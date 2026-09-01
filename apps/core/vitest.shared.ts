@@ -1,9 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import tsconfigPaths from 'vite-tsconfig-paths';
-import type { ViteUserConfig } from 'vitest/config';
+import fs from "node:fs";
+import path from "node:path";
+import tsconfigPaths from "vite-tsconfig-paths";
+import type { ViteUserConfig } from "vitest/config";
 
-import { uiAliases } from './vitest.ui-aliases';
+import { uiAliases } from "./vitest.ui-aliases";
 
 // Walk up from a config file's directory until we find the monorepo root
 // (identified by a packages/ui subdirectory). This must work both for a
@@ -13,7 +13,7 @@ import { uiAliases } from './vitest.ui-aliases';
 // sandbox case, so we search instead of hardcoding depth.
 export function findMonorepoRoot(startDir: string): string {
   let dir = startDir;
-  while (!fs.existsSync(path.join(dir, 'packages', 'ui'))) {
+  while (!fs.existsSync(path.join(dir, "packages", "ui"))) {
     const parent = path.dirname(dir);
     if (parent === dir) {
       throw new Error(`Could not locate monorepo root (packages/ui) starting from ${startDir}`);
@@ -40,9 +40,25 @@ export function baseVitestConfig(coreDir: string): ViteUserConfig {
     test: {
       globals: true,
       // happy-dom avoids jsdom@29 → html-encoding-sniffer → @exodus/bytes ERR_REQUIRE_ESM
-      environment: 'happy-dom',
+      environment: "happy-dom",
       fileParallelism: false,
-      setupFiles: ['./app/tests/setup.ts'],
+      setupFiles: ["./app/tests/setup.ts"],
+      // Node 22+'s own global `localStorage`/`sessionStorage` (Web Storage
+      // API) is defined on the realm before happy-dom installs its working
+      // shim, and happy-dom cannot override it — Node's version is a real
+      // accessor that logs "[ExperimentalWarning]: localStorage is not
+      // available because --localstorage-file was not provided" and returns
+      // undefined, so any test calling `localStorage.clear()` etc. directly
+      // (not through `window.localStorage`) throws "Cannot read properties
+      // of undefined". `NODE_OPTIONS` here is read by each pool worker's own
+      // Node process at its own startup (set via its spawn env, before that
+      // worker's realm ever defines the global), letting happy-dom's shim
+      // through unshadowed. (Confirmed: vitest 4's `poolOptions.*.execArgv`
+      // no longer exists on the public config type, so `env` is the actual
+      // mechanism here, not that older API.)
+      env: {
+        NODE_OPTIONS: "--no-experimental-webstorage",
+      },
     },
   };
 }

@@ -14,9 +14,10 @@
  *   npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --event task_initiation
  */
 
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 const prisma = new PrismaClient();
 
@@ -24,11 +25,7 @@ const prisma = new PrismaClient();
 const RESPONSE_COMPLIANCE = "response_compliance";
 
 /** #521 client UI events — carry behavioural metrics (durationMs/success), never text. */
-const BEHAVIORAL_EVENT_TYPES = [
-  "task_initiation",
-  "re_orientation",
-  "session_completion",
-] as const;
+const BEHAVIORAL_EVENT_TYPES = ["task_initiation", "re_orientation", "session_completion"] as const;
 
 const REPORTED_EVENT_TYPES = [RESPONSE_COMPLIANCE, ...BEHAVIORAL_EVENT_TYPES];
 
@@ -43,7 +40,7 @@ type BehavioralRow = {
   success: boolean | null;
 };
 
-type EventRow = { adhdAssist: boolean; metricsJson: unknown };
+type EventRow = { adhdAssist: boolean; metricsJson: Prisma.JsonValue };
 
 function mean(values: number[]): number {
   if (values.length === 0) return NaN;
@@ -79,37 +76,41 @@ export function pct(count: number, total: number): string {
   return total > 0 ? `${((count / total) * 100).toFixed(0)}%` : "—";
 }
 
-function asMetrics(metricsJson: unknown): Record<string, unknown> | null {
-  if (!metricsJson || typeof metricsJson !== "object" || Array.isArray(metricsJson)) {
-    return null;
-  }
-  return metricsJson as Record<string, unknown>;
+/** One event's metrics object. Values stay undecoded — each reader below asks
+ * for the one field it needs. */
+const metricsRecordSchema = z.record(z.custom<Prisma.JsonValue>());
+
+/** The `metricsJson` column holds a JSON object per event; anything else is a row we skip. */
+function asMetrics(metricsJson: Prisma.JsonValue): Prisma.JsonObject | null {
+  return metricsRecordSchema.safeParse(metricsJson).data ?? null;
 }
 
-function parseCompliance(metricsJson: unknown): ComplianceRow | null {
+function parseCompliance(metricsJson: Prisma.JsonValue): ComplianceRow | null {
   const m = asMetrics(metricsJson);
-  if (!m || typeof m.wordCount !== "number") return null;
+  const wordCount = z.number().safeParse(m?.wordCount);
+  if (!m || !wordCount.success) return null;
   return {
-    wordCount: m.wordCount,
+    wordCount: wordCount.data,
     structuralPass: Boolean(m.structuralPass),
-    durationMs: typeof m.durationMs === "number" ? m.durationMs : null,
+    durationMs: z.number().safeParse(m.durationMs).data ?? null,
   };
 }
 
-function parseBehavioral(metricsJson: unknown): BehavioralRow {
+function parseBehavioral(metricsJson: Prisma.JsonValue): BehavioralRow {
   const m = asMetrics(metricsJson);
   return {
-    durationMs: m && typeof m.durationMs === "number" ? m.durationMs : null,
-    success: m && typeof m.success === "boolean" ? m.success : null,
+    durationMs: z.number().safeParse(m?.durationMs).data ?? null,
+    success: z.boolean().safeParse(m?.success).data ?? null,
   };
 }
 
 async function fetchEvents(eventType: string, since?: Date): Promise<EventRow[]> {
+  const where: Prisma.AssistiveEventWhereInput = { eventType };
+  if (since) {
+    where.createdAt = { gte: since };
+  }
   return prisma.assistiveEvent.findMany({
-    where: {
-      eventType,
-      ...(since ? { createdAt: { gte: since } } : {}),
-    },
+    where,
     select: { adhdAssist: true, metricsJson: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });

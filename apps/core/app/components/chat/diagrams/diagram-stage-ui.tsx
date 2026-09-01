@@ -19,9 +19,7 @@ export function resolveDiagramStages(
 ): EduaiDiagramStage[] {
   return normalizeStagesForType(
     typeId,
-    payload.stages.length > 0
-      ? payload.stages
-      : defaultStagesForType(typeId),
+    payload.stages.length > 0 ? payload.stages : defaultStagesForType(typeId),
   );
 }
 
@@ -33,22 +31,24 @@ export function diagramStageResetKey(
   return `${title ?? ""}\0${stages.map((s) => s.label).join("|")}`;
 }
 
-export function useDiagramStageSelection(
-  stages: EduaiDiagramStage[],
-  resetKey: string,
-): {
+/** Which stage of a diagram is open, and how to move to another one. */
+export type DiagramStageSelection = {
   selected: number;
   setSelected: (index: number) => void;
   selectedStage: EduaiDiagramStage | undefined;
-} {
+};
+
+export function useDiagramStageSelection(
+  stages: EduaiDiagramStage[],
+  resetKey: string,
+): DiagramStageSelection {
   const [selected, setSelected] = useState(0);
 
   useEffect(() => {
     setSelected(0);
   }, [resetKey]);
 
-  const clamped =
-    stages.length === 0 ? 0 : Math.min(selected, stages.length - 1);
+  const clamped = stages.length === 0 ? 0 : Math.min(selected, stages.length - 1);
 
   return {
     selected: clamped,
@@ -57,11 +57,7 @@ export function useDiagramStageSelection(
   };
 }
 
-export function DiagramStageDetail({
-  stage,
-}: {
-  stage: EduaiDiagramStage | undefined;
-}): ReactNode {
+export function DiagramStageDetail({ stage }: { stage: EduaiDiagramStage | undefined }): ReactNode {
   if (!stage) return null;
   return (
     <>
@@ -111,10 +107,7 @@ export function StageChipButton({
 }
 
 /** Stages + selection + detail node for a catalog payload. */
-export function useDiagramStageUi(
-  typeId: EduaiDiagramCanonicalId,
-  payload: EduaiDiagramPayload,
-) {
+export function useDiagramStageUi(typeId: EduaiDiagramCanonicalId, payload: EduaiDiagramPayload) {
   const stages = resolveDiagramStages(typeId, payload);
   const resetKey = diagramStageResetKey(payload.title, stages);
   const selection = useDiagramStageSelection(stages, resetKey);

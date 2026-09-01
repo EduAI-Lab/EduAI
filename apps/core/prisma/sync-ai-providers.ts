@@ -3,31 +3,24 @@
  * Safe to run on every dev start (existing DB with users).
  */
 import { PrismaClient } from "@prisma/client";
+import {
+  VLLM_MODELS,
+  VLLM_RETIRED_MODEL_IDS,
+  VLLM_ROUTING_TIER_ASSIGNMENTS,
+} from "./ai-model-catalog";
 
 const prisma = new PrismaClient();
 
-const ROUTING_TIER_ASSIGNMENTS = [
-  {
-    providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
-    routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
-  },
-  {
-    providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
-    routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
-  },
-];
-
 async function applyRoutingTierAssignments() {
-  for (const row of ROUTING_TIER_ASSIGNMENTS) {
-    const provider = await prisma.aIProvider.findUnique({
-      where: { name: row.providerName },
-    });
+  const providerByName = new Map<string, { id: string }>();
+
+  for (const row of VLLM_ROUTING_TIER_ASSIGNMENTS) {
+    let provider = providerByName.get(row.providerName);
+    if (!provider) {
+      provider =
+        (await prisma.aIProvider.findUnique({ where: { name: row.providerName } })) ?? undefined;
+      if (provider) providerByName.set(row.providerName, provider);
+    }
     if (!provider) continue;
 
     const result = await prisma.aIModel.updateMany({
@@ -44,10 +37,30 @@ async function applyRoutingTierAssignments() {
     }
   }
 
-  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
+  const google = await prisma.aIProvider.findUnique({
+    where: { name: "google" },
+  });
   if (google) {
     await prisma.aIModel.updateMany({
       where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
+  }
+
+  // Clear stale tiers on retired vLLM rows (e.g. after a fleet generation
+  // change) so loadTierRows() cannot keep selecting them — mirrors seed.ts.
+  const vllm =
+    providerByName.get("vllm") ??
+    (await prisma.aIProvider.findUnique({
+      where: { name: "vllm" },
+    }));
+  if (vllm) {
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
+      },
       data: { routerTier: null },
     });
   }
@@ -116,54 +129,115 @@ async function main() {
     },
   });
 
+  const opencode = await prisma.aIProvider.upsert({
+    where: { name: "opencode" },
+    update: {
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+    create: {
+      name: "opencode",
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
-    { modelId: "gpt-4.1", name: "GPT-4.1", description: "Advanced GPT-4.1", maxTokens: 128000, inputPricing: 5, outputPricing: 15 },
-    { modelId: "gpt-4o", name: "GPT-4o", description: "Multimodal flagship", maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
-    { modelId: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and cheap", maxTokens: 128000, inputPricing: 0.15, outputPricing: 0.6 },
+    {
+      modelId: "gpt-4.1",
+      name: "GPT-4.1",
+      description: "Advanced GPT-4.1",
+      maxTokens: 128000,
+      inputPricing: 5,
+      outputPricing: 15,
+    },
+    {
+      modelId: "gpt-4o",
+      name: "GPT-4o",
+      description: "Multimodal flagship",
+      maxTokens: 128000,
+      inputPricing: 2.5,
+      outputPricing: 10,
+    },
+    {
+      modelId: "gpt-4o-mini",
+      name: "GPT-4o Mini",
+      description: "Fast and cheap",
+      maxTokens: 128000,
+      inputPricing: 0.15,
+      outputPricing: 0.6,
+    },
   ];
 
   for (const m of openaiModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: openai.id, modelId: m.modelId } },
+      where: {
+        providerId_modelId: { providerId: openai.id, modelId: m.modelId },
+      },
       update: { isActive: true },
-      create: { ...m, type: "CHAT", supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: openai.id },
+      create: {
+        ...m,
+        type: "CHAT",
+        supportsImages: true,
+        supportsTools: true,
+        supportsStreaming: true,
+        providerId: openai.id,
+      },
     });
   }
 
   const googleModels = [
-    { modelId: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Advanced multimodal", maxTokens: 2097152, inputPricing: 1.25, outputPricing: 5 },
-    { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash", description: "Fast multimodal", maxTokens: 1048576, inputPricing: 0.075, outputPricing: 0.3 },
+    {
+      modelId: "gemini-2.5-pro",
+      name: "Gemini 2.5 Pro",
+      description: "Advanced multimodal",
+      maxTokens: 2097152,
+      inputPricing: 1.25,
+      outputPricing: 5,
+    },
+    {
+      modelId: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      description: "Fast multimodal",
+      maxTokens: 1048576,
+      inputPricing: 0.075,
+      outputPricing: 0.3,
+    },
   ];
 
   for (const m of googleModels) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
+      where: {
+        providerId_modelId: { providerId: google.id, modelId: m.modelId },
+      },
       update: { isActive: true },
-      create: { ...m, type: "CHAT", supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: google.id },
+      create: {
+        ...m,
+        type: "CHAT",
+        supportsImages: true,
+        supportsTools: true,
+        supportsStreaming: true,
+        providerId: google.id,
+      },
     });
   }
 
-  const vllmModels = [
-    {
-      modelId: "qwen2.5-7b-instruct",
-      name: "Qwen 2.5 7B (vLLM)",
-      description: "House chat — tier 1, hybrid RAG",
-      maxTokens: 8192,
-      supportsTools: false,
-    },
-    {
-      modelId: "qwen2.5-32b-instruct",
-      name: "Qwen 2.5 32B AWQ (vLLM)",
-      description: "Large tier — tools via Hermes parser",
-      maxTokens: 8192,
-      supportsTools: true,
-    },
-  ];
-
-  for (const m of vllmModels) {
+  for (const m of VLLM_MODELS) {
     await prisma.aIModel.upsert({
-      where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { isActive: true, supportsTools: m.supportsTools, supportsImages: false },
+      where: {
+        providerId_modelId: { providerId: vllm.id, modelId: m.modelId },
+      },
+      update: {
+        isActive: true,
+        supportsTools: m.supportsTools,
+        supportsImages: false,
+      },
       create: {
         ...m,
         type: "CHAT",
@@ -174,8 +248,33 @@ async function main() {
     });
   }
 
+  await prisma.aIModel.upsert({
+    where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },
+    update: {
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      isActive: true,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+    },
+    create: {
+      modelId: "deepseek-v4-flash",
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+      providerId: opencode.id,
+    },
+  });
+
   await applyRoutingTierAssignments();
-  console.log("[sync-ai-providers] Done (vLLM provider + models synced)");
+  console.log("[sync-ai-providers] Done (vLLM + OpenCode providers and models synced)");
 }
 
 main()

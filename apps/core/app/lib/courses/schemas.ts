@@ -7,9 +7,7 @@ import { TERM_CODES } from "@eduai/ui/term";
  * - Used in POST /api/courses
  */
 
-export const ResponseStyleTagIdSchema = z.enum(
-  RESPONSE_STYLE_TAG_IDS as [string, ...string[]],
-);
+export const ResponseStyleTagIdSchema = z.enum(RESPONSE_STYLE_TAG_IDS as [string, ...string[]]);
 
 /** PATCH body: at least one of responseStyleTags / aiInstructions required (and/or). */
 export const UpdateCourseResponseStyleSchema = z
@@ -17,17 +15,11 @@ export const UpdateCourseResponseStyleSchema = z
     responseStyleTags: z.array(ResponseStyleTagIdSchema).max(7).optional(),
     aiInstructions: z.string().max(4000).optional(),
   })
-  .refine(
-    (data) =>
-      data.responseStyleTags !== undefined || data.aiInstructions !== undefined,
-    {
-      message: "At least one of responseStyleTags or aiInstructions is required",
-    },
-  );
+  .refine((data) => data.responseStyleTags !== undefined || data.aiInstructions !== undefined, {
+    message: "At least one of responseStyleTags or aiInstructions is required",
+  });
 
-export type UpdateCourseResponseStyleInput = z.infer<
-  typeof UpdateCourseResponseStyleSchema
->;
+export type UpdateCourseResponseStyleInput = z.infer<typeof UpdateCourseResponseStyleSchema>;
 
 // Canonical UBC term code — the single vocabulary shared across all EduAI apps.
 const TermCodeSchema = z.enum(TERM_CODES);
@@ -66,6 +58,12 @@ export const UpdateCourseSchema = z.object({
 });
 
 export const UpdateCourseRagSettingsSchema = z.object({
+  // Naming debt (#1152 review, yta3216): this schema also carries the
+  // per-course course-scope-guardrail toggle, which isn't a RAG setting.
+  // Kept here rather than renamed because it's served by the same
+  // instructor-only PATCH /api/courses/:id/rag-settings endpoint and a rename
+  // would be a larger, separate change.
+  courseScopeGuardrailEnabled: z.boolean().optional(),
   ragTopK: z
     .number()
     .int()

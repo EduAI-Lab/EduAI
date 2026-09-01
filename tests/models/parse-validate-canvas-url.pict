@@ -1,0 +1,10 @@
+# docs/PICT_CENSUS.md § S5 — parse-validate-canvas-url (Core ∪ QM drift)
+# Core parseAndValidateCanvasUrl vs QM validateCanvasUrl at connect/parse time.
+UrlForm:     https-host, http-host, with-userinfo, relative, opaque
+HostClass:    public-dns, localhost, ipv4-private, ipv4-public, ipv6-literal
+ExtraPath:    none, traversal, query-ssrf
+
+IF [UrlForm] in {"relative", "opaque", "with-userinfo"} THEN [HostClass] = "public-dns";
+IF [UrlForm] = "http-host" THEN [HostClass] <> "ipv6-literal";
+IF [HostClass] = "ipv6-literal" THEN [UrlForm] = "https-host";
+IF [UrlForm] in {"relative", "opaque"} THEN [ExtraPath] = "none";

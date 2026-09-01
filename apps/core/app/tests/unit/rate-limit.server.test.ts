@@ -1,13 +1,34 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isRateLimited, parseEnvInt, resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+
+const redisEvalMock = vi.hoisted(() => vi.fn());
+const redisZremMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/queue/connection.server", () => ({
+  default: {},
+  rateLimitRedis: { eval: redisEvalMock, zrem: redisZremMock },
+}));
+
+import {
+  checkRateLimit,
+  getChatRateLimitConfig,
+  isRateLimited,
+  parseEnvInt,
+  refundRateLimitCharge,
+  resetRateLimitsForTests,
+} from "~/lib/auth/rate-limit.server";
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  redisEvalMock.mockReset();
+  redisZremMock.mockReset();
   resetRateLimitsForTests();
 });
 
 describe("parseEnvInt", () => {
+  // #1101: call the exported helper directly. Cap config is read at module
+  // load (`RATE_LIMIT_MAX_KEYS`); bounded-store tests that need a custom
+  // cap use `vi.resetModules()` + dynamic import after stubbing the env.
   it("returns the fallback when the value is undefined", () => {
     expect(parseEnvInt(undefined, 20)).toBe(20);
   });
@@ -16,6 +37,13 @@ describe("parseEnvInt", () => {
     // Number(process.env.X ?? fallback) only guards null/undefined; an
     // empty string skips the fallback and parses to 0.
     expect(parseEnvInt("", 20)).toBe(20);
+  });
+
+  it("returns the fallback — not 0 — when the value is whitespace-only", () => {
+    // Number("   ") === 0 and is finite, so dropping `.trim()` before the
+    // empty check (value.trim() === "" → value === "") would return 0.
+    expect(parseEnvInt("   ", 20)).toBe(20);
+    expect(parseEnvInt("\t\n", 20)).toBe(20);
   });
 
   it("returns the fallback when the value is not a finite number", () => {
@@ -67,6 +95,279 @@ describe("isRateLimited", () => {
     isRateLimited("10.0.0.7");
     expect(isRateLimited("10.0.0.7")).toBe(true);
   });
+
+  // AUTH-05: `Number(env ?? 300)` turns a non-numeric override into NaN, and
+  // `hits.length >= NaN` is always false, so the limiter never trips. The
+  // default parameter must go through `parseEnvInt` and fail closed to the
+  // 300 default instead.
+  it("falls back to the 300 default (fail-closed) when SESSION_VALIDATE_RATE_LIMIT is not numeric", () => {
+    vi.stubEnv("SESSION_VALIDATE_RATE_LIMIT", "not-a-number");
+    for (let i = 0; i < 300; i++) {
+      expect(isRateLimited("10.0.0.8")).toBe(false);
+    }
+    expect(isRateLimited("10.0.0.8")).toBe(true);
+  });
+
+  it("excludes a hit exactly at the window boundary (half-open window)", () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    isRateLimited("10.0.0.9", 1, 1_000);
+    vi.setSystemTime(start + 1_000); // exactly at the boundary, not past it
+
+    expect(isRateLimited("10.0.0.9", 1, 1_000)).toBe(false);
+  });
+});
+
+describe("getChatRateLimitConfig", () => {
+  it("uses the documented 100 request / 60 second defaults", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT", "");
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "");
+
+    expect(getChatRateLimitConfig()).toEqual({ limit: 100, windowMs: 60_000 });
+  });
+
+  it("prefers CHAT_RATE_LIMIT_WINDOW_MS over the legacy window alias", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT", "25");
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "30000");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "45000");
+
+    expect(getChatRateLimitConfig()).toEqual({ limit: 25, windowMs: 30_000 });
+  });
+
+  it("falls back to CHAT_RATE_WINDOW_MS while the legacy alias remains supported", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "45000");
+
+    expect(getChatRateLimitConfig()).toMatchObject({ windowMs: 45_000 });
+  });
+});
+
+describe("checkRateLimit", () => {
+  it("uses Redis as the primary allow path", async () => {
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await expect(checkRateLimit("chat:user-1", 2, 60_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+      reservationToken: expect.any(String),
+    });
+    expect(redisEvalMock).toHaveBeenCalledOnce();
+  });
+
+  it("returns Redis threshold denial with a positive integer retryAfter", async () => {
+    redisEvalMock.mockResolvedValue([1, 1.2]);
+
+    await expect(checkRateLimit("chat:user-2", 2, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 2,
+    });
+  });
+
+  it("normalizes fractional limits before executing the Redis script", async () => {
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await checkRateLimit("chat:user-fractional", 2.9, 60_000);
+
+    expect(redisEvalMock.mock.calls[0]?.[5]).toBe(2);
+  });
+
+  it("fails closed with a positive retryAfter when the configured limit is zero", async () => {
+    await expect(checkRateLimit("chat:user-disabled", 0, 1_500)).resolves.toEqual({
+      limited: true,
+      retryAfter: 2,
+    });
+    expect(redisEvalMock).not.toHaveBeenCalled();
+  });
+
+  it("allows a request after the Redis sliding window expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T00:00:00Z"));
+    redisEvalMock.mockResolvedValueOnce([1, 1]).mockResolvedValueOnce([0, 0]);
+
+    await expect(checkRateLimit("chat:user-3", 1, 1_000)).resolves.toMatchObject({
+      limited: true,
+    });
+    vi.advanceTimersByTime(1_000);
+    await expect(checkRateLimit("chat:user-3", 1, 1_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+      reservationToken: expect.any(String),
+    });
+  });
+
+  it("gives same-millisecond requests unique sorted-set members", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T00:00:00Z"));
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await Promise.all([
+      checkRateLimit("chat:user-4", 2, 60_000),
+      checkRateLimit("chat:user-4", 2, 60_000),
+    ]);
+
+    const firstMember = redisEvalMock.mock.calls[0]?.[6];
+    const secondMember = redisEvalMock.mock.calls[1]?.[6];
+    expect(firstMember).not.toBe(secondMember);
+  });
+
+  it("does not overshoot the limit across parallel Redis decisions", async () => {
+    let accepted = 0;
+    redisEvalMock.mockImplementation(async () => {
+      if (accepted >= 2) return [1, 60];
+      accepted += 1;
+      return [0, 0];
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => checkRateLimit("chat:user-5", 2, 60_000)),
+    );
+
+    expect(results.filter((result) => !result.limited)).toHaveLength(2);
+    expect(results.filter((result) => result.limited)).toHaveLength(4);
+  });
+
+  it("falls back to the bounded memory limiter when Redis errors", async () => {
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+
+    await expect(checkRateLimit("chat:user-6", 1, 60_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+      reservationToken: expect.any(String),
+    });
+    await expect(checkRateLimit("chat:user-6", 1, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 60,
+    });
+  });
+
+  it("falls back when Redis returns a malformed response", async () => {
+    redisEvalMock.mockResolvedValueOnce("invalid").mockResolvedValueOnce([1, "not-a-number"]);
+
+    await expect(checkRateLimit("chat:user-malformed", 1, 60_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+      reservationToken: expect.any(String),
+    });
+    await expect(checkRateLimit("chat:user-malformed", 1, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 60,
+    });
+  });
+
+  it("calculates memory fallback retryAfter from the oldest active hit", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T00:00:00Z"));
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+
+    await checkRateLimit("chat:user-retry-after", 1, 60_000);
+    vi.advanceTimersByTime(10_001);
+
+    await expect(checkRateLimit("chat:user-retry-after", 1, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 50,
+    });
+  });
+
+  it("clears the fallback timer after a fast Redis response", async () => {
+    vi.useFakeTimers();
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await checkRateLimit("chat:user-fast", 1, 60_000);
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("falls back instead of hanging when the Redis operation times out", async () => {
+    vi.useFakeTimers();
+    redisEvalMock.mockReturnValue(new Promise(() => {}));
+
+    const resultPromise = checkRateLimit("chat:user-7", 1, 60_000);
+    await vi.advanceTimersByTimeAsync(301);
+
+    await expect(resultPromise).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+      reservationToken: expect.any(String),
+    });
+  });
+});
+
+describe("refundRateLimitCharge (#1547 review)", () => {
+  it("removes the exact reservation token via a single atomic Redis ZREM, not by rank", async () => {
+    redisZremMock.mockResolvedValue(1);
+
+    await refundRateLimitCharge("chat-daily:user-1", "1700000000000:token-a");
+
+    expect(redisZremMock).toHaveBeenCalledOnce();
+    expect(redisZremMock).toHaveBeenCalledWith("chat-daily:user-1", "1700000000000:token-a");
+  });
+
+  it("does not touch a concurrent charge's token when Redis is healthy", async () => {
+    // Whichever member ZREM is asked to remove is the only one that goes —
+    // there is no "remove whatever is newest" step for a concurrent charge
+    // to race with.
+    redisZremMock.mockImplementation(async (_key: string, member: string) =>
+      member === "token-a" ? 1 : 0,
+    );
+
+    await refundRateLimitCharge("chat-daily:user-1", "token-a");
+
+    expect(redisZremMock).toHaveBeenCalledWith("chat-daily:user-1", "token-a");
+    expect(redisZremMock).not.toHaveBeenCalledWith("chat-daily:user-1", "token-b");
+  });
+
+  it("falls back to the memory store, removing only the matching token, when Redis errors", async () => {
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+    redisZremMock.mockRejectedValue(new Error("redis unavailable"));
+
+    const first = await checkRateLimit("chat-daily:user-2", 3, 60_000);
+    const second = await checkRateLimit("chat-daily:user-2", 3, 60_000);
+    const third = await checkRateLimit("chat-daily:user-2", 3, 60_000);
+    expect([first, second, third].every((r) => !r.limited)).toBe(true);
+
+    // Refund only the middle charge — the classic bug this fixes would
+    // instead drop whichever charge is newest (`third`'s), not `second`'s.
+    await refundRateLimitCharge("chat-daily:user-2", second.reservationToken!);
+
+    // One slot freed: a 4th charge fits (first, third, and the new one = 3),
+    // but a 5th does not — proving exactly one charge (second's) was
+    // removed, not zero and not two.
+    await expect(checkRateLimit("chat-daily:user-2", 3, 60_000)).resolves.toMatchObject({
+      limited: false,
+    });
+    await expect(checkRateLimit("chat-daily:user-2", 3, 60_000)).resolves.toMatchObject({
+      limited: true,
+    });
+  });
+
+  it("checks the memory store even when Redis ZREM reports nothing removed (charge landed there during a Redis blip)", async () => {
+    // Charge happens while Redis is down (memory fallback)...
+    redisEvalMock.mockRejectedValueOnce(new Error("redis unavailable"));
+    const charged = await checkRateLimit("chat-daily:user-3", 1, 60_000);
+    expect(charged.limited).toBe(false);
+
+    // ...but by refund time Redis has recovered: ZREM runs, finds no such
+    // member (it was never in Redis), and must still fall through to check
+    // the memory store rather than treating "0 removed" as "done."
+    redisZremMock.mockResolvedValue(0);
+    await refundRateLimitCharge("chat-daily:user-3", charged.reservationToken!);
+
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+    await expect(checkRateLimit("chat-daily:user-3", 1, 60_000)).resolves.toMatchObject({
+      limited: false,
+    });
+  });
+
+  it("is a safe no-op for a token that was never charged (already refunded, or evicted)", async () => {
+    redisZremMock.mockResolvedValue(0);
+
+    await expect(
+      refundRateLimitCharge("chat-daily:user-4", "mem:never-existed"),
+    ).resolves.toBeUndefined();
+  });
 });
 
 // #990: the store must stay bounded even when many distinct keys never
@@ -79,9 +380,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("evicts stale keys once the store exceeds RATE_LIMIT_MAX_KEYS", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     vi.useFakeTimers();
     const start = Date.now();
@@ -105,9 +404,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("falls back to evicting the oldest key when every entry is still hot", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "2");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     // Two hot keys, then a third — all within the window, so the sweep can't
     // reclaim anything and the oldest-inserted key ("hot-1") must be evicted.
@@ -123,9 +420,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("does not treat RATE_LIMIT_MAX_KEYS='' as a cap of 0", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     // A cap of 0 would trigger eviction on every single insert. With the
     // empty string falling back to the 50k default, a handful of keys
@@ -135,12 +430,20 @@ describe("isRateLimited — bounded store (#990)", () => {
     expect(isRateLimitedBounded("k1", 1, 60_000)).toBe(true);
   });
 
+  it("does not treat RATE_LIMIT_MAX_KEYS='   ' (whitespace) as a cap of 0", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "   ");
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
+
+    isRateLimitedBounded("k1", 5, 60_000);
+    isRateLimitedBounded("k2", 5, 60_000);
+    expect(isRateLimitedBounded("k1", 1, 60_000)).toBe(true);
+  });
+
   it("evicts below the cap (not just back to it) so a sweep isn't re-triggered on the very next insert", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     // Fill past the cap once, forcing the oldest-key fallback eviction.
     for (let i = 0; i < 11; i++) {
@@ -150,5 +453,97 @@ describe("isRateLimited — bounded store (#990)", () => {
     // The most recently inserted keys should have survived the eviction and
     // still be tracked as repeat callers (not reset to fresh).
     expect(isRateLimitedBounded("hot-10", 1, 60_000)).toBe(true);
+  });
+
+  it("evicts a defined-but-stale last hit even when it's not among the oldest keys the fallback would trim anyway", async () => {
+    // A stale key sitting in the *middle* of insertion order isolates the
+    // sweep from the oldest-key fallback: if only the fallback ran (sweep a
+    // no-op), it would trim the two positionally-oldest keys and never
+    // touch this one, even though it's the one that's actually stale.
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = floor(3 * 0.9) = 2
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
+
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("stale-mid", 5, 60_000); // never touched again
+
+    vi.setSystemTime(start + 61 * 60_000); // past STALE_ENTRY_MS
+    // Refresh old-1/old-2 so they're NOT stale despite being positionally
+    // oldest, then push the store over the cap to trigger eviction.
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("trigger", 5, 60_000);
+
+    // A day-long window means a retained stale hit would still count toward
+    // the limit — only actual sweep eviction resets the key to a clean slate.
+    expect(isRateLimitedBounded("stale-mid", 1, 24 * 60 * 60_000)).toBe(false);
+  });
+
+  it("does NOT evict a key exactly at the STALE_ENTRY_MS boundary (strictly-greater-than)", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = floor(3 * 0.9) = 2
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
+
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("boundary-mid", 5, 60_000); // never touched again
+
+    vi.setSystemTime(start + 60 * 60_000); // exactly STALE_ENTRY_MS, not past it
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("trigger", 5, 60_000);
+
+    // At exactly the boundary the sweep must NOT evict it — a retained hit
+    // still counts toward the limit under a day-long window.
+    expect(isRateLimitedBounded("boundary-mid", 1, 24 * 60 * 60_000)).toBe(true);
+  });
+
+  it("stops evicting exactly at EVICTION_TARGET_KEYS, not past it", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10"); // EVICTION_TARGET_KEYS = floor(10 * 0.9) = 9
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
+
+    for (let i = 0; i < 11; i++) {
+      isRateLimitedBounded(`hot-${i}`, 5, 60_000);
+    }
+
+    // hot-0 and hot-1 are evicted to bring size from 11 down to the target
+    // (9, i.e. floor(10 * 0.9) — not floor(10 / 0.9), which would exceed
+    // MAX_STORE_KEYS and disable trimming entirely). hot-0 must be gone;
+    // hot-2 must survive — evicting it too would overshoot the target.
+    expect(isRateLimitedBounded("hot-0", 1, 60_000)).toBe(false);
+    expect(isRateLimitedBounded("hot-2", 1, 60_000)).toBe(true);
+  });
+
+  it("sweeps an empty hits entry (limit=0) so the oldest-key fallback does not over-trim a later hot key", async () => {
+    // limit=0 stores an empty hits array (`hits.length >= 0`). That entry's
+    // lastHit is undefined, so the sweep must delete it via the
+    // `lastHit === undefined` arm. Placing it last in insertion order means
+    // the oldest-key fallback would not reach it when the sweep already
+    // brought size down — but without the undefined arm the fallback has to
+    // delete one extra key and would take keeper-b with it.
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = 2
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
+
+    isRateLimitedBounded("keeper-a", 5, 60_000);
+    isRateLimitedBounded("keeper-b", 5, 60_000);
+    expect(isRateLimitedBounded("empty", 0, 60_000)).toBe(true); // stores []
+
+    isRateLimitedBounded("trigger", 5, 60_000);
+
+    // keeper-b must survive: only keeper-a is oldest-key trimmed after the
+    // empty entry is swept. If the undefined-arm were a no-op, fallback
+    // would also drop keeper-b.
+    expect(isRateLimitedBounded("keeper-b", 1, 60_000)).toBe(true);
   });
 });

@@ -1,10 +1,12 @@
-import { IconPuzzle } from '@tabler/icons-react'
-import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui'
-import { getEduAiAppUrl, getAiTutorAppUrl } from '~/lib/extension-urls'
-import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
+import { asJsonArray, parseJsonText } from "~/lib/json-value";
+import { z } from "zod";
+import { IconPuzzle } from "@tabler/icons-react";
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from "@eduai/ui";
+import { getEduAiAppUrl, getAiTutorAppUrl } from "~/lib/extension-urls";
+import { getQuestionMakerUrl } from "~/lib/extensions/question-maker";
 
 /** Stable id for the app rendering this sidebar — passed to AppLauncher. */
-export const CURRENT_APP_ID = 'core'
+export const CURRENT_APP_ID = "core";
 
 /**
  * Parse additional extensions from the VITE_EXTRA_EXTENSIONS env var.
@@ -17,32 +19,42 @@ export const CURRENT_APP_ID = 'core'
  *
  * Malformed JSON is silently ignored so a bad value never breaks the sidebar.
  */
+/** Sidebar tint for an extension that did not choose one. */
+const DEFAULT_EXTENSION_COLOR = "oklch(0.580 0.150 300)";
+
+/**
+ * One entry of `VITE_EXTRA_EXTENSIONS`. `id`, `name` and `url` are the minimum
+ * an entry needs to be launchable; an entry missing any of them is dropped
+ * rather than rendered half-formed. A `color` that is present but empty falls
+ * back to the default, which is why it is `.min(1)`.
+ */
+const extraExtensionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  url: z.string(),
+  description: z.string().optional().catch(undefined),
+  color: z.string().min(1).optional().catch(undefined),
+});
+
 export function parseExtraExtensions(): LauncherApp[] {
-  const raw = import.meta.env.VITE_EXTRA_EXTENSIONS?.trim()
-  if (!raw) return []
-  try {
-    const entries: unknown = JSON.parse(raw)
-    if (!Array.isArray(entries)) return []
-    return entries
-      .filter(
-        (e): e is Record<string, string> =>
-          typeof e === 'object' &&
-          e !== null &&
-          typeof (e as Record<string, unknown>).id === 'string' &&
-          typeof (e as Record<string, unknown>).name === 'string' &&
-          typeof (e as Record<string, unknown>).url === 'string',
-      )
-      .map((e) => ({
-        id: e.id,
-        name: e.name,
-        url: e.url,
+  const raw = import.meta.env.VITE_EXTRA_EXTENSIONS?.trim();
+  if (!raw) return [];
+  const entries = asJsonArray(parseJsonText(raw));
+  if (!entries) return [];
+  return entries.flatMap((entry) => {
+    const decoded = extraExtensionSchema.safeParse(entry);
+    if (!decoded.success) return [];
+    return [
+      {
+        id: decoded.data.id,
+        name: decoded.data.name,
+        url: decoded.data.url,
         icon: <IconPuzzle className="size-4" />,
-        description: e.description,
-        color: e.color || 'oklch(0.580 0.150 300)',
-      }))
-  } catch {
-    return []
-  }
+        description: decoded.data.description,
+        color: decoded.data.color ?? DEFAULT_EXTENSION_COLOR,
+      },
+    ];
+  });
 }
 
 /**
@@ -56,21 +68,19 @@ export function parseExtraExtensions(): LauncherApp[] {
  * where the extension isn't deployed and it won't show in the sidebar.
  * Additional extensions can also be injected via VITE_EXTRA_EXTENSIONS.
  */
-export function getLauncherApps(): LauncherApp[] {
-  const aiTutorUrl = getAiTutorAppUrl()
-  const questionMakerUrl = getQuestionMakerUrl()
+export function getLauncherApps(coreCourseId?: string | null): LauncherApp[] {
+  const aiTutorUrl = getAiTutorAppUrl();
+  const questionMakerUrl = getQuestionMakerUrl();
 
   const apps = getSharedLauncherApps({
     currentAppId: CURRENT_APP_ID,
     urls: {
       core: getEduAiAppUrl(),
-      aiTutor: aiTutorUrl ?? '',
-      questionMaker: questionMakerUrl ?? '',
+      aiTutor: aiTutorUrl ?? "",
+      questionMaker: questionMakerUrl ?? "",
     },
-  })
+    coreCourseId,
+  });
 
-  return [
-    ...apps.filter((app) => app.id === CURRENT_APP_ID || app.url),
-    ...parseExtraExtensions(),
-  ]
+  return [...apps.filter((app) => app.id === CURRENT_APP_ID || app.url), ...parseExtraExtensions()];
 }

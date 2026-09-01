@@ -21,6 +21,7 @@ const existingModel: AIModel = {
   inputPricing: 0,
   outputPricing: 0,
   isActive: true,
+  routerTier: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   providerId,
@@ -54,6 +55,7 @@ describe("buildOllamaModelCreatePayload", () => {
       inputPricing: 0,
       outputPricing: 0,
     });
+    expect(payload.routerTier).toBeNull();
   });
 });
 
@@ -69,6 +71,7 @@ describe("buildVllmModelCreatePayload", () => {
       name: "Qwen2.5 7b Instruct",
       supportsTools: false,
     });
+    expect(payload.routerTier).toBeNull();
   });
 });
 

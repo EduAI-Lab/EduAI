@@ -18,9 +18,8 @@ import {
   IconChevronRight,
   IconCircleCheck,
   IconInfoCircle,
-  IconLoader2,
   IconSparkles,
-} from '@tabler/icons-react';
+} from "@tabler/icons-react";
 import {
   AnswerOption,
   Badge,
@@ -33,10 +32,11 @@ import {
   Input,
   courseThemeVars,
   type CourseAccentColor,
-} from '@eduai/ui';
-import StudentActivityFeedbackCard from '~/components/StudentActivityFeedbackCard';
-import type { Activity } from '~/lib/types';
-import { cn } from '~/lib/utils';
+} from "@eduai/ui";
+import StudentActivityFeedbackCard from "~/components/StudentActivityFeedbackCard";
+import { Spinner } from "@eduai/ui";
+import type { Activity } from "~/lib/types";
+import { cn } from "~/lib/utils";
 
 export type LessonActivityFeedbackState = {
   rating: number | null;
@@ -67,6 +67,19 @@ type LessonActivityViewProps = {
   onSubmit: () => void;
   result: string | null;
   wasCorrect: boolean;
+  /**
+   * The caller's answer-submission capability for this course (#1626).
+   * Recording a graded attempt is a STUDENT-enrolment path; a course TA keeps
+   * the learner surface but is not a submitter (`POST /questions/:id/answer` is
+   * 403 for them). Answer inputs and Submit are offered only in `"allowed"`;
+   * otherwise they are withheld and a short note explains why, rather than
+   * leaving a dead button (U-TA-1). The gate fails closed while the caller's
+   * per-course role is unresolved:
+   * - `"pending"`   — the breadcrumb that resolves the course role is in flight.
+   * - `"unverified"`— that lookup failed; the role could not be confirmed.
+   * - `"withheld"`  — a resolved non-STUDENT role (a course TA).
+   */
+  submitState: "allowed" | "pending" | "unverified" | "withheld";
 
   isUserReady: boolean;
   onGuideMe: () => void;
@@ -102,6 +115,7 @@ export function LessonActivityView({
   onSubmit,
   result,
   wasCorrect,
+  submitState,
   isUserReady,
   onGuideMe,
   canPrev,
@@ -114,8 +128,29 @@ export function LessonActivityView({
   onFeedbackSubmit,
   onFeedbackDismiss,
 }: LessonActivityViewProps) {
-  const accent = accentColor ?? 'var(--primary)';
-  const orderLabel = String(questionNumber).padStart(2, '0');
+  const accent = accentColor ?? "var(--primary)";
+  const orderLabel = String(questionNumber).padStart(2, "0");
+  const canSubmitAnswers = submitState === "allowed";
+  // Label shown under the (disabled) Submit + Guide me actions when the quiz is
+  // withheld. Pending and unverified are the fail-closed states for an
+  // unresolved course role; a resolved non-STUDENT (a course TA) gets the
+  // definitive note. Both quiz actions are STUDENT-in-this-course capabilities —
+  // Submit records an attempt (403 for a TA) and Guide me drives the study buddy
+  // (also withheld for a TA) — so one label covers both.
+  const withheldNote =
+    submitState === "pending"
+      ? "Checking your access…"
+      : submitState === "unverified"
+        ? "Couldn't verify your access. Reload to try again."
+        : "Only students of this course can interact with quizzes.";
+  // Render the whole quiz (question + answer cards) visually disabled once a
+  // resolved non-STUDENT role — or an unconfirmable one — means it is not
+  // interactive (#1626). The Prev/Next footer stays full-strength and enabled so
+  // a TA can still page through and review every question as course content. We
+  // deliberately do NOT mute during "pending": a real STUDENT briefly hits that
+  // state on every lesson load while the breadcrumb resolves, and should not see
+  // the quiz flash greyed.
+  const quizMuted = submitState === "withheld" || submitState === "unverified";
 
   return (
     <div className="flex flex-col gap-5">
@@ -124,7 +159,11 @@ export function LessonActivityView({
           watermark, and a ringed accent chip + uppercase kicker. */}
       <Card
         data-tour="student-question-card"
-        className="group relative overflow-hidden"
+        aria-disabled={quizMuted || undefined}
+        className={cn(
+          "group relative overflow-hidden",
+          quizMuted && "opacity-60 transition-opacity",
+        )}
         style={courseThemeVars(accent)}
       >
         {/* Accent gradient rail */}
@@ -132,7 +171,7 @@ export function LessonActivityView({
           className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
           style={{
             background:
-              'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+              "linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))",
           }}
           aria-hidden="true"
         />
@@ -141,7 +180,7 @@ export function LessonActivityView({
         <span
           aria-hidden="true"
           className="pointer-events-none absolute -right-3 top-1/2 -translate-y-1/2 select-none text-[6rem] font-black leading-none tabular-nums"
-          style={{ color: 'color-mix(in oklch, var(--course-accent) 9%, transparent)' }}
+          style={{ color: "color-mix(in oklch, var(--course-accent) 9%, transparent)" }}
         >
           {orderLabel}
         </span>
@@ -152,10 +191,10 @@ export function LessonActivityView({
               <span
                 className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] text-sm font-bold tabular-nums"
                 style={{
-                  background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                  color: 'var(--course-accent)',
+                  background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                  color: "var(--course-accent)",
                   boxShadow:
-                    'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                    "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
                 }}
               >
                 {questionNumber}
@@ -163,7 +202,7 @@ export function LessonActivityView({
               <span
                 className="text-[11px] font-bold uppercase tracking-[0.16em]"
                 style={{
-                  color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))',
+                  color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
                 }}
               >
                 Question {questionNumber} of {questionCount}
@@ -196,19 +235,24 @@ export function LessonActivityView({
       </Card>
 
       {/* Answer card */}
-      <Card data-tour="student-answer-card" style={courseThemeVars(accent)}>
+      <Card
+        data-tour="student-answer-card"
+        aria-disabled={quizMuted || undefined}
+        className={cn(quizMuted && "opacity-60 transition-opacity")}
+        style={courseThemeVars(accent)}
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <span
               className="size-2 shrink-0 rounded-full"
-              style={{ background: 'var(--course-accent)' }}
+              style={{ background: "var(--course-accent)" }}
               aria-hidden="true"
             />
             Your answer
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          {activity?.type === 'MCQ' ? (
+          {activity?.type === "MCQ" ? (
             Array.isArray(activity?.options?.choices) ? (
               <div className="space-y-3" role="radiogroup" aria-label="Answer choices">
                 {activity.options.choices.map((choice, i) => {
@@ -216,19 +260,19 @@ export function LessonActivityView({
                   const state = graded
                     ? mcq === i
                       ? wasCorrect
-                        ? 'correct'
-                        : 'incorrect'
-                      : 'default'
+                        ? "correct"
+                        : "incorrect"
+                      : "default"
                     : mcq === i
-                      ? 'selected'
-                      : 'default';
+                      ? "selected"
+                      : "default";
                   return (
                     <AnswerOption
                       key={i}
                       letter={String.fromCharCode(65 + i)}
                       state={state}
                       selected={mcq === i}
-                      disabled={submitting || wasCorrect}
+                      disabled={submitting || wasCorrect || !canSubmitAnswers}
                       onSelect={() => onSelectMcq(i)}
                     >
                       {choice}
@@ -247,20 +291,27 @@ export function LessonActivityView({
               onChange={(e) => onTextChange(e.target.value)}
               placeholder="Type your answer…"
               className="text-lg"
+              disabled={!canSubmitAnswers}
             />
           )}
 
-          {/* Actions */}
+          {/* Actions — both quiz controls are STUDENT-in-this-course only, so
+              they are disabled together when the quiz is withheld (#1626). */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Button
               variant="primary"
               size="lg"
               onClick={onSubmit}
-              disabled={submitting || (activity?.type === 'MCQ' ? mcq === null : text.trim() === '')}
+              disabled={
+                !canSubmitAnswers ||
+                submitting ||
+                wasCorrect ||
+                (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
+              }
             >
               {submitting ? (
                 <>
-                  <IconLoader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
+                  <Spinner className="mr-1" />
                   Submitting…
                 </>
               ) : (
@@ -275,7 +326,7 @@ export function LessonActivityView({
               variant="secondary"
               size="lg"
               onClick={onGuideMe}
-              disabled={wasCorrect || !isUserReady}
+              disabled={!canSubmitAnswers || wasCorrect || !isUserReady}
               data-tour="student-guide-button"
             >
               <IconSparkles className="mr-1 h-4 w-4" aria-hidden="true" />
@@ -283,14 +334,28 @@ export function LessonActivityView({
             </Button>
           </div>
 
+          {!canSubmitAnswers && (
+            <p
+              role="note"
+              className={cn(
+                "rounded-[var(--radius-lg)] px-3 py-2 text-sm",
+                // Stronger contrast when the card is muted so the reason stays
+                // legible through the reduced opacity.
+                quizMuted ? "bg-muted text-foreground" : "bg-muted/60 text-muted-foreground",
+              )}
+            >
+              {withheldNote}
+            </p>
+          )}
+
           {/* Result feedback */}
           {result && (
             <div
               className={cn(
-                'flex items-center gap-3 rounded-[var(--radius-lg)] p-4',
+                "flex items-center gap-3 rounded-[var(--radius-lg)] p-4",
                 wasCorrect
-                  ? 'border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]'
-                  : 'border border-destructive/40 bg-destructive/10 text-destructive',
+                  ? "border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]"
+                  : "border border-destructive/40 bg-destructive/10 text-destructive",
               )}
             >
               {wasCorrect ? (

@@ -7,12 +7,31 @@ PartOf=eduai-dev.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-EnvironmentFile=-%h/.config/systemd/user/eduai-dev.env
-Environment=PATH=%h/.volta/bin:/usr/local/bin:/usr/bin:/bin
-Environment=HOME=%h
-Environment=VOLTA_HOME=%h/.volta
-ExecStart=%h/.volta/bin/npm run dev -w edu-ai
+# System unit, not a --user unit: any member of eduai-dev can restart the stack
+# without loginctl linger and without being ssaada08.
+User=ssaada08
+Group=eduai-dev
+# Anything the service writes into the shared checkout stays group-writable.
+UMask=0002
+
+WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
+# Defaults first, so an absent or unreadable env file cannot silently change
+# behaviour: @react-router/serve does `NODE_ENV ??= "production"`, which would
+# flip on Core's isProd gates and start pinning a 1-year HSTS header on the dev
+# host. The EnvironmentFile below still wins when it is present.
+Environment=NODE_ENV=development
+EnvironmentFile=-/etc/eduai/eduai-dev.env
+Environment=HOME=/home/ssaada08
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PORT=3000
+
+# Serves the built SSR bundle. Core is ssr:true, so it stays a node process.
+# Direct exec rather than `npm run start -w edu-ai` so signals reach the server
+# and MainPID is the server rather than an npm wrapper.
+# Migrations and the build both live in go-live-build.sh, deliberately not here:
+# Restart=always would re-run a migration on every crash-loop iteration.
+ExecStart=/usr/local/bin/node /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/node_modules/@react-router/serve/bin.js ./build/server/index.js
+
 Restart=always
 RestartSec=5
 TimeoutStartSec=120

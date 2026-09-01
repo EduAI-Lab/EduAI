@@ -26,7 +26,7 @@ function requirePlatformAdmin(user: RbacUser): ToolError | null {
   return null;
 }
 
-function adminToolPayload<T extends Record<string, unknown>>(data: T) {
+function adminToolPayload<T extends object>(data: T) {
   return {
     dataSource: "database" as const,
     queriedAt: new Date().toISOString(),
@@ -137,7 +137,12 @@ export async function readAdminCourseTAs(
 
 export async function readAdminCourseChats(
   user: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; limit?: number },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    limit?: number;
+  },
 ) {
   return listAdminCourseChats(user, opts);
 }

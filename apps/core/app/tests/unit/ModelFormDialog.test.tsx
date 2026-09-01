@@ -40,6 +40,7 @@ const baseModel: AIModel = {
   inputPricing: 5,
   outputPricing: 15,
   isActive: true,
+  routerTier: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   providerId: "p1",
@@ -116,10 +117,12 @@ describe("ModelFormDialog — title", () => {
         onOpenChange={vi.fn()}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     // Use heading role to avoid matching the submit button which also says "Create Model"
     expect(screen.getByRole("heading", { name: "Create Model" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Provider")).toBeInTheDocument();
+    expect(screen.getByLabelText("Type")).toBeInTheDocument();
   });
 
   it("shows 'Edit Model' when a model is provided", () => {
@@ -130,7 +133,7 @@ describe("ModelFormDialog — title", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("Edit Model")).toBeInTheDocument();
   });
@@ -149,7 +152,7 @@ describe("ModelFormDialog — Ollama section", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.queryByText("Ollama models")).not.toBeInTheDocument();
   });
@@ -162,7 +165,7 @@ describe("ModelFormDialog — Ollama section", () => {
         model={ollamaModel}
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("Ollama models")).toBeInTheDocument();
   });
@@ -176,7 +179,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         onFetchOllamaModels={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByRole("button", { name: "Sync models" })).toBeInTheDocument();
   });
@@ -191,7 +194,7 @@ describe("ModelFormDialog — Ollama section", () => {
         onSubmit={vi.fn()}
         fetchingOllamaModels={true}
         onFetchOllamaModels={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByRole("button", { name: /syncing/i })).toBeDisabled();
   });
@@ -206,7 +209,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         onFetchOllamaModels={onFetchOllamaModels}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Sync models" }));
     expect(onFetchOllamaModels).toHaveBeenCalled();
@@ -222,7 +225,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         onFetchOllamaModels={onFetchOllamaModels}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -239,7 +242,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         ollamaError="Connection refused"
-      />
+      />,
     );
     expect(screen.getByText("Connection refused")).toBeInTheDocument();
   });
@@ -258,7 +261,7 @@ describe("ModelFormDialog — vLLM section", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.queryByText("vLLM models")).not.toBeInTheDocument();
   });
@@ -271,7 +274,7 @@ describe("ModelFormDialog — vLLM section", () => {
         model={vllmModel}
         providers={[vllmProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("vLLM models")).toBeInTheDocument();
   });
@@ -286,7 +289,7 @@ describe("ModelFormDialog — vLLM section", () => {
         providers={[vllmProvider]}
         onSubmit={vi.fn()}
         onFetchVllmModels={onFetchVllmModels}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /sync models/i }));
     expect(onFetchVllmModels).toHaveBeenCalled();
@@ -301,9 +304,91 @@ describe("ModelFormDialog — vLLM section", () => {
         providers={[vllmProvider]}
         onSubmit={vi.fn()}
         vllmError="Connection refused"
-      />
+      />,
     );
     expect(screen.getByText("Connection refused")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto Routing Tier field
+// ---------------------------------------------------------------------------
+
+describe("ModelFormDialog — Auto Routing Tier", () => {
+  it("pre-populates 'Not in Auto pool' when the model has no routerTier", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={baseModel}
+        providers={[baseProvider]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Auto Routing Tier")).toHaveTextContent("Not in Auto pool");
+  });
+
+  it("pre-populates the model's existing routerTier", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={{ ...baseModel, routerTier: "TIER_3" }}
+        providers={[baseProvider]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Auto Routing Tier")).toHaveTextContent(
+      "Tier 3 (escalation/capable)",
+    );
+  });
+
+  it("submits the selected routerTier", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={baseModel}
+        providers={[baseProvider]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Auto Routing Tier"));
+    const tier1Option = await screen.findByRole("option", { name: /Tier 1/ });
+    fireEvent.click(tier1Option);
+
+    const submitButton = screen.getByRole("button", { name: /update model/i });
+    fireEvent.submit(submitButton.closest("form")!);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ routerTier: "TIER_1" }));
+    });
+  });
+
+  it("submits routerTier: null when the model is cleared back to 'Not in Auto pool'", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={{ ...baseModel, routerTier: "TIER_1" }}
+        providers={[baseProvider]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Auto Routing Tier"));
+    const noneOption = await screen.findByRole("option", { name: "Not in Auto pool" });
+    fireEvent.click(noneOption);
+
+    const submitButton = screen.getByRole("button", { name: /update model/i });
+    fireEvent.submit(submitButton.closest("form")!);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ routerTier: null }));
+    });
   });
 });
 
@@ -321,7 +406,7 @@ describe("ModelFormDialog — form actions", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={onSubmit}
-      />
+      />,
     );
     await waitFor(() => {
       expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
@@ -332,7 +417,7 @@ describe("ModelFormDialog — form actions", () => {
     fireEvent.submit(form!);
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" })
+        expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" }),
       );
     });
   });
@@ -345,7 +430,7 @@ describe("ModelFormDialog — form actions", () => {
         onOpenChange={onOpenChange}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -359,7 +444,7 @@ describe("ModelFormDialog — form actions", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByLabelText("Model ID")).toHaveValue("gpt-4o");
   });

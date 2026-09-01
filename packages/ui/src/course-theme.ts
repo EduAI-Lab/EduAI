@@ -1,6 +1,10 @@
-import type * as React from "react"
+import type * as React from "react";
 
-/** Default palette — matches `--color-course-*` tokens in app.css (OKLCH, both modes). */
+/**
+ * Default course accent palette (OKLCH). This module is the single owner of
+ * these values — they are content identity per course, not theme, and do not
+ * flip between light and dark. There is deliberately no CSS-token mirror.
+ */
 export const DEFAULT_COURSE_PALETTE = [
   "oklch(0.56 0.20 255)",
   "oklch(0.56 0.18 145)",
@@ -8,7 +12,7 @@ export const DEFAULT_COURSE_PALETTE = [
   "oklch(0.58 0.18 48)",
   "oklch(0.55 0.16 25)",
   "oklch(0.52 0.17 210)",
-] as const
+] as const;
 
 /** Student-selectable swatches — moderate chroma, readable white label on hero. */
 export const COURSE_COLOR_PRESETS = [
@@ -27,20 +31,20 @@ export const COURSE_COLOR_PRESETS = [
   "oklch(0.54 0.15 85)",
   "oklch(0.52 0.13 55)",
   "oklch(0.50 0.11 240)",
-] as const
+] as const;
 
-export type CourseAccentColor = string
+export type CourseAccentColor = string;
 
 export function defaultColorIndexForCourse(courseId: string): number {
-  let hash = 0
+  let hash = 0;
   for (let i = 0; i < courseId.length; i++) {
-    hash = (hash * 31 + courseId.charCodeAt(i)) >>> 0
+    hash = (hash * 31 + courseId.charCodeAt(i)) >>> 0;
   }
-  return hash % DEFAULT_COURSE_PALETTE.length
+  return hash % DEFAULT_COURSE_PALETTE.length;
 }
 
 export function paletteColorAtIndex(index: number): CourseAccentColor {
-  return DEFAULT_COURSE_PALETTE[index % DEFAULT_COURSE_PALETTE.length]
+  return DEFAULT_COURSE_PALETTE[index % DEFAULT_COURSE_PALETTE.length];
 }
 
 export function resolvePaletteAccent(
@@ -48,11 +52,11 @@ export function resolvePaletteAccent(
   colorIndex?: number,
   customColor?: string,
 ): CourseAccentColor {
-  if (customColor?.trim()) return customColor.trim()
+  if (customColor?.trim()) return customColor.trim();
   if (colorIndex !== undefined && colorIndex >= 0) {
-    return paletteColorAtIndex(colorIndex)
+    return paletteColorAtIndex(colorIndex);
   }
-  return paletteColorAtIndex(defaultColorIndexForCourse(courseId))
+  return paletteColorAtIndex(defaultColorIndexForCourse(courseId));
 }
 
 /**
@@ -68,7 +72,7 @@ export function courseThemeVars(accent: CourseAccentColor): React.CSSProperties 
     "--course-border": `color-mix(in oklch, ${accent} 16%, var(--border))`,
     "--course-muted": `color-mix(in oklch, ${accent} 12%, transparent)`,
     "--course-glow": `color-mix(in oklch, ${accent} 28%, transparent)`,
-  } as React.CSSProperties
+  } as React.CSSProperties;
 }
 
 export function courseHeroBackgroundStyle(accent: CourseAccentColor): React.CSSProperties {
@@ -81,5 +85,5 @@ export function courseHeroBackgroundStyle(accent: CourseAccentColor): React.CSSP
       `color-mix(in oklch, ${accent} 52%, black) 100%`,
       `)`,
     ].join(" "),
-  }
+  };
 }

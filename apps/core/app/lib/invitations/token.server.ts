@@ -12,8 +12,11 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/** A freshly minted invite token and its digest: mail the token, store the hash. */
+export type InviteToken = { token: string; tokenHash: string };
+
 /** Mint a fresh URL-safe token and its hash. Persist only the hash. */
-export function generateInviteToken(): { token: string; tokenHash: string } {
+export function generateInviteToken(): InviteToken {
   const token = randomBytes(32).toString("base64url");
   return { token, tokenHash: hashToken(token) };
 }

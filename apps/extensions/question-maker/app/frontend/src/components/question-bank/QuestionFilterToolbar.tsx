@@ -5,7 +5,7 @@
  * applied state is always visible. Replaces the old heavy "Search & Filters" card and
  * its fixed-position dropdown hack (which detached on scroll).
  */
-import { type ReactNode } from 'react';
+import { type ReactNode } from "react";
 import {
   Input,
   Button,
@@ -21,42 +21,42 @@ import {
   SelectItem,
   Separator,
   cn,
-} from '@eduai/ui';
-import { IconSearch, IconFilter, IconX, IconArrowsSort } from '@tabler/icons-react';
-import { QuestionType, QuestionDifficulty, ReasoningLevel } from '../../types/question';
+} from "@eduai/ui";
+import { IconSearch, IconFilter, IconX, IconArrowsSort } from "@tabler/icons-react";
+import { QuestionType, QuestionDifficulty, ReasoningLevel } from "../../types/question";
 
 export interface QuestionFilters {
   questionTypes: QuestionType[];
   reasoningLevels: ReasoningLevel[];
   difficulties: QuestionDifficulty[];
-  aiGenerated: 'all' | 'ai' | 'not-ai';
-  draftStatus: 'all' | 'draft' | 'reviewed';
+  aiGenerated: "all" | "ai" | "not-ai";
+  draftStatus: "all" | "draft" | "reviewed";
 }
 
 /** Server-backed sorts only — difficulty lives on variants and isn't orderable in SQL yet. */
-export type QuestionSort = 'newest' | 'oldest' | 'type';
+export type QuestionSort = "newest" | "oldest" | "type";
 
 export const EMPTY_QUESTION_FILTERS: QuestionFilters = {
   questionTypes: [],
   reasoningLevels: [],
   difficulties: [],
-  aiGenerated: 'all',
-  draftStatus: 'all',
+  aiGenerated: "all",
+  draftStatus: "all",
 };
 
 const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
-  { value: 'MCQ', label: 'Multiple choice' },
-  { value: 'SA', label: 'Short answer' },
-  { value: 'LA', label: 'Long answer' },
+  { value: "MCQ", label: "Multiple choice" },
+  { value: "SA", label: "Short answer" },
+  { value: "LA", label: "Long answer" },
 ];
-const DIFFICULTY_OPTIONS: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
-const REASONING_OPTIONS: ReasoningLevel[] = ['factual', 'analytical', 'application'];
+const DIFFICULTY_OPTIONS: QuestionDifficulty[] = ["easy", "medium", "hard"];
+const REASONING_OPTIONS: ReasoningLevel[] = ["factual", "analytical", "application"];
 
-const SORT_LABELS: Record<QuestionSort, string> = {
-  newest: 'Newest first',
-  oldest: 'Oldest first',
-  type: 'By type',
-};
+const SORT_LABELS = {
+  newest: "Newest first",
+  oldest: "Oldest first",
+  type: "By type",
+} satisfies Record<QuestionSort, string>;
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -65,8 +65,8 @@ export function countActiveFilters(filters: QuestionFilters): number {
     filters.questionTypes.length +
     filters.reasoningLevels.length +
     filters.difficulties.length +
-    (filters.aiGenerated !== 'all' ? 1 : 0) +
-    (filters.draftStatus !== 'all' ? 1 : 0)
+    (filters.aiGenerated !== "all" ? 1 : 0) +
+    (filters.draftStatus !== "all" ? 1 : 0)
   );
 }
 
@@ -83,7 +83,10 @@ function CheckRows<T extends string>({ options, selected, onToggle }: CheckRowsP
           key={opt.value}
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
         >
-          <Checkbox checked={selected.includes(opt.value)} onCheckedChange={() => onToggle(opt.value)} />
+          <Checkbox
+            checked={selected.includes(opt.value)}
+            onCheckedChange={() => onToggle(opt.value)}
+          />
           <span>{opt.label}</span>
         </label>
       ))}
@@ -109,10 +112,10 @@ function Segmented<T extends string>({
           type="button"
           onClick={() => onChange(opt.value)}
           className={cn(
-            'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+            "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
             value === opt.value
-              ? 'bg-card text-foreground shadow-[var(--shadow-2xs)]'
-              : 'text-muted-foreground hover:text-foreground',
+              ? "bg-card text-foreground shadow-[var(--shadow-2xs)]"
+              : "text-muted-foreground hover:text-foreground",
           )}
         >
           {opt.label}
@@ -144,14 +147,14 @@ interface QuestionFilterToolbarProps {
   trailing?: ReactNode;
 }
 
-const COURSE_ALL = '__all__';
+const COURSE_ALL = "__all__";
 
 export function QuestionFilterToolbar({
   searchTerm,
   onSearchChange,
   filters,
   onFiltersChange,
-  searchPlaceholder = 'Search questions or topics…',
+  searchPlaceholder = "Search questions or topics…",
   sortBy,
   onSortChange,
   courseOptions,
@@ -162,14 +165,12 @@ export function QuestionFilterToolbar({
   const activeCount = countActiveFilters(filters);
   const selectedCourse = courseOptions?.find((c) => c.value === courseValue);
 
-  const toggle = <K extends 'questionTypes' | 'reasoningLevels' | 'difficulties'>(
+  const toggle = <K extends "questionTypes" | "reasoningLevels" | "difficulties">(
     key: K,
     value: QuestionFilters[K][number],
   ) => {
     const current = filters[key] as string[];
-    const next = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value];
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
     onFiltersChange({ ...filters, [key]: next });
   };
 
@@ -180,33 +181,33 @@ export function QuestionFilterToolbar({
     ...filters.questionTypes.map((t) => ({
       key: `type-${t}`,
       label: TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t,
-      onRemove: () => toggle('questionTypes', t),
+      onRemove: () => toggle("questionTypes", t),
     })),
     ...filters.difficulties.map((d) => ({
       key: `diff-${d}`,
       label: cap(d),
-      onRemove: () => toggle('difficulties', d),
+      onRemove: () => toggle("difficulties", d),
     })),
     ...filters.reasoningLevels.map((r) => ({
       key: `reason-${r}`,
       label: cap(r),
-      onRemove: () => toggle('reasoningLevels', r),
+      onRemove: () => toggle("reasoningLevels", r),
     })),
-    ...(filters.aiGenerated !== 'all'
+    ...(filters.aiGenerated !== "all"
       ? [
           {
-            key: 'ai',
-            label: filters.aiGenerated === 'ai' ? 'AI-generated' : 'Written manually',
-            onRemove: () => onFiltersChange({ ...filters, aiGenerated: 'all' }),
+            key: "ai",
+            label: filters.aiGenerated === "ai" ? "AI-generated" : "Written manually",
+            onRemove: () => onFiltersChange({ ...filters, aiGenerated: "all" }),
           },
         ]
       : []),
-    ...(filters.draftStatus !== 'all'
+    ...(filters.draftStatus !== "all"
       ? [
           {
-            key: 'status',
-            label: filters.draftStatus === 'draft' ? 'Draft' : 'Reviewed',
-            onRemove: () => onFiltersChange({ ...filters, draftStatus: 'all' }),
+            key: "status",
+            label: filters.draftStatus === "draft" ? "Draft" : "Reviewed",
+            onRemove: () => onFiltersChange({ ...filters, draftStatus: "all" }),
           },
         ]
       : []),
@@ -229,7 +230,7 @@ export function QuestionFilterToolbar({
         {courseOptions && onCourseChange && (
           <Select value={courseValue} onValueChange={onCourseChange}>
             <SelectTrigger className="sm:w-44" aria-label="Filter by course">
-              <SelectValue>{selectedCourse?.label ?? 'All courses'}</SelectValue>
+              <SelectValue>{selectedCourse?.label ?? "All courses"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={COURSE_ALL}>All courses</SelectItem>
@@ -286,50 +287,60 @@ export function QuestionFilterToolbar({
             <Separator />
             <div className="max-h-[60vh] space-y-4 overflow-y-auto p-4">
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Type</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Type
+                </p>
                 <CheckRows
                   options={TYPE_OPTIONS}
                   selected={filters.questionTypes}
-                  onToggle={(v) => toggle('questionTypes', v)}
+                  onToggle={(v) => toggle("questionTypes", v)}
                 />
               </div>
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Difficulty</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Difficulty
+                </p>
                 <CheckRows
                   options={DIFFICULTY_OPTIONS.map((d) => ({ value: d, label: cap(d) }))}
                   selected={filters.difficulties}
-                  onToggle={(v) => toggle('difficulties', v)}
+                  onToggle={(v) => toggle("difficulties", v)}
                 />
               </div>
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reasoning</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Reasoning
+                </p>
                 <CheckRows
                   options={REASONING_OPTIONS.map((r) => ({ value: r, label: cap(r) }))}
                   selected={filters.reasoningLevels}
-                  onToggle={(v) => toggle('reasoningLevels', v)}
+                  onToggle={(v) => toggle("reasoningLevels", v)}
                 />
               </div>
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Source</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Source
+                </p>
                 <Segmented
                   value={filters.aiGenerated}
                   onChange={(v) => onFiltersChange({ ...filters, aiGenerated: v })}
                   options={[
-                    { value: 'all', label: 'All' },
-                    { value: 'ai', label: 'AI' },
-                    { value: 'not-ai', label: 'Manual' },
+                    { value: "all", label: "All" },
+                    { value: "ai", label: "AI" },
+                    { value: "not-ai", label: "Manual" },
                   ]}
                 />
               </div>
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review status</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Review status
+                </p>
                 <Segmented
                   value={filters.draftStatus}
                   onChange={(v) => onFiltersChange({ ...filters, draftStatus: v })}
                   options={[
-                    { value: 'all', label: 'All' },
-                    { value: 'draft', label: 'Draft' },
-                    { value: 'reviewed', label: 'Reviewed' },
+                    { value: "all", label: "All" },
+                    { value: "draft", label: "Draft" },
+                    { value: "reviewed", label: "Reviewed" },
                   ]}
                 />
               </div>

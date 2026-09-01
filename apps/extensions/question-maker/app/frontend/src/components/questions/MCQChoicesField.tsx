@@ -2,27 +2,40 @@
  * Reusable MCQ choices editor: lettered options where clicking a choice marks it
  * as the correct answer (no separate dropdown). Used in AddQuestionDialog and
  * QuestionDetailView so MCQ UI is consistent and safe (no undefined .map).
+ *
+ * Optional select-all-that-apply mode (#1360): clicking letters toggles membership
+ * in `correctAnswers` instead of replacing a single `answer`.
  */
-import { Button, Input, Label } from '@eduai/ui';
-import { IconX } from '@tabler/icons-react';
-import { cn } from '@/lib/utils';
+import { Button, Checkbox, Input, Label } from "@eduai/ui";
+import { IconX } from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
 
-import type { MCQChoice } from '../../types/question';
+import type { MCQChoice } from "../../types/question";
 
 const DEFAULT_CHOICES: MCQChoice[] = [
-  { letter: 'A', text: '' },
-  { letter: 'B', text: '' },
-  { letter: 'C', text: '' },
-  { letter: 'D', text: '' }
+  { letter: "A", text: "" },
+  { letter: "B", text: "" },
+  { letter: "C", text: "" },
+  { letter: "D", text: "" },
 ];
 
-const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
+const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
+
+function sortedUnique(letters: string[]): string[] {
+  return [...new Set(letters)].sort();
+}
 
 export interface MCQChoicesFieldProps {
   choices: MCQChoice[] | null | undefined;
   answer: string;
   onChoicesChange: (choices: MCQChoice[]) => void;
   onAnswerChange: (answer: string) => void;
+  /** When true, multiple letters may be marked correct via correctAnswers */
+  selectAllThatApply?: boolean;
+  /** Correct choice letters when selectAllThatApply is on */
+  correctAnswers?: string[];
+  onSelectAllThatApplyChange?: (value: boolean) => void;
+  onCorrectAnswersChange?: (letters: string[]) => void;
   /** Optional label override */
   choicesLabel?: string;
   /** Optional id prefix for a11y */
@@ -35,11 +48,17 @@ export function MCQChoicesField({
   answer,
   onChoicesChange,
   onAnswerChange,
-  choicesLabel = 'Choices',
-  idPrefix = 'mcq',
-  disabled = false
+  selectAllThatApply = false,
+  correctAnswers = [],
+  onSelectAllThatApplyChange,
+  onCorrectAnswersChange,
+  choicesLabel = "Choices",
+  idPrefix = "mcq",
+  disabled = false,
 }: MCQChoicesFieldProps) {
   const safeChoices = Array.isArray(choices) && choices.length > 0 ? choices : DEFAULT_CHOICES;
+  const multi = selectAllThatApply === true;
+  const safeCorrect = Array.isArray(correctAnswers) ? correctAnswers : [];
 
   const handleChoiceTextChange = (index: number, text: string) => {
     const next = [...safeChoices];
@@ -49,12 +68,28 @@ export function MCQChoicesField({
 
   const handleRemoveChoice = (index: number) => {
     if (safeChoices.length <= 2) return;
-    const removedLetter = safeChoices[index]?.letter;
-    const next = safeChoices.filter((_, i) => i !== index).map((c, i) => ({ ...c, letter: LETTERS[i] }));
+    const survivors = safeChoices.filter((_, i) => i !== index);
+    const next = survivors.map((c, i) => ({ ...c, letter: LETTERS[i]! }));
+    // Re-lettering shifts later options; remap correctness through old→new letters.
+    const remap = new Map<string, string>(survivors.map((c, i) => [c.letter, LETTERS[i]!]));
+
+    if (multi) {
+      const nextCorrect = sortedUnique(
+        safeCorrect.flatMap((l) => {
+          const mapped = remap.get(l);
+          return mapped ? [mapped] : [];
+        }),
+      );
+      onCorrectAnswersChange?.(nextCorrect);
+      onAnswerChange(nextCorrect[0] ?? "");
+      onChoicesChange(next);
+      return;
+    }
+
+    const remappedAnswer = answer ? remap.get(answer) : undefined;
     onChoicesChange(next);
-    // If the removed (or now-relettered) choice was the answer, clear it.
-    if (removedLetter === answer) {
-      onAnswerChange('');
+    if (answer && remappedAnswer !== answer) {
+      onAnswerChange(remappedAnswer ?? "");
     }
   };
 
@@ -62,45 +97,93 @@ export function MCQChoicesField({
     if (safeChoices.length >= 8) return;
     const nextLetter = LETTERS[safeChoices.length];
     if (nextLetter) {
-      onChoicesChange([...safeChoices, { letter: nextLetter, text: '' }]);
+      onChoicesChange([...safeChoices, { letter: nextLetter, text: "" }]);
     }
+  };
+
+  const handleLetterClick = (letter: string) => {
+    if (!multi) {
+      onAnswerChange(letter);
+      return;
+    }
+    const next = safeCorrect.includes(letter)
+      ? safeCorrect.filter((l) => l !== letter)
+      : [...safeCorrect, letter];
+    const sorted = sortedUnique(next);
+    onCorrectAnswersChange?.(sorted);
+    onAnswerChange(sorted[0] ?? "");
+  };
+
+  const handleSelectAllThatApplyChange = (checked: boolean) => {
+    if (!checked && multi && safeCorrect.length > 1) {
+      const first = sortedUnique(safeCorrect)[0] ?? "";
+      onSelectAllThatApplyChange?.(false);
+      onAnswerChange(first);
+      onCorrectAnswersChange?.(first ? [first] : []);
+      return;
+    }
+    if (checked && !multi) {
+      onSelectAllThatApplyChange?.(true);
+      onCorrectAnswersChange?.(answer ? [answer] : []);
+      return;
+    }
+    onSelectAllThatApplyChange?.(checked);
   };
 
   return (
     <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-3">
         <Label>
           {choicesLabel} <span className="text-destructive">*</span>
         </Label>
-        <span className="text-xs text-muted-foreground">Click a letter to mark the correct answer</span>
+        <span className="text-xs text-muted-foreground">
+          {multi
+            ? "Click letters to mark all correct answers"
+            : "Click a letter to mark the correct answer"}
+        </span>
       </div>
+      {onSelectAllThatApplyChange && (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={multi}
+            onCheckedChange={(value) => handleSelectAllThatApplyChange(value === true)}
+            disabled={disabled}
+            aria-label="Select all that apply"
+          />
+          Select all that apply
+        </label>
+      )}
       <div className="space-y-3 rounded-md border bg-muted/50 p-4">
         {safeChoices.map((choice, index) => {
-          const isCorrect = choice.letter === answer && answer !== '';
+          const isCorrect = multi
+            ? safeCorrect.includes(choice.letter)
+            : choice.letter === answer && answer !== "";
           return (
             <div
               key={`${idPrefix}-choice-${index}`}
               className={cn(
-                'relative flex items-center gap-3 rounded-md border p-1.5 transition-colors',
-                isCorrect ? 'border-green-500/60 bg-green-500/10' : 'border-transparent'
+                "relative flex items-center gap-3 rounded-md border p-1.5 transition-colors",
+                isCorrect ? "border-green-500/60 bg-green-500/10" : "border-transparent",
               )}
             >
               <button
                 type="button"
-                onClick={() => onAnswerChange(choice.letter)}
+                onClick={() => handleLetterClick(choice.letter)}
                 disabled={disabled}
                 aria-pressed={isCorrect}
                 aria-label={
-                  isCorrect ? `Option ${choice.letter} (correct answer)` : `Mark option ${choice.letter} correct`
-                }
-                title={isCorrect ? 'Correct answer' : 'Mark as correct answer'}
-                className={cn(
-                  'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  disabled ? 'cursor-not-allowed' : 'cursor-pointer',
                   isCorrect
-                    ? 'bg-green-600 text-white'
-                    : 'bg-primary/15 text-foreground hover:bg-primary/30'
+                    ? `Option ${choice.letter} (correct answer)`
+                    : `Mark option ${choice.letter} correct`
+                }
+                title={isCorrect ? "Correct answer" : "Mark as correct answer"}
+                className={cn(
+                  "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  disabled ? "cursor-not-allowed" : "cursor-pointer",
+                  isCorrect
+                    ? "bg-green-600 text-white"
+                    : "bg-primary/15 text-foreground hover:bg-primary/30",
                 )}
               >
                 {choice.letter}
@@ -142,7 +225,7 @@ export function MCQChoicesField({
           </Button>
         )}
       </div>
-      {answer === '' && (
+      {(multi ? safeCorrect.length === 0 : answer === "") && (
         <p className="text-xs text-muted-foreground">No correct answer selected yet.</p>
       )}
     </div>

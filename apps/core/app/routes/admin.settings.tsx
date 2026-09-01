@@ -1,7 +1,9 @@
-import { Link, useLoaderData, redirect } from 'react-router'
-import type { LoaderFunctionArgs } from 'react-router'
+import { Link, useLoaderData, redirect } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
-import { CoreAppShell } from '~/components/layout/core-app-shell'
+import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { ChatDailyLimitSettingsCard } from "~/components/settings/chat-daily-limit-settings";
+import { BedrockOverflowSettingsCard } from "~/components/settings/bedrock-overflow-settings";
 import {
   Card,
   CardContent,
@@ -17,9 +19,19 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@eduai/ui'
-import { usePolicies } from '~/hooks/api/use-policies'
-import { auth } from '~/lib/auth/server'
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@eduai/ui";
+import { apiFetch } from "~/hooks/api/config";
+import { usePolicies } from "~/hooks/api/use-policies";
+import { getEnvironmentHealth } from "~/lib/environment-health.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { getChatDailyLimitSettings } from "~/lib/chat-daily-limits.server";
+import type { ChatDailyLimitSettings } from "~/lib/chat-daily-limits";
+import { getBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
+import { isBedrockTokenConfigured } from "~/lib/ai/routing/bedrock/overflow.server";
+import type { BedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings";
 
 /**
  * Permission groups for the admin settings UI, in display order. Each policy
@@ -28,72 +40,78 @@ import { auth } from '~/lib/auth/server'
  * for non-role-scoped switches like `chat.*` and `auth.*`.
  */
 const PERMISSION_GROUPS: {
-  id: string
-  title: string
-  description: string
-  match: (prefix: string) => boolean
+  id: string;
+  title: string;
+  description: string;
+  match: (prefix: string) => boolean;
 }[] = [
   {
-    id: 'instructors',
-    title: 'Instructors',
-    description: 'What users with the INSTRUCTOR role may do.',
-    match: (p) => p === 'instructors',
+    id: "instructors",
+    title: "Instructors",
+    description: "What users with the INSTRUCTOR role may do.",
+    match: (p) => p === "instructors",
   },
   {
-    id: 'students',
-    title: 'Students',
-    description: 'What users with the STUDENT role may do.',
-    match: (p) => p === 'students',
+    id: "students",
+    title: "Students",
+    description: "What users with the STUDENT role may do.",
+    match: (p) => p === "students",
   },
   {
-    id: 'tas',
-    title: 'Teaching Assistants',
-    description: 'What users with the TA role may do.',
-    match: (p) => p === 'tas',
+    id: "tas",
+    title: "Teaching Assistants",
+    description: "What users with the TA role may do.",
+    match: (p) => p === "tas",
   },
   {
-    id: 'unitAdmins',
-    title: 'Unit Admins',
-    description: 'What users with the UNIT_ADMIN role may do.',
-    match: (p) => p === 'unitAdmins',
+    id: "unitAdmins",
+    title: "Unit Admins",
+    description: "What users with the UNIT_ADMIN role may do.",
+    match: (p) => p === "unitAdmins",
   },
   {
-    id: 'general',
-    title: 'General',
-    description: 'Settings that apply to everyone, not just one role.',
+    id: "general",
+    title: "General",
+    description: "Settings that apply to everyone, not just one role.",
     match: () => true,
   },
-]
+];
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
-    return redirect('/auth/login')
+    return redirect("/auth/login");
   }
 
-  if (session.user.role !== 'ADMIN') {
-    return redirect('/dashboard')
+  if (session.user.role !== "ADMIN") {
+    return redirect("/dashboard");
   }
 
   return {
     user: session.user,
-  }
+    environmentHealth: getEnvironmentHealth(),
+    // Caps are edited on this page, so they load with the document. Policy
+    // toggles stay on usePolicies() because those are live client updates.
+    chatDailyLimits: await getChatDailyLimitSettings(),
+    bedrockSettings: await getBedrockOverflowSettings(),
+    bedrockTokenConfigured: isBedrockTokenConfigured(),
+  };
 }
 
 export default function AdminSettingsPage() {
-  const { user } = useLoaderData<typeof loader>()
-  const { policies, definitions, isLoading, error, setPolicy } = usePolicies()
+  const { user, environmentHealth, chatDailyLimits, bedrockSettings, bedrockTokenConfigured } =
+    useLoaderData<typeof loader>();
+  const { policies, definitions, isLoading, error, setPolicy } = usePolicies();
 
   // Bucket each flag into the first group whose `match` passes, preserving the
   // PERMISSION_GROUPS order; drop empty groups so we never render a stray card.
   const groups = PERMISSION_GROUPS.map((group) => ({
     ...group,
     items: definitions.filter(
-      (def) =>
-        PERMISSION_GROUPS.find((g) => g.match(def.key.split('.')[0]))?.id === group.id,
+      (def) => PERMISSION_GROUPS.find((g) => g.match(def.key.split(".")[0]))?.id === group.id,
     ),
-  })).filter((group) => group.items.length > 0)
+  })).filter((group) => group.items.length > 0);
 
   return (
     <CoreAppShell
@@ -102,7 +120,9 @@ export default function AdminSettingsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -128,11 +148,41 @@ export default function AdminSettingsPage() {
 
             {error ? (
               <div className="px-4 lg:px-6">
-                <p className="text-destructive text-sm" role="alert">{error}</p>
+                <p className="text-destructive text-sm" role="alert">
+                  {error}
+                </p>
               </div>
             ) : null}
 
             <div className="flex flex-col gap-4 px-4 md:gap-6 lg:px-6">
+              {environmentHealth.missingKeys.length > 0 ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Environment configuration is incomplete</AlertTitle>
+                  <AlertDescription>
+                    Missing: {environmentHealth.missingKeys.join(", ")}. Add the key to this
+                    deployment&apos;s environment and restart the service.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              <ChatDailyLimitSettingsCard
+                initialSettings={chatDailyLimits}
+                onSave={async (settings: ChatDailyLimitSettings) => {
+                  await apiFetch("/api/admin/chat-daily-limits", {
+                    method: "PATCH",
+                    body: JSON.stringify(settings),
+                  });
+                }}
+              />
+              <BedrockOverflowSettingsCard
+                initialSettings={bedrockSettings}
+                tokenConfigured={bedrockTokenConfigured}
+                onSave={async (settings: BedrockOverflowSettings) => {
+                  await apiFetch("/api/admin/bedrock-settings", {
+                    method: "PATCH",
+                    body: JSON.stringify(settings),
+                  });
+                }}
+              />
               {isLoading ? (
                 <Card>
                   <CardContent className="pt-6">
@@ -156,11 +206,14 @@ export default function AdminSettingsPage() {
                       {group.items.map((def) => (
                         <div key={def.key} className="flex items-start justify-between gap-4">
                           <div className="space-y-1">
-                            <Label htmlFor={def.key} className="text-base">{def.label}</Label>
+                            <Label htmlFor={def.key} className="text-base">
+                              {def.label}
+                            </Label>
                             <p className="text-muted-foreground text-sm">{def.description}</p>
                           </div>
                           <Switch
                             id={def.key}
+                            aria-label={def.label}
                             checked={policies[def.key] ?? def.default}
                             onCheckedChange={(value) => setPolicy(def.key, value)}
                           />
@@ -175,5 +228,5 @@ export default function AdminSettingsPage() {
         </div>
       </div>
     </CoreAppShell>
-  )
+  );
 }

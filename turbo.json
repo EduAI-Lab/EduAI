@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".oxlintrc.json", ".oxfmtrc.json"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -16,6 +17,8 @@
         "tests/**",
         "vitest.config.*",
         "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",
@@ -23,7 +26,7 @@
         "tsconfig*.json"
       ]
     },
-    "test:all": {
+    "test:unit": {
       "dependsOn": ["^build"],
       "inputs": [
         "src/**",
@@ -33,9 +36,25 @@
         "test/**",
         "tests/**",
         "vitest.config.*",
-        "vitest.*.config.*",
-        "jest.config.*",
-        "jest.integration.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.integration.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "package.json",
         "prisma/**",
         "tsconfig*.json"
@@ -52,6 +71,8 @@
         "tests/**",
         "vitest.config.*",
         "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",
@@ -61,6 +82,22 @@
       "outputs": ["coverage/**"]
     },
     "lint": {
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
+    "lint:fix": {
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "format:check": {
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
       "outputs": []
     },
     "dev": {

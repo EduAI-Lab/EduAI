@@ -2,14 +2,14 @@
  * Skeleton presets for QM loading states. Prefer these over spinners for any list,
  * grid, or stat row so layout stays stable while data loads (DS guidance).
  */
-import { Skeleton, cn } from '@eduai/ui';
+import { Skeleton, cn } from "@eduai/ui";
 
 /** A single question/course-card placeholder matching card height. */
 export function CardSkeleton({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 shadow-2xs',
+        "flex flex-col gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 shadow-2xs",
         className,
       )}
     >
@@ -29,11 +29,21 @@ export function CardSkeleton({ className }: { className?: string }) {
 }
 
 /** Responsive grid of card skeletons. */
-export function CardGridSkeleton({ count = 6, columns = 2 }: { count?: number; columns?: 1 | 2 | 3 }) {
+export function CardGridSkeleton({
+  count = 6,
+  columns = 2,
+}: {
+  count?: number;
+  columns?: 1 | 2 | 3;
+}) {
   const cols =
-    columns === 1 ? 'grid-cols-1' : columns === 3 ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 lg:grid-cols-2';
+    columns === 1
+      ? "grid-cols-1"
+      : columns === 3
+        ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+        : "grid-cols-1 lg:grid-cols-2";
   return (
-    <div className={cn('grid gap-4', cols)}>
+    <div className={cn("grid gap-4", cols)}>
       {Array.from({ length: count }).map((_, i) => (
         <CardSkeleton key={i} />
       ))}
@@ -67,11 +77,87 @@ export function StatRowSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-card p-4 shadow-2xs">
+        <div
+          key={i}
+          className="flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-card p-4 shadow-2xs"
+        >
           <Skeleton className="h-3.5 w-20" />
           <Skeleton className="h-7 w-12" />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Two-column question composer layout (edit/create source load). */
+export function ComposerSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading question composer…"
+      aria-busy="true"
+      data-testid="composer-skeleton"
+      className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
+    >
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-28 w-full rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-64 w-full rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
+      </div>
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-80 w-full rounded-[var(--radius-xl)]" />
+      </div>
+    </div>
+  );
+}
+
+/** Assessment builder header + section list placeholders. */
+export function AssessmentBuilderSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading assessment builder…"
+      aria-busy="true"
+      data-testid="assessment-builder-skeleton"
+      className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6"
+    >
+      <Skeleton className="h-8 w-40" />
+      <div className="flex items-start gap-3.5">
+        <Skeleton className="hidden size-11 shrink-0 rounded-xl sm:block" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-7 w-1/3" />
+          <div className="flex gap-1.5">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </div>
+      <StatRowSkeleton count={4} />
+      <ListSkeleton count={4} />
+    </div>
+  );
+}
+
+/** Course detail hero + tabs + content placeholders. */
+export function CourseDetailSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading course detail…"
+      aria-busy="true"
+      data-testid="course-detail-skeleton"
+      className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6"
+    >
+      <Skeleton className="h-40 w-full rounded-[var(--radius-xl)]" />
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-24 rounded-[var(--radius-lg)]" />
+        ))}
+      </div>
+      <StatRowSkeleton count={4} />
+      <ListSkeleton count={6} />
     </div>
   );
 }

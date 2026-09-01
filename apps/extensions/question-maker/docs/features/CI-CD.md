@@ -2,6 +2,11 @@
 
 This document describes the GitHub Actions CI pipeline for the Question Maker application.
 
+> **Scope note:** this extension now lives inside the `EduAI-Lab/EduAI` monorepo and its workflow
+> files are at the repo root (`.github/workflows/`), outside `apps/extensions/question-maker/`. What
+> follows is retained as background on the branch/pipeline shape; verify current workflow file names
+> and jobs against the root `.github/workflows/` directory rather than this doc alone.
+
 ## Pipeline Overview
 
 The CI pipeline consists of two workflows that run based on branch triggers to ensure code quality and container build validity.
@@ -50,8 +55,9 @@ feature/* → dev → release
 ### Lint and Test Job
 - **Purpose**: Code quality enforcement
 - **Actions**:
-  - ESLint code analysis (if configured)
-  - Unit test execution (Jest + Vitest)
+  - `oxlint` code analysis (`npm run lint` in both `app/backend` and `app/frontend` — the lint script
+    is `oxlint .`, not ESLint; `oxfmt` covers formatting)
+  - Unit test execution (Vitest — there is no Jest anywhere in this extension)
   - Dependency caching for performance
 
 ### Build and Test Docker Job

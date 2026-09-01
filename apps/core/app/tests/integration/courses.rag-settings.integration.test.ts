@@ -12,6 +12,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader, action } from "~/routes/api/courses.id.rag-settings";
 import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 let instructorId: string;
 let studentId: string;
@@ -49,7 +50,7 @@ function getArgs(id: string) {
   } as any;
 }
 
-function patchArgs(id: string, body: unknown, user: { id: string; role: string }) {
+function patchArgs(id: string, body: RouteRequestBody, user: { id: string; role: string }) {
   mockSession(user);
   return {
     request: new Request(`http://localhost/api/courses/${id}/rag-settings`, {
@@ -72,7 +73,9 @@ describe("GET /api/courses/:id/rag-settings", () => {
     mockSession({ id: instructorId, role: "INSTRUCTOR" });
     const res = await loader(getArgs(courseId));
     expect(res.status).toBe(200);
+    // Defaulted off (was on) for easier testing
     expect(await res.json()).toEqual({
+      courseScopeGuardrailEnabled: false,
       ragTopK: null,
       ragSimilarityThreshold: null,
     });
@@ -137,30 +140,44 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
     await cleanupRbac({ userIds: [outsider.id] });
   });
 
-  it("persists ragTopK and ragSimilarityThreshold for instructors", async () => {
+  it("persists course-scope and RAG settings for instructors", async () => {
     const res = await action(
       patchArgs(
         courseId,
-        { ragTopK: 8, ragSimilarityThreshold: 0.65 },
+        {
+          courseScopeGuardrailEnabled: false,
+          ragTopK: 8,
+          ragSimilarityThreshold: 0.65,
+        },
         { id: instructorId, role: "INSTRUCTOR" },
       ),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       id: courseId,
+      courseScopeGuardrailEnabled: false,
       ragTopK: 8,
       ragSimilarityThreshold: 0.65,
     });
 
     const row = await prisma.course.findUnique({
       where: { id: courseId },
-      select: { ragTopK: true, ragSimilarityThreshold: true },
+      select: {
+        courseScopeGuardrailEnabled: true,
+        ragTopK: true,
+        ragSimilarityThreshold: true,
+      },
     });
-    expect(row).toEqual({ ragTopK: 8, ragSimilarityThreshold: 0.65 });
+    expect(row).toEqual({
+      courseScopeGuardrailEnabled: false,
+      ragTopK: 8,
+      ragSimilarityThreshold: 0.65,
+    });
 
     mockSession({ id: instructorId, role: "INSTRUCTOR" });
     const readBack = await loader(getArgs(courseId));
     expect(await readBack.json()).toEqual({
+      courseScopeGuardrailEnabled: false,
       ragTopK: 8,
       ragSimilarityThreshold: 0.65,
     });

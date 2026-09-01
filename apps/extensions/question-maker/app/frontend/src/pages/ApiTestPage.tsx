@@ -2,100 +2,114 @@
  * Developer-only API test page for exercising backend endpoints from the UI.
  * Includes forms to create/fetch courses, topics, questions, and assessments for debugging.
  */
-import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Label } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
-import React, { useState } from 'react';
-import { Navigate } from 'react-router';
-import api from '../services/api';
-import eduaiService from '../services/eduaiService';
-import { useAuth } from '../contexts/AuthContext';
-import { AIServiceIndicators } from '../components/eduai/AIServiceIndicators';
-import { useEduAIStatus } from '../hooks/useEduAIStatus';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Button,
+  Input,
+  Textarea,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Label,
+} from "@eduai/ui";
+import React, { useState } from "react";
+import { Navigate } from "react-router";
+import api from "../services/api";
+import eduaiService from "../services/eduaiService";
+import { apiKeyStorage } from "../services/apiKeyStorage";
+import { useAuth } from "../contexts/AuthContext";
+import { AIServiceIndicators } from "../components/eduai/AIServiceIndicators";
+import { useEduAIStatus } from "../hooks/useEduAIStatus";
+import { toast } from "sonner";
 
 interface ResultState {
-  status: 'idle' | 'success' | 'error';
+  status: "idle" | "success" | "error";
   payload?: any;
   message?: string;
 }
 
-const defaultResult: ResultState = { status: 'idle' };
+const defaultResult: ResultState = { status: "idle" };
 
 export const ApiTestPage = () => {
   const { isAuthenticated, isLoading } = useAuth();
-  const { toast } = useToast();
   const eduaiStatus = useEduAIStatus();
 
   const [courseListResult, setCourseListResult] = useState<ResultState>(defaultResult);
 
   const [topicForm, setTopicForm] = useState({
-    courseId: '',
-    name: ''
+    courseId: "",
+    name: "",
   });
   const [topicResult, setTopicResult] = useState<ResultState>(defaultResult);
 
   const [questionForm, setQuestionForm] = useState({
-    courseId: '',
-    primaryTopicId: '',
-    description: '',
-    type: 'MCQ',
-    questionOrder: ''
+    courseId: "",
+    primaryTopicId: "",
+    description: "",
+    type: "MCQ",
+    questionOrder: "",
   });
   const [questionResult, setQuestionResult] = useState<ResultState>(defaultResult);
 
   const [assessmentForm, setAssessmentForm] = useState({
-    name: '',
-    type: 'Assignment'
+    name: "",
+    type: "Assignment",
   });
   const [assessmentResult, setAssessmentResult] = useState<ResultState>(defaultResult);
 
   const [assessmentLinkForm, setAssessmentLinkForm] = useState({
-    assessmentId: '',
-    questionId: '',
-    orderNumber: '1'
+    assessmentId: "",
+    questionId: "",
+    orderNumber: "1",
   });
   const [assessmentLinkResult, setAssessmentLinkResult] = useState<ResultState>(defaultResult);
 
   const [variantForm, setVariantForm] = useState({
-    questionId: '',
-    questionText: '',
-    difficulty: 'medium',
-    assessmentId: '',
-    secondaryTopicsId: '',
-    answer: '',
-    referenceId: ''
+    questionId: "",
+    questionText: "",
+    difficulty: "medium",
+    assessmentId: "",
+    secondaryTopicsId: "",
+    answer: "",
+    referenceId: "",
   });
   const [variantResult, setVariantResult] = useState<ResultState>(defaultResult);
 
   // AI service form states
   const [eduaiChatForm, setEduaiChatForm] = useState({
-    courseCode: 'COSC121',
-    message: '',
-    model: 'vllm:qwen2.5-32b-instruct'
+    courseCode: "COSC121",
+    message: "",
+    model: "vllm:qwen3.5-9b-instruct",
   });
   const [eduaiChatResult, setEduaiChatResult] = useState<ResultState>(defaultResult);
 
   const [eduaiQuestionForm, setEduaiQuestionForm] = useState({
-    courseCode: 'COSC121',
-    prompt: '',
-    model: 'vllm:qwen2.5-32b-instruct',
-    numQuestions: '5',
-    difficultyEasy: '1',
-    difficultyMedium: '2',
-    difficultyHard: '2'
+    courseCode: "COSC121",
+    prompt: "",
+    model: "vllm:qwen3.5-9b-instruct",
+    numQuestions: "5",
+    difficultyEasy: "1",
+    difficultyMedium: "2",
+    difficultyHard: "2",
   });
   const [eduaiQuestionResult, setEduaiQuestionResult] = useState<ResultState>(defaultResult);
 
   const [eduaiApiKeyResult, setEduaiApiKeyResult] = useState<ResultState>(defaultResult);
   const [isTestingApiKey, setIsTestingApiKey] = useState(false);
   const [eduaiTopicsForm, setEduaiTopicsForm] = useState({
-    courseId: ''
+    courseId: "",
   });
   const [eduaiTopicsResult, setEduaiTopicsResult] = useState<ResultState>(defaultResult);
 
   const handleApiCall = async (
     request: () => Promise<any>,
     onSuccess: (data: any) => void,
-    onError: (message: string) => void
+    onError: (message: string) => void,
   ) => {
     try {
       const response = await request();
@@ -105,32 +119,25 @@ export const ApiTestPage = () => {
       const aiErrorReason = error.response?.data?.aiErrorReason;
       const details = error.response?.data?.details;
       const errorMessage = error.response?.data?.error;
-      const message =
-        aiErrorReason ||
-        details ||
-        errorMessage ||
-        error.message ||
-        'Request failed';
+      const message = aiErrorReason || details || errorMessage || error.message || "Request failed";
       onError(message);
-      toast({
-        variant: 'destructive',
-        title: 'Request failed',
-        description: message
-      });
+      toast.error("Request failed", { description: message });
     }
   };
 
   const formatPayload = (payload: any) => JSON.stringify(payload, null, 2);
 
   const renderResult = (result: ResultState) => {
-    if (result.status === 'idle') {
-      return <p className="text-sm text-muted-foreground">Submit a form to see the API response.</p>;
+    if (result.status === "idle") {
+      return (
+        <p className="text-sm text-muted-foreground">Submit a form to see the API response.</p>
+      );
     }
 
-    if (result.status === 'error') {
+    if (result.status === "error") {
       return (
         <p className="text-sm text-red-500 whitespace-pre-wrap">
-          {result.message || 'Something went wrong.'}
+          {result.message || "Something went wrong."}
         </p>
       );
     }
@@ -189,9 +196,12 @@ export const ApiTestPage = () => {
                 onClick={() =>
                   handleApiCall(
                     // page/pageSize are required on this list (#1044).
-                    () => api.get('/api/course', { params: { page: 1, pageSize: 200, includeStats: true } }),
-                    (data) => setCourseListResult({ status: 'success', payload: data }),
-                    (message) => setCourseListResult({ status: 'error', message })
+                    () =>
+                      api.get("/api/course", {
+                        params: { page: 1, pageSize: 200, includeStats: true },
+                      }),
+                    (data) => setCourseListResult({ status: "success", payload: data }),
+                    (message) => setCourseListResult({ status: "error", message }),
                   )
                 }
               >
@@ -214,7 +224,9 @@ export const ApiTestPage = () => {
                   id="topic-course-id"
                   type="number"
                   value={topicForm.courseId}
-                  onChange={(event) => setTopicForm((prev) => ({ ...prev, courseId: event.target.value }))}
+                  onChange={(event) =>
+                    setTopicForm((prev) => ({ ...prev, courseId: event.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -222,16 +234,16 @@ export const ApiTestPage = () => {
                 <Input
                   id="topic-name"
                   value={topicForm.name}
-                  onChange={(event) => setTopicForm((prev) => ({ ...prev, name: event.target.value }))}
+                  onChange={(event) =>
+                    setTopicForm((prev) => ({ ...prev, name: event.target.value }))
+                  }
                 />
               </div>
               <Button
                 onClick={() => {
                   if (!topicForm.courseId || !topicForm.name.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course ID and topic name are required.'
+                    toast.error("Missing required fields", {
+                      description: "Course ID and topic name are required.",
                     });
                     return;
                   }
@@ -239,13 +251,13 @@ export const ApiTestPage = () => {
                   handleApiCall(
                     () =>
                       api.post(`/api/course/${topicForm.courseId}/topics`, {
-                        name: topicForm.name
+                        name: topicForm.name,
                       }),
                     (data) => {
-                      setTopicResult({ status: 'success', payload: data });
-                      toast({ title: 'Topic created' });
+                      setTopicResult({ status: "success", payload: data });
+                      toast("Topic created");
                     },
-                    (message) => setTopicResult({ status: 'error', message })
+                    (message) => setTopicResult({ status: "error", message }),
                   );
                 }}
               >
@@ -267,7 +279,9 @@ export const ApiTestPage = () => {
                     id="question-course-id"
                     type="number"
                     value={questionForm.courseId}
-                    onChange={(event) => setQuestionForm((prev) => ({ ...prev, courseId: event.target.value }))}
+                    onChange={(event) =>
+                      setQuestionForm((prev) => ({ ...prev, courseId: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
@@ -276,7 +290,9 @@ export const ApiTestPage = () => {
                     id="question-topic-id"
                     type="number"
                     value={questionForm.primaryTopicId}
-                    onChange={(event) => setQuestionForm((prev) => ({ ...prev, primaryTopicId: event.target.value }))}
+                    onChange={(event) =>
+                      setQuestionForm((prev) => ({ ...prev, primaryTopicId: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
@@ -285,7 +301,9 @@ export const ApiTestPage = () => {
                     id="question-description"
                     placeholder="Enter the question stem or prompt"
                     value={questionForm.description}
-                    onChange={(event) => setQuestionForm((prev) => ({ ...prev, description: event.target.value }))}
+                    onChange={(event) =>
+                      setQuestionForm((prev) => ({ ...prev, description: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
@@ -310,17 +328,21 @@ export const ApiTestPage = () => {
                     id="question-order"
                     placeholder='e.g. {"1": 2}'
                     value={questionForm.questionOrder}
-                    onChange={(event) => setQuestionForm((prev) => ({ ...prev, questionOrder: event.target.value }))}
+                    onChange={(event) =>
+                      setQuestionForm((prev) => ({ ...prev, questionOrder: event.target.value }))
+                    }
                   />
                 </div>
               </div>
               <Button
                 onClick={() => {
-                  if (!questionForm.courseId || !questionForm.primaryTopicId || !questionForm.description.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course ID, primary topic ID, and description are required.'
+                  if (
+                    !questionForm.courseId ||
+                    !questionForm.primaryTopicId ||
+                    !questionForm.description.trim()
+                  ) {
+                    toast.error("Missing required fields", {
+                      description: "Course ID, primary topic ID, and description are required.",
                     });
                     return;
                   }
@@ -330,10 +352,8 @@ export const ApiTestPage = () => {
                     try {
                       parsedOrder = JSON.parse(questionForm.questionOrder);
                     } catch (error) {
-                      toast({
-                        variant: 'destructive',
-                        title: 'Invalid question order',
-                        description: 'Question order must be valid JSON.'
+                      toast.error("Invalid question order", {
+                        description: "Question order must be valid JSON.",
                       });
                       return;
                     }
@@ -341,18 +361,18 @@ export const ApiTestPage = () => {
 
                   handleApiCall(
                     () =>
-                      api.post('/api/questions', {
+                      api.post("/api/questions", {
                         description: questionForm.description,
                         courseId: Number(questionForm.courseId),
                         primaryTopicId: Number(questionForm.primaryTopicId),
                         type: questionForm.type,
-                        questionOrder: parsedOrder
+                        questionOrder: parsedOrder,
                       }),
                     (data) => {
-                      setQuestionResult({ status: 'success', payload: data });
-                      toast({ title: 'Question created' });
+                      setQuestionResult({ status: "success", payload: data });
+                      toast("Question created");
                     },
-                    (message) => setQuestionResult({ status: 'error', message })
+                    (message) => setQuestionResult({ status: "error", message }),
                   );
                 }}
               >
@@ -374,7 +394,9 @@ export const ApiTestPage = () => {
                 <Input
                   id="assessment-name"
                   value={assessmentForm.name}
-                  onChange={(event) => setAssessmentForm((prev) => ({ ...prev, name: event.target.value }))}
+                  onChange={(event) =>
+                    setAssessmentForm((prev) => ({ ...prev, name: event.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -390,7 +412,7 @@ export const ApiTestPage = () => {
                     <SelectItem value="Assignment">Assignment</SelectItem>
                     <SelectItem value="Lab">Lab</SelectItem>
                     <SelectItem value="Quiz">Quiz</SelectItem>
-                    <SelectItem value="Mid">Mid</SelectItem>
+                    <SelectItem value="Midterm">Midterm</SelectItem>
                     <SelectItem value="Final">Final</SelectItem>
                   </SelectContent>
                 </Select>
@@ -398,25 +420,21 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!assessmentForm.name.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Name is required.'
-                    });
+                    toast.error("Missing required fields", { description: "Name is required." });
                     return;
                   }
 
                   handleApiCall(
                     () =>
-                      api.post('/api/assessments', {
+                      api.post("/api/assessments", {
                         name: assessmentForm.name,
-                        type: assessmentForm.type
+                        type: assessmentForm.type,
                       }),
                     (data) => {
-                      setAssessmentResult({ status: 'success', payload: data });
-                      toast({ title: 'Assessment created' });
+                      setAssessmentResult({ status: "success", payload: data });
+                      toast("Assessment created");
                     },
-                    (message) => setAssessmentResult({ status: 'error', message })
+                    (message) => setAssessmentResult({ status: "error", message }),
                   );
                 }}
               >
@@ -437,7 +455,9 @@ export const ApiTestPage = () => {
                   id="link-assessment-id"
                   type="number"
                   value={assessmentLinkForm.assessmentId}
-                  onChange={(event) => setAssessmentLinkForm((prev) => ({ ...prev, assessmentId: event.target.value }))}
+                  onChange={(event) =>
+                    setAssessmentLinkForm((prev) => ({ ...prev, assessmentId: event.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -446,7 +466,9 @@ export const ApiTestPage = () => {
                   id="link-question-id"
                   type="number"
                   value={assessmentLinkForm.questionId}
-                  onChange={(event) => setAssessmentLinkForm((prev) => ({ ...prev, questionId: event.target.value }))}
+                  onChange={(event) =>
+                    setAssessmentLinkForm((prev) => ({ ...prev, questionId: event.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -455,16 +477,16 @@ export const ApiTestPage = () => {
                   id="link-order-number"
                   type="number"
                   value={assessmentLinkForm.orderNumber}
-                  onChange={(event) => setAssessmentLinkForm((prev) => ({ ...prev, orderNumber: event.target.value }))}
+                  onChange={(event) =>
+                    setAssessmentLinkForm((prev) => ({ ...prev, orderNumber: event.target.value }))
+                  }
                 />
               </div>
               <Button
                 onClick={() => {
                   if (!assessmentLinkForm.assessmentId || !assessmentLinkForm.questionId) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Assessment ID and question ID are required.'
+                    toast.error("Missing required fields", {
+                      description: "Assessment ID and question ID are required.",
                     });
                     return;
                   }
@@ -472,14 +494,18 @@ export const ApiTestPage = () => {
                   handleApiCall(
                     () =>
                       api.post(`/api/assessments/${assessmentLinkForm.assessmentId}/questions`, {
-                        questionId: assessmentLinkForm.questionId ? Number(assessmentLinkForm.questionId) : undefined,
-                        orderNumber: assessmentLinkForm.orderNumber ? Number(assessmentLinkForm.orderNumber) : 1
+                        questionId: assessmentLinkForm.questionId
+                          ? Number(assessmentLinkForm.questionId)
+                          : undefined,
+                        orderNumber: assessmentLinkForm.orderNumber
+                          ? Number(assessmentLinkForm.orderNumber)
+                          : 1,
                       }),
                     (data) => {
-                      setAssessmentLinkResult({ status: 'success', payload: data });
-                      toast({ title: 'Question linked' });
+                      setAssessmentLinkResult({ status: "success", payload: data });
+                      toast("Question linked");
                     },
-                    (message) => setAssessmentLinkResult({ status: 'error', message })
+                    (message) => setAssessmentLinkResult({ status: "error", message }),
                   );
                 }}
               >
@@ -503,14 +529,18 @@ export const ApiTestPage = () => {
                     id="variant-question-id"
                     type="number"
                     value={variantForm.questionId}
-                    onChange={(event) => setVariantForm((prev) => ({ ...prev, questionId: event.target.value }))}
+                    onChange={(event) =>
+                      setVariantForm((prev) => ({ ...prev, questionId: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
                   <Label>Difficulty</Label>
                   <Select
                     value={variantForm.difficulty}
-                    onValueChange={(value) => setVariantForm((prev) => ({ ...prev, difficulty: value }))}
+                    onValueChange={(value) =>
+                      setVariantForm((prev) => ({ ...prev, difficulty: value }))
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -528,16 +558,22 @@ export const ApiTestPage = () => {
                     id="variant-assessment-id"
                     type="number"
                     value={variantForm.assessmentId}
-                    onChange={(event) => setVariantForm((prev) => ({ ...prev, assessmentId: event.target.value }))}
+                    onChange={(event) =>
+                      setVariantForm((prev) => ({ ...prev, assessmentId: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="variant-secondary-topic">Secondary Topic IDs (comma separated, optional)</Label>
+                  <Label htmlFor="variant-secondary-topic">
+                    Secondary Topic IDs (comma separated, optional)
+                  </Label>
                   <Input
                     id="variant-secondary-topic"
                     placeholder="e.g. 1,2,3"
                     value={variantForm.secondaryTopicsId}
-                    onChange={(event) => setVariantForm((prev) => ({ ...prev, secondaryTopicsId: event.target.value }))}
+                    onChange={(event) =>
+                      setVariantForm((prev) => ({ ...prev, secondaryTopicsId: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
@@ -546,7 +582,9 @@ export const ApiTestPage = () => {
                     id="variant-reference-id"
                     type="number"
                     value={variantForm.referenceId}
-                    onChange={(event) => setVariantForm((prev) => ({ ...prev, referenceId: event.target.value }))}
+                    onChange={(event) =>
+                      setVariantForm((prev) => ({ ...prev, referenceId: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="md:col-span-2 space-y-1">
@@ -554,7 +592,9 @@ export const ApiTestPage = () => {
                   <Textarea
                     id="variant-question-text"
                     value={variantForm.questionText}
-                    onChange={(event) => setVariantForm((prev) => ({ ...prev, questionText: event.target.value }))}
+                    onChange={(event) =>
+                      setVariantForm((prev) => ({ ...prev, questionText: event.target.value }))
+                    }
                   />
                 </div>
                 <div className="md:col-span-2 space-y-1">
@@ -562,17 +602,17 @@ export const ApiTestPage = () => {
                   <Textarea
                     id="variant-answer"
                     value={variantForm.answer}
-                    onChange={(event) => setVariantForm((prev) => ({ ...prev, answer: event.target.value }))}
+                    onChange={(event) =>
+                      setVariantForm((prev) => ({ ...prev, answer: event.target.value }))
+                    }
                   />
                 </div>
               </div>
               <Button
                 onClick={() => {
                   if (!variantForm.questionId || !variantForm.questionText.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Question ID and question text are required.'
+                    toast.error("Missing required fields", {
+                      description: "Question ID and question text are required.",
                     });
                     return;
                   }
@@ -582,21 +622,25 @@ export const ApiTestPage = () => {
                       api.post(`/api/questions/${variantForm.questionId}/variants`, {
                         questionText: variantForm.questionText,
                         difficulty: variantForm.difficulty,
-                        assessmentId: variantForm.assessmentId ? Number(variantForm.assessmentId) : undefined,
+                        assessmentId: variantForm.assessmentId
+                          ? Number(variantForm.assessmentId)
+                          : undefined,
                         secondaryTopicsId: variantForm.secondaryTopicsId
                           ? variantForm.secondaryTopicsId
-                              .split(',')
+                              .split(",")
                               .map((item) => Number(item.trim()))
                               .filter((item) => Number.isInteger(item))
                           : undefined,
-                        referenceId: variantForm.referenceId ? Number(variantForm.referenceId) : undefined,
-                        answer: variantForm.answer || undefined
+                        referenceId: variantForm.referenceId
+                          ? Number(variantForm.referenceId)
+                          : undefined,
+                        answer: variantForm.answer || undefined,
                       }),
                     (data) => {
-                      setVariantResult({ status: 'success', payload: data });
-                      toast({ title: 'Variant created' });
+                      setVariantResult({ status: "success", payload: data });
+                      toast("Variant created");
                     },
-                    (message) => setVariantResult({ status: 'error', message })
+                    (message) => setVariantResult({ status: "error", message }),
                   );
                 }}
               >
@@ -625,19 +669,18 @@ export const ApiTestPage = () => {
                     try {
                       await handleApiCall(
                         () => eduaiService.testApiKey(),
-                        (data) => setEduaiApiKeyResult({ status: 'success', payload: data }),
-                        (message) => setEduaiApiKeyResult({ status: 'error', message })
+                        (data) => setEduaiApiKeyResult({ status: "success", payload: data }),
+                        (message) => setEduaiApiKeyResult({ status: "error", message }),
                       );
                     } finally {
                       setIsTestingApiKey(false);
                     }
                   }}
                 >
-                  {isTestingApiKey ? 'Testing...' : 'Test API Key'}
+                  {isTestingApiKey ? "Testing..." : "Test API Key"}
                 </Button>
                 <div>{renderResult(eduaiApiKeyResult)}</div>
               </div>
-
             </CardContent>
           </Card>
         </section>
@@ -649,7 +692,8 @@ export const ApiTestPage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Hit the live AI service endpoint <code>/api/courses/:courseId/topics</code> to preview the topic list for a course.
+                Hit the live AI service endpoint <code>/api/courses/:courseId/topics</code> to
+                preview the topic list for a course.
               </p>
               <div className="space-y-1">
                 <Label htmlFor="eduai-topics-course-id">AI Service Course ID</Label>
@@ -666,10 +710,8 @@ export const ApiTestPage = () => {
                 onClick={() => {
                   const trimmedId = eduaiTopicsForm.courseId.trim();
                   if (!trimmedId) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing course ID',
-                      description: 'Enter the AI service course identifier you want to inspect.'
+                    toast.error("Missing course ID", {
+                      description: "Enter the AI service course identifier you want to inspect.",
                     });
                     return;
                   }
@@ -677,10 +719,10 @@ export const ApiTestPage = () => {
                   handleApiCall(
                     () => eduaiService.fetchCourseTopics(trimmedId),
                     (data) => {
-                      setEduaiTopicsResult({ status: 'success', payload: data });
-                      toast({ title: 'Fetched course topics' });
+                      setEduaiTopicsResult({ status: "success", payload: data });
+                      toast("Fetched course topics");
                     },
-                    (message) => setEduaiTopicsResult({ status: 'error', message })
+                    (message) => setEduaiTopicsResult({ status: "error", message }),
                   );
                 }}
               >
@@ -704,7 +746,9 @@ export const ApiTestPage = () => {
                   id="eduai-course-code"
                   placeholder="COSC121 or COSC211"
                   value={eduaiChatForm.courseCode}
-                  onChange={(event) => setEduaiChatForm((prev) => ({ ...prev, courseCode: event.target.value }))}
+                  onChange={(event) =>
+                    setEduaiChatForm((prev) => ({ ...prev, courseCode: event.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -717,10 +761,17 @@ export const ApiTestPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (UBC, no API key)</SelectItem>
-                    <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct (UBC, no API key)</SelectItem>
+                    <SelectItem value="vllm:qwen3.5-9b-instruct">
+                      Qwen2.5 32B Instruct (UBC, no API key)
+                    </SelectItem>
+                    <SelectItem value="vllm:qwen3.5-2b-instruct">
+                      Qwen2.5 7B Instruct (UBC, no API key)
+                    </SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
+                    <SelectItem value="opencode:deepseek-v4-flash">
+                      DeepSeek V4 Flash (OpenCode Go)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -730,36 +781,33 @@ export const ApiTestPage = () => {
                   id="eduai-message"
                   placeholder="Ask a question about the course material..."
                   value={eduaiChatForm.message}
-                  onChange={(event) => setEduaiChatForm((prev) => ({ ...prev, message: event.target.value }))}
+                  onChange={(event) =>
+                    setEduaiChatForm((prev) => ({ ...prev, message: event.target.value }))
+                  }
                 />
               </div>
               <Button
                 onClick={() => {
                   if (!eduaiChatForm.courseCode.trim() || !eduaiChatForm.message.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course code and message are required.'
+                    toast.error("Missing required fields", {
+                      description: "Course code and message are required.",
                     });
                     return;
                   }
 
                   handleApiCall(
-                    () => eduaiService.chat({
-                      messages: [{ role: 'user', content: eduaiChatForm.message }],
-                      courseCode: eduaiChatForm.courseCode,
-                      model: eduaiChatForm.model,
-                      apiKeys: eduaiChatForm.model.startsWith('ollama')
-                        ? { ollama: { isEnabled: true } }
-                        : eduaiChatForm.model.startsWith('vllm')
-                          ? { vllm: { isEnabled: true } }
-                          : {}
-                    }),
+                    async () =>
+                      eduaiService.chat({
+                        messages: [{ role: "user", content: eduaiChatForm.message }],
+                        courseCode: eduaiChatForm.courseCode,
+                        model: eduaiChatForm.model,
+                        apiKeys: await apiKeyStorage.buildApiKeysForModel(eduaiChatForm.model),
+                      }),
                     (data) => {
-                      setEduaiChatResult({ status: 'success', payload: data });
-                      toast({ title: 'Chat request sent' });
+                      setEduaiChatResult({ status: "success", payload: data });
+                      toast("Chat request sent");
                     },
-                    (message) => setEduaiChatResult({ status: 'error', message })
+                    (message) => setEduaiChatResult({ status: "error", message }),
                   );
                 }}
               >
@@ -781,23 +829,34 @@ export const ApiTestPage = () => {
                   id="eduai-q-course-code"
                   placeholder="COSC121 or COSC211"
                   value={eduaiQuestionForm.courseCode}
-                  onChange={(event) => setEduaiQuestionForm((prev) => ({ ...prev, courseCode: event.target.value }))}
+                  onChange={(event) =>
+                    setEduaiQuestionForm((prev) => ({ ...prev, courseCode: event.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-1">
                 <Label>Model</Label>
                 <Select
                   value={eduaiQuestionForm.model}
-                  onValueChange={(value) => setEduaiQuestionForm((prev) => ({ ...prev, model: value }))}
+                  onValueChange={(value) =>
+                    setEduaiQuestionForm((prev) => ({ ...prev, model: value }))
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (UBC, no API key)</SelectItem>
-                    <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct (UBC, no API key)</SelectItem>
+                    <SelectItem value="vllm:qwen3.5-9b-instruct">
+                      Qwen2.5 32B Instruct (UBC, no API key)
+                    </SelectItem>
+                    <SelectItem value="vllm:qwen3.5-2b-instruct">
+                      Qwen2.5 7B Instruct (UBC, no API key)
+                    </SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
+                    <SelectItem value="opencode:deepseek-v4-flash">
+                      DeepSeek V4 Flash (OpenCode Go)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -807,7 +866,9 @@ export const ApiTestPage = () => {
                   id="eduai-prompt"
                   placeholder="e.g. Data structures and algorithms, Machine learning basics..."
                   value={eduaiQuestionForm.prompt}
-                  onChange={(event) => setEduaiQuestionForm((prev) => ({ ...prev, prompt: event.target.value }))}
+                  onChange={(event) =>
+                    setEduaiQuestionForm((prev) => ({ ...prev, prompt: event.target.value }))
+                  }
                 />
               </div>
               <div className="grid grid-cols-3 gap-2">
@@ -819,7 +880,12 @@ export const ApiTestPage = () => {
                     min="1"
                     max="20"
                     value={eduaiQuestionForm.numQuestions}
-                    onChange={(event) => setEduaiQuestionForm((prev) => ({ ...prev, numQuestions: event.target.value }))}
+                    onChange={(event) =>
+                      setEduaiQuestionForm((prev) => ({
+                        ...prev,
+                        numQuestions: event.target.value,
+                      }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
@@ -829,7 +895,12 @@ export const ApiTestPage = () => {
                     type="number"
                     min="0"
                     value={eduaiQuestionForm.difficultyEasy}
-                    onChange={(event) => setEduaiQuestionForm((prev) => ({ ...prev, difficultyEasy: event.target.value }))}
+                    onChange={(event) =>
+                      setEduaiQuestionForm((prev) => ({
+                        ...prev,
+                        difficultyEasy: event.target.value,
+                      }))
+                    }
                   />
                 </div>
                 <div className="space-y-1">
@@ -839,7 +910,12 @@ export const ApiTestPage = () => {
                     type="number"
                     min="0"
                     value={eduaiQuestionForm.difficultyMedium}
-                    onChange={(event) => setEduaiQuestionForm((prev) => ({ ...prev, difficultyMedium: event.target.value }))}
+                    onChange={(event) =>
+                      setEduaiQuestionForm((prev) => ({
+                        ...prev,
+                        difficultyMedium: event.target.value,
+                      }))
+                    }
                   />
                 </div>
               </div>
@@ -850,16 +926,19 @@ export const ApiTestPage = () => {
                   type="number"
                   min="0"
                   value={eduaiQuestionForm.difficultyHard}
-                  onChange={(event) => setEduaiQuestionForm((prev) => ({ ...prev, difficultyHard: event.target.value }))}
+                  onChange={(event) =>
+                    setEduaiQuestionForm((prev) => ({
+                      ...prev,
+                      difficultyHard: event.target.value,
+                    }))
+                  }
                 />
               </div>
               <Button
                 onClick={() => {
                   if (!eduaiQuestionForm.courseCode.trim() || !eduaiQuestionForm.prompt.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course code and prompt are required.'
+                    toast.error("Missing required fields", {
+                      description: "Course code and prompt are required.",
                     });
                     return;
                   }
@@ -870,32 +949,27 @@ export const ApiTestPage = () => {
                   const hard = parseInt(eduaiQuestionForm.difficultyHard);
 
                   if (easy + medium + hard !== numQuestions) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Invalid difficulty distribution',
-                      description: 'Sum of difficulty levels must equal number of questions.'
+                    toast.error("Invalid difficulty distribution", {
+                      description: "Sum of difficulty levels must equal number of questions.",
                     });
                     return;
                   }
 
                   handleApiCall(
-                    () => eduaiService.generateQuestions({
-                      prompt: eduaiQuestionForm.prompt,
-                      courseCode: eduaiQuestionForm.courseCode,
-                      model: eduaiQuestionForm.model,
-                      apiKeys: eduaiQuestionForm.model.startsWith('ollama')
-                        ? { ollama: { isEnabled: true } }
-                        : eduaiQuestionForm.model.startsWith('vllm')
-                          ? { vllm: { isEnabled: true } }
-                          : {},
-                      numQuestions,
-                      difficultyDistribution: { easy, medium, hard }
-                    }),
+                    async () =>
+                      eduaiService.generateQuestions({
+                        prompt: eduaiQuestionForm.prompt,
+                        courseCode: eduaiQuestionForm.courseCode,
+                        model: eduaiQuestionForm.model,
+                        apiKeys: await apiKeyStorage.buildApiKeysForModel(eduaiQuestionForm.model),
+                        numQuestions,
+                        difficultyDistribution: { easy, medium, hard },
+                      }),
                     (data) => {
-                      setEduaiQuestionResult({ status: 'success', payload: data });
-                      toast({ title: 'Questions generated' });
+                      setEduaiQuestionResult({ status: "success", payload: data });
+                      toast("Questions generated");
                     },
-                    (message) => setEduaiQuestionResult({ status: 'error', message })
+                    (message) => setEduaiQuestionResult({ status: "error", message }),
                   );
                 }}
               >

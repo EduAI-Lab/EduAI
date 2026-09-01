@@ -1,9 +1,9 @@
-import { Link, useLoaderData, redirect } from 'react-router'
-import type { LoaderFunctionArgs } from 'react-router'
+import { Link, useLoaderData, redirect } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
-import { UsersAdminView } from '~/components/admin/users-admin-view'
-import { CoreAppShell } from '~/components/layout/core-app-shell'
-import { useUsers } from '~/hooks/api/use-users'
+import { UsersAdminView } from "~/components/admin/users-admin-view";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { useUsers } from "~/hooks/api/use-users";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -11,27 +11,27 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@eduai/ui'
-import { auth } from '~/lib/auth/server'
+} from "@eduai/ui";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
-    return redirect('/auth/login')
+    return redirect("/auth/login");
   }
 
-  if (session.user.role !== 'ADMIN') {
-    return redirect('/dashboard')
+  if (session.user.role !== "ADMIN") {
+    return redirect("/dashboard");
   }
 
   return {
     user: session.user,
-  }
+  };
 }
 
 export default function UsersPage() {
-  const { user } = useLoaderData<typeof loader>()
+  const { user } = useLoaderData<typeof loader>();
   const {
     users,
     total,
@@ -43,7 +43,7 @@ export default function UsersPage() {
     updateUser,
     deleteUser,
     toggleUserActive,
-  } = useUsers()
+  } = useUsers();
 
   return (
     <CoreAppShell
@@ -52,7 +52,9 @@ export default function UsersPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -80,5 +82,5 @@ export default function UsersPage() {
         onToggleUserActive={toggleUserActive}
       />
     </CoreAppShell>
-  )
+  );
 }

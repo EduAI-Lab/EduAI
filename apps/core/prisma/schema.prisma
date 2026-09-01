@@ -13,32 +13,32 @@ datasource db {
 }
 
 model User {
-  id                String                 @id @default(cuid())
-  email             String                 @unique
-  name              String
-  image             String?
-  role              UserRole
-  studentId         String?
-  studentIdLookup   String?                @unique
-  isActive          Boolean                @default(true)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  emailVerified     Boolean                @default(false)
-  authorizedUnits   String[]
-  accounts          Account[]
-  aiInteractions    AIInteraction[]
-  enrollments       Enrollment[]
-  questions         Question[]
-  sessions          Session[]
-  providerSettings  UserProviderSettings[]
-  apiKeys           apikey[]
-  chats             Chat[]
-  externalUsers     ExternalUser[]
-  preference        UserPreference?
-  bugReports        BugReport[]
-  assistiveEvents   AssistiveEvent[]
-  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
-  createdTopics     CourseTopic[]          @relation("TopicCreator")
+  id                        String                 @id @default(cuid())
+  email                     String                 @unique
+  name                      String
+  image                     String?
+  role                      UserRole
+  studentId                 String?
+  studentIdLookup           String?                @unique
+  isActive                  Boolean                @default(true)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  emailVerified             Boolean                @default(false)
+  authorizedUnits           String[]
+  accounts                  Account[]
+  aiInteractions            AIInteraction[]
+  enrollments               Enrollment[]
+  questions                 Question[]
+  sessions                  Session[]
+  providerSettings          UserProviderSettings[]
+  apiKeys                   apikey[]
+  chats                     Chat[]
+  externalUsers             ExternalUser[]
+  preference                UserPreference?
+  bugReports                BugReport[]
+  assistiveEvents           AssistiveEvent[]
+  uploadedMaterials         CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics             CourseTopic[]          @relation("TopicCreator")
   canvasIntegration         CanvasIntegration?
   syncedCanvasRosterMembers CanvasRosterMember[]
   invitationsSent           Invitation[]           @relation("InvitationsSent")
@@ -62,6 +62,9 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // #1369: unindexed FK. Every authenticated request resolves a session, and the
+  // `onDelete: Cascade` from User seq-scans this table on account deletion.
+  @@index([userId])
   @@map("session")
 }
 
@@ -83,6 +86,11 @@ model Account {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  // #1369: `getPasswordChangedAt` filters { userId, providerId: "credential" } from
+  // the root loader on every authenticated render, and the unique above leads with
+  // `providerId` so it cannot serve that lookup. Composite rather than `userId`
+  // alone: same write cost, and it still covers any `userId`-prefix query.
+  @@index([userId, providerId])
   @@map("account")
 }
 
@@ -113,72 +121,98 @@ model Discipline {
 }
 
 model Course {
-  id                     String               @id @default(cuid())
-  code                   String
-  name                   String
-  description            String?
-  section                String
-  term                   String
-  year                   Int
-  isActive               Boolean              @default(true)
-  isPublished            Boolean              @default(false)
-  startDate              DateTime
-  endDate                DateTime?
-  instructorId           String?
-  externalId             String?
-  externalSource         String?
-  lastSyncedAt           DateTime?
-  department             String?
-  discipline             Discipline?          @relation("CourseDiscipline", fields: [department], references: [code], onDelete: Restrict, onUpdate: Cascade)
-  deletedAt              DateTime?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
-  aiInstructions         String               @default("")
+  id                          String                    @id @default(cuid())
+  code                        String
+  name                        String
+  description                 String?
+  section                     String
+  term                        String
+  year                        Int
+  isActive                    Boolean                   @default(true)
+  isPublished                 Boolean                   @default(false)
+  startDate                   DateTime
+  endDate                     DateTime?
+  instructorId                String?
+  externalId                  String?
+  externalSource              String?
+  lastSyncedAt                DateTime?
+  department                  String?
+  discipline                  Discipline?               @relation("CourseDiscipline", fields: [department], references: [code], onDelete: Restrict, onUpdate: Cascade)
+  deletedAt                   DateTime?
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  aiInstructions              String                    @default("")
   /// Instructor-selected response style tag ids (e.g. socratic, concise). Injected at chat time.
-  responseStyleTags      String[]             @default([])
+  responseStyleTags           String[]                  @default([])
+  /// Enables the strict second-pass course-scope classifier. Layer A prompt scoping is always on.
+  // Defaulted off (was on) for easier testing
+  courseScopeGuardrailEnabled Boolean                   @default(false)
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
-  ragTopK                Int?
+  ragTopK                     Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
-  ragSimilarityThreshold Float?
-  instructor             User?                @relation("CourseInstructor", fields: [instructorId], references: [id])
+  ragSimilarityThreshold      Float?
+  instructor                  User?                     @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
-  embeddingProvider      String?
+  embeddingProvider           String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
-  embeddingModel         String?
-  lastEmbeddedAt         DateTime?
-  embeddedWithProvider   String?
-  embeddedWithModel      String?
-  aiInteractions         AIInteraction[]
-  chats                  Chat[]               @relation("CourseChats")
-  enrollments            Enrollment[]
-  canvasRosterMembers    CanvasRosterMember[]
-  materials              CourseMaterial[]
-  canvasMaterialExclusions CanvasMaterialExclusion[]
-  reEmbedJobs            CourseReEmbedJob[]
-  topics                 CourseTopic[]
-  questions              Question[]
+  embeddingModel              String?
+  lastEmbeddedAt              DateTime?
+  embeddedWithProvider        String?
+  embeddedWithModel           String?
+  aiInteractions              AIInteraction[]
+  chats                       Chat[]                    @relation("CourseChats")
+  enrollments                 Enrollment[]
+  canvasRosterMembers         CanvasRosterMember[]
+  materials                   CourseMaterial[]
+  canvasMaterialExclusions    CanvasMaterialExclusion[]
+  reEmbedJobs                 CourseReEmbedJob[]
+  topics                      CourseTopic[]
+  questions                   Question[]
+  questionBanks               QuestionBank[]
 
   @@unique([code, startDate, section])
-  @@index([externalSource, externalId])
+  // PostgreSQL unique indexes permit multiple NULL values, so ordinary Core
+  // courses remain unconstrained while every populated external identity maps
+  // to exactly one row (including a soft-deleted row that can be reactivated).
+  @@unique([externalSource, externalId])
+  // #1369: FK -> Discipline.code (onDelete: Restrict, onUpdate: Cascade). Without an
+  // index every discipline rename or delete seq-scans courses to enforce the action.
+  @@index([department])
+  // #1369 deferred: `instructorId` returned 223/238 rows on the perf seed, so the
+  // planner would ignore an index there. Re-evaluate against production selectivity.
   @@map("courses")
 }
 
 model CourseReEmbedJob {
-  id                   String           @id @default(cuid())
-  courseId             String
-  status               ReEmbedJobStatus @default(PENDING)
-  totalMaterials       Int              @default(0)
-  processedCount       Int              @default(0)
-  failedMaterialIds    String[]         @default([])
-  currentMaterialTitle String?
-  errorMessage         String?
-  startedAt            DateTime?
-  completedAt          DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id                        String           @id @default(cuid())
+  courseId                  String
+  /// Optional client key for retry-safe starts (#1112). Unique per course when set.
+  idempotencyKey            String?
+  status                    ReEmbedJobStatus @default(PENDING)
+  /// Effective provider/model frozen atomically with job creation.
+  embeddingProviderSnapshot String
+  embeddingModelSnapshot    String
+  totalMaterials            Int              @default(0)
+  processedCount            Int              @default(0)
+  failedMaterialIds         String[]         @default([])
+  currentMaterialTitle      String?
+  errorMessage              String?
+  /// Renewable execution lease. An expired RUNNING row is reclaimable in place.
+  leaseOwner                String?
+  leaseHeartbeatAt          DateTime?
+  leaseExpiresAt            DateTime?
+  attemptCount              Int              @default(0)
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  course                    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
+  @@unique([courseId, idempotencyKey])
   @@index([courseId, status])
+  @@index([status, leaseExpiresAt])
+  // A PostgreSQL partial unique index enforces one PENDING/RUNNING row per
+  // course; Prisma cannot represent its predicate. See the hardening migration.
   @@map("course_re_embed_jobs")
 }
 
@@ -206,10 +240,11 @@ model AiJob {
   updatedAt    DateTime    @updatedAt
 
   // BullMQ auto-generated ids are per-queue counters, so `bullJobId` alone is not
-  // globally unique — `ai-jobs:chat` and `ai-jobs:heavy` both hand out "1".
+  // globally unique — `ai-jobs-chat` and `ai-jobs-heavy` both hand out "1".
   @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
+  @@index([queueName, status, completedAt])
   @@map("ai_jobs")
 }
 
@@ -258,10 +293,20 @@ model AIInteraction {
   energySource     EnergyMeasurementSource?
   carbonGramsCO2   Float?
   finishReason     String?
+  /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed or pre-tracking. */
+  serverId         String?
+  /**
+   * Durable correlation id for metrics. Null for async Question Maker /
+   * background completions and pre-tracking rows. This is intentionally not a
+   * relation to Chat, so deleting a chat cannot rewrite historical metrics.
+   */
+  chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
 
+  @@index([serverId])
+  @@index([chatId])
   @@map("ai_interactions")
 }
 
@@ -300,6 +345,9 @@ model AIModel {
   description                String
   type                       AIModelType
   maxTokens                  Int?
+  // Per-model override for CHAT_CONTEXT_FILL_RATIO (0 < r <= 1): fraction of the
+  // context window the assembled prompt may fill before older turns are digested.
+  contextFillRatio           Float?
   supportsImages             Boolean         @default(false)
   supportsTools              Boolean         @default(false)
   supportsStreaming          Boolean         @default(true)
@@ -320,19 +368,22 @@ model AIModel {
 }
 
 model UserProviderSettings {
-  id               String     @id @default(cuid())
-  userId           String
-  providerId       String
-  apiKey           String?
-  apiKeyExpiresAt  DateTime?
-  baseUrl          String?
-  isEnabled        Boolean    @default(false)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  provider         AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String     @id @default(cuid())
+  userId          String
+  providerId      String
+  apiKey          String?
+  apiKeyExpiresAt DateTime?
+  baseUrl         String?
+  isEnabled       Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  provider        AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
+  // #1369 deferred: the unique above leads with `userId`, so the `onDelete: Cascade`
+  // from AIProvider seq-scans this table. One row per user per provider keeps it tiny;
+  // revisit if provider deletes ever become routine.
   @@map("user_provider_settings")
 }
 
@@ -352,50 +403,102 @@ model UserPreference {
 }
 
 model CourseMaterial {
-  id              String          @id @default(cuid())
-  courseId        String
-  title           String
-  mimeType        String
-  fileSize        Int
-  checksum        String
-  rawText         String?
-  status          MaterialStatus  @default(PROCESSING)
-  externalId      String?
-  externalSource  String?
-  canvasUpdatedAt DateTime?
-  uploadedBy      String?
+  id                String          @id @default(cuid())
+  courseId          String
+  title             String
+  mimeType          String
+  fileSize          Int
+  checksum          String
+  rawText           String?
+  status            MaterialStatus  @default(PROCESSING)
+  externalId        String?
+  externalSource    String?
+  canvasUpdatedAt   DateTime?
+  uploadedBy        String?
   /// Student-visibility gate, independent of the course-level publish flag. When
   /// false, students never see this material even in a published course; staff
   /// (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) always see it. Lets instructors stage all
   /// material up-front and reveal it on the course timeline.
-  visibleToStudents Boolean       @default(true)
+  visibleToStudents Boolean         @default(true)
   /// Optional scheduled reveal. When set and in the future, students do not see
   /// this material until the timestamp passes (staff always see it). Null = no
   /// schedule (governed only by `visibleToStudents` + course publish state).
-  availableAt     DateTime?
-  /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
-  /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
-  /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
-  deletedAt       DateTime?
-  deletedBy       String?
+  availableAt       DateTime?
+  /// Soft-delete marker. Non-null = removed in EduAI; deletes are never
+  /// propagated upstream to Canvas. Reads filter `deletedAt: null`; an explicit
+  /// instructor re-sync of the source Canvas file restores the row.
+  deletedAt         DateTime?
+  deletedBy         String?
   /// Set automatically when Canvas re-check finds the source file unpublished/
   /// locked/hidden; cleared automatically if it becomes published again. This is
-  /// distinct from `deletedAt` (manual, one-way instructor delete) — the two must
-  /// never be set/cleared by the same code path. Student-facing reads filter
-  /// `unpublishedAt: null` alongside `deletedAt: null`.
-  unpublishedAt   DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  processedAt     DateTime?
-  course          Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  uploader        User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
-  chunks          MaterialChunk[]
+  /// distinct from `deletedAt` (manual instructor delete). Re-syncing a published
+  /// Canvas file clears either marker as an explicit restore. Student-facing
+  /// reads filter `unpublishedAt: null` alongside `deletedAt: null`.
+  unpublishedAt     DateTime?
+  /// Upload receipt pointer (#949). Extraction moved off the upload request, so
+  /// the content checksum — and therefore duplicate detection — is only known
+  /// after the response has been sent. When the background pass finds this
+  /// upload's content already on the course, the row becomes terminal FAILED
+  /// and points here at the material that won, which is how a client learns
+  /// that its 202 resolved to an existing material instead of a new one. This
+  /// is the asynchronous successor to the old synchronous 409. Null on every
+  /// row that is not a duplicate receipt.
+  duplicateOfId     String?
+  /// Durable-extraction bookkeeping (#949). Extraction runs off the request, so
+  /// the row is also the job record: a worker must hold a lease before it may
+  /// run, and the lease is what makes a restart recoverable. A PROCESSING row
+  /// whose `extractionLeaseUntil` has passed is definitionally abandoned — its
+  /// worker died — and the sweeper re-claims it and re-runs from the persisted
+  /// upload bytes. `extractionAttempts` bounds that retry loop so a file that
+  /// reliably kills its worker fails terminally instead of looping forever.
+  extractionAttempts Int            @default(0)
+  extractionLeaseUntil DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  processedAt       DateTime?
+  course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader          User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  duplicateOf       CourseMaterial? @relation("MaterialDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates        CourseMaterial[] @relation("MaterialDuplicate")
+  chunks            MaterialChunk[]
+  uploadBlob        MaterialUploadBlob?
+  derivedTopics     CourseTopicSource[]
 
   @@unique([courseId, checksum])
+  @@index([duplicateOfId])
   @@index([externalSource, externalId])
   @@index([uploadedBy])
   @@index([courseId, deletedAt])
+  @@index([status, extractionLeaseUntil])
   @@map("course_materials")
+}
+
+/// The raw uploaded bytes, persisted before the upload request returns 202 (#949).
+///
+/// Extraction no longer happens on the request, so the bytes have to outlive it:
+/// without this table a restart mid-extraction loses the upload entirely and
+/// strands the material row with nothing to retry from. Written in the same
+/// transaction as the `CourseMaterial` row, so a material in PROCESSING always
+/// has bytes to re-run against, and deleted as soon as the row reaches a terminal
+/// state (READY, FAILED, or a duplicate receipt) so this table only ever holds
+/// in-flight uploads rather than a second copy of the corpus.
+///
+/// Stored in Postgres rather than on a volume or in object storage deliberately:
+/// it is transactional with the row it belongs to, needs no new deployment
+/// surface, and the payload is already capped by the upload validator.
+model MaterialUploadBlob {
+  id         String         @id @default(cuid())
+  materialId String         @unique
+  /// Exactly the bytes the client uploaded — pre-extraction, unmodified.
+  bytes      Bytes
+  /// Declared upload metadata, kept so a resumed extraction can rebuild the same
+  /// `File` the original request would have handed to the extractor.
+  fileName   String
+  mimeType   String
+  createdAt  DateTime       @default(now())
+  material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@map("material_upload_blobs")
 }
 
 model CanvasMaterialExclusion {
@@ -415,6 +518,20 @@ model CourseTopic {
   courseId        String
   name            String
   createdBy       String?
+  /// Where this topic came from (#1624). Defaults to HUMAN so every pre-existing
+  /// row reads back as instructor-authored — topic provisioning never renames,
+  /// merges, or deletes a row it did not create, and this is how it tells.
+  origin          TopicOrigin              @default(HUMAN)
+  /// ACCEPTED for anything a human made or approved; SUGGESTED for a row the
+  /// topic-analysis job created and nobody has reviewed yet. Defaults to
+  /// ACCEPTED so the migration leaves existing rows unflagged.
+  reviewStatus    TopicReviewStatus        @default(ACCEPTED)
+  /// How much the generator trusts this name: 1 for a Canvas module title, less
+  /// for a heading match, least for an AI proposal. Null on human-created rows.
+  confidence      Float?
+  /// The AiJob that produced this topic. Not a relation — AiJob rows are prunable
+  /// telemetry and must be free to disappear without cascading into course data.
+  generatedByJobId String?
   /// Soft-delete marker — see CourseMaterial.deletedAt. One-way (EduAI only),
   /// never propagated to Canvas. Reads filter `deletedAt: null`.
   deletedAt       DateTime?
@@ -425,11 +542,29 @@ model CourseTopic {
   creator         User?                    @relation("TopicCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   questions       Question[]
   secondaryTopics QuestionSecondaryTopic[]
+  sources         CourseTopicSource[]
 
   @@unique([courseId, name])
   @@index([createdBy])
   @@index([courseId, deletedAt])
+  @@index([courseId, reviewStatus])
   @@map("course_topics")
+}
+
+/// Which materials a generated topic was derived from (#1624) — the provenance
+/// half of "generated topics identify their source materials". Empty for
+/// human-created topics and for the SYSTEM fallback topic.
+model CourseTopicSource {
+  id         String         @id @default(cuid())
+  topicId    String
+  materialId String
+  createdAt  DateTime       @default(now())
+  topic      CourseTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, materialId])
+  @@index([materialId])
+  @@map("course_topic_sources")
 }
 
 model Question {
@@ -441,9 +576,11 @@ model Question {
   type            QuestionType
   difficulty      QuestionDifficulty       @default(MEDIUM)
   reasoningLevel  ReasoningLevel           @default(FACTUAL)
-  choices         Json?
-  answer          String?
-  testable        Boolean                  @default(false)
+  choices            Json?
+  answer             String?
+  selectAllThatApply Boolean                  @default(false)
+  correctAnswers     Json?
+  testable           Boolean                  @default(false)
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
@@ -454,6 +591,12 @@ model Question {
 
   @@index([courseId, topicId, testable])
   @@index([createdBy])
+  // #1369 deferred: a bare `@@index([topicId])` measured 1.105 ms -> 0.095 ms on the perf
+  // seed (10,046 rows), but Core never issues a topic-only filter — `listQuestions` types
+  // `courseId` as required, so `topicId` is only ever an extra narrowing on top of the
+  // composite above, which already seeks. The `Restrict` FK check doesn't need it either:
+  // topics are soft-deleted via `courseTopic.update({ deletedAt })`, never hard-deleted.
+  // Add it if a cross-course topic view ever ships.
   @@map("questions")
 }
 
@@ -468,23 +611,58 @@ model QuestionSecondaryTopic {
   @@map("question_secondary_topics")
 }
 
+/// Named question bank scoped to a Core course (Canvas-modeled).
+/// Questions from extensions (e.g. Question Maker) join via QuestionBankMembership.externalQuestionId.
+model QuestionBank {
+  id          String                   @id @default(cuid())
+  courseId    String
+  name        String
+  description String?
+  isDefault   Boolean                  @default(false)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  course      Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  memberships QuestionBankMembership[]
+
+  @@index([courseId, isDefault])
+  /// Partial unique (one default bank per course) is enforced in SQL:
+  /// question_banks_courseId_default_key WHERE "isDefault"
+  @@map("question_banks")
+}
+
+model QuestionBankMembership {
+  id                 String       @id @default(cuid())
+  questionBankId     String
+  /// Extension-local question id (e.g. QM QuestionMetadata.id as string)
+  externalQuestionId String
+  /// Source system that owns the question row
+  source             String       @default("question-maker")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  questionBank       QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+
+  @@unique([questionBankId, source, externalQuestionId])
+  @@index([source, externalQuestionId])
+  @@map("question_bank_memberships")
+}
+
 model BugReport {
-  id          String           @id @default(cuid())
+  id          String          @id @default(cuid())
   source      BugReportSource
   userId      String?
-  isAnonymous Boolean          @default(false)
-  description String           @db.VarChar(2000)
+  isAnonymous Boolean         @default(false)
+  description String          @db.VarChar(2000)
   bugType     BugReportType?
-  status      BugReportStatus  @default(UNHANDLED)
+  status      BugReportStatus @default(UNHANDLED)
   consoleLogs String?
   networkLogs String?
   screenshot  String?
   pageUrl     String?
   userAgent   String?
   context     Json?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId])
@@ -497,11 +675,20 @@ model MaterialChunk {
   materialId String
   index      Int
   content    String
+  content_tsv Unsupported("tsvector")
   createdAt  DateTime           @default(now())
   material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
   embedding  MaterialEmbedding?
 
+  // #941: `content_tsv` (GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+  // GIN-indexed) also lives on this table. Prisma has no first-class `tsvector` type
+  // and can't model a generated/STORED column, so it's intentionally left off this
+  // model (same reasoning as the `Unsupported("vector(1024)")` column on
+  // MaterialEmbedding below — raw SQL only). See
+  // prisma/migrations/20260804180000_material_chunks_content_tsv_gin and the hybrid
+  // query in app/lib/ai/embedding.ts (findRelevantContent).
   @@unique([materialId, index])
+  @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_idx")
   @@map("material_chunks")
 }
 
@@ -515,38 +702,42 @@ model MaterialEmbedding {
   @@map("material_embeddings")
 }
 
-
 model apikey {
   id                  String    @id @default(cuid())
+  configId            String    @default("default")
   name                String?
   start               String?
   prefix              String?
   key                 String
-  userId              String
+  referenceId         String
   refillInterval      Int?
   refillAmount        Int?
   lastRefillAt        DateTime?
   enabled             Boolean   @default(true)
-  rateLimitEnabled    Boolean   @default(false)
-  rateLimitTimeWindow Int?
-  rateLimitMax        Int?
+  rateLimitEnabled    Boolean   @default(true)
+  rateLimitTimeWindow Int?      @default(86400000)
+  rateLimitMax        Int?      @default(10)
   requestCount        Int       @default(0)
   remaining           Int?
   lastRequest         DateTime?
   expiresAt           DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  permissions         Json?
-  metadata            Json?
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissions         String?
+  metadata            String?
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
   @@map("apiKey")
 }
 
 enum ChatbotType {
   LEARNING
   ADMIN
+  /// #1659: instructor's course-scoped ops assistant for their own published course.
+  INSTRUCTOR
 }
 
 model Chat {
@@ -642,6 +833,9 @@ model CanvasRosterMember {
   @@index([email])
   @@index([sisUserIdLookup])
   @@index([canvasUserId])
+  // #1369 deferred: `syncedByUserId` has the default `Restrict`, so a user delete
+  // seq-scans here. This table grows with every roster sync, making it the likeliest
+  // of the deferred candidates to need an index later.
   @@map("canvas_roster_members")
 }
 
@@ -705,6 +899,8 @@ model Invitation {
 
   @@index([email])
   @@index([status])
+  // #1369 deferred: `invitedById` / `acceptedUserId` are both `onDelete: SetNull` from
+  // User, so a user delete seq-scans here. Table is small; revisit past ~10k rows.
   @@map("invitations")
 }
 
@@ -775,6 +971,23 @@ enum MaterialStatus {
   PROCESSING
   READY
   FAILED
+}
+
+/// Provenance of a CourseTopic (#1624), ordered from most to least trusted.
+/// SYSTEM is the `Uncategorized` zero-topic fallback, which exists so authoring
+/// is never blocked while topic analysis is pending or after it fails.
+enum TopicOrigin {
+  HUMAN
+  SYSTEM
+  CANVAS_MODULE
+  MATERIAL_HEADING
+  AI
+}
+
+/// Whether a topic still needs instructor review (#1624).
+enum TopicReviewStatus {
+  ACCEPTED
+  SUGGESTED
 }
 
 enum ReEmbedJobStatus {
@@ -931,17 +1144,28 @@ enum CronJobStatus {
   ERROR
 }
 
+enum CronJobTriggerSource {
+  SCHEDULE
+  ADMIN_UI
+  ADMIN_CHAT
+  UNKNOWN
+}
+
 model CronJobRun {
-  id         String        @id @default(cuid())
-  jobName    String
-  status     CronJobStatus
-  startedAt  DateTime
-  finishedAt DateTime?
-  message    String?
-  exitCode   Int?
-  createdAt  DateTime      @default(now())
+  id               String        @id @default(cuid())
+  jobName          String
+  status           CronJobStatus
+  startedAt        DateTime
+  finishedAt       DateTime?
+  message          String?
+  exitCode         Int?
+  leaseOwner       String?
+  leaseHeartbeatAt DateTime?
+  leaseExpiresAt   DateTime?
+  createdAt        DateTime      @default(now())
 
   @@index([jobName, startedAt])
+  @@index([status, leaseExpiresAt])
   /// Partial unique index (one RUNNING per jobName) lives in SQL migration —
   /// Prisma cannot express WHERE status = 'RUNNING' in schema.
   @@map("cron_job_runs")

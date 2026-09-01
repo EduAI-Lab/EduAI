@@ -1,8 +1,8 @@
-import * as React from "react"
+import * as React from "react";
 
-import { AppSidebar, type AppSidebarProps } from "./app-sidebar"
-import { SiteHeader } from "./site-header"
-import { SidebarProvider, SidebarInset } from "./ui/sidebar"
+import { AppSidebar, type AppSidebarProps } from "./app-sidebar";
+import { SiteHeader } from "./site-header";
+import { SidebarProvider, SidebarInset } from "./ui/sidebar";
 
 export interface AppShellProps {
   /**
@@ -12,25 +12,25 @@ export interface AppShellProps {
    * AppSidebar prop individually — so sidebar and header props never collide
    * (both would otherwise want e.g. a `user` or `actions` name).
    */
-  sidebar: AppSidebarProps
+  sidebar: AppSidebarProps;
   /** Header title. Rendered as a visible heading, or an sr-only one when `breadcrumbs` is set. */
-  title?: string
+  title?: string;
   /** Breadcrumb trail rendered in place of the plain title. */
-  breadcrumbs?: React.ReactNode
+  breadcrumbs?: React.ReactNode;
   /** Right-aligned header controls (forwarded to SiteHeader's `actions`). */
-  headerActions?: React.ReactNode
+  headerActions?: React.ReactNode;
   /** Main content — e.g. a router `<Outlet />` or page-level JSX. */
-  children: React.ReactNode
+  children: React.ReactNode;
   /**
    * Floating/global elements that need to live inside the SidebarProvider
    * tree, rendered as a sibling after SidebarInset — a command palette, a
    * product tour, app-scoped dialogs, etc. Pass a fragment for more than one.
    */
-  commandPalette?: React.ReactNode
+  commandPalette?: React.ReactNode;
   /** CSS value for the `--sidebar-width` custom property. */
-  sidebarWidth?: string
+  sidebarWidth?: string;
   /** CSS value for the `--header-height` custom property. */
-  headerHeight?: string
+  headerHeight?: string;
   /**
    * Escape hatch that REPLACES `SidebarInset`'s default className
    * (`"min-w-0"`) when provided. Most pages should leave this alone — it
@@ -39,21 +39,21 @@ export interface AppShellProps {
    * `min-w-0`). `SidebarInset` itself always keeps its own base flex classes
    * regardless of what's passed here.
    */
-  insetClassName?: string
+  insetClassName?: string;
   /**
    * Escape hatch that REPLACES the wrapping `<main>`'s default className
    * (`"min-w-0 flex-1 overflow-auto"`) when provided. Pair with
    * `insetClassName` when a page owns its own internal scroll region and the
    * default `overflow-auto` main would fight it.
    */
-  mainClassName?: string
+  mainClassName?: string;
   /**
    * Optional className merged onto `SidebarProvider`'s wrapper. Use for
    * viewport-locked pages (e.g. chat: `h-svh overflow-hidden`) so the
    * default `min-h-svh` wrapper cannot grow and create page-level scroll
    * past an internally-scrolling pane.
    */
-  providerClassName?: string
+  providerClassName?: string;
 }
 
 /**
@@ -94,5 +94,5 @@ export function AppShell({
       </SidebarInset>
       {commandPalette}
     </SidebarProvider>
-  )
+  );
 }

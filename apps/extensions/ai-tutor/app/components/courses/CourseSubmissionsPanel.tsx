@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
   IconInbox,
   IconLayoutGrid,
   IconLayoutList,
   IconSearch,
   IconSparkles,
-} from '@tabler/icons-react';
+} from "@tabler/icons-react";
 import {
   AnswerOption,
   Avatar,
@@ -31,43 +31,72 @@ import {
   SelectValue,
   StatCard,
   cn,
-} from '@eduai/ui';
-import { useAtPermissions } from '~/hooks/useAtPermissions';
-import { canGradeSubmissions } from '~/lib/rbac/permissions';
-import api from '~/lib/api';
-import type { SubmissionRow } from '~/lib/types';
-import { SubmissionCard } from './SubmissionCard';
+} from "@eduai/ui";
+import { useAtPermissions } from "~/hooks/useAtPermissions";
+import { canGradeSubmissions } from "~/lib/rbac/permissions";
+import api from "~/lib/api";
+import type { SubmissionRow } from "~/lib/types";
+import { SubmissionCard } from "./SubmissionCard";
 
 type CourseSubmissionsPanelProps = {
   courseId: number;
 };
 
-type GradeChoice = 'ungraded' | 'correct' | 'incorrect';
-type StatusFilter = 'all' | 'needs' | 'correct' | 'incorrect';
+type GradeChoice = "ungraded" | "correct" | "incorrect";
+
+export type GradePayload = { score: number | null; isCorrect: boolean | null };
+
+/**
+ * Build the `PATCH .../submissions/:id` body for the grade dialog.
+ *
+ * Both fields are always sent, `null` meaning "clear it". Omitting them —
+ * which is what "Not graded" plus an empty score used to do — posts `{}`, and
+ * the route answers `400 Nothing to update`, so a grade could never be taken
+ * back. Returns `null` when the typed score isn't a number, so the caller can
+ * say so instead of silently clearing the score.
+ */
+export function buildGradePayload(
+  gradeChoice: GradeChoice,
+  gradeScore: string,
+): GradePayload | null {
+  const trimmed = gradeScore.trim();
+  let score: number | null = null;
+  if (trimmed !== "") {
+    const parsed = Number(trimmed);
+    if (Number.isNaN(parsed)) return null;
+    score = parsed;
+  }
+  return {
+    isCorrect: gradeChoice === "ungraded" ? null : gradeChoice === "correct",
+    score,
+  };
+}
+
+type StatusFilter = "all" | "needs" | "correct" | "incorrect";
 
 const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 60 * 60 * 24 * 365],
-  ['month', 60 * 60 * 24 * 30],
-  ['day', 60 * 60 * 24],
-  ['hour', 60 * 60],
-  ['minute', 60],
+  ["year", 60 * 60 * 24 * 365],
+  ["month", 60 * 60 * 24 * 30],
+  ["day", 60 * 60 * 24],
+  ["hour", 60 * 60],
+  ["minute", 60],
 ];
 
-const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
 /** Compact "2h ago" style stamp; the full timestamp stays available via `title`. */
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
+  if (Number.isNaN(then)) return "";
   const diffSeconds = Math.round((then - Date.now()) / 1000);
   const absSeconds = Math.abs(diffSeconds);
-  if (absSeconds < 45) return 'just now';
+  if (absSeconds < 45) return "just now";
   for (const [unit, secondsInUnit] of RELATIVE_UNITS) {
     if (absSeconds >= secondsInUnit) {
       return relativeFormatter.format(Math.round(diffSeconds / secondsInUnit), unit);
     }
   }
-  return 'just now';
+  return "just now";
 }
 
 export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps) {
@@ -78,13 +107,13 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [search, setSearch] = useState('');
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<"grid" | "list">("grid");
 
   const [activeRow, setActiveRow] = useState<SubmissionRow | null>(null);
-  const [gradeChoice, setGradeChoice] = useState<GradeChoice>('ungraded');
-  const [gradeScore, setGradeScore] = useState('');
+  const [gradeChoice, setGradeChoice] = useState<GradeChoice>("ungraded");
+  const [gradeScore, setGradeScore] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -97,7 +126,7 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
         if (!cancelled) setRows(data);
       })
       .catch(() => {
-        if (!cancelled) setError('Could not load submissions.');
+        if (!cancelled) setError("Could not load submissions.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -124,13 +153,13 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   const visibleRows = useMemo(() => {
     const query = search.trim().toLowerCase();
     return rows.filter((row) => {
-      if (statusFilter === 'needs' && row.isCorrect != null) return false;
-      if (statusFilter === 'correct' && row.isCorrect !== true) return false;
-      if (statusFilter === 'incorrect' && row.isCorrect !== false) return false;
+      if (statusFilter === "needs" && row.isCorrect != null) return false;
+      if (statusFilter === "correct" && row.isCorrect !== true) return false;
+      if (statusFilter === "incorrect" && row.isCorrect !== false) return false;
       if (query) {
-        const haystack = `${row.studentName ?? ''} ${row.userId} ${
-          row.activityTitle ?? ''
-        } ${row.lessonTitle ?? ''} activity ${row.activityId}`.toLowerCase();
+        const haystack = `${row.studentName ?? ""} ${row.userId} ${
+          row.activityTitle ?? ""
+        } ${row.lessonTitle ?? ""} activity ${row.activityId}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
@@ -138,15 +167,15 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   }, [rows, statusFilter, search]);
 
   const filterOptions: { value: StatusFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'needs', label: 'Needs grading' },
-    { value: 'correct', label: 'Correct' },
-    { value: 'incorrect', label: 'Incorrect' },
+    { value: "all", label: "All" },
+    { value: "needs", label: "Needs grading" },
+    { value: "correct", label: "Correct" },
+    { value: "incorrect", label: "Incorrect" },
   ];
 
   const openRowDialog = (row: SubmissionRow) => {
-    setGradeChoice(row.isCorrect == null ? 'ungraded' : row.isCorrect ? 'correct' : 'incorrect');
-    setGradeScore(row.score != null ? String(row.score) : '');
+    setGradeChoice(row.isCorrect == null ? "ungraded" : row.isCorrect ? "correct" : "incorrect");
+    setGradeScore(row.score != null ? String(row.score) : "");
     setSaveError(null);
     setActiveRow(row);
   };
@@ -160,11 +189,10 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   const handleSaveGrade = async () => {
     if (!activeRow) return;
 
-    const payload: { score?: number; isCorrect?: boolean } = {};
-    if (gradeChoice !== 'ungraded') payload.isCorrect = gradeChoice === 'correct';
-    if (gradeScore.trim() !== '') {
-      const parsedScore = Number(gradeScore);
-      if (!Number.isNaN(parsedScore)) payload.score = parsedScore;
+    const payload = buildGradePayload(gradeChoice, gradeScore);
+    if (!payload) {
+      setSaveError("Score must be a number.");
+      return;
     }
 
     const targetId = activeRow.id;
@@ -180,7 +208,7 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
       setActiveRow(null);
     } catch {
       setRows(previousRows);
-      setSaveError('Could not save the grade. Try again.');
+      setSaveError("Could not save the grade. Try again.");
     } finally {
       setSaving(false);
     }
@@ -207,29 +235,25 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
   const activeFeedback = activeRow?.aiFeedback?.message ?? null;
 
   const activeResponse = activeRow?.response ?? null;
-  const activeHasText =
-    typeof activeResponse?.answerText === 'string' && activeResponse.answerText.trim() !== '';
-  const activeOptionIndex =
-    !activeHasText && typeof activeResponse?.answerOption === 'number'
-      ? activeResponse.answerOption
-      : null;
+  const activeHasText = (activeResponse?.answerText ?? "").trim() !== "";
+  const activeOptionIndex = !activeHasText ? (activeResponse?.answerOption ?? null) : null;
   // MCQ verdict tints the option chip; ungraded stays neutral (mirrors SubmissionCard).
   const activeOptionState =
     activeOptionIndex == null
-      ? 'default'
+      ? "default"
       : activeRow?.isCorrect === true
-        ? 'correct'
+        ? "correct"
         : activeRow?.isCorrect === false
-          ? 'incorrect'
-          : 'selected';
+          ? "incorrect"
+          : "selected";
   const activeOptionBody =
     activeOptionIndex != null
       ? activeRow?.answerLabel?.trim() || `Option ${activeOptionIndex + 1}`
       : null;
-  const activeStudent = activeRow ? activeRow.studentName?.trim() || activeRow.userId : '';
+  const activeStudent = activeRow ? activeRow.studentName?.trim() || activeRow.userId : "";
   const activeActivity = activeRow
     ? activeRow.activityTitle?.trim() || `Activity ${activeRow.activityId}`
-    : '';
+    : "";
 
   return (
     <div className="space-y-4" data-testid="course-submissions-panel">
@@ -242,16 +266,13 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
             stats.needsGrading > 0
               ? {
                   background:
-                    'linear-gradient(to bottom, oklch(from var(--color-warning-500) l c h / 0.12), var(--card))',
+                    "linear-gradient(to bottom, oklch(from var(--color-warning-500) l c h / 0.12), var(--card))",
                 }
               : undefined
           }
         />
         <StatCard label="Correct" value={stats.correct} />
-        <StatCard
-          label="Pass rate"
-          value={stats.passRate != null ? `${stats.passRate}%` : '—'}
-        />
+        <StatCard label="Pass rate" value={stats.passRate != null ? `${stats.passRate}%` : "—"} />
       </div>
 
       <Card>
@@ -260,8 +281,8 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
             <CardTitle>Submissions</CardTitle>
             <CardDescription>
               {stats.needsGrading > 0
-                ? `${stats.needsGrading} attempt${stats.needsGrading === 1 ? '' : 's'} waiting on a grade.`
-                : 'Student answer attempts in this course.'}
+                ? `${stats.needsGrading} attempt${stats.needsGrading === 1 ? "" : "s"} waiting on a grade.`
+                : "Student answer attempts in this course."}
             </CardDescription>
           </div>
           {rows.length > 0 ? (
@@ -290,13 +311,13 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
                   <button
                     type="button"
                     aria-label="Grid view"
-                    aria-pressed={view === 'grid'}
-                    onClick={() => setView('grid')}
+                    aria-pressed={view === "grid"}
+                    onClick={() => setView("grid")}
                     className={cn(
-                      'flex size-8 items-center justify-center rounded-md transition-colors',
-                      view === 'grid'
-                        ? 'bg-muted text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
+                      "flex size-8 items-center justify-center rounded-md transition-colors",
+                      view === "grid"
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <IconLayoutGrid className="size-4" />
@@ -304,13 +325,13 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
                   <button
                     type="button"
                     aria-label="Extended view"
-                    aria-pressed={view === 'list'}
-                    onClick={() => setView('list')}
+                    aria-pressed={view === "list"}
+                    onClick={() => setView("list")}
                     className={cn(
-                      'flex size-8 items-center justify-center rounded-md transition-colors',
-                      view === 'list'
-                        ? 'bg-muted text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
+                      "flex size-8 items-center justify-center rounded-md transition-colors",
+                      view === "list"
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <IconLayoutList className="size-4" />
@@ -329,15 +350,13 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
           ) : visibleRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <IconSearch className="size-8 text-muted-foreground/60" />
-              <p className="text-sm text-muted-foreground">
-                No submissions match this filter.
-              </p>
+              <p className="text-sm text-muted-foreground">No submissions match this filter.</p>
             </div>
           ) : (
             <div
               className={cn(
-                'grid gap-3',
-                view === 'grid' ? 'md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1',
+                "grid gap-3",
+                view === "grid" ? "md:grid-cols-2 xl:grid-cols-3" : "grid-cols-1",
               )}
             >
               {visibleRows.map((row) => (
@@ -374,18 +393,18 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
           {/* Header: identity + result verdict, echoing QuestionMaker's view modal. */}
           <DialogHeader className="space-y-3 border-b border-border px-6 py-5 pr-12 text-left">
             <div className="flex items-center gap-3">
-              <Avatar name={activeStudent || 'Student'} size={40} radius={10} />
+              <Avatar name={activeStudent || "Student"} size={40} radius={10} />
               <div className="flex min-w-0 flex-1 flex-col">
                 <DialogTitle
                   className="truncate text-lg font-semibold leading-snug"
                   title={activeRow?.userId}
                 >
-                  {activeStudent || 'Submission'}
+                  {activeStudent || "Submission"}
                 </DialogTitle>
                 <DialogDescription className="truncate">
                   {activeRow
-                    ? `${activeRow.lessonTitle ? `${activeRow.lessonTitle} — ` : ''}${activeActivity} · Attempt ${activeRow.attemptNumber}`
-                    : 'Review this submission.'}
+                    ? `${activeRow.lessonTitle ? `${activeRow.lessonTitle} — ` : ""}${activeActivity} · Attempt ${activeRow.attemptNumber}`
+                    : "Review this submission."}
                 </DialogDescription>
               </div>
               {activeRow ? (
@@ -395,10 +414,10 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
                   </Badge>
                 ) : (
                   <Badge
-                    variant={activeRow.isCorrect ? 'success' : 'destructive'}
+                    variant={activeRow.isCorrect ? "success" : "destructive"}
                     className="shrink-0"
                   >
-                    {activeRow.isCorrect ? 'Correct' : 'Incorrect'}
+                    {activeRow.isCorrect ? "Correct" : "Incorrect"}
                   </Badge>
                 )
               ) : null}
@@ -498,7 +517,7 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
                   Cancel
                 </Button>
                 <Button type="button" onClick={handleSaveGrade} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save grade'}
+                  {saving ? "Saving…" : "Save grade"}
                 </Button>
               </>
             ) : (

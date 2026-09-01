@@ -1,19 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { canAccessQm } from '@/lib/rbac/roles';
+import { describe, expect, it } from "vitest";
+import { canAccessQm } from "@/lib/rbac/roles";
 
-describe('canAccessQm', () => {
-  it('allows instructors and admins', () => {
-    expect(canAccessQm('INSTRUCTOR')).toBe(true);
-    expect(canAccessQm('ADMIN')).toBe(true);
-    expect(canAccessQm('UNIT_ADMIN')).toBe(true);
+describe("canAccessQm", () => {
+  it("allows instructors and admins", () => {
+    expect(canAccessQm("INSTRUCTOR")).toBe(true);
+    expect(canAccessQm("ADMIN")).toBe(true);
+    expect(canAccessQm("UNIT_ADMIN")).toBe(true);
   });
 
-  it('blocks students and TAs', () => {
-    expect(canAccessQm('STUDENT')).toBe(false);
-    expect(canAccessQm('TA')).toBe(false);
+  it("allows verified course TAs without admitting ordinary students", () => {
+    expect(canAccessQm("TA")).toBe(true);
+    expect(canAccessQm("STUDENT")).toBe(false);
   });
 
-  it('blocks missing role', () => {
+  it("blocks missing role", () => {
     expect(canAccessQm(undefined)).toBe(false);
     expect(canAccessQm(null)).toBe(false);
   });

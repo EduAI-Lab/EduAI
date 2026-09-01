@@ -5,15 +5,15 @@
  * the easy→hard ordering legible at a glance. Replaces the taller slider, which wasted
  * vertical space for what is really a three-way toggle.
  */
-import { cn } from '@eduai/ui';
-import type { QuestionDifficulty } from '../../types/question';
+import { cn } from "@eduai/ui";
+import type { QuestionDifficulty } from "../../types/question";
 import {
   DIFFICULTY_LEVELS,
   DIFFICULTY_META,
   DIFFICULTY_GRADIENT,
   difficultyChipClass,
   difficultyTextClass,
-} from '../../lib/difficulty';
+} from "../../lib/difficulty";
 
 interface DifficultySliderProps {
   value: QuestionDifficulty;
@@ -25,7 +25,7 @@ interface DifficultySliderProps {
 export function DifficultySlider({ value, onChange, disabled = false, id }: DifficultySliderProps) {
   const meta = DIFFICULTY_META[value];
   return (
-    <div className={cn('flex flex-col gap-1.5', disabled && 'opacity-60')}>
+    <div className={cn("flex flex-col gap-1.5", disabled && "opacity-60")}>
       <div
         id={id}
         role="radiogroup"
@@ -44,10 +44,10 @@ export function DifficultySlider({ value, onChange, disabled = false, id }: Diff
               disabled={disabled}
               onClick={() => onChange(lvl)}
               className={cn(
-                'flex-1 whitespace-nowrap rounded-[5px] px-1 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed',
+                "flex-1 whitespace-nowrap rounded-[5px] px-1 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
                 active
-                  ? cn('border font-semibold shadow-sm', difficultyChipClass[lvl])
-                  : 'border border-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+                  ? cn("border font-semibold shadow-sm", difficultyChipClass[lvl])
+                  : "border border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
               {m.label}
@@ -63,7 +63,7 @@ export function DifficultySlider({ value, onChange, disabled = false, id }: Diff
       </div>
       {/* Active blurb — cognitive demand at a glance */}
       <p className="text-xs text-muted-foreground">
-        <span className={cn('font-semibold', difficultyTextClass[value])}>{meta.label}</span>
+        <span className={cn("font-semibold", difficultyTextClass[value])}>{meta.label}</span>
         {` · ${meta.blurb}`}
       </p>
     </div>

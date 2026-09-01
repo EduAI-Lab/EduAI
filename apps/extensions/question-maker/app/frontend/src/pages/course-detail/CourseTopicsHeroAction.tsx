@@ -10,10 +10,10 @@
  * get a create-topic dialog. Topic deletion stays in Core (source of truth)
  * and is not exposed.
  */
-import { useCallback } from 'react';
-import { CourseTopicsHeroAction as SharedCourseTopicsHeroAction } from '@eduai/ui';
-import { courseService } from '../../services/courseService';
-import { useToast } from '../../components/ui/use-toast';
+import { useCallback } from "react";
+import { CourseTopicsHeroAction as SharedCourseTopicsHeroAction } from "@eduai/ui";
+import { courseService } from "../../services/courseService";
+import { toast } from "sonner";
 
 interface CourseTopicsHeroActionProps {
   courseId: number;
@@ -29,8 +29,6 @@ export const CourseTopicsHeroAction = ({
   canManage,
   onTopicsChange,
 }: CourseTopicsHeroActionProps) => {
-  const { toast } = useToast();
-
   const handleCreateTopic = useCallback(
     async (name: string) => {
       await courseService.createTopic(courseId, name);
@@ -48,15 +46,13 @@ export const CourseTopicsHeroAction = ({
       showInlineCreateError={false}
       onCreateTopic={handleCreateTopic}
       onCreateSuccess={(name) =>
-        toast({ title: 'Topic created', description: `"${name}" has been created.` })
+        toast("Topic created", { description: `"${name}" has been created.` })
       }
       onCreateError={(error) => {
-        console.error('Failed to create topic:', error);
-        toast({ title: 'Error', description: 'Failed to create topic.', variant: 'destructive' });
+        console.error("Failed to create topic:", error);
+        toast.error("Error", { description: "Failed to create topic." });
       }}
-      onCreateValidationError={(message) =>
-        toast({ title: 'Error', description: message, variant: 'destructive' })
-      }
+      onCreateValidationError={(message) => toast.error("Error", { description: message })}
     />
   );
 };

@@ -1,11 +1,13 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { auth } from "./server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import type { LogSecurityEventInput } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import prisma from "~/lib/prisma.server";
+import { hasValidServiceKey } from "./service-key.server";
 import type { Session } from "./server";
+import { getRequestSession } from "./request-session.server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
 const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
@@ -51,7 +53,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     return { response: null, session: null };
   }
 
-  const cookieSession = await auth.api.getSession({ headers: request.headers });
+  const cookieSession = await getRequestSession(request);
   if (cookieSession?.user?.role === "ADMIN" && (await isActiveAdminUser(cookieSession.user.id))) {
     return { response: null, session: cookieSession };
   }
@@ -101,18 +103,19 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   });
 
   if (!user || user.role !== "ADMIN" || !user.isActive) {
-    fireAndForget(
-      logSecurityEvent({
-        ...getActorContext(user ?? cookieSession?.user ?? null),
-        ...getRequestContext(request),
-        actionCode: "API_KEY_DENIED",
-        outcome: "DENIED",
-        entityType: "Auth",
-        entityId: user?.id ?? cookieSession?.user?.id ?? null,
-        entityLabel: user?.email ?? cookieSession?.user?.email ?? null,
-        ...(user?.email ? { details: { email: user.email } } : {}),
-      }),
-    );
+    // An anonymous denial has no email to record, and the entry must not carry
+    // a `details` key at all in that case.
+    const event: LogSecurityEventInput = {
+      ...getActorContext(user ?? cookieSession?.user ?? null),
+      ...getRequestContext(request),
+      actionCode: "API_KEY_DENIED",
+      outcome: "DENIED",
+      entityType: "Auth",
+      entityId: user?.id ?? cookieSession?.user?.id ?? null,
+      entityLabel: user?.email ?? cookieSession?.user?.email ?? null,
+    };
+    if (user?.email) event.details = { email: user.email };
+    fireAndForget(logSecurityEvent(event));
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
@@ -140,9 +143,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   return { response: null, session };
 }
 
-type AdminGate =
-  | { response: Response; session: null }
-  | { response: null; session: Session };
+type AdminGate = { response: Response; session: null } | { response: null; session: Session };
 
 /**
  * Resolve an ADMIN session for an admin-only endpoint.
@@ -150,25 +151,34 @@ type AdminGate =
  * otherwise `{ session }`.
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
-  const resolved = await auth.api.getSession({ headers: request.headers });
-  if (!resolved?.user || resolved.user.role !== "ADMIN") {
-    fireAndForget(
-      logSecurityEvent({
-        ...getActorContext(resolved?.user ?? null),
-        ...getRequestContext(request),
-        actionCode: "ADMIN_ACCESS_DENIED",
-        outcome: "DENIED",
-        entityType: "Auth",
-        entityId: resolved?.user?.id ?? null,
-        entityLabel: resolved?.user?.email ?? null,
-        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-      }),
-    );
+  const resolved = await getRequestSession(request);
+  // Re-check `isActive` against the DB, not just the session's cached role
+  // (#1571): deactivating an admin must revoke access on their next request,
+  // not only after their session expires. Mirrors the x-api-key admin path,
+  // which already gates on `isActiveAdminUser`.
+  if (
+    !resolved?.user ||
+    resolved.user.role !== "ADMIN" ||
+    !(await isActiveAdminUser(resolved.user.id))
+  ) {
+    // An anonymous denial has no email to record, and the entry must not carry
+    // a `details` key at all in that case.
+    const event: LogSecurityEventInput = {
+      ...getActorContext(resolved?.user ?? null),
+      ...getRequestContext(request),
+      actionCode: "ADMIN_ACCESS_DENIED",
+      outcome: "DENIED",
+      entityType: "Auth",
+      entityId: resolved?.user?.id ?? null,
+      entityLabel: resolved?.user?.email ?? null,
+    };
+    if (resolved?.user?.email) event.details = { email: resolved.user.email };
+    fireAndForget(logSecurityEvent(event));
     return {
-      response: new Response(
-        JSON.stringify({ error: "Forbidden: Admins only" }),
-        { status: 403, headers: { "Content-Type": "application/json" } },
-      ),
+      response: new Response(JSON.stringify({ error: "Forbidden: Admins only" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
       session: null,
     };
   }
@@ -182,25 +192,52 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
  * accidentally skip it — ADMIN is always allowed. `action` tags the
  * policy-denial audit line (e.g. "invitation.create").
  */
-export async function requireInviter(
-  request: Request,
-  action: string,
-): Promise<AdminGate> {
-  const resolved = await auth.api.getSession({ headers: request.headers });
+export async function requireInviter(request: Request, action: string): Promise<AdminGate> {
+  const resolved = await getRequestSession(request);
   const role = resolved?.user?.role;
 
-  if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+  let inviter = resolved;
+  let inviterRole = role;
+
+  const isPrivilegedRole = role === "ADMIN" || role === "UNIT_ADMIN";
+  // Re-check `isActive` against the DB, not just the session's cached role
+  // (#1571 pattern, same fix as `requireAdmin` below): a deactivated
+  // ADMIN/UNIT_ADMIN's still-live session must lose invitation authority
+  // (create/list/revoke/resend) on their very next request, not only once
+  // that session naturally expires.
+  const isActiveInviter =
+    isPrivilegedRole && resolved?.user
+      ? (
+          await prisma.user.findUnique({
+            where: { id: resolved.user.id },
+            select: { isActive: true },
+          })
+        )?.isActive === true
+      : false;
+
+  if (!resolved?.user || !isPrivilegedRole || !isActiveInviter) {
+    let admittedViaServiceKey = false;
     if (!resolved?.user) {
       const serviceKeyError = await requireServiceKey(request);
       if (!serviceKeyError) {
-        return {
-          response: null,
-          session: { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as Session,
-        };
+        // AUTH-02 (#225 SECURITY): a service-key caller delegates on behalf
+        // of an unvetted downstream actor and must never mint ADMIN or
+        // UNIT_ADMIN invitations. Synthesize it as a capped UNIT_ADMIN-tier
+        // inviter so it falls through to the same `unitAdmins.canInvite`
+        // policy gate below and `invitableRolesFor("UNIT_ADMIN")`'s role cap
+        // — not an implicit, policy-bypassing platform ADMIN.
+        inviter = {
+          user: { id: "service", name: "Service", role: "UNIT_ADMIN" },
+        } as Session;
+        inviterRole = "UNIT_ADMIN";
+        admittedViaServiceKey = true;
       }
     }
-    fireAndForget(
-      logSecurityEvent({
+
+    if (!admittedViaServiceKey) {
+      // An anonymous denial has no email to record, and the entry must not
+      // carry a `details` key at all in that case.
+      const event: LogSecurityEventInput = {
         ...getActorContext(resolved?.user ?? null),
         ...getRequestContext(request),
         actionCode: "INVITATION_ACCESS_DENIED",
@@ -208,24 +245,26 @@ export async function requireInviter(
         entityType: "Auth",
         entityId: resolved?.user?.id ?? null,
         entityLabel: resolved?.user?.email ?? null,
-        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-      }),
-    );
-    return {
-      response: new Response(
-        JSON.stringify({ error: "Forbidden" }),
-        { status: 403, headers: { "Content-Type": "application/json" } },
-      ),
-      session: null,
-    };
+      };
+      if (resolved?.user?.email) event.details = { email: resolved.user.email };
+      fireAndForget(logSecurityEvent(event));
+      return {
+        response: new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+        session: null,
+      };
+    }
   }
 
-  // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag
-  if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
+  // A UNIT_ADMIN (real or the capped service-key stand-in above) additionally
+  // needs the `unitAdmins.canInvite` flag.
+  if (inviterRole !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
     return {
       response: denyByPolicy({
         policyKey: "unitAdmins.canInvite",
-        user: resolved.user,
+        user: inviter!.user,
         action,
         request,
       }),
@@ -233,7 +272,7 @@ export async function requireInviter(
     };
   }
 
-  return { response: null, session: resolved };
+  return { response: null, session: inviter as Session };
 }
 
 /**
@@ -257,13 +296,12 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "MISSING_SERVICE_KEY" }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const token = authHeader.slice(7);
   const envKey = process.env.EDUAI_API_KEY;
 
   if (!envKey) {
@@ -276,16 +314,13 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const tokenHash = createHash("sha256").update(token).digest();
-  const keyHash   = createHash("sha256").update(envKey).digest();
-
-  if (!timingSafeEqual(tokenHash, keyHash)) {
+  if (!hasValidServiceKey(request)) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),
@@ -295,11 +330,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return null;
 }
+
+// Defined in service-key.server so trust-elevation callers can import the pure
+// predicate without the guard machinery; re-exported here for existing callers.
+export { hasValidServiceKey };

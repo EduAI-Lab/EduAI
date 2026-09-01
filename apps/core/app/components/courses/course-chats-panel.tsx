@@ -1,45 +1,44 @@
-import { useState } from 'react'
-import { Card, CardContent, Button } from '@eduai/ui'
-import { useChatDetail, useCourseChats, type CourseChatSummary } from '~/hooks/api/use-course-chats'
+import type { JsonValue } from "~/lib/json-value";
+import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
+import { useState } from "react";
+import { Card, CardContent, Button } from "@eduai/ui";
+import {
+  useChatDetail,
+  useCourseChats,
+  type CourseChatSummary,
+} from "~/hooks/api/use-course-chats";
 
 /** Best-effort plain-text extraction from a stored chat message `content` JSON. */
-function messageText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (content && typeof content === 'object') {
-    const obj = content as Record<string, unknown>
-    if (typeof obj.content === 'string') return obj.content
-    if (Array.isArray(obj.parts)) {
-      return obj.parts
-        .map((p) =>
-          p && typeof p === 'object' && typeof (p as Record<string, unknown>).text === 'string'
-            ? (p as Record<string, unknown>).text
-            : '',
-        )
-        .join('')
-    }
-    if (Array.isArray(obj.content)) {
-      return obj.content
-        .map((p) =>
-          p && typeof p === 'object' && typeof (p as Record<string, unknown>).text === 'string'
-            ? (p as Record<string, unknown>).text
-            : '',
-        )
-        .join('')
-    }
+function partText(part: JsonValue | undefined): string {
+  return asText(asJsonObject(part)?.text) ?? "";
+}
+
+function messageText(content: JsonValue | undefined): string {
+  const plain = asText(content);
+  if (plain !== null) return plain;
+
+  const fields = asJsonObject(content);
+  if (fields) {
+    const inner = asText(fields.content);
+    if (inner !== null) return inner;
+    const parts = asJsonArray(fields.parts);
+    if (parts) return parts.map(partText).join("");
+    const contentParts = asJsonArray(fields.content);
+    if (contentParts) return contentParts.map(partText).join("");
   }
-  return ''
+  return "";
 }
 
 function ChatMessageViewer({ chatId }: { chatId: string }) {
-  const { chat, loading, error } = useChatDetail(chatId)
+  const { chat, loading, error, hasMore, loadingMore, loadMore } = useChatDetail(chatId);
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading chat…</p>
+    return <p className="text-sm text-muted-foreground">Loading chat…</p>;
   }
   if (error) {
-    return <p className="text-sm text-destructive">{error}</p>
+    return <p className="text-sm text-destructive">{error}</p>;
   }
-  if (!chat) return null
+  if (!chat) return null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -53,16 +52,30 @@ function ChatMessageViewer({ chatId }: { chatId: string }) {
           </div>
         ))
       )}
+      {hasMore && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          disabled={loadingMore}
+          onClick={() => void loadMore()}
+        >
+          {loadingMore ? "Loading…" : "Load more messages"}
+        </Button>
+      )}
     </div>
-  )
+  );
 }
 
 interface Props {
-  chats: CourseChatSummary[]
-  loading?: boolean
-  error?: string | null
+  chats: CourseChatSummary[];
+  loading?: boolean;
+  error?: string | null;
   /** Optional extra label rendered next to each chat (e.g. the course code in a unit view). */
-  secondaryLabel?: (chatId: string) => string | null
+  secondaryLabel?: (chatId: string) => string | null;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 /**
@@ -70,8 +83,16 @@ interface Props {
  * chat's messages. The backend is the security boundary — this only renders what
  * the gated endpoints already return.
  */
-export function CourseChatsPanel({ chats, loading = false, error = null, secondaryLabel }: Props) {
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
+export function CourseChatsPanel({
+  chats,
+  loading = false,
+  error = null,
+  secondaryLabel,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+}: Props) {
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -80,62 +101,69 @@ export function CourseChatsPanel({ chats, loading = false, error = null, seconda
           Loading chats…
         </CardContent>
       </Card>
-    )
+    );
   }
   if (error) {
     return (
       <Card>
         <CardContent className="py-6 text-sm text-destructive">{error}</CardContent>
       </Card>
-    )
+    );
   }
-  if (chats.length === 0) {
+  // Unit chats can return `{ chats: [], nextCursor }` when early batches are
+  // all staff chats — only treat as truly empty once the stream is exhausted.
+  if (chats.length === 0 && !hasMore) {
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
           No chats yet.
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
     <div className="grid gap-4 md:grid-cols-[20rem_1fr]">
       <div className="grid gap-2 content-start">
         {chats.map((chat) => {
-          const extra = secondaryLabel?.(chat.id)
+          const extra = secondaryLabel?.(chat.id);
           return (
             <Button
               key={chat.id}
-              variant={selectedChatId === chat.id ? 'default' : 'outline'}
+              variant={selectedChatId === chat.id ? "default" : "outline"}
               className="h-auto flex-col items-start gap-0.5 py-2 text-left"
               onClick={() => setSelectedChatId(chat.id)}
             >
               <span className="text-sm font-medium truncate w-full">
-                {chat.title || 'Untitled chat'}
+                {chat.title || "Untitled chat"}
               </span>
               <span className="text-xs text-muted-foreground truncate w-full">
                 {chat.ownerName ?? chat.ownerId}
-                {extra ? ` · ${extra}` : ''}
+                {extra ? ` · ${extra}` : ""}
               </span>
               <span className="text-xs text-muted-foreground">
                 {new Date(chat.updatedAt).toLocaleString()}
               </span>
             </Button>
-          )
+          );
         })}
+        {hasMore && (
+          <Button variant="outline" size="sm" disabled={loadingMore} onClick={() => onLoadMore?.()}>
+            {loadingMore ? "Loading…" : "Load more chats"}
+          </Button>
+        )}
       </div>
       <Card>
         <CardContent className="pt-6">
           {selectedChatId ? (
-            <ChatMessageViewer chatId={selectedChatId} />
+            <ChatMessageViewer key={selectedChatId} chatId={selectedChatId} />
           ) : (
             <p className="text-sm text-muted-foreground">Select a chat to view its messages.</p>
           )}
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
 /**
@@ -145,6 +173,15 @@ export function CourseChatsPanel({ chats, loading = false, error = null, seconda
  * which no longer grants staff access to other users' chats.
  */
 export function CourseChatsTab({ courseId }: { courseId: string }) {
-  const { chats, loading, error } = useCourseChats(courseId)
-  return <CourseChatsPanel chats={chats} loading={loading} error={error} />
+  const { chats, loading, error, hasMore, loadingMore, loadMore } = useCourseChats(courseId);
+  return (
+    <CourseChatsPanel
+      chats={chats}
+      loading={loading}
+      error={error}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      onLoadMore={loadMore}
+    />
+  );
 }

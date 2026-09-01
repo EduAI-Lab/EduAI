@@ -9,6 +9,7 @@ vi.mock("~/lib/prisma.server", () => ({
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      delete: vi.fn(),
     },
     canvasMaterialExclusion: {
       findMany: vi.fn(),
@@ -31,7 +32,12 @@ vi.mock("~/lib/canvas/client.server", () => ({
   listCanvasCourseFiles: vi.fn(),
   downloadCanvasFile: vi.fn(),
   computeCanvasFilePublishState: (
-    file: { hidden?: boolean; locked?: boolean; lock_at?: string | null; unlock_at?: string | null },
+    file: {
+      hidden?: boolean;
+      locked?: boolean;
+      lock_at?: string | null;
+      unlock_at?: string | null;
+    },
     now: Date = new Date(),
   ) => {
     if (file.hidden || file.locked) {
@@ -107,6 +113,8 @@ beforeEach(() => {
   });
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
+  vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
+  vi.mocked(prisma.courseMaterial.delete).mockResolvedValue({ id: "mat-1" } as never);
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
 });
@@ -148,9 +156,7 @@ describe("discoverCanvasMaterialsForCourse", () => {
   });
 
   it("flags an unpublished Canvas file as not importable", async () => {
-    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
-    ]);
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
 
     const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
 
@@ -167,12 +173,70 @@ describe("discoverCanvasMaterialsForCourse", () => {
     expect(files[0]).toMatchObject({ isExcluded: true });
   });
 
-  it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
+  // #225 CANVAS-11: unsupported mime/extension filtered; extension map rescues mismatched type.
+  it("omits files with no extension and no supported content-type", async () => {
     vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
+      {
+        ...CANVAS_FILE,
+        id: 2001,
+        display_name: "binary_blob",
+        filename: "binary_blob",
+        "content-type": "application/octet-stream",
+      },
     ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files).toHaveLength(0);
+  });
+
+  it("accepts a file whose content-type mismatches but extension maps to an allowed mime", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      {
+        ...CANVAS_FILE,
+        id: 2002,
+        display_name: "slides.pdf",
+        filename: "slides.pdf",
+        "content-type": "application/octet-stream",
+      },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({
+      canvasFileId: "2002",
+      displayName: "slides.pdf",
+      mimeType: "application/pdf",
+      importStatus: "not_imported",
+    });
+  });
+
+  it("uses the supported extension when Canvas reports a conflicting text MIME", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      {
+        ...CANVAS_FILE,
+        id: 2003,
+        display_name: "lecture.pdf",
+        filename: "lecture.pdf",
+        "content-type": "text/plain",
+      },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]?.mimeType).toBe("application/pdf");
+  });
+
+  it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
-      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+      {
+        id: "mat-existing",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: null,
+      },
     ] as never);
 
     await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
@@ -182,11 +246,14 @@ describe("discoverCanvasMaterialsForCourse", () => {
   });
 
   it("sets unpublishedAt on a previously-imported material that becomes unpublished when recheckPublishState is opted into", async () => {
-    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
-    ]);
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
-      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+      {
+        id: "mat-existing",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: null,
+      },
     ] as never);
 
     await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
@@ -239,6 +306,28 @@ describe("discoverCanvasMaterialsForCourse", () => {
       data: { unpublishedAt: expect.any(Date) },
     });
   });
+
+  // CANVAS-05 (#225 / #1195): files deleted from Canvas are unpublished on recheck.
+  it("sets unpublishedAt when a previously-imported file is missing from Canvas", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      {
+        id: "mat-deleted-on-canvas",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: null,
+      },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-deleted-on-canvas"] } },
+      data: { unpublishedAt: expect.any(Date) },
+    });
+  });
 });
 
 describe("syncSelectedCanvasMaterials", () => {
@@ -247,25 +336,88 @@ describe("syncSelectedCanvasMaterials", () => {
 
     expect(result.imported).toBe(1);
     expect(result.failed).toHaveLength(0);
-    expect(processUploadedFile).toHaveBeenCalled();
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ fileSize: 5, title: "Lecture 1" }),
+      }),
+    );
+    expect(vi.mocked(processUploadedFile).mock.calls[0]?.[0].name).toBe("Lecture 1.txt");
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
   });
 
-  it("skips a soft-deleted material instead of reviving it on re-sync", async () => {
+  it("marks PROCESSING before extraction and FAILED when extraction throws (#1018)", async () => {
+    const deletedAt = new Date("2025-01-12T00:00:00.000Z");
+    const unpublishedAt = new Date("2025-01-13T00:00:00.000Z");
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
-      id: "mat-deleted",
+      id: "mat-existing",
       status: "READY",
       canvasUpdatedAt: new Date("2025-01-09T00:00:00.000Z"),
-      deletedAt: new Date("2025-01-12T00:00:00.000Z"),
+      deletedAt,
+      deletedBy: "instructor-1",
+      unpublishedAt,
     } as never);
+    vi.mocked(processUploadedFile).mockRejectedValueOnce(
+      new Error("PDF extraction worker was killed"),
+    );
 
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
 
-    expect(result.skipped).toBe(1);
-    expect(result.imported).toBe(0);
-    expect(result.updated).toBe(0);
-    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(prisma.courseMaterial.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "mat-existing" },
+      data: {
+        status: "PROCESSING",
+        uploadedBy: "user-1",
+        canvasUpdatedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenNthCalledWith(2, {
+      where: { id: "mat-existing" },
+      data: { status: "FAILED" },
+    });
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("restores a soft-deleted material when the instructor re-syncs it", async () => {
+    const deletedAt = new Date("2025-01-12T00:00:00.000Z");
+    const unpublishedAt = new Date("2025-01-13T00:00:00.000Z");
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce({
+        id: "mat-deleted",
+        status: "READY",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        deletedAt,
+        deletedBy: "instructor-1",
+        unpublishedAt,
+      } as never)
+      .mockResolvedValueOnce(null);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(0);
+    expect(result.imported).toBe(0);
+    expect(result.updated).toBe(1);
+    expect(prisma.courseMaterial.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "mat-deleted" },
+      data: {
+        status: "PROCESSING",
+        uploadedBy: "user-1",
+        canvasUpdatedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenLastCalledWith({
+      where: { id: "mat-deleted" },
+      data: {
+        status: "READY",
+        processedAt: expect.any(Date),
+        deletedAt: null,
+        deletedBy: null,
+        unpublishedAt: null,
+      },
+    });
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-deleted", "hello", {
+      replace: true,
+    });
   });
 
   it("reports failure for unknown file ids", async () => {
@@ -278,9 +430,7 @@ describe("syncSelectedCanvasMaterials", () => {
   });
 
   it("skips and reports an unpublished file without importing it", async () => {
-    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
-      { ...CANVAS_FILE, hidden: true },
-    ]);
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([{ ...CANVAS_FILE, hidden: true }]);
 
     const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
 
@@ -302,6 +452,180 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "excluded" }]);
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
+
+  // #225 CANVAS-08: oversized files fail before download; checksum collision skips import.
+  it("rejects a file over 50 MB before calling downloadCanvasFile", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, size: 50 * 1024 * 1024 + 1 },
+    ]);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.imported).toBe(0);
+    expect(result.failed).toEqual([
+      expect.objectContaining({
+        canvasFileId: "1001",
+        message: expect.stringMatching(/File too large.*max 50 MB/i),
+      }),
+    ]);
+    expect(downloadCanvasFile).not.toHaveBeenCalled();
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
+  it("skips import when another material already owns the same checksum", async () => {
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      title: "Lecture 1.txt",
+      mimeType: "text/plain",
+      fileSize: 5,
+      checksum: "shared-checksum",
+      content: "hello",
+    });
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing lookup
+      .mockResolvedValueOnce({ id: "mat-other", status: "READY" } as never) // pre-check duplicate
+      .mockResolvedValueOnce({ id: "mat-other", status: "READY" } as never); // winner confirmation
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
+    // Provisional PROCESSING row is created before extraction (#1018), then
+    // rolled back when another material already owns the content checksum.
+    expect(prisma.courseMaterial.create).toHaveBeenCalled();
+    expect(prisma.courseMaterial.delete).toHaveBeenCalledWith({ where: { id: "mat-1" } });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495: the dedupe pre-check and the finalize write are not atomic, so a
+  // concurrent import of a file with identical extracted text can win the
+  // content hash between them. The DB unique constraint is the real guard.
+  it("resolves a lost content-hash race (P2002 on the finalize update) as a skip, not a raw error", async () => {
+    // existing → null, pre-check duplicate → null, then after the P2002 the
+    // winner lookup confirms a healthy winner owns the checksum.
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "mat-other", status: "READY" } as never);
+    // create (provisional) resolves; finalize update loses the race with P2002.
+    vi.mocked(prisma.courseMaterial.update).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
+    expect(result.failed).toHaveLength(0);
+    // Loser's provisional row is dropped; the winner's content is untouched.
+    expect(prisma.courseMaterial.delete).toHaveBeenCalledWith({ where: { id: "mat-1" } });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495: the loser must confirm a real winner before dropping its own row. If
+  // the row that won the unique index has vanished (deleted / rolled back after
+  // the collision), skipping would make this file silently disappear — mark it
+  // FAILED and report it instead.
+  it("marks the row FAILED when the finalize P2002 winner has vanished", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing
+      .mockResolvedValueOnce(null) // pre-check duplicate
+      .mockResolvedValueOnce(null); // winner lookup — gone
+    vi.mocked(prisma.courseMaterial.update).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    // The loser's provisional row is not deleted — it is marked FAILED so it
+    // surfaces for a re-sync rather than vanishing.
+    expect(prisma.courseMaterial.delete).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "mat-1" }, data: { status: "FAILED" } }),
+    );
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495: a FAILED winner is not a good surviving copy either — deferring to it
+  // would leave no READY material for this content, so treat it as a failure.
+  it("marks the row FAILED when the finalize P2002 winner is itself FAILED", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing
+      .mockResolvedValueOnce(null) // pre-check duplicate
+      .mockResolvedValueOnce({ id: "mat-other", status: "FAILED" } as never); // winner is FAILED
+    vi.mocked(prisma.courseMaterial.update).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(prisma.courseMaterial.delete).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "mat-1" }, data: { status: "FAILED" } }),
+    );
+  });
+
+  // #1495 window 2: two concurrent syncs of the same canvasFileId both pass the
+  // `existing === null` check and both create with `canvas-pending:<id>`.
+  it("resolves a provisional-checksum create race (P2002 on create) as a skip", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing
+      .mockResolvedValueOnce({ id: "mat-other", status: "PROCESSING" } as never); // healthy winner
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
+    expect(result.failed).toHaveLength(0);
+    // The loser backs off before doing any extraction work.
+    expect(processUploadedFile).not.toHaveBeenCalled();
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495: a create P2002 whose concurrent owner has vanished has no import in
+  // flight to finish the file, so it must be reported, not silently skipped.
+  it("reports failure when the create P2002 concurrent owner has vanished", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing
+      .mockResolvedValueOnce(null); // concurrent owner lookup — gone
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
+  // #1495: the concurrent owner existing is not enough — if the importer that
+  // claimed the provisional row then died, that row is FAILED and there is no
+  // usable copy of the file, so skipping here would report success over missing
+  // content. Mirrors the finalize path's healthy-winner check.
+  it("reports failure when the create P2002 concurrent owner is itself FAILED", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // existing
+      .mockResolvedValueOnce({ id: "mat-other", status: "FAILED" } as never); // owner is FAILED
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValueOnce({ code: "P2002" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(processUploadedFile).not.toHaveBeenCalled();
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1495: a non-duplicate failure on the finalize write must mark the row
+  // FAILED, never leave it stranded in PROCESSING.
+  it("marks the row FAILED when the finalize update throws a non-duplicate error", async () => {
+    vi.mocked(prisma.courseMaterial.update).mockRejectedValueOnce(new Error("db unavailable"));
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.failed).toEqual([expect.objectContaining({ canvasFileId: "1001" })]);
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "mat-1" }, data: { status: "FAILED" } }),
+    );
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
 });
 
 describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
@@ -320,9 +644,7 @@ describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
   it("is idempotent when excluding an already-excluded file", async () => {
     vi.mocked(prisma.canvasMaterialExclusion.upsert).mockResolvedValue({} as never);
 
-    await expect(
-      excludeCanvasMaterial("user-1", "core-course-1", "1001"),
-    ).resolves.toBeUndefined();
+    await expect(excludeCanvasMaterial("user-1", "core-course-1", "1001")).resolves.toBeUndefined();
   });
 
   it("deletes the exclusion row on unexclude", async () => {

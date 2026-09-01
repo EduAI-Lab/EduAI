@@ -20,6 +20,7 @@ import { loader, action } from "~/routes/api/me";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const PROFILE = {
   id: "u1",
@@ -34,16 +35,15 @@ const PROFILE = {
   updatedAt: new Date("2026-01-01"),
 };
 
-function makeArgs(method = "GET", body?: unknown, headers?: Record<string, string>) {
+function makeArgs(method = "GET", body?: RouteRequestBody, headers?: Record<string, string>) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = {
+    method,
+    headers: { "Content-Type": "application/json", ...headers },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/me", {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request("http://localhost/api/me", init),
     params: {},
     context: {} as never,
   } as any;
@@ -141,5 +141,32 @@ describe("PATCH /api/me (#297)", () => {
     const res = await action(makeArgs("PATCH", { name: "x" }));
     expect(res.status).toBe(400);
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+// #1453 — the profile carries email, name and role, all scoped to
+// `session.user.id`. The browser cache key is method + URL with no session
+// component and logout does not purge it, so nothing here may be stored: on a
+// shared profile a stored body is handed to whoever logs in next.
+describe("GET /api/me Cache-Control (#1453)", () => {
+  it("forbids storing the profile", async () => {
+    mockUser();
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the 401", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(401);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing a 404 (the row can appear at any time)", async () => {
+    mockUser();
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(404);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 });

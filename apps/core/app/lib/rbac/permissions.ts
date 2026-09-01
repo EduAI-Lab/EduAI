@@ -1,89 +1,89 @@
-import type { CourseAccess, RbacUser } from './types'
+import type { CourseAccess, RbacUser } from "./types";
 // Type-only import (erased at runtime) — keeps this module free of the
 // prisma-importing policy.server while sharing the PolicyKey union.
-import type { PolicyKey } from '~/lib/policy.server'
+import type { PolicyKey } from "~/lib/policy.server";
 
 // §5 Course Management
 // ADMIN can create any course; UNIT_ADMIN can create courses in their authorized units
 export function canCreateCourse(user: RbacUser): boolean {
-  return user.role === 'ADMIN' || user.role === 'UNIT_ADMIN'
+  return user.role === "ADMIN" || user.role === "UNIT_ADMIN";
 }
 
 export function canEditCourse(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor'
+  return access === "admin" || access === "unit" || access === "instructor";
 }
 
 export function canPublishCourse(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor'
+  return access === "admin" || access === "unit" || access === "instructor";
 }
 
 export function canDeleteCourse(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor'
+  return access === "admin" || access === "unit" || access === "instructor";
 }
 
 // §6 Enrollment Management
 export function canViewEnrollments(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta'
+  return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
 export function canManageStudents(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor'
+  return access === "admin" || access === "unit" || access === "instructor";
 }
 
 // Instructor add/remove is ADMIN and UNIT_ADMIN only (§6)
 export function canManageInstructors(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit'
+  return access === "admin" || access === "unit";
 }
 
 // §7 Course Materials
 export function canUploadMaterial(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta'
+  return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
 export function canViewMaterial(access: CourseAccess, isPublished: boolean): boolean {
-  if (!access) return false
-  if (access === 'student') return isPublished
-  return true
+  if (!access) return false;
+  if (access === "student") return isPublished;
+  return true;
 }
 
-// TA can only delete their own uploads; instructor/admin/unit can delete any
+// TA can only delete their own uploads; instructor/admin/unit can delete any.
+// `uploadedBy` is nullable (the uploader's FK is SetNull on user delete) — a
+// null uploader has no owner, so a TA must never match it (#225 AUTH-08).
 export function canDeleteMaterial(
   access: CourseAccess,
   userId: string,
-  uploadedBy: string,
+  uploadedBy: string | null,
 ): boolean {
-  if (access === 'admin' || access === 'unit' || access === 'instructor') return true
-  if (access === 'ta') return userId === uploadedBy
-  return false
+  if (access === "admin" || access === "unit" || access === "instructor") return true;
+  if (access === "ta") return uploadedBy !== null && userId === uploadedBy;
+  return false;
 }
 
-// Rename mirrors delete: TA can rename only their own uploads; instructor/admin/unit any
+// Rename mirrors delete: TA can rename only their own uploads; instructor/admin/unit any.
+// Same null-uploader fail-closed rule as canDeleteMaterial (#225 AUTH-08).
 export function canRenameMaterial(
   access: CourseAccess,
   userId: string,
-  uploadedBy: string,
+  uploadedBy: string | null,
 ): boolean {
-  if (access === 'admin' || access === 'unit' || access === 'instructor') return true
-  if (access === 'ta') return userId === uploadedBy
-  return false
+  if (access === "admin" || access === "unit" || access === "instructor") return true;
+  if (access === "ta") return uploadedBy !== null && userId === uploadedBy;
+  return false;
 }
 
 // §8 Course Topics
 export function canViewTopics(access: CourseAccess, isPublished: boolean): boolean {
-  if (!access) return false
-  if (access === 'student') return isPublished
-  return true
+  if (!access) return false;
+  if (access === "student") return isPublished;
+  return true;
 }
 
 // A TA may manage topics only when the `tas.canManageTopics` grant is on; pass
 // the policy value in from usePolicies() so the UI mirrors backend enforcement.
-export function canManageTopics(
-  access: CourseAccess,
-  taCanManageTopics = false,
-): boolean {
-  if (access === 'admin' || access === 'unit' || access === 'instructor') return true
-  if (access === 'ta') return taCanManageTopics
-  return false
+export function canManageTopics(access: CourseAccess, taCanManageTopics = false): boolean {
+  if (access === "admin" || access === "unit" || access === "instructor") return true;
+  if (access === "ta") return taCanManageTopics;
+  return false;
 }
 
 // §5c Course chat visibility
@@ -94,18 +94,18 @@ export function canManageTopics(
 // performs staff oversight, so the two cannot drift. Returns the policy flag
 // that gates the level, or the sentinels 'always' (ADMIN — no flag needed) /
 // 'never' (TA/STUDENT/none — no flag can grant it).
-export type ChatViewGate = PolicyKey | 'always' | 'never'
+export type ChatViewGate = PolicyKey | "always" | "never";
 
 export function courseChatViewPolicyKey(access: CourseAccess): ChatViewGate {
   switch (access) {
-    case 'admin':
-      return 'always'
-    case 'instructor':
-      return 'instructors.canViewCourseChats'
-    case 'unit':
-      return 'unitAdmins.canViewUnitChats'
+    case "admin":
+      return "always";
+    case "instructor":
+      return "instructors.canViewCourseChats";
+    case "unit":
+      return "unitAdmins.canViewUnitChats";
     default:
-      return 'never'
+      return "never";
   }
 }
 
@@ -114,19 +114,19 @@ export function courseChatViewPolicyKey(access: CourseAccess): ChatViewGate {
 // courseChatViewPolicyKey so the enrollments and TA routes share one source.
 export function manageEnrollmentsPolicyKey(access: CourseAccess): ChatViewGate {
   switch (access) {
-    case 'admin':
-    case 'unit':
-      return 'always'
-    case 'instructor':
-      return 'instructors.canManageEnrollments'
+    case "admin":
+    case "unit":
+      return "always";
+    case "instructor":
+      return "instructors.canManageEnrollments";
     default:
-      return 'never'
+      return "never";
   }
 }
 
 // Course-scoped capabilities whose policy gate is resolved centrally, so adding
 // a flag is one entry here instead of an edit to every route that enforces it.
-export type CourseCapability = 'viewChats' | 'manageEnrollments'
+export type CourseCapability = "viewChats" | "manageEnrollments";
 
 // Resolve the policy gate governing `capability` for a given access level —
 // a PolicyKey to check, or the 'always'/'never' sentinels. Pair with `getPolicy`
@@ -136,10 +136,10 @@ export function resolvePolicyGate(
   capability: CourseCapability,
 ): ChatViewGate {
   switch (capability) {
-    case 'viewChats':
-      return courseChatViewPolicyKey(access)
-    case 'manageEnrollments':
-      return manageEnrollmentsPolicyKey(access)
+    case "viewChats":
+      return courseChatViewPolicyKey(access);
+    case "manageEnrollments":
+      return manageEnrollmentsPolicyKey(access);
   }
 }
 
@@ -149,13 +149,13 @@ export function canViewCourseChats(
   access: CourseAccess,
   policies: Partial<Record<PolicyKey, boolean>>,
 ): boolean {
-  const gate = courseChatViewPolicyKey(access)
-  if (gate === 'always') return true
-  if (gate === 'never') return false
-  return policies[gate] ?? false
+  const gate = courseChatViewPolicyKey(access);
+  if (gate === "always") return true;
+  if (gate === "never") return false;
+  return policies[gate] ?? false;
 }
 
 // §19 Cross-cutting
 export function isStudentAccess(access: CourseAccess): boolean {
-  return access === 'student'
+  return access === "student";
 }

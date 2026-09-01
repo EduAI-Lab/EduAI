@@ -84,14 +84,19 @@ describe("UpdateCourseSchema", () => {
 });
 
 describe("UpdateCourseRagSettingsSchema", () => {
-  it("accepts valid ragTopK and ragSimilarityThreshold", () => {
+  it("accepts scope guardrail and valid RAG settings", () => {
     const result = UpdateCourseRagSettingsSchema.safeParse({
+      courseScopeGuardrailEnabled: false,
       ragTopK: 6,
       ragSimilarityThreshold: 0.6,
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data).toEqual({ ragTopK: 6, ragSimilarityThreshold: 0.6 });
+      expect(result.data).toEqual({
+        courseScopeGuardrailEnabled: false,
+        ragTopK: 6,
+        ragSimilarityThreshold: 0.6,
+      });
     }
   });
 
@@ -120,6 +125,14 @@ describe("UpdateCourseRagSettingsSchema", () => {
       false,
     );
   });
+
+  it("rejects non-boolean scope guardrail values", () => {
+    expect(
+      UpdateCourseRagSettingsSchema.safeParse({
+        courseScopeGuardrailEnabled: "false",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("CreateCourseTopicSchema", () => {
@@ -143,8 +156,8 @@ describe("DeleteCourseTopicSchema", () => {
   });
 
   it("accepts both fields together", () => {
-    expect(
-      DeleteCourseTopicSchema.safeParse({ topicId: "t1", name: "Algebra" }).success,
-    ).toBe(true);
+    expect(DeleteCourseTopicSchema.safeParse({ topicId: "t1", name: "Algebra" }).success).toBe(
+      true,
+    );
   });
 });

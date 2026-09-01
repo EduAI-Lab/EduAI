@@ -1,6 +1,17 @@
 /**
- * Local vLLM-only routing — research stack uses tier 1 (7B) + tier 3 (32B) only.
- * Cloud tier-2 (Gemini) is excluded from Auto routing when VLLM is configured.
+ * Local vLLM-only routing — research stack uses tier 1 (small) + tier 3
+ * (large) only. Cloud tier-2 (Gemini) is excluded from Auto routing when
+ * VLLM is configured.
+ *
+ * Tier 2 is not merely unused by convention — `normalizePickForLocalVllm`
+ * below actively remaps every tier-2 pick to tier 3 whenever
+ * `isLocalVllmRouting()` is true, and no rule in `../rules.ts` ever targets
+ * tier 2 in the first place. Tagging an `AIModel` row `TIER_2` in a
+ * local-vLLM deployment is therefore harmless but inert: it will never
+ * receive Auto traffic. This is deliberate (avoids paying for a cloud call
+ * on a research/local deployment), not a bug — but it means "which tiers
+ * actually route on this deployment" cannot be read off the `RouterTier`
+ * enum alone; it depends on `VLLM_BASE_URL`/`ROUTING_LOCAL_VLLM_ONLY`.
  */
 
 import type { PickSpec } from "./tiers";
@@ -13,13 +24,9 @@ export function isLocalVllmRouting(): boolean {
   return Boolean(process.env.VLLM_BASE_URL?.trim());
 }
 
-/** Map legacy tier-2 (cloud overflow) picks to tier 3 (32B vLLM). */
+/** Map legacy tier-2 (cloud overflow) picks to tier 3 (large local vLLM model). */
 export function normalizePickForLocalVllm(pick: PickSpec): PickSpec {
   if (!isLocalVllmRouting()) {
-    return pick;
-  }
-
-  if (pick.kind === "minTier" && pick.requireImages) {
     return pick;
   }
 
@@ -34,10 +41,25 @@ export function normalizePickForLocalVllm(pick: PickSpec): PickSpec {
   return pick;
 }
 
-export function localVllmFallbackModelId(): string {
-  return "vllm:qwen2.5-32b-instruct";
-}
-
 export function isVllmRegistryId(registryId: string): boolean {
   return registryId.startsWith("vllm:");
+}
+
+/**
+ * True when a tier-3 pick from Auto routing would actually be able to call
+ * tools at runtime, mirroring `/api/chat`'s own gate
+ * (`useToolCalling = supportsTools && !effectiveForceHybridRag`).
+ *
+ * vLLM chat forces the tool-less hybrid-RAG path unless `VLLM_CHAT_TOOLS=1`
+ * (see `routes/api/chat.ts`), regardless of whether the picked model's DB row
+ * has `supportsTools: true` — so a routing rule that escalates to a
+ * "tool-capable" tier without checking this will select a tier the caller
+ * can't actually use tools on. Non-vLLM (cloud) routing has no such runtime
+ * gate, so it is always effectively available there.
+ */
+export function isEffectiveToolCallingAvailable(): boolean {
+  if (!isLocalVllmRouting()) {
+    return true;
+  }
+  return process.env.VLLM_CHAT_TOOLS === "1";
 }

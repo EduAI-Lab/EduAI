@@ -1,0 +1,9 @@
+# docs/PICT_CENSUS.md § S7 — createQuestion (#1186)
+# lib/questions/server.ts:45 — six-outcome error taxonomy (5 errors + success), precedence:
+# schema validation -> course existence -> primary topic existence/non-deleted -> exact
+# self-duplicate -> secondary topic existence/non-deleted (folded) -> success.
+Validity:          valid, invalid
+Course:            exists, missing
+PrimaryTopic:      exists, missing, deleted
+SecondaryTopicIds: none, valid, duplicate-primary, all-missing, all-deleted, mixed-missing-and-deleted
+Type:              MCQ, SA, LA

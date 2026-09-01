@@ -28,13 +28,14 @@ import { auth } from "~/lib/auth/server";
 import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import { logAuditAction } from "~/lib/logging.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const POLICIES = { "instructors.canCreateCourses": true };
 
 function get(headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/policies", { method: "GET", headers });
 }
-function patch(body: unknown) {
+function patch(body: RouteRequestBody) {
   return new Request("http://localhost/api/policies", {
     method: "PATCH",
     body: JSON.stringify(body),
@@ -46,7 +47,10 @@ beforeEach(() => {
   vi.mocked(getPolicies).mockResolvedValue(POLICIES as any);
   vi.mocked(getPolicyDefinitions).mockReturnValue([]);
   vi.mocked(isPolicyKey).mockReturnValue(true);
-  vi.mocked(requireAdmin).mockResolvedValue({ response: null, session: { user: { id: "a1", role: "ADMIN" } } } as any);
+  vi.mocked(requireAdmin).mockResolvedValue({
+    response: null,
+    session: { user: { id: "a1", role: "ADMIN" } },
+  } as any);
 });
 
 describe("GET /api/policies", () => {
@@ -70,8 +74,12 @@ describe("GET /api/policies", () => {
   it("serves a logged-in user their policy values even when a stray Bearer header is present (not diverted to the service-key path)", async () => {
     // A proxy/SDK may attach an Authorization: Bearer header to a real user
     // request; it must NOT route them through requireServiceKey and 403 them.
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
-    const res = await loader({ request: get({ Authorization: "Bearer not-the-service-key" }) } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as any);
+    const res = await loader({
+      request: get({ Authorization: "Bearer not-the-service-key" }),
+    } as any);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("policies");
@@ -91,7 +99,9 @@ describe("GET /api/policies", () => {
   it("returns policy values (no definitions) for a non-admin session", async () => {
     // Non-admins may read flag VALUES so the client can mirror backend gates;
     // only ADMIN receives the toggle DEFINITIONS for the settings UI.
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as any);
     const res = await loader({ request: get() } as any);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -112,8 +122,13 @@ describe("GET /api/policies", () => {
 
 describe("PATCH /api/policies", () => {
   it("toggles a flag for an ADMIN and returns the updated policies", async () => {
-    vi.mocked(requireAdmin).mockResolvedValue({ response: null, session: { user: { id: "a1", role: "ADMIN" } } } as any);
-    const res = await action({ request: patch({ key: "instructors.canCreateCourses", value: false }) } as any);
+    vi.mocked(requireAdmin).mockResolvedValue({
+      response: null,
+      session: { user: { id: "a1", role: "ADMIN" } },
+    } as any);
+    const res = await action({
+      request: patch({ key: "instructors.canCreateCourses", value: false }),
+    } as any);
     expect(res.status).toBe(200);
     expect(setPolicy).toHaveBeenCalledWith("instructors.canCreateCourses", false, "a1");
   });
@@ -137,14 +152,19 @@ describe("PATCH /api/policies", () => {
       response: new Response(JSON.stringify({ error: "Forbidden: Admins only" }), { status: 403 }),
       session: null,
     } as any);
-    const res = await action({ request: patch({ key: "instructors.canCreateCourses", value: false }) } as any);
+    const res = await action({
+      request: patch({ key: "instructors.canCreateCourses", value: false }),
+    } as any);
     expect(res.status).toBe(403);
     expect(setPolicy).not.toHaveBeenCalled();
     expect(logAuditAction).not.toHaveBeenCalled();
   });
 
   it("404s an unknown policy key", async () => {
-    vi.mocked(requireAdmin).mockResolvedValue({ response: null, session: { user: { id: "a1", role: "ADMIN" } } } as any);
+    vi.mocked(requireAdmin).mockResolvedValue({
+      response: null,
+      session: { user: { id: "a1", role: "ADMIN" } },
+    } as any);
     vi.mocked(isPolicyKey).mockReturnValue(false);
     const res = await action({ request: patch({ key: "bogus", value: true }) } as any);
     expect(res.status).toBe(404);
@@ -153,5 +173,46 @@ describe("PATCH /api/policies", () => {
   it("405s a non-PATCH method", async () => {
     const res = await action({ request: get() } as any);
     expect(res.status).toBe(405);
+  });
+});
+
+// #1453 — the GET body varies by role (ADMIN additionally receives
+// `definitions`) while the browser cache key is method + URL with no role
+// component. A stored body is therefore served across roles in BOTH
+// directions, and the admin-gets-non-admin-body direction is the silent one:
+// `usePolicies` falls back to `[]` and the settings page renders zero toggles.
+// Every read path must agree on `no-store`.
+describe("GET /api/policies Cache-Control (#1453)", () => {
+  it("forbids storing the non-admin read", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
+    const res = await loader({ request: get() } as any);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the admin read (values plus definitions)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as any);
+    const res = await loader({ request: get() } as any);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("forbids storing the service-key read", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    const res = await loader({ request: get({ Authorization: "Bearer key" }) } as any);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  // The two bodies differ, which is exactly why neither may be stored.
+  it("returns definitions only to ADMIN", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as any);
+    const adminBody = await (await loader({ request: get() } as any)).json();
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
+    const studentBody = await (await loader({ request: get() } as any)).json();
+    expect(adminBody.definitions).toBeDefined();
+    expect(studentBody.definitions).toBeUndefined();
   });
 });

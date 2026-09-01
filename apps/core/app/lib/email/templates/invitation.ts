@@ -1,11 +1,14 @@
 import type { EmailMessage } from "~/lib/email/mailer.server";
+import { escapeHtml } from "~/lib/email/templates/escape-html";
 
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: "Administrator",
-  UNIT_ADMIN: "Unit Administrator",
-  INSTRUCTOR: "Instructor",
-  STUDENT: "Student",
-};
+// A `Map` because the key is a caller-supplied string, not a union this
+// file owns: an unrecognised one has to be able to miss.
+const ROLE_LABELS = new Map<string, string>([
+  ["ADMIN", "Administrator"],
+  ["UNIT_ADMIN", "Unit Administrator"],
+  ["INSTRUCTOR", "Instructor"],
+  ["STUDENT", "Student"],
+]);
 
 export type InvitationEmailInput = {
   to: string;
@@ -20,7 +23,7 @@ export type InvitationEmailInput = {
  * subject plus text and HTML bodies that point the invitee at the accept link.
  */
 export function buildInvitationEmail(input: InvitationEmailInput): EmailMessage {
-  const roleLabel = ROLE_LABELS[input.role] ?? input.role;
+  const roleLabel = ROLE_LABELS.get(input.role) ?? input.role;
   const inviter = input.inviterName?.trim() || "An administrator";
   const expires = input.expiresAt.toUTCString();
   const subject = `You've been invited to EduAI as ${roleLabel}`;
@@ -50,12 +53,4 @@ export function buildInvitationEmail(input: InvitationEmailInput): EmailMessage 
   `.trim();
 
   return { to: input.to, subject, text, html };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

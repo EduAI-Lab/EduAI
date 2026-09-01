@@ -2,6 +2,40 @@
 
 A production-ready chat platform with Retrieval-Augmented Generation (RAG) capabilities designed for plug-and-play usage. Seamlessly integrate course-aware Q&A functionality with support for multiple AI providers including Ollama, Google Gemini, and OpenAI.
 
+> **Scope note:** this document describes EduAI Core's own API generally. It predates this
+> repository's move into the EduAI monorepo and some of it (notably the chat endpoint path below) no
+> longer matches how Core is actually deployed alongside Question Maker. For what Question Maker's own
+> backend actually calls — verified against `app/backend/src/services/eduaiService.js` in this
+> extension — see **"How Question Maker calls EduAI"** below; treat the rest of this file as background
+> on Core, not as QM's own contract.
+
+## How Question Maker calls EduAI
+
+Question Maker's backend (`app/backend/src/services/eduaiService.js`) is a thin client around Core.
+It never talks to a course's vector index directly — everything below goes through Core's HTTP API,
+authenticated with `Authorization: Bearer <EDUAI_API_KEY>`, the caller's forwarded session cookie, or
+both at once (Core needs the cookie to resolve a per-user Core-stored provider key even on a
+service-key-authenticated call).
+
+| QM calls | Purpose |
+|---|---|
+| `POST {EDUAI_API_URL}/api/completion` | The actual chat/generation endpoint (`eduaiService.chat()`). Stateless: QM sends `{ systemPrompt, messages, model, apiKeys, streaming, routingContext: { feature: "question-maker", jobType: "background" }, courseId?, courseCode? }` on every call and reconstructs no history — there is no `chatId` concept on QM's side. `generateQuestions()` builds a generation- or extraction-specific system prompt and calls this same endpoint. |
+| `GET {EDUAI_API_URL}/api/ai-models?page=1&pageSize=200` | Model catalog (`listAIModels()`); QM falls back to a small hardcoded list (Gemini 2.5 Flash + the two campus vLLM sizes) if Core's catalog is empty or unreachable. |
+| `GET {EDUAI_API_URL}/api/courses?...` | Course listing/search, used for the EduAI course picker and course-code resolution (paginated per Core's `#1041` contract — QM always sends `page`/`pageSize`, capped at 200). |
+| `GET {EDUAI_API_URL}/api/courses/:courseId/topics` | Topic catalog for a linked course. |
+| `GET/POST/DELETE /api/eduai/provider-settings` (proxied 1:1 from `app/frontend`) | Session-cookie-authenticated CRUD for a user's own AI provider key, stored and encrypted in Core (`services/coreApiService.js`'s `getUserProviderSettingsFromCore`/`upsertUserProviderSettingOnCore`). |
+| Canvas `/api/canvas/*` routes | Not AI, but the same Core base URL/auth pattern — see [features/CANVAS_EXPORT.md](features/CANVAS_EXPORT.md). |
+
+QM's own AI routes (`POST /api/eduai/chat`, `POST /api/eduai/generate-questions`,
+`POST /api/questions/extract`, `POST /api/questions/generate`) all funnel through the calls above; see
+[docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for the route-to-service map and
+`middleware/aiAdmission.js` for the caller-scoped rate limit / provider-call budget / deadline every
+one of them enforces before making a Core call.
+
+---
+
+## Core's general API (background, may not reflect the current deployment exactly)
+
 ## Table of Contents
 
 - [Features](#features)

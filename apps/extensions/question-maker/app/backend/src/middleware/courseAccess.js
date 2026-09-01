@@ -9,29 +9,32 @@
  *     caller-scoped endpoint, with no service-key path).
  *
  * A QM `Course` row is 1:1 with a Core course (unique `core_course_id`) and is
- * owned by whoever linked it. Access here is therefore resolved against the Core
- * enrollment/unit data, NOT QM ownership — except for courses not yet linked to
- * Core, where we fall back to owner-only instructor access.
+ * owned by whoever linked it. Access is resolved against Core enrollment/unit
+ * data only — local ownership is an FK, not an authorization grant (#1114).
+ * When Core is unreachable or enrollment resolution fails, access fails closed
+ * (returns null). Platform ADMIN short-circuits; UNIT_ADMIN uses the unit lock
+ * when department data is available.
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   getCourseEnrollmentsFromCore,
   getCourseFromCore,
   getMyProfileFromCore,
-} from '../services/coreApiService.js';
+} from "../services/coreApiService.js";
+import { assertQmAiDeadline } from "./aiAdmission.js";
 
 /** Resolved access levels and their numeric ranks (shared contract §3). */
 export const LEVELS = {
-  admin: { level: 'admin', rank: 4 },
-  unit: { level: 'unit', rank: 3 },
-  instructor: { level: 'instructor', rank: 2 },
-  ta: { level: 'ta', rank: 1 },
-  student: { level: 'student', rank: 0 },
+  admin: { level: "admin", rank: 4 },
+  unit: { level: "unit", rank: 3 },
+  instructor: { level: "instructor", rank: 2 },
+  ta: { level: "ta", rank: 1 },
+  student: { level: "student", rank: 0 },
 };
 
 /** Map a `min` option (level name or numeric rank) to a numeric rank. */
 export function minRank(min) {
-  if (typeof min === 'number') return min;
+  if (typeof min === "number") return min;
   return LEVELS[min]?.rank ?? LEVELS.instructor.rank;
 }
 
@@ -44,9 +47,12 @@ export function minRank(min) {
  * UNIT_ADMIN unit-lock check in the batched list path (#1072 unified contract)
  * without duplicating the "already on req.user vs fetch /api/me" logic.
  */
-export async function getAuthorizedUnits(reqUser, cookie) {
+export async function getAuthorizedUnits(reqUser, cookie, signal) {
   if (Array.isArray(reqUser.authorizedUnits)) return reqUser.authorizedUnits;
-  const profile = await getMyProfileFromCore(cookie).catch(() => null);
+  const profile = await getMyProfileFromCore(cookie, { signal }).catch(() => {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
+    return null;
+  });
   return Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
 }
 
@@ -55,37 +61,44 @@ export async function getAuthorizedUnits(reqUser, cookie) {
  * the `{ level, rank }` access or null. Use this when the course has already
  * been fetched (e.g. a resource loader eager-loaded it) to avoid a re-query.
  *
+ * Ownership alone never grants access (#1114): Core enrollment/unit data must
+ * authorize the caller. Fail closed when Core is unreachable.
+ *
  * @param {{id: string, role?: string, authorizedUnits?: string[]}} reqUser
  * @param {object} course  a loaded QM Course instance (must include userId + coreCourseId)
  * @param {{cookie?: string}} [opts]  caller cookie, forwarded to /api/me
  */
-export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
+export async function resolveAccessForCourse(reqUser, course, { cookie, signal } = {}) {
   if (!course) return null;
 
-  if (reqUser.role === 'ADMIN') return LEVELS.admin;
+  if (reqUser.role === "ADMIN") return LEVELS.admin;
 
-  // Course not yet linked to Core: no enrollment data exists, so fall back to
-  // owner-only instructor access (a TA/co-instructor has no access here).
+  // Course not yet linked to Core: no enrollment/unit data can authorize anyone.
   if (!course.coreCourseId) {
-    if (reqUser.id === course.userId) return LEVELS.instructor;
     return null;
   }
 
   // UNIT_ADMIN unit lock (§19): a null department is never a match.
-  if (reqUser.role === 'UNIT_ADMIN') {
+  if (reqUser.role === "UNIT_ADMIN") {
     let coreCourse = null;
     try {
       // Unified contract (#1072): `department` is a FIELD read — service-key
       // first, so the result never depends on the caller's own Core
       // enrollment (cookie remains the fallback when no key is configured).
-      coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
+      coreCourse = await getCourseFromCore(course.coreCourseId, {
+        cookie,
+        preferCookie: false,
+        signal,
+      });
     } catch {
-      if (reqUser.id === course.userId) return LEVELS.instructor;
-      // fall through to enrollment check
+      if (signal?.aborted) assertQmAiDeadline({ signal });
+      // #225 SEAM-02: do not grant the QM owner instructor on a Core course
+      // lookup failure — linked courses use Core as source of truth. Fall
+      // through to the enrollment check (which itself fails closed on throw).
     }
     const department = coreCourse?.department ?? null;
     if (department !== null) {
-      const units = await getAuthorizedUnits(reqUser, cookie);
+      const units = await getAuthorizedUnits(reqUser, cookie, signal);
       if (units.includes(department)) return LEVELS.unit;
     }
     // Outside their units a UNIT_ADMIN may still hold an enrollment — fall through.
@@ -94,27 +107,37 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   // Enrollment-based access (C column): only an active enrollment counts.
   let enrollments = [];
   try {
-    const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie });
-    enrollments = data?.enrollments ?? [];
-  } catch (err) {
-    // Service key missing or Core unreachable — allow the QM course owner to proceed locally.
-    if (reqUser.id === course.userId) return LEVELS.instructor;
+    const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie, signal });
+    // Treat an absent/malformed roster as an authoritative empty response;
+    // never let a provider shape error turn into an accidental owner grant.
+    enrollments = Array.isArray(data?.enrollments) ? data.enrollments : [];
+  } catch {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
+    // #225 SEAM-02 / #1197 product decision: fail-CLOSED here, including for
+    // the QM course owner. Once a course is linked (`coreCourseId` set),
+    // Core enrollments are the sole source of truth for who has access — a
+    // QM course owner is not automatically an instructor for a linked course
+    // (they may have lost their Core enrollment, or the course may have been
+    // relinked/deleted in Core). If Core is unreachable we cannot verify
+    // anyone's access, so nobody gets it. This is intentionally asymmetric
+    // with the unlinked-course branch above, where QM ownership IS the
+    // source of truth and instructor access stays fail-open by design.
     return null;
   }
 
   const mine = enrollments.find((e) => e.studentId === reqUser.id && e.isActive);
   if (!mine) {
-    // Linker may not appear in Core roster yet after a fresh link/sync.
-    if (reqUser.id === course.userId) return LEVELS.instructor;
+    // A successful Core response with no active enrollment is authoritative.
+    // Do not let local QM ownership become a stale authorization grant.
     return null;
   }
 
   switch (mine.role) {
-    case 'INSTRUCTOR':
+    case "INSTRUCTOR":
       return LEVELS.instructor;
-    case 'TA':
+    case "TA":
       return LEVELS.ta;
-    case 'STUDENT':
+    case "STUDENT":
       return LEVELS.student;
     default:
       return null;
@@ -162,27 +185,81 @@ export function requireCourseAccess({ min, getCourseId }) {
   return async (req, res, next) => {
     try {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
+        return res.status(401).json({ success: false, error: "Authentication required" });
       }
 
       const courseId = await getCourseId(req);
-      if (courseId === null || courseId === undefined || courseId === '') {
-        return res.status(404).json({ success: false, error: 'Course not found' });
+      if (courseId === null || courseId === undefined || courseId === "") {
+        return res.status(404).json({ success: false, error: "Course not found" });
       }
 
       const { course, access } = await resolveCourseAccessWithCourse(req.user, courseId, {
         cookie: req.headers.cookie,
+        signal: req.aiOperation?.signal,
       });
 
       if (!course) {
-        return res.status(404).json({ success: false, error: 'Course not found' });
+        return res.status(404).json({ success: false, error: "Course not found" });
       }
       if (!access || access.rank < required) {
-        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
       }
 
       req.courseAccess = access;
       req.qmCourse = course;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/**
+ * Gate an optional course supplied alongside a resource addressed by another
+ * course (for example, a PUT that attempts to change `courseId`). The resource
+ * middleware has already attached `req.qmCourse` for the source row; this
+ * guard re-resolves the caller's access for the client-supplied target without
+ * replacing that source context. An omitted target is a same-course update and
+ * continues through the existing resource access decision.
+ */
+export function requireOptionalCourseAccess({ min, getCourseId, attachAs = "targetQmCourse" }) {
+  const required = minRank(min);
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Authentication required" });
+      }
+
+      const courseId = await getCourseId(req);
+      if (courseId === undefined) {
+        return next();
+      }
+      if (courseId === null || courseId === "") {
+        return res.status(404).json({ success: false, error: "Course not found" });
+      }
+
+      // Validate the target identifier before resolving access. Resource
+      // routes keep their source-resource authorization first, but malformed
+      // relocation input is a client error (400), not a target-course 404.
+      const parsedCourseId = Number(courseId);
+      if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
+        return res.status(400).json({ success: false, error: "Valid courseId is required" });
+      }
+
+      const { course, access } = await resolveCourseAccessWithCourse(req.user, parsedCourseId, {
+        cookie: req.headers.cookie,
+        signal: req.aiOperation?.signal,
+      });
+
+      if (!course) {
+        return res.status(404).json({ success: false, error: "Course not found" });
+      }
+      if (!access || access.rank < required) {
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
+      }
+
+      req[attachAs] = course;
+      req[`${attachAs}Access`] = access;
       next();
     } catch (error) {
       next(error);

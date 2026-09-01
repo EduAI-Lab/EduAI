@@ -1,6 +1,7 @@
 // @vitest-environment node
 // /api/completion abortSignal + provider-setup error coverage (#858 review).
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { JsonObject } from "~/lib/json-value";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -28,15 +29,51 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
   };
 });
 
-import { streamText } from "ai";
+vi.mock("~/lib/ai/providers.server", () => ({
+  resolveActiveChatModel: vi.fn(),
+}));
+
+vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/admission.server")>();
+  return {
+    ...actual,
+    acquireAiAdmission: vi.fn().mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
+    withAdmissionRelease: vi.fn((response: Response) => response),
+  };
+});
+
+vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
+  return {
+    ...actual,
+    fleetRoutingEnabled: vi.fn().mockReturnValue(false),
+  };
+});
+
+vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
+  return {
+    ...actual,
+    resolveFleetHost: vi.fn(),
+  };
+});
+
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
+import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
+import { resolveActiveChatModel } from "~/lib/ai/providers.server";
+import { acquireAiAdmission } from "~/lib/ai/admission.server";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeRequest(
-  body: object,
-  signal?: AbortSignal,
-): Parameters<typeof action>[0] {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal): Parameters<typeof action>[0] {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",
@@ -51,7 +88,7 @@ function makeRequest(
   } as Parameters<typeof action>[0];
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     model: "vllm:test-model",
     apiKeys: { vllm: { isEnabled: true, baseUrl: "http://localhost:8001" } },
@@ -73,7 +110,16 @@ function mockStream() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getUserProviderSettings).mockResolvedValue({});
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
+  vi.mocked(resolveActiveChatModel).mockResolvedValue({
+    name: "Test model",
+    supportsTools: false,
+    supportsImages: false,
+    maxTokens: 16_384,
+  });
+  vi.mocked(acquireAiAdmission).mockResolvedValue({ release: vi.fn(), waitedMs: 0 });
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -82,6 +128,10 @@ beforeEach(() => {
   vi.mocked(createAIProviderRegistry).mockReturnValue({
     languageModel: vi.fn().mockReturnValue({ provider: "vllm", modelId: "test-model" }),
   } as never);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("POST /api/completion review regressions", () => {
@@ -98,11 +148,19 @@ describe("POST /api/completion review regressions", () => {
         abortSignal: args.request.signal,
       }),
     );
+
+    await expect(res.json()).resolves.toEqual({
+      content: "Done.",
+      model: "vllm:test-model",
+      usage: { promptTokens: 1, completionTokens: 2 },
+      finishReason: "stop",
+    });
   });
 
-  it("returns JSON 502 when languageModel() throws before streamText", async () => {
-    const setupError = new Error("AI_NoSuchProviderError: No such provider: vllm");
+  it("returns a sanitized provider contract when languageModel() throws", async () => {
+    const setupError = new Error("AI_NoSuchProviderError: key sk-do-not-leak");
     setupError.name = "AI_NoSuchProviderError";
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     vi.mocked(createAIProviderRegistry).mockReturnValue({
       languageModel: vi.fn().mockImplementation(() => {
@@ -111,13 +169,413 @@ describe("POST /api/completion review regressions", () => {
     } as never);
 
     const res = await action(makeRequest(baseBody()));
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(400);
 
     const body = await res.json();
     expect(body).toEqual({
-      error: expect.stringContaining("LLM provider setup failed"),
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "vllm",
     });
-    expect(body.error).toContain("AI_NoSuchProviderError");
+    expect(JSON.stringify(body)).not.toContain("sk-do-not-leak");
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("sk-do-not-leak");
     expect(streamText).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("treats a missing client API key as invalid provider configuration", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: { openai: { isEnabled: true } },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("preserves stored secrets and base URLs while honoring explicit request enablement", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: false,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: {
+              apiKey: "__core_stored__",
+              baseUrl: "https://request.example.test/v1",
+              isEnabled: true,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(createAIProviderRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai: {
+          apiKey: "stored-openai-secret",
+          baseUrl: "https://stored.example.test/v1",
+          isEnabled: true,
+        },
+      }),
+    );
+  });
+
+  it("honors an explicit request isEnabled:false over a stored enabled row", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: true,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: {
+              apiKey: "__core_stored__",
+              isEnabled: false,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the stored isEnabled when the request omits it", async () => {
+    vi.mocked(getUserProviderSettings).mockResolvedValue({
+      openai: {
+        apiKey: "stored-openai-secret",
+        baseUrl: "https://stored.example.test/v1",
+        isEnabled: true,
+      },
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: {
+            openai: { apiKey: "__core_stored__" },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(createAIProviderRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai: expect.objectContaining({ isEnabled: true }),
+      }),
+    );
+  });
+
+  it("maps fleet model unavailability to the stable 503 contract", async () => {
+    vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
+    vi.mocked(resolveFleetHost).mockRejectedValue(
+      new FleetUnavailableError("internal fleet host details"),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({
+      error: "Requested model is unavailable",
+      code: "MODEL_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+  });
+
+  it("falls back to a keyed BYOK provider on fleet outage and forwards the complete held-key map (#1645)", async () => {
+    // The UBC fleet is down for the selected vLLM model, but the caller holds
+    // keys for multiple BYOK providers. Core must switch to the first usable
+    // fallback (openai:gpt-4o-mini, the default order) AND build the provider
+    // registry from EVERY held key — not only the fallback's — so a request
+    // path forcing FleetUnavailableError proves the full map reaches the
+    // provider layer (reviewer follow-up: resolver-only mocks can't show this).
+    vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
+    vi.mocked(resolveFleetHost).mockRejectedValue(
+      new FleetUnavailableError("internal fleet host details"),
+    );
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "vllm:test-model",
+          apiKeys: {
+            vllm: { isEnabled: true, baseUrl: "http://localhost:8001" },
+            openai: { isEnabled: true, apiKey: "sk-openai-do-not-leak" },
+            google: { isEnabled: true, apiKey: "sk-google-do-not-leak" },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    // The response reports the fallback model actually used, not the down vLLM one.
+    await expect(res.json()).resolves.toEqual(
+      expect.objectContaining({ model: "openai:gpt-4o-mini" }),
+    );
+
+    // The registry was built from the COMPLETE held-key map: the fallback
+    // provider's key AND every other held key (so a later outage could reach a
+    // different one), not just the selected provider's.
+    const registryArg = vi.mocked(createAIProviderRegistry).mock.calls.at(-1)?.[0] as Record<
+      string,
+      { apiKey?: string }
+    >;
+    expect(registryArg).toMatchObject({
+      openai: expect.objectContaining({ apiKey: "sk-openai-do-not-leak" }),
+      google: expect.objectContaining({ apiKey: "sk-google-do-not-leak" }),
+    });
+  });
+
+  it("normalizes a transient upstream failure and valid retry hint", async () => {
+    vi.mocked(streamText).mockRejectedValue(
+      new APICallError({
+        message: "upstream said sk-sensitive-value",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-sensitive-value" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "12" },
+        responseBody: "private upstream body",
+        isRetryable: true,
+      }),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("12");
+    const body = await res.json();
+    expect(body).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+    expect(JSON.stringify(body)).not.toContain("sk-sensitive-value");
+  });
+
+  it("returns the selected fleet host for extension observability", async () => {
+    vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
+    vi.mocked(resolveFleetHost).mockResolvedValue({
+      serverId: "cmps03",
+      baseUrl: "http://cmps03.ok.ubc.ca:8001",
+      reason: "background-round-robin",
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          routingContext: {
+            feature: "question-maker",
+            jobType: "background",
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Fleet-Server")).toBe("cmps03");
+  });
+
+  it("rejects an excessive completion token budget before provider work", async () => {
+    mockStream();
+
+    const res = await action(makeRequest(baseBody({ maxTokens: 1_000_000 })));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "maxTokens must be between 1 and 16384",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-range temperature before admission or provider work", async () => {
+    mockStream();
+
+    const res = await action(makeRequest(baseBody({ temperature: 2.01 })));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "temperature must be between 0 and 2",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized JSON streamed without Content-Length before provider work", async () => {
+    vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
+    const chunks = [
+      '{"model":"vllm:test-model","systemPrompt":"',
+      "x".repeat(128),
+      '","messages":[{"role":"user","content":"Hello"}]}',
+    ];
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    });
+    const request = new Request("http://localhost/api/completion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const res = await action({
+      request,
+      url: new URL(request.url),
+      pattern: "/api/completion",
+      params: {},
+      context: {} as never,
+    } as Parameters<typeof action>[0]);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Completion request body exceeds size limit",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects a body that exceeds the cap despite a lying Content-Length", async () => {
+    vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
+    const bodyText = JSON.stringify(baseBody({ systemPrompt: "x".repeat(128) }));
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(bodyText));
+        controller.close();
+      },
+    });
+    const request = new Request("http://localhost/api/completion", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": "10",
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const res = await action({
+      request,
+      url: new URL(request.url),
+      pattern: "/api/completion",
+      params: {},
+      context: {} as never,
+    } as Parameters<typeof action>[0]);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Completion request body exceeds size limit",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an over-limit declared Content-Length before reading the body", async () => {
+    vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({ cancel });
+    const request = new Request("http://localhost/api/completion", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": "97",
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const res = await action({
+      request,
+      url: new URL(request.url),
+      pattern: "/api/completion",
+      params: {},
+      context: {} as never,
+    } as Parameters<typeof action>[0]);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Completion request body exceeds size limit",
+    });
+    // Do not tear down the request socket before the adapter can flush the 413.
+    expect(cancel).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized system prompt with deterministic field limits", async () => {
+    vi.stubEnv("COMPLETION_MAX_SYSTEM_PROMPT_CHARS", "8");
+
+    const res = await action(makeRequest(baseBody({ systemPrompt: "too long!" })));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "systemPrompt exceeds maximum length",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("denies an inactive model before local admission or provider work", async () => {
+    vi.mocked(resolveActiveChatModel).mockResolvedValue(null);
+    mockStream();
+
+    const res = await action(makeRequest(baseBody({ model: "vllm:inactive-model" })));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: 'Model "vllm:inactive-model" is not active in the Core model catalog',
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
   });
 });

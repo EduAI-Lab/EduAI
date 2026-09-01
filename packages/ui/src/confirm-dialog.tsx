@@ -1,4 +1,4 @@
-import { useRef } from "react"
+import { useRef } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -8,18 +8,30 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "./ui/alert-dialog"
-import { buttonVariants } from "./ui/button"
+} from "./ui/alert-dialog";
+import { buttonVariants } from "./ui/button";
 
 export type ConfirmDialogProps = {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  title: string
-  description: string
-  confirmLabel?: string
-  variant?: "default" | "destructive"
-  onConfirm: () => void
-}
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: "default" | "destructive";
+  /**
+   * Set while the confirmed action is in flight: both buttons disable and the
+   * confirm label gains an ellipsis, so the action cannot be submitted twice.
+   */
+  isLoading?: boolean;
+  /**
+   * Whether confirming dismisses the dialog immediately (the default). Pass `false`
+   * when the caller runs async work and closes the dialog itself once it settles —
+   * otherwise the dialog disappears before `isLoading` can ever be seen.
+   */
+  closeOnConfirm?: boolean;
+  onConfirm: () => void;
+};
 
 export function ConfirmDialog({
   open,
@@ -27,7 +39,10 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
   variant = "destructive",
+  isLoading = false,
+  closeOnConfirm = true,
   onConfirm,
 }: ConfirmDialogProps) {
   const lastOpenContentRef = useRef({
@@ -35,10 +50,10 @@ export function ConfirmDialog({
     description,
     confirmLabel,
     variant,
-  })
+  });
 
   if (open) {
-    lastOpenContentRef.current = { title, description, confirmLabel, variant }
+    lastOpenContentRef.current = { title, description, confirmLabel, variant };
   }
 
   const {
@@ -46,7 +61,7 @@ export function ConfirmDialog({
     description: displayDescription,
     confirmLabel: displayConfirmLabel,
     variant: displayVariant,
-  } = open ? { title, description, confirmLabel, variant } : lastOpenContentRef.current
+  } = open ? { title, description, confirmLabel, variant } : lastOpenContentRef.current;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -56,19 +71,25 @@ export function ConfirmDialog({
           <AlertDialogDescription>{displayDescription}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={isLoading}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
             className={
               displayVariant === "destructive"
                 ? buttonVariants({ variant: "destructive" })
                 : undefined
             }
-            onClick={onConfirm}
+            disabled={isLoading}
+            onClick={(event) => {
+              // Radix dismisses on action click; hold the dialog open when the
+              // caller owns closing so its in-flight state stays visible.
+              if (!closeOnConfirm) event.preventDefault();
+              onConfirm();
+            }}
           >
-            {displayConfirmLabel}
+            {isLoading ? `${displayConfirmLabel}…` : displayConfirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  )
+  );
 }

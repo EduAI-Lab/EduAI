@@ -2,6 +2,10 @@
 
 Hardware energy measurement for URA research runs (RAPL CPU + NVML GPU).
 
+The live Core `/api/chat` path does not invoke this service. Start and stop
+sessions from `apps/core/scripts/research` so unavailable measurement cannot
+delay or change student-facing chat behavior.
+
 ## Requirements
 
 - **Linux** host with Intel RAPL (`/sys/class/powercap/intel-rapl:*/energy_uj` for `package-*` domains)

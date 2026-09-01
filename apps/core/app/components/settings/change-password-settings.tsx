@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { IconLoader, IconLock } from "@tabler/icons-react";
+import { Spinner } from "@eduai/ui";
+import { IconLock } from "@tabler/icons-react";
 
 import { authClient } from "~/lib/auth/client";
 import {
@@ -58,9 +59,8 @@ export function ChangePasswordSettings() {
           Change password
         </CardTitle>
         <CardDescription>
-          Must be at least 8 characters with upper and lower case letters, numbers,
-          and symbols — or a passphrase of at least 16 characters. Passwords expire
-          annually and cannot be reused.
+          Must be at least 8 characters with upper and lower case letters, numbers, and symbols — or
+          a passphrase of at least 16 characters. Passwords expire annually and cannot be reused.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -111,15 +111,13 @@ export function ChangePasswordSettings() {
               disabled={saving}
               aria-invalid={mismatch}
             />
-            {mismatch && (
-              <p className="text-xs text-destructive">Passwords don't match</p>
-            )}
+            {mismatch && <p className="text-xs text-destructive">Passwords don't match</p>}
           </div>
 
           <Button type="submit" disabled={!canSubmit}>
             {saving ? (
               <>
-                <IconLoader className="h-4 w-4 mr-2 animate-spin" />
+                <Spinner className="mr-2" />
                 Saving…
               </>
             ) : (

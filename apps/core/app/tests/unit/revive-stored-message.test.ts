@@ -22,9 +22,7 @@ describe("messageToText", () => {
       role: "assistant",
       content: [{ type: "text", text: "Yes, **ADHD Assist Mode is on.**" }],
     });
-    expect(messageToText([{ type: "text", text: inner }])).toBe(
-      "Yes, **ADHD Assist Mode is on.**",
-    );
+    expect(messageToText([{ type: "text", text: inner }])).toBe("Yes, **ADHD Assist Mode is on.**");
   });
 
   it("reads UIMessage parts", () => {
@@ -42,7 +40,11 @@ describe("reviveStoredMessage", () => {
     const revived = reviveStoredMessage({
       messageId: "m1",
       role: "assistant",
-      content: { id: "x", role: "assistant", content: [{ type: "text", text: "real answer" }] },
+      content: {
+        id: "x",
+        role: "assistant",
+        content: [{ type: "text", text: "real answer" }],
+      },
     });
     expect(revived.content).toBe("real answer");
     expect(revived.parts).toEqual([{ type: "text", text: "real answer" }]);
@@ -57,7 +59,11 @@ describe("reviveStoredMessage", () => {
     const revived = reviveStoredMessage({
       messageId: "m2",
       role: "assistant",
-      content: { id: "y", role: "assistant", parts: [{ type: "text", text: inner }] },
+      content: {
+        id: "y",
+        role: "assistant",
+        parts: [{ type: "text", text: inner }],
+      },
     });
     expect(revived.content).toBe("recovered");
   });
@@ -72,7 +78,11 @@ describe("reviveStoredMessage", () => {
   });
 
   it("falls back to messageId/role when missing", () => {
-    const revived = reviveStoredMessage({ messageId: "m4", role: "user", content: "plain" });
+    const revived = reviveStoredMessage({
+      messageId: "m4",
+      role: "user",
+      content: "plain",
+    });
     expect(revived.id).toBe("m4");
     expect(revived.role).toBe("user");
     expect(revived.content).toBe("plain");
@@ -90,12 +100,71 @@ describe("reviveStoredMessage", () => {
       },
     });
 
-    expect(revived.metadata).toEqual({ resolvedModelId: "openai:gpt-4o" });
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
+    });
+  });
+
+  it("preserves the auto-routed flag across reload (#829 regression)", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m8",
+      role: "assistant",
+      content: {
+        id: "m8",
+        role: "assistant",
+        content: "answer",
+        metadata: {
+          resolvedModelId: "vllm:qwen2.5-7b-instruct",
+          wasAutoRouted: true,
+        },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      wasAutoRouted: true,
+    });
+  });
+
+  it("preserves durable long-output-cap metadata on assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m6",
+      role: "assistant",
+      content: {
+        id: "m6",
+        role: "assistant",
+        content: "truncated answer",
+        metadata: {
+          resolvedModelId: "openai:gpt-4o",
+          hitLongOutputCap: true,
+        },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
+      hitLongOutputCap: true,
+    });
+  });
+
+  it("preserves the long-output-cap flag without resolved-model metadata", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m7",
+      role: "assistant",
+      content: {
+        content: "truncated answer",
+        metadata: { hitLongOutputCap: true },
+      },
+    });
+
+    expect(revived.metadata).toEqual({ hitLongOutputCap: true });
   });
 
   it("drops malformed or non-assistant resolved-model metadata", () => {
     const malformed = reviveStoredMessage({
-      messageId: "m6",
+      messageId: "m8",
       role: "assistant",
       content: {
         content: "answer",
@@ -103,7 +172,7 @@ describe("reviveStoredMessage", () => {
       },
     });
     const user = reviveStoredMessage({
-      messageId: "m7",
+      messageId: "m9",
       role: "user",
       content: {
         content: "question",
@@ -113,5 +182,100 @@ describe("reviveStoredMessage", () => {
 
     expect(malformed).not.toHaveProperty("metadata");
     expect(user).not.toHaveProperty("metadata");
+  });
+
+  it("restores the course-scope redirect flag on assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m8",
+      role: "assistant",
+      content: {
+        id: "m8",
+        role: "assistant",
+        content: "That looks outside the scope of this course.",
+        metadata: { courseScopeRedirect: true },
+      },
+    });
+
+    expect(revived.metadata).toEqual({ courseScopeRedirect: true });
+  });
+
+  it("does not restore the course-scope redirect flag on non-assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m9",
+      role: "user",
+      content: {
+        content: "question",
+        metadata: { courseScopeRedirect: true },
+      },
+    });
+
+    expect(revived).not.toHaveProperty("metadata");
+  });
+
+  it("preserves a recorded Assist mode across reload, distinguishing true/false from legacy-absent (#1671)", () => {
+    const assistOn = reviveStoredMessage({
+      messageId: "m11",
+      role: "assistant",
+      content: {
+        id: "m11",
+        role: "assistant",
+        content: "answer",
+        metadata: { adhdAssist: true },
+      },
+    });
+    const assistOff = reviveStoredMessage({
+      messageId: "m12",
+      role: "assistant",
+      content: {
+        id: "m12",
+        role: "assistant",
+        content: "answer",
+        metadata: { adhdAssist: false },
+      },
+    });
+    const legacyRow = reviveStoredMessage({
+      messageId: "m13",
+      role: "assistant",
+      content: { id: "m13", role: "assistant", content: "answer" },
+    });
+
+    expect(assistOn.metadata).toEqual({ adhdAssist: true });
+    // A stored `false` must survive as `false`, not be dropped like an
+    // absent value would be — otherwise the consuming layout couldn't tell
+    // "Assist was off" apart from "this row predates the field".
+    expect(assistOff.metadata).toEqual({ adhdAssist: false });
+    expect(legacyRow).not.toHaveProperty("metadata");
+  });
+
+  it("does not restore the Assist flag on non-assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m14",
+      role: "user",
+      content: { content: "question", metadata: { adhdAssist: true } },
+    });
+
+    expect(revived).not.toHaveProperty("metadata");
+  });
+
+  it("preserves both resolved-model and course-scope-redirect metadata together", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m10",
+      role: "assistant",
+      content: {
+        id: "m10",
+        role: "assistant",
+        content: "That looks outside the scope of this course.",
+        metadata: {
+          resolvedModelId: "openai:gpt-4o",
+          courseScopeRedirect: true,
+        },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
+      courseScopeRedirect: true,
+    });
   });
 });

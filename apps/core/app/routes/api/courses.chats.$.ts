@@ -14,75 +14,91 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.courseId;
-  if (!courseId) {
-    return json({ error: "Course ID is required" }, 400);
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      if (!courseId) {
+        return json({ error: "Course ID is required" }, 400);
+      }
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
+      const session = await getRequestSession(request);
+      if (!session?.user) {
+        return json({ error: "Unauthorized" }, 401);
+      }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
-  if (!course) {
-    return json({ error: "COURSE_NOT_FOUND" }, 404);
-  }
-  if (!access) {
-    return json({ error: "Forbidden" }, 403);
-  }
+      const { course, access } = await resolveCourseAccessGate(session.user, courseId);
+      if (!course) {
+        return json({ error: "COURSE_NOT_FOUND" }, 404);
+      }
+      if (!access) {
+        return json({ error: "Forbidden" }, 403);
+      }
 
-  // §5c chat visibility via the shared gate: ADMIN always; instructor/unit
-  // require their grant flag; TA/STUDENT never read others' course chats.
-  const gate = courseChatViewPolicyKey(access.level);
-  if (gate === "never") {
-    return json({ error: "Forbidden" }, 403);
-  }
-  if (gate !== "always" && !(await getPolicy(gate))) {
-    return denyByPolicy({
-      request,
-      policyKey: gate,
-      user: session.user,
-      action: "course.chats.view",
-      courseId,
-    });
-  }
+      // §5c chat visibility via the shared gate: ADMIN always; instructor/unit
+      // require their grant flag; TA/STUDENT never read others' course chats.
+      const gate = courseChatViewPolicyKey(access.level);
+      if (gate === "never") {
+        return json({ error: "Forbidden" }, 403);
+      }
+      if (gate !== "always" && !(await getPolicy(gate))) {
+        return denyByPolicy({
+          request,
+          policyKey: gate,
+          user: session.user,
+          action: "course.chats.view",
+          courseId,
+        });
+      }
 
-  const chats = await prisma.chat.findMany({
-    // Owner must be an active STUDENT of this course — excludes staff chats
-    // (instructor/TA/unit-admin) that are also tagged to the course.
-    where: {
-      courseId,
-      user: {
-        enrollments: { some: { courseId, role: "STUDENT", isActive: true } },
-      },
+      const { cursor, limit } = parseCursorParams(new URL(request.url).searchParams);
+      const pageArgs = {
+        // Owner must be an active STUDENT of this course — excludes staff chats
+        // (instructor/TA/unit-admin) that are also tagged to the course.
+        where: {
+          courseId,
+          user: {
+            enrollments: { some: { courseId, role: "STUDENT" as const, isActive: true } },
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          updatedAt: true,
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: [{ updatedAt: "desc" as const }, { id: "desc" as const }],
+        take: limit + 1,
+      };
+      // A cursor page resumes past the cursor row itself; the first page sends
+      // neither key, so Prisma never sees a half-specified pair.
+      const rows = cursor
+        ? await prisma.chat.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
+        : await prisma.chat.findMany(pageArgs);
+      const { page, nextCursor } = splitPage(rows, limit);
+
+      return json({
+        chats: page.map((chat) => ({
+          id: chat.id,
+          title: chat.title,
+          ownerId: chat.user.id,
+          ownerName: chat.user.name,
+          createdAt: chat.createdAt.toISOString(),
+          updatedAt: chat.updatedAt.toISOString(),
+        })),
+        nextCursor,
+      });
     },
-    select: {
-      id: true,
-      title: true,
-      createdAt: true,
-      updatedAt: true,
-      user: { select: { id: true, name: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  return json({
-    chats: chats.map((chat) => ({
-      id: chat.id,
-      title: chat.title,
-      ownerId: chat.user.id,
-      ownerName: chat.user.name,
-      createdAt: chat.createdAt.toISOString(),
-      updatedAt: chat.updatedAt.toISOString(),
-    })),
-  });
+    { request },
+  );
 }

@@ -1,8 +1,6 @@
-/** Platform hooks that have no Core API yet — use fixtures until backend lands. */
+/** Kill-switches for falling back to fixtures; every Core API these gate is live, so both are `false`. */
 export const STUB_ONLY = {
   bugReports: false,
-  // DELETE /api/chats/:chatId is implemented (owner / admin). Chat-history UI
-  // wires it live.
   deleteChat: false,
 } as const;
 
@@ -26,10 +24,7 @@ function parseErrorMessage(text: string): string {
 }
 
 /** Session-cookie fetch wrapper for Core `/api/*` routes. */
-export async function apiFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

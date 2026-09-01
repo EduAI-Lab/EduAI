@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { listTeacherCanvasCourses } from "~/lib/canvas/client.server";
-import {
-  mapCanvasCourseToCoreFields,
-  resolveCanvasCourseDates,
-} from "~/lib/canvas/courses.server";
-import {
-  normalizeRosterEmail,
-  normalizeStudentId,
-} from "~/lib/canvas/enrollment-link.server";
-import { SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import { mapCanvasCourseToCoreFields, resolveCanvasCourseDates } from "~/lib/canvas/courses.server";
+import { normalizeRosterEmail, normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
+import { SyncCanvasCoursesSchema, SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
 import {
   ubcTermFromDate,
   ubcAcademicYearFromDate,
@@ -90,6 +84,33 @@ describe("mapCanvasCourseToCoreFields", () => {
     // year (#1088) — 2026-01-06 is the second half of the 2025 academic year.
     expect(mapped.year).toBe(2025);
     expect(mapped.endDate).toEqual(new Date("2026-04-30T23:59:59Z"));
+    // Missing workflow_state defaults to published (available / legacy payloads).
+    expect(mapped.isPublished).toBe(true);
+  });
+
+  // CANVAS-06 (#225 / #1195)
+  it("maps Canvas workflow_state=unpublished to isPublished: false", () => {
+    const mapped = mapCanvasCourseToCoreFields({
+      id: 42,
+      name: "Draft Course",
+      course_code: "COSC 101",
+      start_at: "2026-01-06T08:00:00Z",
+      workflow_state: "unpublished",
+    });
+
+    expect(mapped.isPublished).toBe(false);
+  });
+
+  it("maps Canvas workflow_state=available to isPublished: true", () => {
+    const mapped = mapCanvasCourseToCoreFields({
+      id: 42,
+      name: "Live Course",
+      course_code: "COSC 101",
+      start_at: "2026-01-06T08:00:00Z",
+      workflow_state: "available",
+    });
+
+    expect(mapped.isPublished).toBe(true);
   });
 
   it("falls back to course name when course_code is missing", () => {
@@ -231,6 +252,38 @@ describe("mapCanvasCourseToCoreFields", () => {
     expect(course21.endDate).toEqual(new Date("2026-08-31T06:00:00Z"));
     expect(ubcTermFromDate(course21.startDate)).toBe("S2");
   });
+
+  // #225 CANVAS-10: course with no inferable start date throws and fails sync mapping.
+  it("throws when the course and term provide no parseable start date", () => {
+    expect(() =>
+      resolveCanvasCourseDates({
+        id: 99,
+        name: "Mystery Course",
+        course_code: "MYST 000",
+        start_at: null,
+        end_at: null,
+        term: {
+          id: 1,
+          name: "Unnamed Term",
+          start_at: null,
+          end_at: null,
+        },
+      }),
+    ).toThrow(/Canvas course 99 has no start date/);
+  });
+
+  it("propagates the start-date error through mapCanvasCourseToCoreFields", () => {
+    expect(() =>
+      mapCanvasCourseToCoreFields({
+        id: 99,
+        name: "Mystery Course",
+        course_code: "MYST 000",
+        start_at: null,
+        end_at: null,
+        term: null,
+      }),
+    ).toThrow(/Canvas course 99 has no start date/);
+  });
 });
 
 describe("SyncCanvasCoursesSchema", () => {
@@ -249,6 +302,21 @@ describe("SyncCanvasCoursesSchema", () => {
     if (result.success) {
       expect(result.data.canvasCourseIds).toEqual(["1", "2"]);
     }
+  });
+
+  it("deduplicates ids and rejects oversized batches at the input boundary", () => {
+    const result = SyncCanvasCoursesSchema.safeParse({ canvasCourseIds: [1, "1", "2"] });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.canvasCourseIds).toEqual(["1", "2"]);
+
+    expect(
+      SyncCanvasCoursesSchema.safeParse({
+        canvasCourseIds: Array.from({ length: 101 }, (_, index) => String(index + 1)),
+      }).success,
+    ).toBe(false);
+    expect(
+      SyncCanvasMaterialsSchema.safeParse({ canvasFileIds: ["file-1", "file-1"] }),
+    ).toMatchObject({ success: true, data: { canvasFileIds: ["file-1"] } });
   });
 });
 

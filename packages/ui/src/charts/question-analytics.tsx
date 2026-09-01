@@ -6,29 +6,29 @@
  *
  * Pure presentational: the caller computes every number. Robust to all-zero data.
  */
-import { DonutChart, type DonutSegment } from "./donut-chart"
-import { StackedBar } from "./stacked-bar"
-import { MeterBar } from "./meter-bar"
-import { PanelCard } from "./panel-card"
-import { cn } from "../utils"
+import { DonutChart, type DonutSegment } from "./donut-chart";
+import { StackedBar } from "./stacked-bar";
+import { MeterBar } from "./meter-bar";
+import { PanelCard } from "./panel-card";
+import { cn } from "../utils";
 
-const AI_COLOR = "oklch(0.62 0.17 295)"
-const HUMAN_COLOR = "oklch(0.55 0.14 255)"
-const REVIEWED_COLOR = "oklch(0.60 0.15 150)"
-const COVERAGE_COLOR = "oklch(0.55 0.16 255)"
+const AI_COLOR = "var(--color-series-5)";
+const HUMAN_COLOR = "var(--color-series-4)";
+const REVIEWED_COLOR = "var(--color-series-1)";
+const COVERAGE_COLOR = "var(--color-series-3)";
 
 export interface QuestionAnalyticsProps {
-  typeComposition: DonutSegment[]
+  typeComposition: DonutSegment[];
   /** Easy / Medium / Hard segments (label, count, color). Rendered as a stacked bar. */
-  difficulty: DonutSegment[]
-  totalQuestions: number
-  totalVariants: number
-  aiCount: number
-  humanCount: number
-  reviewedCount: number
+  difficulty: DonutSegment[];
+  totalQuestions: number;
+  totalVariants: number;
+  aiCount: number;
+  humanCount: number;
+  reviewedCount: number;
   /** Omit to hide the topic-coverage panel (e.g. the global, multi-course dashboard). */
-  topicCoverage?: { covered: number; total: number }
-  className?: string
+  topicCoverage?: { covered: number; total: number };
+  className?: string;
 }
 
 export function QuestionAnalytics({
@@ -42,7 +42,7 @@ export function QuestionAnalytics({
   topicCoverage,
   className,
 }: QuestionAnalyticsProps) {
-  const hasCoverage = topicCoverage !== undefined
+  const hasCoverage = topicCoverage !== undefined;
 
   return (
     <div className={cn("grid gap-4", hasCoverage ? "md:grid-cols-2" : "md:grid-cols-3", className)}>
@@ -50,11 +50,11 @@ export function QuestionAnalytics({
         <DonutChart data={typeComposition} centerValue={totalQuestions} centerLabel="Questions" />
       </PanelCard>
 
-      <PanelCard title="Difficulty mix">
+      <PanelCard title="Variant difficulty">
         <StackedBar data={difficulty} />
       </PanelCard>
 
-      <PanelCard title="Authoring & review">
+      <PanelCard title="Variant authoring & review">
         <DonutChart
           size={108}
           thickness={16}
@@ -64,7 +64,13 @@ export function QuestionAnalytics({
           ]}
         />
         <div className="mt-4">
-          <MeterBar label="Reviewed" value={reviewedCount} total={totalVariants} color={REVIEWED_COLOR} showCount />
+          <MeterBar
+            label="Reviewed variants"
+            value={reviewedCount}
+            total={totalVariants}
+            color={REVIEWED_COLOR}
+            showCount
+          />
         </div>
       </PanelCard>
 
@@ -91,5 +97,5 @@ export function QuestionAnalytics({
         </PanelCard>
       )}
     </div>
-  )
+  );
 }

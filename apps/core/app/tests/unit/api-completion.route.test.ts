@@ -1,0 +1,412 @@
+// @vitest-environment node
+// #1213 — POST /api/completion: method gate, the api-key/session/service-key
+// auth chain, invalid JSON, and the streaming vs non-streaming response shape.
+import type { JsonValue } from "~/lib/json-value";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const checkRateLimitMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/auth/rate-limit.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/rate-limit.server")>();
+  return { ...actual, checkRateLimit: checkRateLimitMock };
+});
+
+vi.mock("~/lib/ai/completion.server", () => ({
+  runCompletion: vi.fn(),
+  validateCompletionRequest: vi.fn((input: JsonValue) => ({
+    ok: true,
+    request: input,
+  })),
+  resolveCompletionInputLimits: vi.fn(() => ({
+    maxBodyBytes: 2 * 1024 * 1024,
+    maxMessages: 100,
+    maxMessageChars: 32_768,
+    maxTotalMessageChars: 131_072,
+    maxSystemPromptChars: 32_768,
+    maxApiKeyChars: 16_384,
+    maxBaseUrlChars: 2_048,
+    maxModelChars: 512,
+  })),
+  resolveCompletionModelPolicy: vi.fn(async (model: string) => ({
+    ok: true,
+    modelId: model,
+    parsedModel: {
+      providerId: model.split(":")[0],
+      modelId: model.split(":").slice(1).join(":"),
+    },
+  })),
+}));
+
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+  requireServiceKey: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("~/lib/auth/server", () => ({
+  auth: { api: { getSession: vi.fn() } },
+}));
+
+import { APICallError } from "ai";
+
+vi.mock("~/lib/ai/admission.server", () => ({
+  acquireAiAdmission: vi.fn().mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
+  AdmissionTimeoutError: class AdmissionTimeoutError extends Error {},
+  withAdmissionRelease: vi.fn((response: Response) => response),
+}));
+
+import { action } from "~/routes/api/completion";
+import { resolveCompletionModelPolicy, runCompletion } from "~/lib/ai/completion.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { auth } from "~/lib/auth/server";
+import { acquireAiAdmission, withAdmissionRelease } from "~/lib/ai/admission.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
+
+function makeArgs(body?: RouteRequestBody, method = "POST") {
+  // A bodyless request carries neither a body nor its content type.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  return {
+    request: new Request("http://localhost/api/completion", init),
+    params: {},
+    context: {} as never,
+  } as never;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv("CHAT_RATE_LIMIT", "2");
+  vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "60000");
+  checkRateLimitMock.mockResolvedValue({ limited: false, retryAfter: 0 });
+  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null } as never);
+  vi.mocked(requireServiceKey).mockResolvedValue(null);
+  vi.mocked(auth.api.getSession).mockResolvedValue({
+    user: { id: "u1", role: "STUDENT" },
+  } as never);
+  vi.mocked(acquireAiAdmission).mockResolvedValue({ release: vi.fn(), waitedMs: 0 });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("POST /api/completion", () => {
+  it("rejects non-POST methods with 405", async () => {
+    const res = await action(makeArgs(undefined, "GET"));
+    expect(res.status).toBe(405);
+  });
+
+  it("returns the api-key guard's response when present", async () => {
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: new Response(null, { status: 403 }),
+      session: null,
+    } as never);
+    const res = await action(makeArgs({}));
+    expect(res.status).toBe(403);
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it("falls through to requireServiceKey when no session and no api-key session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(requireServiceKey).mockResolvedValue(new Response(null, { status: 401 }) as never);
+    const res = await action(makeArgs({}));
+    expect(res.status).toBe(401);
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for invalid JSON", async () => {
+    const res = await action({
+      request: new Request("http://localhost/api/completion", { method: "POST", body: "not json" }),
+      params: {},
+      context: {} as never,
+    } as never);
+    expect(res.status).toBe(400);
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:u1", 2, 60_000);
+  });
+
+  it("uses the authenticated session user as the rate-limit identity", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:u1", 2, 60_000);
+  });
+
+  it("uses the admin API-key session user as the rate-limit identity", async () => {
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: null,
+      session: { user: { id: "admin-key-owner", role: "ADMIN" } },
+    } as never);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:admin-key-owner", 2, 60_000);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("forwards a learner-session systemPrompt as-is — no EduAI course default (#1606)", async () => {
+    // AI Tutor and Question Maker POST here, not /api/chat. This route has no
+    // course default prompt, so the supplied systemPrompt is the whole prompt.
+    // A learner session is enough to auth; the bearer is not required.
+    const systemPrompt = "Return only JSON variants. Do not tutor.";
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "{}" },
+      fleetServerId: null,
+    } as never);
+
+    const res = await action(
+      makeArgs({
+        model: "gpt",
+        messages: [{ role: "user", content: "hi" }],
+        systemPrompt,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(runCompletion).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt }));
+  });
+
+  it("uses a stable non-secret identity for service-key-only callers", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:service", 2, 60_000);
+  });
+
+  it("returns the stable 429 contract before runCompletion", async () => {
+    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 11 });
+
+    const res = await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "RATE_LIMITED", retryAfter: 11 });
+    expect(res.headers.get("Retry-After")).toBe("11");
+    expect(runCompletion).not.toHaveBeenCalled();
+  });
+
+  it("rejects direct Bedrock selection before model or provider work", async () => {
+    const res = await action(
+      makeArgs({
+        model: "Bedrock:meta.llama3-70b-instruct-v1:0",
+        apiKeys: { bedrock: { isEnabled: true } },
+        messages: [],
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error:
+        'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+      code: "BEDROCK_NOT_SELECTABLE",
+    });
+    expect(resolveCompletionModelPolicy).not.toHaveBeenCalled();
+    expect(runCompletion).not.toHaveBeenCalled();
+  });
+
+  it("strips Bedrock settings while preserving ordinary completion settings", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    const res = await action(
+      makeArgs({
+        model: "openai:gpt-4o",
+        apiKeys: {
+          openai: { isEnabled: true, apiKey: "client-openai-key" },
+          bedrock: { isEnabled: true },
+        },
+        messages: [],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(runCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "openai:gpt-4o",
+        apiKeys: {
+          openai: { isEnabled: true, apiKey: "client-openai-key" },
+        },
+      }),
+    );
+  });
+
+  it("preserves ordinary validation failures as their existing error shape", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      error: "model is required",
+      status: 400,
+    } as never);
+    const res = await action(makeArgs({ model: "bogus", messages: [] }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "model is required" });
+    expect(res.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("maps a runCompletion failure to its status", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      error: "MODEL_NOT_FOUND",
+      status: 422,
+    } as never);
+
+    const res = await action(makeArgs({ model: "google:test", messages: [] }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "MODEL_NOT_FOUND" });
+  });
+
+  it("serializes the stable provider failure and a valid retry hint", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      status: 503,
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+      retryAfter: 9,
+    } as never);
+
+    const res = await action(makeArgs({ model: "openai:gpt-4o", messages: [] }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+    });
+    expect(res.headers.get("Retry-After")).toBe("9");
+  });
+
+  it("returns 200 JSON for a non-streaming success", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+    const res = await action(makeArgs({ model: "gpt", messages: [] }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ text: "hi" });
+  });
+
+  it("acquires and releases local-model admission for a non-streaming completion", async () => {
+    const release = vi.fn();
+    vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    const res = await action(makeArgs({ model: "vllm:test", messages: [] }));
+
+    expect(res.status).toBe(200);
+    expect(acquireAiAdmission).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("returns a streaming Response for a streaming success", async () => {
+    const streamResponse = new Response("stream", { status: 200 });
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: true,
+      fleetServerId: "fleet-1",
+      result: { toDataStreamResponse: vi.fn(() => streamResponse) },
+    } as never);
+    const res = await action(makeArgs({ model: "gpt", messages: [], streaming: true }));
+    expect(res).toBe(streamResponse);
+  });
+
+  it("routes a late streaming provider error through the stable contract", async () => {
+    const toDataStreamResponse = vi.fn(
+      (_options: { getErrorMessage?: (cause: unknown) => string }) =>
+        new Response("stream", { status: 200 }),
+    );
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: true,
+      fleetServerId: "fleet-1",
+      provider: "openai",
+      result: { toDataStreamResponse },
+    } as never);
+
+    await action(makeArgs({ model: "openai:gpt-4o", messages: [], streaming: true }));
+
+    expect(toDataStreamResponse).toHaveBeenCalledTimes(1);
+    const options = toDataStreamResponse.mock.calls[0][0];
+    expect(options.getErrorMessage).toBeTypeOf("function");
+
+    const serialized = options.getErrorMessage!(
+      new APICallError({
+        message: "upstream error containing sk-do-not-leak",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-do-not-leak" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "12" },
+        responseBody: "private upstream body",
+        isRetryable: true,
+      }),
+    );
+
+    expect(serialized).not.toBe("An error occurred.");
+    expect(JSON.parse(serialized)).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+    });
+    expect(serialized).not.toContain("sk-do-not-leak");
+    expect(serialized).not.toContain("private upstream body");
+  });
+
+  it("holds local-model admission until a streaming response closes", async () => {
+    const release = vi.fn();
+    vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+    const streamResponse = new Response("stream", { status: 200 });
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: true,
+      fleetServerId: null,
+      result: { toDataStreamResponse: vi.fn(() => streamResponse) },
+    } as never);
+
+    await action(makeArgs({ model: "ollama:test", messages: [], streaming: true }));
+
+    expect(withAdmissionRelease).toHaveBeenCalledWith(
+      streamResponse,
+      release,
+      expect.any(AbortSignal),
+    );
+    expect(release).not.toHaveBeenCalled();
+  });
+});

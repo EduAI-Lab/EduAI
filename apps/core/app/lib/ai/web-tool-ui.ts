@@ -6,15 +6,12 @@ export function isWebChatToolName(name: string): name is WebChatToolName {
   return (WEB_CHAT_TOOL_NAMES as readonly string[]).includes(name);
 }
 
-export const WEB_CHAT_TOOL_LABELS: Record<WebChatToolName, string> = {
+export const WEB_CHAT_TOOL_LABELS = {
   webSearch: "Searching the web…",
   fetchPage: "Reading web page…",
-};
+} satisfies Record<WebChatToolName, string>;
 
-export function getChatToolDisplayName(
-  toolName: string,
-  webToolsEnabled: boolean,
-): string | null {
+export function getChatToolDisplayName(toolName: string, webToolsEnabled: boolean): string | null {
   if (isWebChatToolName(toolName)) {
     if (!webToolsEnabled) return null;
     return WEB_CHAT_TOOL_LABELS[toolName];

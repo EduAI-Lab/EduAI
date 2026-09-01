@@ -1,12 +1,16 @@
 /**
- * BYOK (bring-your-own-key) provider-key helpers — the platform-standard
- * pattern (Core keeps user provider keys client-side and forwards them per
- * request; AI Tutor does the same). Keys live only in localStorage; the server
- * never persists them. Centralised here so the chat composer and the Settings →
- * Providers tab share one source of truth.
+ * BYOK (bring-your-own-key) provider-key helpers. AI Tutor keeps these keys in
+ * an account-scoped browser namespace and forwards them through EduAI services
+ * for model requests. Keys are removed on logout. Centralised here so the chat
+ * composer and Settings → Providers share one source of truth.
  */
 
-export type ProviderId = 'google' | 'openai';
+import { isBrowser } from "@eduai/ui/runtime-env";
+import { z } from "zod";
+export type ProviderId = "google" | "openai" | "opencode";
+
+/** Sentinel used in UI state when the encrypted key is owned by Core. */
+export const CORE_STORED_KEY = "__core_stored__";
 
 /** Providers a student can configure a key for, in display order. */
 export const PROVIDERS: ReadonlyArray<{
@@ -14,47 +18,146 @@ export const PROVIDERS: ReadonlyArray<{
   label: string;
   /** Where to get a key. */
   keyUrl: string;
+  /** Provider-specific setup requirement shown beside the key field. */
+  note?: string;
 }> = [
-  { id: 'google', label: 'Gemini', keyUrl: 'https://aistudio.google.com/app/apikey' },
-  { id: 'openai', label: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys' },
+  { id: "google", label: "Gemini", keyUrl: "https://aistudio.google.com/app/apikey" },
+  { id: "openai", label: "OpenAI", keyUrl: "https://platform.openai.com/api-keys" },
+  {
+    id: "opencode",
+    label: "OpenCode Go",
+    keyUrl: "https://opencode.ai/docs/go/",
+    note: "Requires an OpenCode Go subscription.",
+  },
 ];
 
-const PROVIDER_LABELS: Record<string, string> = { google: 'Gemini', openai: 'OpenAI' };
+// A `Map` because the provider half of a model id is free-form: an id from a
+// provider this build has never heard of labels itself.
+const PROVIDER_LABELS = new Map<string, string>([
+  ["google", "Gemini"],
+  ["openai", "OpenAI"],
+  ["opencode", "OpenCode Go"],
+]);
 
-/** localStorage key — unchanged from the original chat implementation so any
- *  keys a student already saved keep working after this refactor. */
-export const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
+/**
+ * Providers that need the student's own (BYOK) key to serve a request. Every
+ * provider a student can configure a key for (see `PROVIDERS`) is BYOK; UBC-
+ * hosted providers (`vllm`, `ollama`) are backed by the server's own key and
+ * never require one from the browser. Kept as a set so the composer gate can
+ * ask "does the SELECTED model need my key?" instead of "do I hold any key?"
+ * (#1645 — a personal key must be a fallback, not a precondition).
+ */
+const BYOK_PROVIDER_IDS = new Set<string>(PROVIDERS.map((provider) => provider.id));
+
+/**
+ * Whether the given provider requires a browser-local BYOK key. UBC-hosted
+ * inference (anything not in `BYOK_PROVIDER_IDS`, e.g. `vllm`/`ollama`) is
+ * served with the server's key, so those models are usable with no key.
+ */
+export function providerRequiresByokKey(provider: string): boolean {
+  return BYOK_PROVIDER_IDS.has(provider);
+}
+
+/** Legacy unscoped localStorage key. It is deliberately discarded because its
+ * owner cannot be established safely on a shared browser. */
+export const API_KEYS_STORAGE_KEY = "ai-provider-keys";
+const API_KEYS_STORAGE_PREFIX = `${API_KEYS_STORAGE_KEY}:v2:`;
+export const API_KEYS_CLEARED_EVENT = "eduai:provider-keys-cleared";
 
 export function getProviderLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
+  return PROVIDER_LABELS.get(provider) ?? provider;
 }
 
 /** The provider half of a namespaced model id ("google:gemini-2.5-flash"). */
 export function getProviderFromModelId(modelId: string): string {
-  return modelId.split(':')[0] || 'google';
+  return modelId.split(":")[0] || "google";
 }
 
 export function maskApiKey(key: string): string {
-  if (key.length <= 8) return '••••••••';
+  if (key === CORE_STORED_KEY) return "••••••••";
+  if (key.length <= 8) return "••••••••";
   return `••••••${key.slice(-4)}`;
 }
 
-// Read/write are wrapped to survive SSR-like envs and quota errors silently.
-export function loadApiKeysFromStorage(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
+export function getApiKeysStorageKey(userId: string): string {
+  return `${API_KEYS_STORAGE_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+/** Removes keys saved before account-bound storage existed. The old entry has
+ * no trustworthy owner, so migrating it to whichever user signs in next would
+ * recreate the cross-account disclosure this boundary prevents. */
+export function discardLegacyApiKeysFromStorage(): void {
+  if (!isBrowser()) return;
   try {
-    const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
+    localStorage.removeItem(API_KEYS_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+/** Read/write helpers are wrapped to survive SSR-like environments and browser
+ * storage failures without ever falling back to another account's namespace. */
+export function loadApiKeysFromStorage(userId: string | null | undefined): Record<string, string> {
+  if (!isBrowser() || !userId) return {};
+  try {
+    discardLegacyApiKeysFromStorage();
+    const stored = localStorage.getItem(getApiKeysStorageKey(userId));
+    if (!stored) return {};
+    const parsed = z.record(z.unknown()).safeParse(JSON.parse(stored));
+    if (!parsed.success) return {};
+    return Object.fromEntries(
+      Object.entries(parsed.data).flatMap(([provider, value]) => {
+        const key = z.string().min(1).safeParse(value);
+        return key.success ? [[provider, key.data] as const] : [];
+      }),
+    );
   } catch {
     return {};
   }
 }
 
-export function saveApiKeysToStorage(keys: Record<string, string>) {
-  if (typeof window === 'undefined') return;
+export function saveApiKeysToStorage(
+  userId: string | null | undefined,
+  keys: Record<string, string>,
+): void {
+  if (!isBrowser() || !userId) return;
   try {
-    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
+    discardLegacyApiKeysFromStorage();
+    const storageKey = getApiKeysStorageKey(userId);
+    if (Object.keys(keys).length === 0) {
+      localStorage.removeItem(storageKey);
+    } else {
+      localStorage.setItem(storageKey, JSON.stringify(keys));
+    }
   } catch {
-    // Ignore storage errors
+    // Ignore storage errors.
   }
+}
+
+/** Removes one account-scoped legacy key after its Core replacement succeeds. */
+export function removeApiKeyFromStorage(userId: string | null | undefined, provider: string): void {
+  if (!isBrowser() || !userId) return;
+  try {
+    const storageKey = getApiKeysStorageKey(userId);
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return;
+    const parsed = z.record(z.string().min(1)).safeParse(JSON.parse(stored));
+    if (!parsed.success) return;
+    const keys = { ...parsed.data };
+    delete keys[provider];
+    saveApiKeysToStorage(userId, keys);
+  } catch {
+    // Keep the legacy value if storage cannot be updated; the next migration
+    // can retry without losing the only copy.
+  }
+}
+
+export function clearApiKeysForUser(userId: string | null | undefined): void {
+  if (!isBrowser() || !userId) return;
+  try {
+    localStorage.removeItem(getApiKeysStorageKey(userId));
+  } catch {
+    // Ignore storage errors.
+  }
+  window.dispatchEvent(new CustomEvent(API_KEYS_CLEARED_EVENT, { detail: { userId } }));
 }

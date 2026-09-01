@@ -1,4 +1,7 @@
-import { resolveAllowedLocalInferenceBaseUrl } from "./local-inference-url.server";
+import {
+  canonicalLocalInferenceBaseUrl,
+  resolveAllowedLocalInferenceBaseUrl,
+} from "./local-inference-url.server";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/api";
 
@@ -9,26 +12,28 @@ export class InvalidOllamaBaseUrlError extends Error {
   }
 }
 
-/** Hostname of the deployment-configured Ollama endpoint, if OLLAMA_BASE_URL is set and valid. */
-function configuredOllamaHostnames(): Set<string> {
+/** Exact deployment-owned Ollama bases, with the provider's optional /api alias. */
+function configuredOllamaBaseUrls(): Set<string> {
+  const allowed = new Set<string>();
   const raw = process.env.OLLAMA_BASE_URL?.trim();
-  if (!raw) return new Set();
-  try {
-    return new Set([new URL(raw).hostname.toLowerCase()]);
-  } catch {
-    return new Set();
+  const configured = raw || DEFAULT_OLLAMA_BASE_URL;
+  const canonical = canonicalLocalInferenceBaseUrl(configured);
+  if (canonical) {
+    allowed.add(canonical);
+    if (canonical.endsWith("/api")) allowed.add(canonical.slice(0, -4));
   }
+  return allowed;
 }
 
 /**
- * Restricts user-supplied Ollama endpoints to loopback or the hostname
- * explicitly configured by the deployment.
+ * Restricts user-supplied Ollama endpoints to an exact deployment-owned base;
+ * explicit development/test runs may additionally use loopback for local tooling.
  */
 export function resolveAllowedOllamaBaseUrl(raw?: string | null): string {
   return resolveAllowedLocalInferenceBaseUrl(raw, {
     label: "Ollama",
     defaultBaseUrl: process.env.OLLAMA_BASE_URL?.trim() || DEFAULT_OLLAMA_BASE_URL,
-    allowedHostnames: configuredOllamaHostnames(),
+    allowedBaseUrls: configuredOllamaBaseUrls(),
     createError: (message) => new InvalidOllamaBaseUrlError(message),
   });
 }

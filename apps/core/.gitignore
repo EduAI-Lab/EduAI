@@ -13,6 +13,26 @@ ecosystem.config.cjs
 /scripts/research/.env.research
 /scripts/research/data/runs/
 
+# Fleet server registry (#1351/#1418) — host-specific, like .env. Copy
+# fleet.config.example.json to fleet.config.json on each deployment; never
+# commit the real file, or every checkout (including CI) picks it up by
+# default and activates fleet routing against servers the environment can't
+# actually reach.
+/fleet.config.json
+
 # Stryker Generated Files
 .stryker-tmp/
 /reports/
+
+# Load test run output (#919) — most runs are point-in-time and not source,
+# but FINDINGS.md and the two baseline run summaries are kept as evidence.
+/loadtest/results/*
+!/loadtest/results/.gitkeep
+!/loadtest/results/FINDINGS.md
+!/loadtest/results/run-a-default-admission.json
+!/loadtest/results/run-b-connection-pool.json
+!/loadtest/results/browser-5vu.summary.json
+
+# Playwright visual regression (test:visual) — fixtures are regenerated from
+# component source by global-setup.ts before each run.
+/app/tests/visual/fixtures/

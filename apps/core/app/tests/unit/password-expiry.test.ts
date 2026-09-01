@@ -14,6 +14,7 @@ import prisma from "~/lib/prisma.server";
 import {
   PASSWORD_EXPIRY_DAYS,
   isPasswordExpired,
+  isPasswordExpiredForUser,
   getPasswordChangedAt,
   getExpiredPasswordRedirect,
   invalidatePasswordExpiryCache,
@@ -86,6 +87,40 @@ describe("getPasswordChangedAt", () => {
       where: { userId: "user-1", providerId: "credential" },
       select: { passwordChangedAt: true },
     });
+  });
+});
+
+// AUTH-06: this cached boolean is the shared primitive behind both the
+// page-loader redirect (below) and the `/api/*` middleware guard in
+// `root.tsx`.
+describe("isPasswordExpiredForUser", () => {
+  it("returns false when the password is not expired", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+
+    expect(await isPasswordExpiredForUser("user-1")).toBe(false);
+  });
+
+  it("returns true when the password is expired", async () => {
+    const old = new Date();
+    old.setFullYear(old.getFullYear() - 2);
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: old,
+    } as never);
+
+    expect(await isPasswordExpiredForUser("user-1")).toBe(true);
+  });
+
+  it("shares its cache with getExpiredPasswordRedirect (single DB lookup)", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+
+    await getExpiredPasswordRedirect("user-1");
+    await isPasswordExpiredForUser("user-1");
+
+    expect(prisma.account.findFirst).toHaveBeenCalledTimes(1);
   });
 });
 

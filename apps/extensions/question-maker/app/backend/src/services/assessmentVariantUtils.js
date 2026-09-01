@@ -1,16 +1,16 @@
 /**
  * Helpers for loading ordered variants and aggregating slot structure for the assessment variant workflow.
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 /** Loads ordered variant rows for an assessment (all sections, section position then display order). */
 export async function loadOrderedVariantsForAssessment(assessmentId) {
   const sections = await prisma.assessmentSections.findMany({
     where: { assessmentId },
-    orderBy: [{ position: 'asc' }, { id: 'asc' }],
+    orderBy: [{ position: "asc" }, { id: "asc" }],
     include: {
       sectionVariants: {
-        orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+        orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
         include: {
           variant: {
             select: {
@@ -18,19 +18,29 @@ export async function loadOrderedVariantsForAssessment(assessmentId) {
               questionText: true,
               answer: true,
               choices: true,
+              selectAllThatApply: true,
+              correctAnswers: true,
               difficulty: true,
               reasoningLevel: true,
               questionMetadataId: true,
               isAiGenerated: true,
               isDraft: true,
               questionMetadata: {
-                select: { id: true, type: true, primaryTopicId: true, description: true }
-              }
-            }
-          }
-        }
-      }
-    }
+                // `courseId` is selected so readiness can filter the course scope in
+                // memory instead of issuing a second authorization query per question.
+                select: {
+                  id: true,
+                  type: true,
+                  courseId: true,
+                  primaryTopicId: true,
+                  description: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   const ordered = [];
@@ -44,7 +54,10 @@ export async function loadOrderedVariantsForAssessment(assessmentId) {
 }
 
 /** Aggregates topic / difficulty / type counts from variant rows (topic keys are strings). */
-export function aggregateStructure(variants, topicKeyFn = (v) => v.questionMetadata?.primaryTopicId) {
+export function aggregateStructure(
+  variants,
+  topicKeyFn = (v) => v.questionMetadata?.primaryTopicId,
+) {
   const topicCounts = {};
   const difficultyCounts = { easy: 0, medium: 0, hard: 0 };
   const typeCounts = { MCQ: 0, SA: 0, LA: 0 };

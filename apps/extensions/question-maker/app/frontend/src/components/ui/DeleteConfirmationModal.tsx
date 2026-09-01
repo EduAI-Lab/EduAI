@@ -12,8 +12,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
-} from '@eduai/ui';
-import { IconAlertTriangle } from '@tabler/icons-react';
+} from "@eduai/ui";
+import { IconAlertTriangle } from "@tabler/icons-react";
 
 interface DeleteConfirmationModalProps {
   open: boolean;
@@ -24,7 +24,7 @@ interface DeleteConfirmationModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   isLoading?: boolean;
-  variant?: 'default' | 'destructive';
+  variant?: "default" | "destructive";
 }
 
 export const DeleteConfirmationModal = ({
@@ -33,14 +33,18 @@ export const DeleteConfirmationModal = ({
   onConfirm,
   title,
   message,
-  confirmLabel = 'Delete',
-  cancelLabel = 'Cancel',
+  confirmLabel = "Delete",
+  cancelLabel = "Cancel",
   isLoading = false,
-  variant = 'destructive',
+  variant = "destructive",
 }: DeleteConfirmationModalProps) => {
   const handleConfirm = async () => {
-    await onConfirm();
-    onOpenChange(false);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } catch {
+      // Leave the dialog open so the user can retry after an error toast.
+    }
   };
 
   return (
@@ -50,23 +54,23 @@ export const DeleteConfirmationModal = ({
           <div className="flex items-center gap-3">
             <div
               className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                variant === 'destructive' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-muted dark:bg-muted'
+                variant === "destructive"
+                  ? "bg-red-100 dark:bg-red-900/20"
+                  : "bg-muted dark:bg-muted"
               }`}
             >
               <IconAlertTriangle
                 className={`h-5 w-5 ${
-                  variant === 'destructive'
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-muted-foreground dark:text-muted-foreground'
+                  variant === "destructive"
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-muted-foreground dark:text-muted-foreground"
                 }`}
               />
             </div>
             <AlertDialogTitle className="text-left">{title}</AlertDialogTitle>
           </div>
           {message && (
-            <AlertDialogDescription className="pt-2 text-left">
-              {message}
-            </AlertDialogDescription>
+            <AlertDialogDescription className="pt-2 text-left">{message}</AlertDialogDescription>
           )}
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-2 sm:gap-0">

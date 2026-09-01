@@ -8,9 +8,10 @@ import {
 } from "~/lib/canvas/guards.server";
 
 describe("canManageCanvasIntegration", () => {
-  it("allows instructors and admins", () => {
+  it("allows instructors, admins, and unit admins", () => {
     expect(canManageCanvasIntegration("INSTRUCTOR")).toBe(true);
     expect(canManageCanvasIntegration("ADMIN")).toBe(true);
+    expect(canManageCanvasIntegration("UNIT_ADMIN")).toBe(true);
   });
 
   it("denies students and TAs", () => {
@@ -92,5 +93,39 @@ describe("resetCanvasRateLimitsForTests", () => {
     expect(isCanvasSyncRateLimited(userId)).toBe(true);
     resetCanvasRateLimitsForTests();
     expect(isCanvasSyncRateLimited(userId)).toBe(false);
+  });
+});
+
+// AUTH-05/CANVAS-13: `Number(env ?? fallback)` yields NaN for a non-numeric
+// override, and `hits.length >= NaN` is always false, so the limiter never
+// trips. These constants are read at module load, so each case re-imports
+// the module under a stubbed env to exercise that read.
+describe("Canvas rate limits — invalid env fails closed (AUTH-05/CANVAS-13)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("falls back to the default sync limit (1) when CANVAS_SYNC_RATE_LIMIT is not numeric", async () => {
+    vi.resetModules();
+    vi.stubEnv("CANVAS_SYNC_RATE_LIMIT", "not-a-number");
+    const { isCanvasSyncRateLimited: syncLimited } = await import("~/lib/canvas/guards.server");
+
+    const userId = `sync-nan-${Date.now()}`;
+    expect(syncLimited(userId)).toBe(false);
+    expect(syncLimited(userId)).toBe(true);
+  });
+
+  it("falls back to the default link-roster limit (10) when CANVAS_LINK_ROSTER_RATE_LIMIT is an empty string", async () => {
+    vi.resetModules();
+    vi.stubEnv("CANVAS_LINK_ROSTER_RATE_LIMIT", "");
+    const { isCanvasLinkRosterRateLimited: linkLimited } =
+      await import("~/lib/canvas/guards.server");
+
+    const userId = `link-empty-${Date.now()}`;
+    for (let i = 0; i < 10; i++) {
+      expect(linkLimited(userId)).toBe(false);
+    }
+    expect(linkLimited(userId)).toBe(true);
   });
 });

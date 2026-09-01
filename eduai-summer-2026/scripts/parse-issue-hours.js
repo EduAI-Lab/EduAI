@@ -4,7 +4,9 @@ const HOURS_LINE_PATTERN =
   /^\s*(?:[-*+]\s*)?(?:\*\*)?\s*Hours\s+to\s+complete\s*(?::\s*(?:\*\*)?|(?:\*\*)?\s*:)\s*([0-9]+(?:\.[0-9]+)?|0?\.[0-9]+)\s*(hours?|hrs?|h)\b\s*(?:\[\s*@?([A-Za-z0-9-]+)\s*\])?\s*$/i;
 
 function normalizeUsername(username) {
-  return String(username || "").trim().replace(/^@/, "");
+  return String(username || "")
+    .trim()
+    .replace(/^@/, "");
 }
 
 function hasHoursPhrase(line) {
@@ -14,7 +16,9 @@ function hasHoursPhrase(line) {
 function parseIssueHours(body, issue = {}) {
   const lines = String(body || "").split(/\r?\n/);
   const assignees = Array.isArray(issue.assignees)
-    ? issue.assignees.map((assignee) => normalizeUsername(assignee.login || assignee)).filter(Boolean)
+    ? issue.assignees
+        .map((assignee) => normalizeUsername(assignee.login || assignee))
+        .filter(Boolean)
     : [];
 
   const validLines = [];
@@ -80,7 +84,8 @@ function parseIssueHours(body, issue = {}) {
         type: "duplicate-person-hours",
         issueNumber: issue.number,
         username: entries[0].parsedPerson,
-        message: "Multiple Hours to complete lines were found for the same person; hours were excluded until reviewed.",
+        message:
+          "Multiple Hours to complete lines were found for the same person; hours were excluded until reviewed.",
       });
       entries.forEach((entry) => {
         manualReviewRows.push({
@@ -105,7 +110,8 @@ function parseIssueHours(body, issue = {}) {
     warnings.push({
       type: "mixed-named-and-unnamed-hours",
       issueNumber: issue.number,
-      message: "Issue mixes named and unnamed Hours to complete lines; unnamed hours were excluded until reviewed.",
+      message:
+        "Issue mixes named and unnamed Hours to complete lines; unnamed hours were excluded until reviewed.",
     });
     unnamedLines.forEach((entry) => {
       manualReviewRows.push({
@@ -145,7 +151,8 @@ function parseIssueHours(body, issue = {}) {
     warnings.push({
       type: "multiple-unnamed-hours",
       issueNumber: issue.number,
-      message: "Multiple unnamed Hours to complete lines were found; hours were excluded until reviewed.",
+      message:
+        "Multiple unnamed Hours to complete lines were found; hours were excluded until reviewed.",
     });
     unnamedLines.forEach((entry) => {
       manualReviewRows.push({

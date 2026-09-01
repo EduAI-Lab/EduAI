@@ -2,16 +2,36 @@
  * Dialog for importing a Canvas quiz into a local assessment with topic selection.
  * Handles integration checks, course/quiz selection, and imports while reporting skips.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
-import { Button, Label, Input } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import canvasService, { CanvasCourse, CanvasIntegration, CanvasQuiz, CanvasSkippedQuestion } from '../../services/canvasService';
-import { courseService } from '../../services/courseService';
-import { Course } from '../../types/question';
-import { Topic } from '../../types/topic';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@eduai/ui";
+import { Button, Label, Input } from "@eduai/ui";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import canvasService, {
+  CanvasIntegration,
+  CanvasQuiz,
+  CanvasSkippedQuestion,
+} from "../../services/canvasService";
+import { courseService } from "../../services/courseService";
+import { Topic } from "../../types/topic";
+import { assessmentTypes, AssessmentType } from "../../types/question";
+import { toast } from "sonner";
+
+interface CanvasCourseLink {
+  canvasCourseId: number;
+  canvasCourseName: string;
+}
 
 interface CanvasImportDialogProps {
   open: boolean;
@@ -24,66 +44,58 @@ export const CanvasImportDialog = ({
   open,
   onClose,
   courseId = null,
-  onImportSuccess
+  onImportSuccess,
 }: CanvasImportDialogProps) => {
-  const { toast } = useToast();
   const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
-  const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
-  const [localCourses, setLocalCourses] = useState<Course[]>([]);
+  // Neither course is picked: quizzes come from the Canvas course this course is
+  // linked to, and the assessment lands in this course.
+  const [linkedCanvasCourse, setLinkedCanvasCourse] = useState<CanvasCourseLink | null>(null);
+  const [isLoadingMapping, setIsLoadingMapping] = useState(false);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [quizzes, setQuizzes] = useState<CanvasQuiz[]>([]);
-  
-  const [selectedCanvasCourseId, setSelectedCanvasCourseId] = useState<string>('');
-  const [selectedQuizId, setSelectedQuizId] = useState<string>('');
-  const [selectedLocalCourseId, setSelectedLocalCourseId] = useState<string>('');
-  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
-  const [assessmentName, setAssessmentName] = useState<string>('');
-  const [assessmentType, setAssessmentType] = useState<string>('Quiz');
+
+  const [selectedQuizId, setSelectedQuizId] = useState<string>("");
+  const [selectedTopicId, setSelectedTopicId] = useState<string>("");
+  const [assessmentName, setAssessmentName] = useState<string>("");
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>("Quiz");
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  
-  // Connection form state
-  const [showConnectForm, setShowConnectForm] = useState(false);
-  const [canvasUrl, setCanvasUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
 
   // Load integration status
   useEffect(() => {
     if (open) {
       loadIntegration();
-      loadLocalCourses();
     }
   }, [open]);
 
-  // Load quizzes when Canvas course is selected
+  // Resolve the Canvas course linked to the course in context, then its quizzes
   useEffect(() => {
-    if (selectedCanvasCourseId && integration?.isConnected) {
-      loadQuizzes(parseInt(selectedCanvasCourseId));
-    } else {
+    if (!open || !courseId || !integration?.isConnected) {
+      setLinkedCanvasCourse(null);
       setQuizzes([]);
-      setSelectedQuizId('');
+      setSelectedQuizId("");
+      return;
     }
-  }, [selectedCanvasCourseId, integration]);
+    void loadLinkedCanvasCourse(courseId);
+  }, [open, courseId, integration]);
 
-  // Load topics when local course is selected
+  // Topics always come from the course in context
   useEffect(() => {
-    if (selectedLocalCourseId) {
-      loadTopics(parseInt(selectedLocalCourseId));
+    if (open && courseId) {
+      loadTopics(courseId);
     } else {
       setTopics([]);
-      setSelectedTopicId('');
+      setSelectedTopicId("");
     }
-  }, [selectedLocalCourseId]);
+  }, [open, courseId]);
 
   // Update assessment name when quiz is selected
   useEffect(() => {
     if (selectedQuizId && quizzes.length > 0) {
-      const quiz = quizzes.find(q => q.id.toString() === selectedQuizId);
+      const quiz = quizzes.find((q) => q.id.toString() === selectedQuizId);
       if (quiz && !assessmentName) {
         setAssessmentName(quiz.title);
       }
@@ -94,39 +106,30 @@ export const CanvasImportDialog = ({
     try {
       const integrationData = await canvasService.getIntegration();
       setIntegration(integrationData);
-      
-      if (integrationData?.isConnected) {
-        await loadCanvasCourses();
-      } else {
-        setShowConnectForm(true);
+    } catch (error) {
+      console.error("Failed to load Canvas integration:", error);
+    }
+  };
+
+  /** Resolves the Canvas course this local course was synced from; null when unlinked. */
+  const loadLinkedCanvasCourse = async (localCourseId: number) => {
+    setIsLoadingMapping(true);
+    try {
+      const mapping = await canvasService.getCourseMapping(localCourseId);
+      const canvasCourseId = mapping?.canvasCourseId ? Number(mapping.canvasCourseId) : null;
+      if (!canvasCourseId) {
+        setLinkedCanvasCourse(null);
+        setQuizzes([]);
+        setSelectedQuizId("");
+        return;
       }
-    } catch (error) {
-      console.error('Failed to load Canvas integration:', error);
-    }
-  };
-
-  const loadCanvasCourses = async () => {
-    setIsLoadingCourses(true);
-    try {
-      const courses = await canvasService.getCourses();
-      setCanvasCourses(courses);
-    } catch (error: any) {
-      toast({
-        title: 'Failed to load Canvas courses',
-        description: error.response?.data?.error || 'Please check your Canvas connection.',
-        variant: 'destructive'
+      setLinkedCanvasCourse({
+        canvasCourseId,
+        canvasCourseName: mapping.canvasCourseName || `Canvas course ${canvasCourseId}`,
       });
+      await loadQuizzes(canvasCourseId);
     } finally {
-      setIsLoadingCourses(false);
-    }
-  };
-
-  const loadLocalCourses = async () => {
-    try {
-      const courses = await courseService.getCourses();
-      setLocalCourses(courses);
-    } catch (error) {
-      console.error('Failed to load local courses:', error);
+      setIsLoadingMapping(false);
     }
   };
 
@@ -136,10 +139,8 @@ export const CanvasImportDialog = ({
       const quizList = await canvasService.getQuizzes(canvasCourseId);
       setQuizzes(quizList);
     } catch (error: any) {
-      toast({
-        title: 'Failed to load quizzes',
-        description: error.response?.data?.error || 'Failed to load quizzes from Canvas.',
-        variant: 'destructive'
+      toast.error("Failed to load quizzes", {
+        description: error.response?.data?.error || "Failed to load quizzes from Canvas.",
       });
       setQuizzes([]);
     } finally {
@@ -156,100 +157,36 @@ export const CanvasImportDialog = ({
         setSelectedTopicId(topicList[0].id.toString());
       }
     } catch (error) {
-      console.error('Failed to load topics:', error);
+      console.error("Failed to load topics:", error);
       setTopics([]);
     } finally {
       setIsLoadingTopics(false);
     }
   };
 
-  const handleConnect = async () => {
-    if (!canvasUrl) {
-      toast({
-        title: 'Canvas URL required',
-        description: 'Please enter your Canvas instance URL.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!apiKey) {
-      toast({
-        title: 'API Key required',
-        description: 'Please enter your Canvas API key.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    setIsConnecting(true);
-    try {
-      const { integration: result, usedTestMode } = await canvasService.connectCanvasWithFallback(
-        canvasUrl,
-        apiKey,
-      );
-      setIntegration(result);
-      setShowConnectForm(false);
-      if (usedTestMode) {
-        toast({
-          title: 'Canvas test mode',
-          description: 'Using mock Canvas data because live credentials were unavailable.',
-        });
-      }
-      await loadCanvasCourses();
-    } catch (error: any) {
-      toast({
-        title: 'Failed to connect Canvas',
-        description: error.response?.data?.error || 'Please check your credentials and try again.',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
   const handleImport = async () => {
-    if (!selectedCanvasCourseId) {
-      toast({
-        title: 'Canvas course required',
-        description: 'Please select a Canvas course.',
-        variant: 'destructive'
+    if (!courseId || !linkedCanvasCourse) {
+      toast.error("Course not linked to Canvas", {
+        description: "Sync this course from Canvas before importing.",
       });
       return;
     }
 
     if (!selectedQuizId) {
-      toast({
-        title: 'Quiz required',
-        description: 'Please select a quiz to import.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!selectedLocalCourseId) {
-      toast({
-        title: 'Local course required',
-        description: 'Please select a local course to import into.',
-        variant: 'destructive'
-      });
+      toast.error("Quiz required", { description: "Please select a quiz to import." });
       return;
     }
 
     if (!selectedTopicId) {
-      toast({
-        title: 'Topic required',
-        description: 'Please select a primary topic for the imported questions.',
-        variant: 'destructive'
+      toast.error("Topic required", {
+        description: "Please select a primary topic for the imported questions.",
       });
       return;
     }
 
     if (!assessmentName.trim()) {
-      toast({
-        title: 'Assessment name required',
-        description: 'Please enter a name for the assessment.',
-        variant: 'destructive'
+      toast.error("Assessment name required", {
+        description: "Please enter a name for the assessment.",
       });
       return;
     }
@@ -257,36 +194,33 @@ export const CanvasImportDialog = ({
     setIsLoading(true);
     try {
       const result = await canvasService.importQuiz(
-        parseInt(selectedCanvasCourseId),
+        linkedCanvasCourse.canvasCourseId,
         parseInt(selectedQuizId),
-        parseInt(selectedLocalCourseId),
+        courseId,
         {
           assessmentType,
           assessmentName: assessmentName.trim(),
-          primaryTopicId: parseInt(selectedTopicId)
-        }
+          // Local topic ids are CUIDs; `parseInt` turned every one into NaN,
+          // which serialized to null and failed the route's topic check.
+          primaryTopicId: selectedTopicId,
+        },
       );
-      
+
       // Build success message
-      let description = `Imported ${result.questionsImported} question${result.questionsImported !== 1 ? 's' : ''} from Canvas.`;
+      let description = `Imported ${result.questionsImported} question${result.questionsImported !== 1 ? "s" : ""} from Canvas.`;
       if (result.questionsSkipped && result.questionsSkipped > 0) {
-        description += ` ${result.questionsSkipped} question${result.questionsSkipped !== 1 ? 's were' : ' was'} skipped due to unsupported question types.`;
+        description += ` ${result.questionsSkipped} question${result.questionsSkipped !== 1 ? "s were" : " was"} skipped due to unsupported question types.`;
       }
-      
-      toast({
-        title: 'Import successful!',
-        description: description,
-      });
+
+      toast("Import successful!", { description: description });
 
       // If there are skipped questions, show details in console and optionally in a longer toast
       if (result.skippedQuestions && result.skippedQuestions.length > 0) {
-        console.warn('Skipped questions during import:', result.skippedQuestions);
+        console.warn("Skipped questions during import:", result.skippedQuestions);
         // Show additional toast with details if there are many skipped questions
         if (result.skippedQuestions.length > 3) {
-          toast({
-            title: 'Some questions were skipped',
+          toast("Some questions were skipped", {
             description: `${result.skippedQuestions.length} questions with unsupported types were not imported. Check the browser console for details.`,
-            variant: 'default',
           });
         }
       }
@@ -294,35 +228,29 @@ export const CanvasImportDialog = ({
       if (onImportSuccess) {
         onImportSuccess({
           assessmentId: result.assessmentId,
-          assessmentName: result.assessmentName
+          assessmentName: result.assessmentName,
         });
       }
 
       // Reset form
-      setSelectedCanvasCourseId('');
-      setSelectedQuizId('');
-      setSelectedLocalCourseId('');
-      setSelectedTopicId('');
-      setAssessmentName('');
-      setQuizzes([]);
-      
+      setSelectedQuizId("");
+      setSelectedTopicId("");
+      setAssessmentName("");
+
       onClose();
     } catch (error: any) {
-      toast({
-        title: 'Import failed',
-        description: error.response?.data?.error || 'Failed to import quiz from Canvas.',
-        variant: 'destructive'
+      toast.error("Import failed", {
+        description: error.response?.data?.error || "Failed to import quiz from Canvas.",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const canImport = 
+  const canImport =
     integration?.isConnected &&
-    selectedCanvasCourseId &&
+    linkedCanvasCourse &&
     selectedQuizId &&
-    selectedLocalCourseId &&
     selectedTopicId &&
     assessmentName.trim() &&
     !isLoading;
@@ -330,7 +258,7 @@ export const CanvasImportDialog = ({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0">
-        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-border">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle>Import from Canvas LMS</DialogTitle>
           <DialogDescription>
             Import a quiz from Canvas as a new assessment in Question Maker.
@@ -342,105 +270,53 @@ export const CanvasImportDialog = ({
             <p className="text-sm text-muted-foreground">
               Canvas import is available to instructors and administrators only.
             </p>
-          ) : showConnectForm ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="canvasUrl">Canvas Instance URL</Label>
-                <Input
-                  id="canvasUrl"
-                  placeholder="https://canvas.instructure.com"
-                  value={canvasUrl}
-                  onChange={(e) => setCanvasUrl(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Your Canvas LMS instance URL (e.g., https://canvas.ubc.ca)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="Enter your Canvas API key"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Generate an API key from your Canvas account settings
-                </p>
-              </div>
-            </div>
+          ) : !integration?.isConnected ? (
+            <p className="text-sm text-muted-foreground">
+              Canvas is not connected. Connect Canvas in your EduAI settings, then reopen this
+              dialog.
+            </p>
+          ) : !courseId ? (
+            <p className="text-sm text-muted-foreground">
+              Select a course before importing from Canvas.
+            </p>
+          ) : isLoadingMapping ? (
+            <div className="text-sm text-muted-foreground">Loading Canvas course...</div>
+          ) : !linkedCanvasCourse ? (
+            <p className="text-sm text-muted-foreground">
+              This course is not linked to a Canvas course. Sync the course from Canvas before
+              importing quizzes.
+            </p>
           ) : (
             <div className="space-y-4">
-              {/* Canvas Course Selection */}
+              {/* Linked Canvas course — not selectable */}
               <div className="space-y-2">
-                <Label htmlFor="canvasCourse">Canvas Course</Label>
-                {isLoadingCourses ? (
-                  <div className="text-sm text-muted-foreground">Loading courses...</div>
-                ) : canvasCourses.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    No courses found. Make sure you are enrolled as an instructor.
-                  </div>
-                ) : (
-                  <Select value={selectedCanvasCourseId} onValueChange={setSelectedCanvasCourseId}>
-                    <SelectTrigger id="canvasCourse">
-                      <SelectValue placeholder="Select a Canvas course" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {canvasCourses.map((course) => (
-                        <SelectItem key={course.id} value={course.id.toString()}>
-                          {course.course_code ? `${course.course_code} - ` : ''}{course.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <Label>Canvas Course</Label>
+                <p className="text-sm" data-testid="linked-canvas-course">
+                  {linkedCanvasCourse.canvasCourseName}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Quizzes import from the Canvas course this course is linked to, into this course.
+                </p>
               </div>
 
               {/* Quiz Selection */}
-              {selectedCanvasCourseId && (
-                <div className="space-y-2">
-                  <Label htmlFor="quiz">Quiz</Label>
-                  {isLoadingQuizzes ? (
-                    <div className="text-sm text-muted-foreground">Loading quizzes...</div>
-                  ) : quizzes.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                      No quizzes found in this course.
-                    </div>
-                  ) : (
-                    <Select value={selectedQuizId} onValueChange={setSelectedQuizId}>
-                      <SelectTrigger id="quiz">
-                        <SelectValue placeholder="Select a quiz" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {quizzes.map((quiz) => (
-                          <SelectItem key={quiz.id} value={quiz.id.toString()}>
-                            {quiz.title} {quiz.published ? '(Published)' : '(Unpublished)'}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              )}
-
-              {/* Local Course Selection */}
               <div className="space-y-2">
-                <Label htmlFor="localCourse">Local Course</Label>
-                {localCourses.length === 0 ? (
+                <Label htmlFor="quiz">Quiz</Label>
+                {isLoadingQuizzes ? (
+                  <div className="text-sm text-muted-foreground">Loading quizzes...</div>
+                ) : quizzes.length === 0 ? (
                   <div className="text-sm text-muted-foreground">
-                    No local courses found. Please create a course first.
+                    No quizzes found in this course.
                   </div>
                 ) : (
-                  <Select value={selectedLocalCourseId} onValueChange={setSelectedLocalCourseId}>
-                    <SelectTrigger id="localCourse">
-                      <SelectValue placeholder="Select a local course" />
+                  <Select value={selectedQuizId} onValueChange={setSelectedQuizId}>
+                    <SelectTrigger id="quiz">
+                      <SelectValue placeholder="Select a quiz" />
                     </SelectTrigger>
                     <SelectContent>
-                      {localCourses.map((course) => (
-                        <SelectItem key={course.id} value={course.id.toString()}>
-                          {course.code ? `${course.code} - ` : ''}{course.name}
+                      {quizzes.map((quiz) => (
+                        <SelectItem key={quiz.id} value={quiz.id.toString()}>
+                          {quiz.title} {quiz.published ? "(Published)" : "(Unpublished)"}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -449,34 +325,32 @@ export const CanvasImportDialog = ({
               </div>
 
               {/* Topic Selection */}
-              {selectedLocalCourseId && (
-                <div className="space-y-2">
-                  <Label htmlFor="topic">Primary Topic (Required)</Label>
-                  {isLoadingTopics ? (
-                    <div className="text-sm text-muted-foreground">Loading topics...</div>
-                  ) : topics.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                      No topics found. Please create a topic for this course first.
-                    </div>
-                  ) : (
-                    <Select value={selectedTopicId} onValueChange={setSelectedTopicId}>
-                      <SelectTrigger id="topic">
-                        <SelectValue placeholder="Select a topic" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {topics.map((topic) => (
-                          <SelectItem key={topic.id} value={topic.id.toString()}>
-                            {topic.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    All imported questions will be assigned to this topic.
-                  </p>
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="topic">Primary Topic (Required)</Label>
+                {isLoadingTopics ? (
+                  <div className="text-sm text-muted-foreground">Loading topics...</div>
+                ) : topics.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    No topics found. Please create a topic for this course first.
+                  </div>
+                ) : (
+                  <Select value={selectedTopicId} onValueChange={setSelectedTopicId}>
+                    <SelectTrigger id="topic">
+                      <SelectValue placeholder="Select a topic" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {topics.map((topic) => (
+                        <SelectItem key={topic.id} value={topic.id.toString()}>
+                          {topic.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  All imported questions will be assigned to this topic.
+                </p>
+              </div>
 
               {/* Assessment Details */}
               <div className="space-y-2">
@@ -491,16 +365,22 @@ export const CanvasImportDialog = ({
 
               <div className="space-y-2">
                 <Label htmlFor="assessmentType">Assessment Type</Label>
-                <Select value={assessmentType} onValueChange={setAssessmentType}>
+                <Select
+                  value={assessmentType}
+                  onValueChange={(value) => {
+                    const nextType = assessmentTypes.find((type) => type === value);
+                    if (nextType) setAssessmentType(nextType);
+                  }}
+                >
                   <SelectTrigger id="assessmentType">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Quiz">Quiz</SelectItem>
-                    <SelectItem value="Assignment">Assignment</SelectItem>
-                    <SelectItem value="Exam">Exam</SelectItem>
-                    <SelectItem value="Midterm">Midterm</SelectItem>
-                    <SelectItem value="Final">Final</SelectItem>
+                    {assessmentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -508,42 +388,13 @@ export const CanvasImportDialog = ({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4 flex-row gap-2 sm:justify-between">
+          <Button variant="outline" onClick={onClose}>
+            {canManageCanvas ? "Cancel" : "Close"}
+          </Button>
           {canManageCanvas && (
-            showConnectForm ? (
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowConnectForm(true);
-                  setSelectedCanvasCourseId('');
-                  setSelectedQuizId('');
-                }}
-              >
-                Change Connection
-              </Button>
-            )
-          )}
-          {!canManageCanvas ? (
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
-          ) : showConnectForm ? (
-            <Button
-              onClick={handleConnect}
-              disabled={isConnecting || !canvasUrl || !apiKey}
-            >
-              {isConnecting ? 'Connecting...' : 'Connect Canvas'}
-            </Button>
-          ) : (
-            <Button
-              onClick={handleImport}
-              disabled={!canImport}
-            >
-              {isLoading ? 'Importing...' : 'Import from Canvas'}
+            <Button onClick={handleImport} disabled={!canImport} data-testid="canvas-import-submit">
+              {isLoading ? "Importing..." : "Import from Canvas"}
             </Button>
           )}
         </DialogFooter>

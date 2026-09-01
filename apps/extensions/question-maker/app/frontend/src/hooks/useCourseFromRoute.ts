@@ -3,10 +3,10 @@
  * Returns the Course object, loading state, and not-found state.
  * Used by CourseDetailPage to ensure the course is valid and accessible.
  */
-import { useMemo } from 'react';
-import { useParams } from 'react-router';
-import { Course } from '../types/question';
-import { useDisplayCourses } from './useDisplayCourses';
+import { useMemo } from "react";
+import { useParams } from "react-router";
+import { Course } from "../types/question";
+import { useDisplayCourses } from "./useDisplayCourses";
 
 interface UseCourseFromRouteResult {
   course: Course | null;

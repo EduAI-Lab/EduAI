@@ -1,3 +1,6 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
+import { z } from "zod";
+import { asJsonObject } from "~/lib/json-value";
 /** Multi-server vLLM fleet routing — job types, chat features, and pick results. */
 
 export type JobType = "interactive" | "background";
@@ -8,13 +11,11 @@ export type FleetServer = {
   baseUrl: string;
   jobTypes: JobType[];
   models: string[];
-  energySidecarUrl: string;
 };
 
 export type FleetPick = {
   serverId: string;
   baseUrl: string;
-  energySidecarUrl: string;
   reason: string;
 };
 
@@ -25,18 +26,16 @@ export type FleetHealthResult = {
   error?: string;
 };
 
-const WORKLOAD_FEATURES: WorkloadFeature[] = ["chat", "tutor", "question-maker"];
-const JOB_TYPES: JobType[] = ["interactive", "background"];
+const WORKLOAD_FEATURES = [
+  "chat",
+  "tutor",
+  "question-maker",
+] as const satisfies readonly WorkloadFeature[];
+const JOB_TYPES = ["interactive", "background"] as const satisfies readonly JobType[];
 
-export function parseWorkloadFeature(routingContext: unknown): WorkloadFeature {
-  if (!routingContext || typeof routingContext !== "object") {
-    return "chat";
-  }
-  const feature = (routingContext as { feature?: unknown }).feature;
-  if (typeof feature === "string" && WORKLOAD_FEATURES.includes(feature as WorkloadFeature)) {
-    return feature as WorkloadFeature;
-  }
-  return "chat";
+export function parseWorkloadFeature(routingContext: JsonValue | undefined): WorkloadFeature {
+  const feature = z.enum(WORKLOAD_FEATURES).safeParse(asJsonObject(routingContext)?.feature);
+  return feature.success ? feature.data : "chat";
 }
 
 /** Map the legacy feature vocabulary onto the canonical fleet job types. */
@@ -47,22 +46,17 @@ export function jobTypeForWorkloadFeature(feature: WorkloadFeature): JobType {
 export function buildFleetRouterFeatures(
   feature: WorkloadFeature,
   fleetPick: FleetPick | null,
-): Record<string, unknown> {
+): JsonObject {
+  // A request the fleet router did not place carries no server attribution.
   return {
     feature,
-    ...(fleetPick
-      ? { fleetServerId: fleetPick.serverId, fleetReason: fleetPick.reason }
-      : {}),
+    fleetServerId: fleetPick?.serverId,
+    fleetReason: fleetPick?.reason,
   };
 }
 
 /** Parse validated `routingContext.jobType`; default interactive. */
-export function parseJobType(routingContext: unknown): JobType {
-  if (routingContext && typeof routingContext === "object") {
-    const jobType = (routingContext as { jobType?: unknown }).jobType;
-    if (typeof jobType === "string" && JOB_TYPES.includes(jobType as JobType)) {
-      return jobType as JobType;
-    }
-  }
-  return "interactive";
+export function parseJobType(routingContext: JsonValue | undefined): JobType {
+  const jobType = z.enum(JOB_TYPES).safeParse(asJsonObject(routingContext)?.jobType);
+  return jobType.success ? jobType.data : "interactive";
 }

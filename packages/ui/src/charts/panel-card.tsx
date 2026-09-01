@@ -1,12 +1,12 @@
 /** Standard titled content card used across dashboard + course analytics panels. */
-import type { ReactNode } from "react"
-import { cn } from "../utils"
+import type { ReactNode } from "react";
+import { cn } from "../utils";
 
 export interface PanelCardProps {
-  title: string
-  action?: ReactNode
-  children: ReactNode
-  className?: string
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
 }
 
 export function PanelCard({ title, action, children, className }: PanelCardProps) {
@@ -23,5 +23,5 @@ export function PanelCard({ title, action, children, className }: PanelCardProps
       </div>
       {children}
     </div>
-  )
+  );
 }

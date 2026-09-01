@@ -1,19 +1,23 @@
-import { Form, Link, useActionData, useLoaderData, redirect } from "react-router"
-import { useState } from "react"
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { RegisterForm } from "~/components/register-form"
-import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server"
-import { signUpSchema, type SignUpInput } from "~/lib/auth"
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
-import { auth } from "~/lib/auth/server"
-import { getPolicy } from "~/lib/policy.server"
+import { RegisterForm } from "~/components/register-form";
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
+import { signUpSchema, type SignUpInput } from "~/lib/auth";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import { auth } from "~/lib/auth/server";
+import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import { getPolicy } from "~/lib/policy.server";
+import { messageFromCause } from "~/lib/form-errors";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (session?.user) {
+    if (session.user.emailVerified === false) {
+      return redirect("/auth/verify-email");
+    }
     const onboardingRedirect = await redirectToStudentIdOnboardingIfNeeded(
       session.user.id,
       session.user.role,
@@ -38,12 +42,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const formData = Object.fromEntries(await request.formData());
+  let formData: FormData;
+  try {
+    formData = await readAuthFormData(request);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
   const input = {
-    name: String(formData.name || ""),
-    email: String(formData.email || ""),
-    password: String(formData.password || ""),
-    confirmPassword: String(formData.confirmPassword || ""),
+    name: String(values.name || ""),
+    email: String(values.email || ""),
+    password: String(values.password || ""),
+    confirmPassword: String(values.confirmPassword || ""),
   };
   const result = signUpSchema.safeParse(input);
   if (!result.success) {
@@ -58,19 +70,16 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    const authRequest = buildAuthSubRequest(
-      "/api/auth/sign-up/email",
-      request,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: input.name,
-          email: input.email,
-          password: input.password,
-        }),
-      },
-    );
+    const authRequest = buildAuthSubRequest("/api/auth/sign-up/email", request, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: input.name,
+        email: input.email,
+        password: input.password,
+        callbackURL: "/onboarding/student-id",
+      }),
+    });
 
     const response = await auth.handler(authRequest);
 
@@ -84,28 +93,24 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
-    const headers = new Headers();
-    appendAuthSetCookies(response, headers);
-
-    return redirect("/onboarding/student-id", { headers });
+    return redirect("/auth/verify-email");
   } catch (err: unknown) {
-    let message = "Sign up failed";
-    if (typeof err === "object" && err && "message" in err) {
-      message = String((err as { message?: string }).message ?? message);
-    }
+    const message = messageFromCause(err, "Sign up failed");
     return { formError: message };
   }
 }
 
 export default function RegisterPage() {
-  const [isLoading, setIsLoading] = useState(false);
+  const isLoading = useNavigation().state !== "idle";
   const { registrationDisabled } = useLoaderData() as {
     registrationDisabled: boolean;
   };
-  const actionData = useActionData() as {
-    fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
-    formError?: string;
-  } | undefined;
+  const actionData = useActionData() as
+    | {
+        fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
+        formError?: string;
+      }
+    | undefined;
 
   return (
     <div
@@ -113,36 +118,53 @@ export default function RegisterPage() {
       style={{ background: "var(--muted)" }}
     >
       {/* Gold top bar */}
-      <div className="fixed top-0 left-0 right-0 h-[3px] z-10" style={{ background: "var(--gold)" }} />
+      <div
+        className="fixed top-0 left-0 right-0 h-[3px] z-10"
+        style={{ background: "var(--gold)" }}
+      />
 
       {/* Logo */}
       <div className="flex items-center gap-2 mb-7">
         <div
-          className="w-9 h-9 rounded-[9px] flex items-center justify-center"
+          className="w-9 h-9 rounded-[9px] flex items-center justify-center dark:ring-1 dark:ring-white/40"
           style={{ background: "var(--primary)" }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+          >
+            <path d="m3 9 9-5 9 5-9 5Z" />
+            <path d="M6 11v4c3 3 9 3 12 0v-4" />
+            <path d="M21 10v6" stroke="var(--gold)" />
+            <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
-        <span className="text-xl font-bold" style={{ color: "var(--primary)", letterSpacing: "-0.01em" }}>EduAI</span>
+        <span className="text-xl font-bold text-primary dark:text-foreground">EduAI</span>
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+      <div
+        className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg"
+        style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
+      >
         {registrationDisabled ? (
           // §807: public registration is off — explain it's invite-only instead
           // of bouncing the user to /login with no context.
           <div className="flex flex-col items-center gap-4 text-center">
             <h1 className="text-lg font-semibold text-foreground">Registration is invite-only</h1>
             <p className="text-sm text-muted-foreground">
-              New accounts on this platform are created by invitation. Ask your
-              administrator or instructor to send you an invite, then use the link
-              in that email to set up your account.
+              New accounts on this platform are created by invitation. Ask your administrator or
+              instructor to send you an invite, then use the link in that email to set up your
+              account.
             </p>
             <Link
               to="/auth/login"
-              className="text-sm text-primary underline underline-offset-4"
+              className="text-sm text-primary-text underline underline-offset-4"
             >
               Back to sign in
             </Link>
@@ -157,7 +179,9 @@ export default function RegisterPage() {
         )}
       </div>
 
-      <p className="mt-5 text-xs text-muted-foreground">University of British Columbia · EduAI Platform</p>
+      <p className="mt-5 text-xs text-muted-foreground">
+        University of British Columbia · EduAI Platform
+      </p>
     </div>
-  )
+  );
 }

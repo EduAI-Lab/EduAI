@@ -1,18 +1,165 @@
-import { prisma } from '../config/database.js';
-import { listEduAiCourseEnrollmentsServiceKey } from './eduaiClient.js';
+import { prisma } from "../config/database.js";
+import {
+  getEduAiCourseEnrollmentServiceKey,
+  listEduAiCourseEnrollmentsServiceKey,
+} from "./eduaiClient.js";
+
+// AI Tutor local enrollments mirror STUDENT and TA access (#1065); INSTRUCTOR
+// access is tracked separately via CourseInstructor and never mirrored here.
+const MIRRORED_ROLES = new Set(["STUDENT", "TA"]);
 
 /**
- * Sync active student enrollments from Core into the local CourseEnrollment table.
- * Only STUDENT rows are imported (#578); TA and INSTRUCTOR access is not mirrored locally.
+ * How long a successful auto-sync is trusted before the next sync-before-read
+ * call for the same course triggers another Core call. Only applies when the
+ * caller opts in via `options.ttlMs` (read-path auto-sync, e.g.
+ * `GET /courses/:courseId` and `GET /admin/courses/:courseId/enrollments`) —
+ * an explicit POST .../sync-enrollments call always hits Core. Keeps a page
+ * with many concurrent viewers from firing a Core request per request.
+ * Mirrors `topicSync.js`'s `AUTO_SYNC_TTL_MS` (#1031).
+ */
+export const AUTO_SYNC_TTL_MS = 30_000;
+
+/**
+ * How long a sync-before-read caller will wait on Core before giving up and
+ * serving the local mirror. Without this, a Core that's up but slow or hung
+ * doesn't throw — it just holds the socket — so every reader blocks on
+ * Core's latency instead of degrading gracefully like a hard failure does.
+ * Mirrors `topicSync.js`'s `AUTO_SYNC_TIMEOUT_MS` (#1031).
+ */
+export const AUTO_SYNC_TIMEOUT_MS = 3_000;
+
+/**
+ * Live student operations use Core's single-enrollment endpoint rather than
+ * the local roster mirror. A short TTL absorbs duplicate checks from one page
+ * action while keeping revocation lag bounded.
+ */
+export const LIVE_ENROLLMENT_SYNC_TIMEOUT_MS = 3_000;
+export const LIVE_ENROLLMENT_CACHE_TTL_MS = 3_000;
+export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE = "ENROLLMENT_AUTH_UNAVAILABLE";
+export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE = "Enrollment authorization unavailable";
+
+const lastAutoSyncAt = new Map();
+const liveEnrollmentCache = new Map();
+const localCourseLockTails = new Map();
+const COURSE_ENROLLMENT_LOCK_PREFIX = "ai-tutor:course-enrollment:";
+
+/**
+ * Serialize a course's roster fetch, local reconciliation, and any effective
+ * role read. Production uses a PostgreSQL transaction-scoped advisory lock so
+ * separate API replicas share the same lock. The Core request intentionally
+ * runs inside that short transaction: releasing the lock between the fetch and
+ * write would allow an older active snapshot to overwrite a newer revocation.
+ * The local queue is only a test/runtime fallback for lightweight Prisma
+ * doubles that do not expose `$transaction`; it is bounded by deleting its
+ * tail when the operation settles. Callers must invoke this only at the
+ * outermost reconciliation boundary; do not call it from inside another
+ * `withCourseEnrollmentLock` callback for the same course.
+ */
+export async function withCourseEnrollmentLock(courseOfferingId, operation) {
+  if (typeof prisma.$transaction === "function") {
+    return prisma.$transaction(async (tx) => {
+      if (typeof tx.$executeRaw === "function") {
+        // `pg_advisory_xact_lock` returns PostgreSQL `void`, which Prisma
+        // cannot deserialize through `$queryRaw` (P2010). Execute the SELECT
+        // for its locking side effect instead.
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(${`${COURSE_ENROLLMENT_LOCK_PREFIX}${courseOfferingId}`}, 0)
+          )
+        `;
+      }
+      return operation(tx);
+    });
+  }
+
+  const previous = localCourseLockTails.get(courseOfferingId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(() => operation(prisma));
+  localCourseLockTails.set(courseOfferingId, current);
+  return current.finally(() => {
+    if (localCourseLockTails.get(courseOfferingId) === current) {
+      localCourseLockTails.delete(courseOfferingId);
+    }
+  });
+}
+
+/**
+ * Check one caller's authoritative Core enrollment immediately before a
+ * sensitive student operation. This path never fetches the full roster, takes
+ * the reconciliation lock, or mutates the local mirror.
+ *
+ * A Core/network/timeout/malformed-response failure is a stable, fail-closed
+ * `unavailable` result. Callers must return 503 and must not perform their
+ * provider or resource write in that case.
+ *
+ * @param {number} courseOfferingId Local CourseOffering primary key
+ * @param {string} userId Authenticated Core user id
+ * @param {{ course?: object, signal?: AbortSignal, timeoutMs?: number }} options
+ * @returns {Promise<{allowed: boolean, state: 'allowed'|'denied'|'unavailable', role: string|null}>}
+ */
+export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, options = {}) {
+  if (!Number.isFinite(courseOfferingId) || typeof userId !== "string" || userId.length === 0) {
+    return { allowed: false, state: "denied", role: null };
+  }
+
+  try {
+    const course =
+      options.course ??
+      (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+    if (!course?.coreOfferingId) return { allowed: false, state: "denied", role: null };
+
+    const cacheKey = `${course.coreOfferingId}:${userId}`;
+    const cached = liveEnrollmentCache.get(cacheKey);
+    const ttlMs = options.ttlMs ?? LIVE_ENROLLMENT_CACHE_TTL_MS;
+    let enrollment =
+      cached && Date.now() - cached.checkedAt < ttlMs ? cached.enrollment : undefined;
+    if (enrollment === undefined) {
+      const signal =
+        options.signal ?? AbortSignal.timeout(options.timeoutMs ?? LIVE_ENROLLMENT_SYNC_TIMEOUT_MS);
+      enrollment = await getEduAiCourseEnrollmentServiceKey(course.coreOfferingId, userId, {
+        signal,
+      });
+      liveEnrollmentCache.set(cacheKey, { checkedAt: Date.now(), enrollment });
+    }
+
+    const role = enrollment?.isActive === false ? null : (enrollment?.role ?? null);
+    const allowedRoles = new Set(
+      Array.isArray(options.allowedRoles) && options.allowedRoles.length > 0
+        ? options.allowedRoles
+        : ["STUDENT"],
+    );
+    const allowed = role !== null && allowedRoles.has(role);
+    return { allowed, state: allowed ? "allowed" : "denied", role };
+  } catch {
+    return {
+      allowed: false,
+      state: "unavailable",
+      role: null,
+    };
+  }
+}
+
+/**
+ * Sync active student + TA enrollments from Core into the local
+ * CourseEnrollment table. INSTRUCTOR access is not mirrored locally (owned by
+ * CourseInstructor).
  *
  * - Creates rows for users active in Core but missing locally.
- * - Updates the `role` for rows whose Core role changed.
- * - Deletes rows for users no longer active in Core.
- * - No-ops if Core returns an empty active list (guards against data loss
- *   from transient misconfiguration).
+ * - Updates the `role` for rows whose Core role changed (including
+ *   STUDENT<->TA transitions, #1065).
+ * - Deletes rows for users no longer active in Core, or whose Core role is
+ *   no longer STUDENT/TA. A schema-validated empty roster is trusted and
+ *   prunes all local STUDENT/TA rows (e.g. a revoked final TA) — Core's
+ *   response is Zod-validated before this function ever sees it, so an
+ *   empty list here means "really zero", not "malformed/misconfigured"
+ *   (#1173).
+ * - Pass `options.ttlMs` to skip the Core call (and just report a no-op) if a
+ *   sync for this course succeeded within the last `ttlMs` ms.
+ * - Pass `options.signal` (e.g. `AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS)`)
+ *   to bound the Core call; an abort surfaces like any other fetch failure
+ *   and is tagged `phase: 'fetch'` on the thrown error.
  *
  * @param {number} courseOfferingId  Local CourseOffering PK
- * @param {{ course?: object }} options  Pass a pre-fetched course to skip the DB lookup
+ * @param {{ course?: object, ttlMs?: number, signal?: AbortSignal }} options  Pass a pre-fetched course to skip the DB lookup
  * @returns {{ synced: number, created: number, updated: number, deleted: number, errors: [] }}
  */
 export async function syncCourseEnrollments(courseOfferingId, options = {}) {
@@ -20,28 +167,46 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
     return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
   }
 
+  return withCourseEnrollmentLock(courseOfferingId, (db) =>
+    syncCourseEnrollmentsLocked(courseOfferingId, options, db),
+  );
+}
+
+/**
+ * Reconcile one course while the background/read-side caller holds the course
+ * lock. Live authorization does not use this full-roster path.
+ */
+async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
   const course =
-    options.course ??
-    (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+    options.course ?? (await db.courseOffering.findUnique({ where: { id: courseOfferingId } }));
 
   if (!course || !course.coreOfferingId) {
     return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
   }
 
-  const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
-  // AI Tutor local enrollments represent student access only (#578).
-  const activeEnrollments = allEnrollments.filter(
-    (e) => e.isActive && (e.role ?? 'STUDENT') === 'STUDENT',
-  );
-
-  // Guard: empty upstream means "no data yet" — don't wipe local rows
-  if (activeEnrollments.length === 0) {
-    return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
+  if (options.ttlMs) {
+    const lastSync = lastAutoSyncAt.get(courseOfferingId);
+    if (lastSync && Date.now() - lastSync < options.ttlMs) {
+      return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [], skipped: true };
+    }
   }
 
-  const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
+  let allEnrollments;
+  try {
+    allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId, {
+      signal: options.signal,
+    });
+  } catch (e) {
+    e.phase = e.phase || "fetch";
+    throw e;
+  }
 
-  const existing = await prisma.courseEnrollment.findMany({
+  const activeEnrollments = allEnrollments.filter(
+    (e) => e.isActive && MIRRORED_ROLES.has(e.role ?? "STUDENT"),
+  );
+
+  const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
+  const existing = await db.courseEnrollment.findMany({
     where: { courseOfferingId },
     select: { userId: true, role: true },
   });
@@ -49,39 +214,58 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
 
   const toCreate = activeEnrollments.filter((e) => !existingByUserId.has(e.studentId));
   const toDelete = existing.filter(
-    (e) => !activeUserIds.has(e.userId) && e.role === 'STUDENT',
+    (e) => !activeUserIds.has(e.userId) && MIRRORED_ROLES.has(e.role),
   );
   const toUpdate = activeEnrollments.filter((e) => {
     const local = existingByUserId.get(e.studentId);
-    return local && local.role !== (e.role ?? 'STUDENT');
+    return local && local.role !== (e.role ?? "STUDENT");
   });
+  try {
+    if (toCreate.length > 0) {
+      await db.courseEnrollment.createMany({
+        data: toCreate.map((e) => ({
+          courseOfferingId,
+          userId: e.studentId,
+          role: e.role ?? "STUDENT",
+        })),
+        skipDuplicates: true,
+      });
+    }
 
-  if (toCreate.length > 0) {
-    await prisma.courseEnrollment.createMany({
-      data: toCreate.map((e) => ({
-        courseOfferingId,
-        userId: e.studentId,
-        role: e.role ?? 'STUDENT',
-      })),
-      skipDuplicates: true,
-    });
+    // One updateMany per distinct target role rather than one update per row
+    // (#1451). MIRRORED_ROLES caps this at two queries no matter the roster size.
+    const userIdsByRole = new Map();
+    for (const e of toUpdate) {
+      const role = e.role ?? "STUDENT";
+      const userIds = userIdsByRole.get(role);
+      if (userIds) {
+        userIds.push(e.studentId);
+      } else {
+        userIdsByRole.set(role, [e.studentId]);
+      }
+    }
+
+    for (const [role, userIds] of userIdsByRole) {
+      await db.courseEnrollment.updateMany({
+        where: { courseOfferingId, userId: { in: userIds } },
+        data: { role },
+      });
+    }
+
+    if (toDelete.length > 0) {
+      await db.courseEnrollment.deleteMany({
+        where: {
+          courseOfferingId,
+          userId: { in: toDelete.map((e) => e.userId) },
+        },
+      });
+    }
+  } catch (e) {
+    e.phase = "write";
+    throw e;
   }
 
-  for (const e of toUpdate) {
-    await prisma.courseEnrollment.update({
-      where: { courseOfferingId_userId: { courseOfferingId, userId: e.studentId } },
-      data: { role: e.role ?? 'STUDENT' },
-    });
-  }
-
-  if (toDelete.length > 0) {
-    await prisma.courseEnrollment.deleteMany({
-      where: {
-        courseOfferingId,
-        userId: { in: toDelete.map((e) => e.userId) },
-      },
-    });
-  }
+  lastAutoSyncAt.set(courseOfferingId, Date.now());
 
   return {
     synced: activeEnrollments.length,
@@ -90,4 +274,20 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
     deleted: toDelete.length,
     errors: [],
   };
+}
+
+/** Test-only: clears the per-course auto-sync TTL throttle so each test starts fresh. */
+export function resetEnrollmentSyncThrottleForTests() {
+  lastAutoSyncAt.clear();
+  liveEnrollmentCache.clear();
+}
+
+/**
+ * Evicts a single course's auto-sync TTL throttle entry. `lastAutoSyncAt`
+ * lives for the process lifetime, so callers that delete a CourseOffering
+ * (e.g. reconcile.js's Phase 1) must call this alongside the delete or the
+ * throttle key leaks forever.
+ */
+export function clearEnrollmentSyncThrottle(courseOfferingId) {
+  lastAutoSyncAt.delete(courseOfferingId);
 }

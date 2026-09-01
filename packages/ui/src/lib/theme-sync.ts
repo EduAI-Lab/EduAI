@@ -21,6 +21,7 @@
  * back to same-origin behaviour.
  */
 
+import { hasDocument, hasLocation, isBrowser } from "./runtime-env";
 export type Theme = "light" | "dark" | "system";
 
 const BROADCAST_CHANNEL_NAME = "eduai_theme_sync";
@@ -38,17 +39,15 @@ function getCookieDomain(): string | undefined {
 }
 
 function readThemeCookie(): Theme | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith(`${THEME_COOKIE_NAME}=`));
+  if (!hasDocument()) return null;
+  const match = document.cookie.split("; ").find((row) => row.startsWith(`${THEME_COOKIE_NAME}=`));
   if (!match) return null;
   const value = decodeURIComponent(match.split("=")[1] ?? "");
   return value === "light" || value === "dark" || value === "system" ? value : null;
 }
 
 function writeThemeCookie(theme: Theme): void {
-  if (typeof document === "undefined") return;
+  if (!hasDocument()) return;
   const domain = getCookieDomain();
   const parts = [
     `${THEME_COOKIE_NAME}=${encodeURIComponent(theme)}`,
@@ -57,7 +56,7 @@ function writeThemeCookie(theme: Theme): void {
     "SameSite=Lax",
   ];
   if (domain) parts.push(`domain=${domain}`);
-  if (typeof location !== "undefined" && location.protocol === "https:") {
+  if (hasLocation() && location.protocol === "https:") {
     parts.push("Secure");
   }
   document.cookie = parts.join("; ");
@@ -69,7 +68,7 @@ function writeThemeCookie(theme: Theme): void {
  * the caller can apply it (e.g. next-themes `setTheme`).
  */
 export function initThemeSync(onThemeChange?: (theme: Theme) => void): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
 
   // Cross-subdomain: adopt the shared cookie on mount (set by another app).
   const cookieTheme = readThemeCookie();
@@ -104,7 +103,7 @@ export function initThemeSync(onThemeChange?: (theme: Theme) => void): void {
  * and broadcasts to same-origin tabs.
  */
 export function broadcastThemeChange(theme: Theme): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
 
   writeThemeCookie(theme);
   try {
@@ -121,13 +120,12 @@ export function broadcastThemeChange(theme: Theme): void {
 
 /** Apply a theme to the document root (mirrors next-themes' class strategy). */
 function applyTheme(theme: Theme): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
 
   const html = document.documentElement;
   const isDark =
     theme === "dark" ||
-    (theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   html.classList.toggle("dark", isDark);
 }
 

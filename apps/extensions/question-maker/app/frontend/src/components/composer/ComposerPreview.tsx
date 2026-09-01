@@ -4,16 +4,17 @@
  * Mirrors the mapping used by the course Questions tab wrapper (difficulty label,
  * correct-choice flagging, topic tags).
  */
-import { QuestionCard, questionStatus } from '@eduai/ui';
-import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
+import { QuestionCard, questionStatus } from "@eduai/ui";
+import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from "@eduai/ui";
 
 import {
   questionTypeLabels,
   type QuestionType,
   type QuestionDifficulty,
   type MCQChoice,
-} from '../../types/question';
-import type { Topic } from '../../types/topic';
+} from "../../types/question";
+import type { Topic } from "../../types/topic";
+import { markCorrectChoices } from "@/lib/mcq";
 
 interface ComposerPreviewProps {
   questionType: QuestionType;
@@ -21,6 +22,8 @@ interface ComposerPreviewProps {
   questionText: string;
   choices: MCQChoice[];
   answer: string;
+  selectAllThatApply?: boolean;
+  correctAnswers?: string[] | null;
   primaryTopicId: string;
   secondaryTopicIds: string[];
   topics: Topic[];
@@ -39,6 +42,8 @@ export function ComposerPreview({
   questionText,
   choices,
   answer,
+  selectAllThatApply,
+  correctAnswers,
   primaryTopicId,
   secondaryTopicIds,
   topics,
@@ -46,21 +51,27 @@ export function ComposerPreview({
   ai = false,
   isDraft = true,
 }: ComposerPreviewProps) {
-  const topicName = (id: string) => topics.find((t) => t.id.toString() === id)?.name ?? `Topic ${id}`;
+  const topicName = (id: string) =>
+    topics.find((t) => t.id.toString() === id)?.name ?? `Topic ${id}`;
   const topicLabels = [
     ...(primaryTopicId ? [topicName(primaryTopicId)] : []),
     ...secondaryTopicIds.map(topicName),
   ];
 
   const previewChoices: QuestionCardChoice[] | undefined =
-    questionType === 'MCQ'
-      ? choices
-          .filter((c) => c.text.trim().length > 0)
-          .map((choice) => ({
+    questionType === "MCQ"
+      ? (() => {
+          const visible = choices.filter((c) => c.text.trim().length > 0);
+          const correctFlags = markCorrectChoices(answer, visible, {
+            selectAllThatApply,
+            correctAnswers,
+          });
+          return visible.map((choice, i) => ({
             letter: choice.letter,
             text: choice.text,
-            correct: answer !== '' && choice.letter === answer,
-          }))
+            correct: correctFlags[i],
+          }));
+        })()
       : undefined;
 
   const hasChoices = Boolean(previewChoices && previewChoices.length > 0);
@@ -77,7 +88,9 @@ export function ComposerPreview({
         questionText.trim() ? (
           questionText
         ) : (
-          <span className="text-muted-foreground italic">Your question will appear here as you type…</span>
+          <span className="text-muted-foreground italic">
+            Your question will appear here as you type…
+          </span>
         )
       }
       choices={previewChoices}

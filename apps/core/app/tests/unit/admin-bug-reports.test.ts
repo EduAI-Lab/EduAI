@@ -30,6 +30,7 @@ import { loader as adminLoader, action as adminAction } from "~/routes/api/admin
 import { loader as mineLoader } from "~/routes/api/bug-reports";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const REPORT = {
   id: "br-1",
@@ -71,22 +72,24 @@ const LIST_ROW = {
   hasScreenshot: false,
 };
 
-function makeArgs(path: string, method = "GET", body?: unknown, params: Record<string, string> = {}) {
+function makeArgs(
+  path: string,
+  method = "GET",
+  body?: RouteRequestBody,
+  params: Record<string, string> = {},
+) {
+  // A GET carries no body at all, so the key is added only when one is passed.
+  const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request(`http://localhost${path}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request(`http://localhost${path}`, init),
     params,
     context: {} as never,
   } as any;
 }
 
 function mockUser(role: string | null, id = "u1") {
-  vi.mocked(auth.api.getSession).mockResolvedValue(
-    (role ? { user: { id, role } } : null) as never,
-  );
+  vi.mocked(auth.api.getSession).mockResolvedValue((role ? { user: { id, role } } : null) as never);
 }
 
 beforeEach(() => {
@@ -94,6 +97,10 @@ beforeEach(() => {
   vi.mocked(prisma.bugReport.findMany).mockResolvedValue([REPORT] as never);
   vi.mocked(prisma.bugReport.count).mockResolvedValue(1);
   vi.mocked(prisma.$queryRaw).mockResolvedValue([LIST_ROW] as never);
+  // Default: an ADMIN-role session's account is also active in the DB
+  // (`requireAdmin` re-checks this — #1571 pattern). The deactivated-admin
+  // regression test below overrides it per call.
+  vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "ADMIN", isActive: true } as never);
 });
 
 describe("GET /api/admin/bug-reports (#304)", () => {
@@ -105,6 +112,21 @@ describe("GET /api/admin/bug-reports (#304)", () => {
 
   it.each(["STUDENT", "INSTRUCTOR", "UNIT_ADMIN"])("returns 403 for %s", async (role) => {
     mockUser(role);
+    const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
+    expect(res.status).toBe(403);
+  });
+
+  // #1571-pattern gap found in a #1669 deep-audit pass: this route's local
+  // requireAdmin only checked the session's cached role, so a deactivated
+  // admin's still-live session kept full bug-report triage access — including
+  // full attachments, console/network logs, and status changes — until the
+  // session naturally expired.
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: false,
+    } as never);
     const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
     expect(res.status).toBe(403);
   });
@@ -136,7 +158,9 @@ describe("GET /api/admin/bug-reports (#304)", () => {
       consoleLogs: '[{"level":"error"}]',
       screenshot: "data:image/png;base64,abc",
     } as never);
-    const res = await adminLoader(makeArgs("/api/admin/bug-reports/br-1", "GET", undefined, { id: "br-1" }));
+    const res = await adminLoader(
+      makeArgs("/api/admin/bug-reports/br-1", "GET", undefined, { id: "br-1" }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
@@ -151,7 +175,9 @@ describe("GET /api/admin/bug-reports (#304)", () => {
   it("returns 404 when GET /:id misses", async () => {
     mockUser("ADMIN");
     vi.mocked(prisma.bugReport.findUnique).mockResolvedValue(null);
-    const res = await adminLoader(makeArgs("/api/admin/bug-reports/missing", "GET", undefined, { id: "missing" }));
+    const res = await adminLoader(
+      makeArgs("/api/admin/bug-reports/missing", "GET", undefined, { id: "missing" }),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -177,9 +203,7 @@ describe("GET /api/admin/bug-reports (#304)", () => {
 
   it("masks userId/email/name when isAnonymous=true (§11)", async () => {
     mockUser("ADMIN");
-    vi.mocked(prisma.$queryRaw).mockResolvedValue([
-      { ...LIST_ROW, isAnonymous: true },
-    ] as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ ...LIST_ROW, isAnonymous: true }] as never);
     const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
     const body = await res.json();
     expect(body.reports[0].userId).toBeNull();
@@ -190,9 +214,7 @@ describe("GET /api/admin/bug-reports (#304)", () => {
 
   it("forwards source and status filters to the count query", async () => {
     mockUser("ADMIN");
-    await adminLoader(
-      makeArgs("/api/admin/bug-reports?source=QUESTION_MAKER&status=RESOLVED"),
-    );
+    await adminLoader(makeArgs("/api/admin/bug-reports?source=QUESTION_MAKER&status=RESOLVED"));
     expect(prisma.bugReport.count).toHaveBeenCalledWith({
       where: { source: "QUESTION_MAKER", status: "RESOLVED" },
     });
@@ -265,6 +287,19 @@ describe("PATCH /api/admin/bug-reports/:id (#304)", () => {
       data: { status: "IN_PROGRESS" },
       select: { id: true, status: true },
     });
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: false,
+    } as never);
+    const res = await adminAction(
+      makeArgs("/api/admin/bug-reports/br-1", "PATCH", { status: "IN_PROGRESS" }, { id: "br-1" }),
+    );
+    expect(res.status).toBe(403);
+    expect(prisma.bugReport.update).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid status with 422", async () => {

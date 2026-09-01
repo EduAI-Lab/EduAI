@@ -8,16 +8,22 @@
 import { DonutChart, MeterBar, PanelCard, type DonutSegment } from "@eduai/ui";
 import type { DashboardStats } from "~/types/dashboard";
 
-const READY_COLOR = "oklch(0.60 0.15 150)";
-const PROCESSING_COLOR = "oklch(0.75 0.15 80)";
-const FAILED_COLOR = "oklch(0.58 0.19 25)";
+/*
+ * Semantic + role slots come from CSS custom properties, not literals. app.css
+ * re-declares these under `.dark` for legibility on a dark background, so a
+ * hardcoded oklch() would keep the light-mode hue after a theme flip — which is
+ * what these donuts previously did while ai-tutor's equivalents followed along.
+ */
+const READY_COLOR = "var(--color-success-500)";
+const PROCESSING_COLOR = "var(--color-warning-500)";
+const FAILED_COLOR = "var(--color-error-500)";
 
-const STUDENT_COLOR = "oklch(0.55 0.14 255)";
-const INSTRUCTOR_COLOR = "oklch(0.62 0.17 295)";
-const ADMIN_COLOR = "oklch(0.60 0.15 150)";
-const OTHER_COLOR = "oklch(0.70 0.03 255)";
+const STUDENT_COLOR = "var(--color-role-student)";
+const INSTRUCTOR_COLOR = "var(--color-role-instructor)";
+const ADMIN_COLOR = "var(--color-role-admin)";
+const OTHER_COLOR = "var(--muted-foreground)";
 
-const ACTIVITY_COLOR = "oklch(0.55 0.16 255)";
+const ACTIVITY_COLOR = "var(--color-role-instructor)";
 
 function AnalyticsSkeleton() {
   return (

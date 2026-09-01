@@ -17,15 +17,19 @@ export function generateNonce(): string {
  *   chunk — required for hydration.
  * - `style-src` keeps `'unsafe-inline'`: React inline `style={}` attributes and
  *   UI libraries cannot carry a nonce, and style injection is low-risk versus
- *   scripts. Google Fonts' stylesheet origin is whitelisted.
+ *   scripts. No third-party stylesheet origin is whitelisted — Outfit is
+ *   self-hosted (#1221), so fonts.googleapis.com is no longer reachable.
  * - `frame-ancestors 'none'` is the modern equivalent of `X-Frame-Options: DENY`.
  */
 function buildHtmlCsp(nonce: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    // `data:` — Vite inlines any font under `assetsInlineLimit` (4 KB) into the
+    // stylesheet as a base64 `data:font/woff2` URL; without this the browser
+    // blocks it and that glyph range silently falls back.
+    "font-src 'self' data:",
     "img-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",
@@ -68,16 +72,22 @@ export function applySecurityHeaders(
   headers.set("X-Frame-Options", "DENY");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=()",
-  );
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+
+  // Keep the team roster's photos out of Google Images. `noimageindex` tells a
+  // crawler not to index any image embedded in this document, while leaving the
+  // page itself indexable. It only applies to HTML documents (the ones that
+  // carry a nonce) — a JSON resource response embeds no images.
+  //
+  // This deliberately does NOT go in robots.txt: a `Disallow` stops the crawler
+  // from fetching the images at all, which also stops it from ever seeing that
+  // they should be dropped, so anything already indexed would stay indexed.
+  if (opts.nonce) {
+    headers.set("X-Robots-Tag", "noimageindex");
+  }
 
   if (opts.isProd) {
-    headers.set(
-      "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains",
-    );
+    headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     headers.set(
       "Content-Security-Policy",
       opts.nonce ? buildHtmlCsp(opts.nonce) : buildResourceCsp(),

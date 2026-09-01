@@ -1,0 +1,58 @@
+[
+  {
+    "Provider": "vllm",
+    "FleetBaseUrl": "unset",
+    "UserBaseUrl": "set",
+    "EnvBaseUrl": "unset",
+    "UserApiKey": "set",
+    "PlatformKey": "set"
+  },
+  {
+    "Provider": "vllm",
+    "FleetBaseUrl": "set",
+    "UserBaseUrl": "unset",
+    "EnvBaseUrl": "set",
+    "UserApiKey": "unset",
+    "PlatformKey": "unset"
+  },
+  {
+    "Provider": "ollama",
+    "FleetBaseUrl": "unset",
+    "UserBaseUrl": "set",
+    "EnvBaseUrl": "unset",
+    "UserApiKey": "unset",
+    "PlatformKey": "unset"
+  },
+  {
+    "Provider": "vllm",
+    "FleetBaseUrl": "set",
+    "UserBaseUrl": "set",
+    "EnvBaseUrl": "set",
+    "UserApiKey": "set",
+    "PlatformKey": "set"
+  },
+  {
+    "Provider": "vllm",
+    "FleetBaseUrl": "unset",
+    "UserBaseUrl": "unset",
+    "EnvBaseUrl": "set",
+    "UserApiKey": "set",
+    "PlatformKey": "unset"
+  },
+  {
+    "Provider": "vllm",
+    "FleetBaseUrl": "set",
+    "UserBaseUrl": "unset",
+    "EnvBaseUrl": "unset",
+    "UserApiKey": "unset",
+    "PlatformKey": "set"
+  },
+  {
+    "Provider": "ollama",
+    "FleetBaseUrl": "unset",
+    "UserBaseUrl": "unset",
+    "EnvBaseUrl": "set",
+    "UserApiKey": "unset",
+    "PlatformKey": "unset"
+  }
+]

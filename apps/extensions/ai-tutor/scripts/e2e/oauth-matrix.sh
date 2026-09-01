@@ -124,7 +124,7 @@ cleanup_db() {
     (
       cd "$EDUAI_ROOT"
       node --input-type=module >/dev/null 2>&1 <<'JSEOF'
-      import { PrismaClient } from "@prisma/client";
+      import { PrismaClient } from "./generated/prisma/index.js";
       const prisma = new PrismaClient();
       const code = process.env.EDUAI_FIXTURE_CODE;
       const run = async () => {
@@ -286,7 +286,7 @@ EXTERNAL_COURSE_ID=$(jq -r '.id' "$TMPDIR/eduai-fixture-course.json")
 (
   cd "$EDUAI_ROOT"
   EXTERNAL_COURSE_ID="$EXTERNAL_COURSE_ID" node --input-type=module <<'JSEOF'
-  import { PrismaClient } from "@prisma/client";
+  import { PrismaClient } from "./generated/prisma/index.js";
   const prisma = new PrismaClient();
   const courseId = process.env.EXTERNAL_COURSE_ID;
   const instructor = await prisma.user.findFirst({ where: { email: "instructor@eduai.local" } });

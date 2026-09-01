@@ -23,7 +23,7 @@ const baseModel = {
   provider: "openai",
 };
 
-const makeProps = (overrides: Record<string, any> = {}) => ({
+const makeProps = (overrides: Partial<React.ComponentProps<typeof ChatInput>> = {}) => ({
   input: "",
   isLoading: false,
   onInputChange: vi.fn(),
@@ -52,6 +52,28 @@ describe("ChatInput — rendering", () => {
   it("renders the settings gear button", () => {
     render(<ChatInput {...makeProps()} />);
     expect(screen.getByRole("button", { name: /chat settings/i })).toBeInTheDocument();
+  });
+
+  it("shows model names without provider labels in the model menu", () => {
+    render(
+      <ChatInput
+        {...makeProps({
+          chatModels: [
+            baseModel,
+            { ...baseModel, id: "m2", name: "Claude", provider: "anthropic" },
+          ],
+        })}
+      />,
+    );
+
+    const modelButton = screen.getByRole("button", { name: /GPT-4o/ });
+    fireEvent.pointerDown(modelButton, { button: 0, pointerType: "mouse" });
+    fireEvent.click(modelButton);
+
+    expect(screen.getByRole("menuitem", { name: "GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Claude" })).toBeInTheDocument();
+    expect(screen.queryByText("openai")).not.toBeInTheDocument();
+    expect(screen.queryByText("anthropic")).not.toBeInTheDocument();
   });
 });
 
@@ -86,6 +108,12 @@ describe("ChatInput — send button", () => {
   it("enables the send button when input is non-empty and not loading", () => {
     render(<ChatInput {...makeProps({ input: "hello" })} />);
     expect(screen.getByRole("button", { name: /send message/i })).not.toBeDisabled();
+  });
+
+  it("disables the send button and textarea while a regenerate request is in flight (#1365 review)", () => {
+    render(<ChatInput {...makeProps({ input: "hello", assistBusy: true })} />);
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+    expect(screen.getByPlaceholderText(/ask/i)).toBeDisabled();
   });
 
   it("calls onSubmit when the send button is clicked", () => {
@@ -158,5 +186,67 @@ describe("ChatInput — focus mode chip", () => {
     expect(focusChip).not.toBeDisabled();
     fireEvent.click(focusChip);
     expect(onFocusModeChange).toHaveBeenCalledWith(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Assist toggle busy state (#1246)
+// ---------------------------------------------------------------------------
+
+describe("ChatInput — assist toggle busy state", () => {
+  it("disables the assist chip and shows a spinner while a regenerate request is in flight", () => {
+    const onAdhdAssistChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange,
+          assistBusy: true,
+        })}
+      />,
+    );
+    const assistChip = screen.getByRole("button", { name: /assistive mode/i });
+    expect(assistChip).toBeDisabled();
+    expect(assistChip).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(assistChip);
+    expect(onAdhdAssistChange).not.toHaveBeenCalled();
+  });
+
+  it("is enabled and toggleable when not busy", () => {
+    const onAdhdAssistChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange,
+          assistBusy: false,
+        })}
+      />,
+    );
+    const assistChip = screen.getByRole("button", { name: /assistive mode/i });
+    expect(assistChip).not.toBeDisabled();
+    fireEvent.click(assistChip);
+    expect(onAdhdAssistChange).toHaveBeenCalledWith(true);
+  });
+
+  // #1671 review: the toggle previously stayed enabled while a message was
+  // streaming, letting a mid-flight click race the in-flight request's
+  // recorded Assist mode.
+  it("disables the assist chip while a message is streaming (isLoading), even when not regenerate-busy (#1671 review)", () => {
+    const onAdhdAssistChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange,
+          assistBusy: false,
+          isLoading: true,
+        })}
+      />,
+    );
+    const assistChip = screen.getByRole("button", { name: /assistive mode/i });
+    expect(assistChip).toBeDisabled();
+    fireEvent.click(assistChip);
+    expect(onAdhdAssistChange).not.toHaveBeenCalled();
   });
 });

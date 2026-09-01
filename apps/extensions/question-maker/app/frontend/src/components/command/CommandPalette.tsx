@@ -5,13 +5,14 @@
  * behaves identically across Core, QuestionMaker, and AI Tutor. Opens on ⌘K or
  * the `qm:open-command` window event (dispatched by the header search button).
  */
-import { useNavigate, useLocation } from 'react-router';
+import { useNavigate, useLocation } from "react-router";
 import {
   CommandPalette as SharedCommandPalette,
   buildAppSwitcherGroup,
   type CommandPaletteGroup,
-} from '@eduai/ui';
+} from "@eduai/ui";
 import {
+  IconBug,
   IconDashboard,
   IconBooks,
   IconLibrary,
@@ -24,64 +25,123 @@ import {
   IconLayoutGrid,
   IconSchool,
   IconLayoutDashboard,
-} from '@tabler/icons-react';
-import { useDisplayCourses } from '@/hooks/useDisplayCourses';
-import { useAuth } from '@/contexts/AuthContext';
-import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
+} from "@tabler/icons-react";
+import { useDisplayCourses } from "@/hooks/useDisplayCourses";
+import { useQmPermissions } from "@/hooks/useQmPermissions";
+import { useAuth } from "@/contexts/AuthContext";
+import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
+import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
+import type { QmNavItemKey } from "@/lib/rbac/types";
 
-const iconClass = 'size-4';
+const iconClass = "size-4";
+
+const PALETTE_NAV_ICONS = {
+  dashboard: IconDashboard,
+  courses: IconBooks,
+  library: IconLibrary,
+  help: IconHelpCircle,
+  "bug-reports": IconBug,
+  "back-to-eduai": IconBooks,
+} satisfies Record<QmNavItemKey, typeof IconDashboard>;
+
+function PaletteNavIcon({ navKey }: { navKey: QmNavItemKey }) {
+  const Icon = PALETTE_NAV_ICONS[navKey];
+  return <Icon className={iconClass} />;
+}
+
+/** Sidebar nav + secondary nav, flattened for the palette (mirrors Core). */
+function paletteNavItems(user: Parameters<typeof getNavForUser>[0]) {
+  return [...getNavForUser(user), ...getNavSecondaryForUser(user)];
+}
 
 export function CommandPalette() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { displayCourses } = useDisplayCourses();
   const { user } = useAuth();
+  const { canManageCanvas } = useQmPermissions();
+  const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
+  const coreCourseId =
+    displayCourses.find((course) => course.id === localCourseId)?.coreCourseId ??
+    new URLSearchParams(search).get("coreCourseId");
 
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
-  const currentCourse = courseId ? displayCourses.find((c) => c.id === courseId) ?? null : null;
+  const currentCourse = courseId ? (displayCourses.find((c) => c.id === courseId) ?? null) : null;
 
   const groups: CommandPaletteGroup[] = [
     {
-      heading: 'Go to',
+      heading: "Go to",
       items: [
-        { label: 'Dashboard', icon: <IconDashboard className={iconClass} />, onSelect: () => navigate('/dashboard') },
-        { label: 'Courses', icon: <IconBooks className={iconClass} />, onSelect: () => navigate('/courses') },
-        { label: 'Question Library', icon: <IconLibrary className={iconClass} />, onSelect: () => navigate('/library') },
-        { label: 'Settings', icon: <IconSettings className={iconClass} />, onSelect: () => navigate('/settings') },
-        { label: 'Help', icon: <IconHelpCircle className={iconClass} />, onSelect: () => navigate('/help') },
+        // Driven by the same lib/rbac/nav the sidebar uses, so role-gated entries
+        // (Bug reports) cannot appear in one surface and not the other. Settings
+        // is appended here because it lives in the navUser dropdown, not the nav.
+        ...paletteNavItems(user).map((item) => ({
+          label: item.title,
+          icon: <PaletteNavIcon navKey={item.key} />,
+          onSelect: () => navigate(item.href),
+        })),
+        {
+          label: "Settings",
+          icon: <IconSettings className={iconClass} />,
+          onSelect: () => navigate("/settings"),
+        },
       ],
     },
     {
-      heading: currentCourse ? currentCourse.code || currentCourse.name : 'This course',
-      items: courseId
+      heading: currentCourse ? currentCourse.code || currentCourse.name : "This course",
+      items: currentCourse
         ? [
             {
-              label: 'New question',
-              shortcut: 'C',
+              label: "New question",
+              shortcut: "C",
               icon: <IconPlus className={iconClass} />,
               onSelect: () => navigate(`/courses/${courseId}/questions/new`),
             },
-            { label: 'Questions', icon: <IconStack2 className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=questions`) },
-            { label: 'Assessments', icon: <IconClipboardList className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=assessments`) },
-            { label: 'Topics', icon: <IconFolderOpen className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=topics`) },
-            { label: 'Canvas', icon: <IconSchool className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=canvas`) },
-            { label: 'Overview', icon: <IconLayoutDashboard className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=overview`) },
+            {
+              label: "Questions",
+              icon: <IconStack2 className={iconClass} />,
+              onSelect: () => navigate(`/courses/${courseId}?tab=questions`),
+            },
+            {
+              label: "Assessments",
+              icon: <IconClipboardList className={iconClass} />,
+              onSelect: () => navigate(`/courses/${courseId}?tab=assessments`),
+            },
+            {
+              label: "Topics",
+              icon: <IconFolderOpen className={iconClass} />,
+              onSelect: () => navigate(`/courses/${courseId}?tab=topics`),
+            },
+            ...(canManageCanvas
+              ? [
+                  {
+                    label: "Canvas",
+                    icon: <IconSchool className={iconClass} />,
+                    onSelect: () => navigate(`/courses/${courseId}?tab=canvas`),
+                  },
+                ]
+              : []),
+            {
+              label: "Overview",
+              icon: <IconLayoutDashboard className={iconClass} />,
+              onSelect: () => navigate(`/courses/${courseId}?tab=overview`),
+            },
           ]
         : [],
     },
     {
-      heading: 'Switch course',
+      heading: "Switch course",
       items: displayCourses.slice(0, 8).map((c) => ({
         label: c.code || c.name,
         sublabel: c.code && c.name ? c.name : undefined,
-        value: `course ${c.code ?? ''} ${c.name}`,
+        value: `course ${c.code ?? ""} ${c.name}`,
         icon: <IconLayoutGrid className={iconClass} />,
         onSelect: () => navigate(`/courses/${c.id}`),
       })),
     },
     buildAppSwitcherGroup({
-      apps: getLauncherApps(),
+      apps: getLauncherApps(coreCourseId),
       currentAppId: CURRENT_APP_ID,
       role: user?.role,
     }),

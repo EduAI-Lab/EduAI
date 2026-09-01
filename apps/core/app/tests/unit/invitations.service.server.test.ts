@@ -1,0 +1,171 @@
+// @vitest-environment node
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Invitation } from "@prisma/client";
+
+const prismaMock = vi.hoisted(() => {
+  const tx = {
+    user: { update: vi.fn() },
+    invitation: { update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() },
+  };
+  return {
+    invitation: { findUnique: vi.fn(), updateMany: vi.fn() },
+    user: { findUnique: vi.fn(), delete: vi.fn() },
+    $transaction: vi.fn(async <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx)),
+    __tx: tx,
+  };
+});
+
+vi.mock("~/lib/prisma.server", () => ({
+  default: prismaMock,
+}));
+
+vi.mock("~/lib/auth/server", () => ({
+  auth: { handler: vi.fn() },
+  authBaseURL: "http://localhost:3000",
+}));
+
+vi.mock("~/lib/auth/auth-handler-request", () => ({
+  INTERNAL_INVITE_SIGNUP_HEADER: "x-eduai-invite-signup",
+  buildAuthSubRequest: vi.fn(
+    (_path: string, request: Request, init: RequestInit) =>
+      new Request("http://localhost/api/auth/sign-up/email", init),
+  ),
+}));
+
+vi.mock("~/lib/auth/forward-session-cookies", () => ({
+  appendAuthSetCookies: vi.fn(),
+}));
+
+vi.mock("~/lib/email/mailer.server", () => ({
+  sendEmail: vi.fn(),
+}));
+
+import { getInvitationByToken, acceptInvitation } from "~/lib/invitations/service.server";
+import { hashToken } from "~/lib/invitations/token.server";
+import { auth } from "~/lib/auth/server";
+
+const TOKEN = "test-invite-token";
+const TOKEN_HASH = hashToken(TOKEN);
+
+function baseInvitation(overrides: Partial<Invitation> = {}): Invitation {
+  return {
+    id: "inv1",
+    email: "invitee@ubc.ca",
+    name: null,
+    role: "INSTRUCTOR",
+    status: "PENDING",
+    tokenHash: TOKEN_HASH,
+    expiresAt: new Date("2026-07-25T12:00:00.000Z"),
+    authorizedUnits: [],
+    invitedById: "admin1",
+    acceptedAt: null,
+    acceptedUserId: null,
+    createdAt: new Date("2026-07-22T12:00:00.000Z"),
+    updatedAt: new Date("2026-07-22T12:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-07-25T12:00:00.000Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("getInvitationByToken", () => {
+  // Edge-case audit #225 (AUTH-18): expiry uses strict `<` — token at exact
+  // expiresAt is still valid; one millisecond past is rejected.
+  it("accepts a PENDING token whose expiresAt equals now (AUTH-18 boundary)", async () => {
+    const expiresAt = new Date("2026-07-25T12:00:00.000Z");
+    prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation({ expiresAt }));
+
+    const result = await getInvitationByToken(TOKEN);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.invitation.isExpired).toBe(false);
+    }
+  });
+
+  it("rejects a PENDING token one millisecond past expiresAt (AUTH-18 boundary)", async () => {
+    const expiresAt = new Date("2026-07-25T11:59:59.999Z");
+    prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation({ expiresAt }));
+
+    const result = await getInvitationByToken(TOKEN);
+
+    expect(result).toEqual({ ok: false, status: 410, error: "INVITATION_EXPIRED" });
+  });
+});
+
+describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
+  it("consumes with an atomic original-token/PENDING/expiry conditional", async () => {
+    const originalExpiry = new Date("2026-07-25T12:00:00.000Z");
+    prismaMock.invitation.findUnique.mockResolvedValue(
+      baseInvitation({ expiresAt: originalExpiry }),
+    );
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "new-u1", email: "invitee@ubc.ca", role: "STUDENT" });
+    vi.mocked(auth.handler).mockResolvedValue(
+      Response.json(
+        { user: { id: "new-u1", email: "invitee@ubc.ca" } },
+        { status: 200, headers: { "Set-Cookie": "session=1" } },
+      ),
+    );
+    prismaMock.__tx.user.update.mockResolvedValue({
+      id: "new-u1",
+      email: "invitee@ubc.ca",
+      role: "INSTRUCTOR",
+    });
+    prismaMock.__tx.invitation.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.__tx.invitation.findUnique.mockResolvedValue(
+      baseInvitation({ expiresAt: originalExpiry }),
+    );
+    prismaMock.user.delete.mockResolvedValue({});
+
+    const result = await acceptInvitation(
+      { token: TOKEN, name: "Invitee", password: "password1", confirmPassword: "password1" },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(prismaMock.__tx.invitation.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "inv1",
+        tokenHash: TOKEN_HASH,
+        status: "PENDING",
+        expiresAt: {
+          equals: originalExpiry,
+          gte: expect.any(Date),
+        },
+      },
+      data: expect.objectContaining({ status: "ACCEPTED" }),
+    });
+    expect(prismaMock.__tx.invitation.update).not.toHaveBeenCalled();
+  });
+
+  it("never promotes or deletes an account it did not create", async () => {
+    prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation());
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    vi.mocked(auth.handler).mockResolvedValue(
+      Response.json({ user: { id: "synthetic-user", email: "invitee@ubc.ca" } }),
+    );
+
+    const result = await acceptInvitation(
+      { token: TOKEN, name: "Invitee", password: "password1", confirmPassword: "password1" },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+
+    expect(result).toEqual({ ok: false, status: 409, error: "USER_EXISTS" });
+    expect(prismaMock.user.findUnique).toHaveBeenLastCalledWith({
+      where: { id: "synthetic-user" },
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.user.delete).not.toHaveBeenCalled();
+  });
+});

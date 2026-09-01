@@ -1,12 +1,7 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
+import { Spinner } from "@eduai/ui";
 import { Link, useNavigate } from "react-router";
-import {
-  IconMessageCircle,
-  IconChevronRight,
-  IconBook,
-  IconUser,
-  IconLoader2,
-} from "@tabler/icons-react";
+import { IconMessageCircle, IconChevronRight, IconBook, IconUser } from "@tabler/icons-react";
 
 import {
   StatCard,
@@ -20,9 +15,17 @@ import {
   DialogDescription,
 } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
-import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+
+// Only ever rendered inside the transcript dialog, and it pulls the heavy
+// chat-message chunk (streamdown + shiki). Load it on open so the dashboard's
+// initial bundle doesn't carry it (#1223).
+const ChatTranscriptViewer = lazy(() =>
+  import("~/components/chat/chat-transcript-viewer").then((m) => ({
+    default: m.ChatTranscriptViewer,
+  })),
+);
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +37,7 @@ export type DashboardStatDef = {
   trendLabel?: string;
 };
 
-/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing role-view imports. */
+/** @deprecated Use `QuickAction` from `@eduai/ui` directly. */
 export type DashboardQuickAction = QuickAction;
 
 export type DashboardCourse = {
@@ -43,6 +46,23 @@ export type DashboardCourse = {
   name: string;
   term: string;
   year: number;
+  /**
+   * #1659 review: `/instructor/chat` only ever loads published courses and
+   * falls back to `courses[0]` (or redirects if none) when asked for one
+   * that isn't — so a card for an unpublished course must not send the
+   * instructor there at all, rather than silently landing on the wrong
+   * course or bouncing back.
+   */
+  isPublished: boolean;
+  /**
+   * #1666 review: `listCoursesForUser` includes active TA and published
+   * STUDENT enrollment rows for a platform INSTRUCTOR too (not just courses
+   * they teach), but `/instructor/chat`'s loader only lists courses with a
+   * real active INSTRUCTOR enrollment — so a mixed-role user's card for a
+   * course they merely take/TA must not link to the ops assistant either;
+   * it would silently fall back to a different (actually-taught) course.
+   */
+  callerEnrollmentRole: string | null;
 };
 
 export type DashboardRecentChat = {
@@ -69,6 +89,14 @@ export type DashboardViewProps = {
   recentChatsLoading?: boolean;
   /** Optional analytics row (charts) rendered full-width below the stat cards. */
   analytics?: React.ReactNode;
+  /**
+   * #1659 review: where "New chat" and each course card's "Chat" button
+   * navigate — defaults to the shared learning assistant (`/chat`,
+   * `?courseCode=`-keyed). INSTRUCTOR's config points this at
+   * `/instructor/chat` (id-keyed) instead, so instructors land on the
+   * course-scoped ops assistant, not the learning one.
+   */
+  chatHref?: string;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -94,18 +122,23 @@ function CourseListPanel({
   courses,
   loading,
   title,
+  chatHref = "/chat",
 }: {
   courses: DashboardCourse[];
   loading: boolean;
   title: string;
+  chatHref?: string;
 }) {
   const navigate = useNavigate();
   if (loading) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
+      <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0 animate-pulse">
-            <div className="w-1 h-11 rounded-sm bg-muted flex-shrink-0" />
+          <div
+            key={i}
+            className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0 animate-pulse"
+          >
+            <div className="w-1 h-11 rounded-sm bg-muted shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-3.5 bg-muted rounded w-24" />
               <div className="h-3 bg-muted rounded w-48" />
@@ -118,9 +151,12 @@ function CourseListPanel({
 
   if (courses.length === 0) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)] px-5 py-8 text-center">
+      <div className="rounded-xl border border-border bg-card shadow-2xs px-5 py-8 text-center">
         <p className="text-sm text-muted-foreground">No courses found.</p>
-        <Link to="/courses" className="mt-2 inline-block text-xs font-medium text-primary-text hover:underline">
+        <Link
+          to="/courses"
+          className="mt-2 inline-block text-xs font-medium text-primary-text hover:underline"
+        >
           Browse courses →
         </Link>
       </div>
@@ -128,7 +164,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
+    <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
       {courses.slice(0, 5).map((course, i) => (
         <Link
           key={course.id}
@@ -137,44 +173,93 @@ function CourseListPanel({
         >
           {/* color swatch */}
           <div
-            className="w-1 h-11 rounded-sm flex-shrink-0"
+            className="w-1 h-11 rounded-sm shrink-0"
             style={{ background: COURSE_COLORS[i % COURSE_COLORS.length] }}
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">{course.code}</span>
-              <span className="text-[11px] text-muted-foreground">{termLabel(course.term, course.year)}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {termLabel(course.term, course.year)}
+              </span>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              // Nested inside the row's <Link>; a nested <a> is invalid markup
-              // and hydration-mismatches, so navigate imperatively instead.
-              e.preventDefault();
-              e.stopPropagation();
-              navigate(`/chat?courseCode=${encodeURIComponent(course.code)}`);
-            }}
-            className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
-            style={{ background: "var(--primary)" }}
-          >
-            Chat
-          </button>
+          {/*
+           * #1666 review (Stavan): this used to gate on the panel-wide
+           * `chatHref` prop (role-derived: INSTRUCTOR → /instructor/chat,
+           * everyone else → /chat) — but a mixed-role STUDENT/TA who really
+           * teaches THIS course still landed on /chat for it, since their
+           * platform role picks the STUDENT/TA config regardless of any
+           * individual course's enrollment. Each row now decides for
+           * itself, from its own recorded enrollment role, instead of
+           * inheriting one blanket destination for the whole panel.
+           */}
+          {(() => {
+            const rowChatHref =
+              course.callerEnrollmentRole === "INSTRUCTOR" ? "/instructor/chat" : chatHref;
+            const routesToInstructorChat = rowChatHref === "/instructor/chat";
+            // #1659 review: /instructor/chat only ever loads published
+            // courses (falling back to courses[0], or redirecting if none)
+            // — so a card for an unpublished course must not link there at
+            // all, rather than silently landing on a different course or
+            // bouncing back.
+            //
+            // #1666 review: a row can also land here via the panel-wide
+            // fallback (e.g. a TA'd course on the INSTRUCTOR dashboard,
+            // whose default chatHref is already /instructor/chat) without
+            // this caller actually teaching it — that must show the same
+            // kind of disabled state, not open the ops assistant for a
+            // course this row's own enrollment doesn't back.
+            const notTeaching =
+              routesToInstructorChat && course.callerEnrollmentRole !== "INSTRUCTOR";
+            const unpublished = routesToInstructorChat && !course.isPublished;
+            if (notTeaching || unpublished) {
+              return (
+                <span
+                  title={
+                    notTeaching
+                      ? "You don't teach this course"
+                      : "Publish this course to open the ops assistant for it"
+                  }
+                  className="shrink-0 px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-md whitespace-nowrap border border-border cursor-not-allowed"
+                >
+                  {notTeaching ? "Not teaching" : "Unpublished"}
+                </span>
+              );
+            }
+            return (
+              <button
+                type="button"
+                onClick={(e) => {
+                  // Nested inside the row's <Link>; a nested <a> is invalid
+                  // markup and hydration-mismatches, so navigate
+                  // imperatively instead.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // #1659 review: /instructor/chat keys its selector by
+                  // course id (Course.code isn't globally unique); every
+                  // other chat surface still keys by ?courseCode=.
+                  const param =
+                    rowChatHref === "/instructor/chat"
+                      ? `courseId=${encodeURIComponent(course.id)}`
+                      : `courseCode=${encodeURIComponent(course.code)}`;
+                  navigate(`${rowChatHref}?${param}`);
+                }}
+                className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
+                style={{ background: "var(--primary)" }}
+              >
+                Chat
+              </button>
+            );
+          })()}
         </Link>
       ))}
     </div>
   );
 }
 
-
-function RecentChatsPanel({
-  chats,
-  loading,
-}: {
-  chats: DashboardRecentChat[];
-  loading: boolean;
-}) {
+function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; loading: boolean }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<DashboardRecentChat | null>(null);
   const [transcript, setTranscript] = useState<ChatTranscript | null>(null);
@@ -200,9 +285,12 @@ function RecentChatsPanel({
 
   if (loading) {
     return (
-      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
+      <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="px-5 py-[14px] border-b border-border last:border-b-0 animate-pulse space-y-2">
+          <div
+            key={i}
+            className="px-5 py-[14px] border-b border-border last:border-b-0 animate-pulse space-y-2"
+          >
             <div className="flex justify-between">
               <div className="h-3 bg-muted rounded w-16" />
               <div className="h-3 bg-muted rounded w-12" />
@@ -216,7 +304,7 @@ function RecentChatsPanel({
 
   return (
     <>
-      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card h-full flex flex-col">
+      <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card h-full flex flex-col">
         {chats.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
             <IconMessageCircle size={24} className="mb-2 text-muted-foreground" />
@@ -229,29 +317,39 @@ function RecentChatsPanel({
                 key={chat.id}
                 type="button"
                 onClick={() => handleOpen(chat)}
-                className="w-full text-left block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
+                className="w-full text-left block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors cursor-pointer"
               >
                 <div className="flex justify-between items-center mb-1">
                   <div className="flex items-center gap-2 min-w-0">
                     {chat.courseCode ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-text flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-text shrink-0">
                         <IconBook size={11} />
                         {chat.courseCode}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground shrink-0">
                         <IconMessageCircle size={11} />
                         General
                       </span>
                     )}
                     {chat.userName && (
                       <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground truncate">
-                        <IconUser size={10} className="flex-shrink-0" />
+                        <IconUser size={10} className="shrink-0" />
                         <span className="truncate">{chat.userName}</span>
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">{relativeTime(chat.updatedAt)}</span>
+                  {/* Recent chats are SSR'd now (#1220), so this relative
+                      timestamp renders on the server too; its value depends on
+                      the wall clock and timezone, so suppress the expected
+                      server/client hydration diff (React's canonical timestamp
+                      case) rather than mismatch-warn on every dashboard load. */}
+                  <span
+                    suppressHydrationWarning
+                    className="text-[11px] text-muted-foreground shrink-0 ml-2"
+                  >
+                    {relativeTime(chat.updatedAt)}
+                  </span>
                 </div>
                 <p className="text-[13px] text-foreground leading-snug line-clamp-2">
                   {chat.preview ?? chat.title ?? "New conversation"}
@@ -263,7 +361,7 @@ function RecentChatsPanel({
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-[var(--radius-xl)]">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-xl">
           <DialogHeader>
             <DialogTitle>
               {selectedChat?.preview ?? selectedChat?.title ?? "Conversation"}
@@ -275,15 +373,23 @@ function RecentChatsPanel({
           </DialogHeader>
           {transcriptLoading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground">
-              <IconLoader2 size={20} className="animate-spin" />
+              <Spinner size="md" />
             </div>
           ) : (
-            <ChatTranscriptViewer
-              messages={transcript?.messages ?? []}
-              ownerName={selectedChat?.userName}
-              courseCode={selectedChat?.courseCode}
-              continueChatId={transcript?.canEdit ? selectedChat?.id : undefined}
-            />
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-16 text-muted-foreground">
+                  <Spinner size="md" />
+                </div>
+              }
+            >
+              <ChatTranscriptViewer
+                messages={transcript?.messages ?? []}
+                ownerName={selectedChat?.userName}
+                courseCode={selectedChat?.courseCode}
+                continueChatId={transcript?.canEdit ? selectedChat?.id : undefined}
+              />
+            </Suspense>
           )}
         </DialogContent>
       </Dialog>
@@ -302,78 +408,82 @@ export function DashboardView({
   recentChats,
   recentChatsLoading = false,
   analytics,
+  chatHref = "/chat",
 }: DashboardViewProps) {
   const showQuickActions = Boolean(quickActions && quickActions.length > 0);
   const panelTitle = leftPanelTitle ?? (showQuickActions ? "Quick actions" : "Your courses");
+  // #1666 review (Stavan): "New chat" has no course of its own to key off,
+  // so it can't route straight to a specific instructor-mode chat — but a
+  // mixed-role STUDENT/TA who teaches at least one course should still land
+  // on /instructor/chat (whose own course selector picks which one) rather
+  // than the learning assistant, matching what the sidebar's Course
+  // Assistant link already promises them.
+  const hasTaughtCourse = courses?.some((c) => c.callerEnrollmentRole === "INSTRUCTOR") ?? false;
+  const newChatHref = hasTaughtCourse ? "/instructor/chat" : chatHref;
 
   return (
     <div className="flex flex-col gap-6 px-4 lg:px-6 pb-8">
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {stats.map((s, index) => (
-          <ScrollReveal key={s.label} index={index}>
-            <StatCard
-              label={s.label}
-              value={s.value}
-              trend={s.trend}
-              trendLabel={s.trendLabel}
-            />
+          <ScrollReveal key={s.label} index={index} parallax={false}>
+            <StatCard label={s.label} value={s.value} trend={s.trend} trendLabel={s.trendLabel} />
           </ScrollReveal>
         ))}
       </div>
 
       {/* Analytics charts */}
       {analytics && (
-        <ScrollReveal index={3}>
+        <ScrollReveal index={3} parallax={false}>
           <div data-tour="dashboard-analytics">{analytics}</div>
         </ScrollReveal>
       )}
 
       {/* 2-column body */}
       <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
-
         {/* Left — courses or quick actions */}
-        <ScrollReveal index={4}>
-        <div>
-          <div className="flex items-center justify-between mb-3.5">
-            <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
-            {!showQuickActions && (
-              <Link
-                to="/courses"
-                className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
-              >
-                Browse all <IconChevronRight size={13} />
-              </Link>
+        <ScrollReveal index={4} parallax={false}>
+          <div>
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
+              {!showQuickActions && (
+                <Link
+                  to="/courses"
+                  className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
+                >
+                  Browse all <IconChevronRight size={13} />
+                </Link>
+              )}
+            </div>
+            {showQuickActions ? (
+              <QuickActionsPanel actions={quickActions!} LinkComponent={Link} />
+            ) : (
+              <CourseListPanel
+                courses={courses ?? []}
+                loading={coursesLoading}
+                title={panelTitle}
+                chatHref={chatHref}
+              />
             )}
           </div>
-          {showQuickActions ? (
-            <QuickActionsPanel actions={quickActions!} LinkComponent={Link} />
-          ) : (
-            <CourseListPanel
-              courses={courses ?? []}
-              loading={coursesLoading}
-              title={panelTitle}
-            />
-          )}
-        </div>
         </ScrollReveal>
 
         {/* Right — recent conversations */}
-        <ScrollReveal index={5}>
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between mb-3.5">
-            <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
-            <Link
-              to="/chat"
-              className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
-            >
-              New chat <IconChevronRight size={13} />
-            </Link>
+        <ScrollReveal index={5} parallax={false}>
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
+              <Link
+                to={newChatHref}
+                className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
+              >
+                New chat <IconChevronRight size={13} />
+              </Link>
+            </div>
+            <div className="flex-1">
+              <RecentChatsPanel chats={recentChats} loading={recentChatsLoading} />
+            </div>
           </div>
-          <div className="flex-1">
-            <RecentChatsPanel chats={recentChats} loading={recentChatsLoading} />
-          </div>
-        </div>
         </ScrollReveal>
       </div>
     </div>

@@ -1,0 +1,8 @@
+# docs/PICT_CENSUS.md § S6 — auth-precedence (#1185)
+# enforceAdminIfApiKey (lib/auth/guards.server.ts:48) and its composition with the cookie
+# fallback at the call site (routes/api/me.ts:57) are two implementations of one precedence
+# rule: invalid key + cookie defers to the cookie; invalid key with no cookie is 401. Site
+# distinguishes the guard's own contract from the composed /api/me endpoint it feeds.
+KeyState:    none, valid-admin-active, valid-admin-inactive, valid-nonadmin, invalid
+CookieState: none, admin-active, admin-inactive, nonadmin
+Site:        guard, api-me

@@ -53,7 +53,7 @@ const MAX_PAGE = 1_000_000;
 export class PaginationError extends Error {
   constructor(message, code) {
     super(message);
-    this.name = 'PaginationError';
+    this.name = "PaginationError";
     this.status = 400;
     this.code = code;
   }
@@ -90,24 +90,18 @@ export function parsePaginationParams(req, opts = {}) {
 
   const rawPage = req.query.page;
   const rawPageSize = req.query.pageSize;
-  const hasPage = rawPage !== undefined && rawPage !== '';
-  const hasPageSize = rawPageSize !== undefined && rawPageSize !== '';
+  const hasPage = rawPage !== undefined && rawPage !== "";
+  const hasPageSize = rawPageSize !== undefined && rawPageSize !== "";
 
   if (required && (!hasPage || !hasPageSize)) {
-    throw new PaginationError(
-      'page and pageSize query params are required',
-      'PAGINATION_REQUIRED',
-    );
+    throw new PaginationError("page and pageSize query params are required", "PAGINATION_REQUIRED");
   }
 
   const pageNum = hasPage ? Number(rawPage) : 1;
   const pageSizeNum = hasPageSize ? Number(rawPageSize) : defaultPageSize;
 
   if (required && (!Number.isFinite(pageNum) || !Number.isFinite(pageSizeNum))) {
-    throw new PaginationError(
-      'page and pageSize must be numbers',
-      'PAGINATION_INVALID',
-    );
+    throw new PaginationError("page and pageSize must be numbers", "PAGINATION_INVALID");
   }
 
   const page = Number.isFinite(pageNum) ? clampInt(pageNum, 1, MAX_PAGE) : 1;

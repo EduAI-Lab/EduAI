@@ -1,4 +1,4 @@
-import { EnrollmentRole } from "@prisma/client";
+import { EnrollmentRole, Prisma } from "@prisma/client";
 import type { CanvasCourseApi } from "~/lib/canvas/client.server";
 import {
   CANVAS_EXTERNAL_SOURCE,
@@ -15,10 +15,7 @@ import {
   deactivateDroppedCanvasEnrollments,
   linkEnrollmentsFromStagingForCourse,
 } from "~/lib/canvas/enrollment-link.server";
-import {
-  deactivateCourseRoster,
-  syncCourseRoster,
-} from "~/lib/canvas/roster.server";
+import { deactivateCourseRoster, syncCourseRoster } from "~/lib/canvas/roster.server";
 import type {
   SyncCanvasCourseResult,
   SyncCanvasCoursesResult,
@@ -39,7 +36,7 @@ async function syncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
   fetchImpl: typeof fetch,
-): Promise<Omit<SyncCanvasCourseResult, 'canvasId'>> {
+): Promise<Omit<SyncCanvasCourseResult, "canvasId">> {
   const credentials = await requireCanvasCredentials(userId);
   const canvasCourse = await findCanvasCourseByExternalId(canvasCourseId, fetchImpl, userId);
 
@@ -47,33 +44,61 @@ async function syncSingleCanvasCourse(
     throw new Error(`Canvas course ${canvasCourseId} not found or not taught by this account`);
   }
 
-  const syncStartedAt = new Date();
-  const coreCourse = await upsertCoreCourseFromCanvas(canvasCourse);
-  await ensureInstructorEnrollment(coreCourse.id, userId);
+  // CANVAS-04 (#225 / #1195): serialize concurrent instructor syncs for the same
+  // Core course with a Postgres transaction-scoped advisory lock so lastSeenAt /
+  // deactivation sweeps cannot race. Capture the sweep boundary *after* the
+  // lock so a waiting sync cannot preserve rows written by the preceding sync
+  // (those rows would have lastSeenAt newer than a pre-lock syncStartedAt).
+  const runSyncTransaction = () =>
+    prisma.$transaction(
+      async (tx) => {
+        // Lock the stable external identity before touching the course row. Unsync
+        // takes the same lock first, preventing row-lock/advisory-lock inversion.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-course:${canvasCourseId}`}))`;
+        const coreCourse = await upsertCoreCourseFromCanvas(canvasCourse, tx);
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-sync:${coreCourse.id}`}))`;
+        await ensureInstructorEnrollment(coreCourse.id, userId, tx);
+        const syncStartedAt = new Date();
 
-  const rosterMembersSynced = await syncCourseRoster({
-    credentials,
-    coreCourseId: coreCourse.id,
-    canvasCourseId,
-    syncedByUserId: userId,
-    syncStartedAt,
-    fetchImpl,
-  });
+        const rosterMembersSynced = await syncCourseRoster({
+          credentials,
+          coreCourseId: coreCourse.id,
+          canvasCourseId,
+          syncedByUserId: userId,
+          syncStartedAt,
+          fetchImpl,
+          db: tx,
+        });
 
-  const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id);
-  await deactivateDroppedCanvasEnrollments(coreCourse.id);
+        const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id, tx);
+        await deactivateDroppedCanvasEnrollments(coreCourse.id, tx);
 
-  return {
-    coreCourseId: coreCourse.id,
-    rosterMembersSynced,
-    enrollmentsLinked,
-  };
+        return {
+          coreCourseId: coreCourse.id,
+          rosterMembersSynced,
+          enrollmentsLinked,
+        };
+      },
+      { maxWait: 15_000, timeout: 120_000 },
+    );
+
+  try {
+    return await runSyncTransaction();
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+
+    // The failed transaction has rolled back. Retry once from the lock onward
+    // so a concurrent winner can be adopted without weakening roster atomicity.
+    return runSyncTransaction();
+  }
 }
 
 async function unsyncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
-): Promise<Omit<UnsyncCanvasCourseResult, 'canvasId'>> {
+): Promise<Omit<UnsyncCanvasCourseResult, "canvasId">> {
   const course = await prisma.course.findFirst({
     where: {
       externalSource: CANVAS_EXTERNAL_SOURCE,
@@ -94,42 +119,54 @@ async function unsyncSingleCanvasCourse(
     throw new Error(`Synced course ${canvasCourseId} not found for this instructor`);
   }
 
-  await prisma.enrollment.updateMany({
-    where: {
-      courseId: course.id,
-      userId,
-      role: EnrollmentRole.INSTRUCTOR,
+  // Serialize sync and unsync decisions for a shared Core course. Instructors
+  // can independently connect the same Canvas course, so student/TA and roster
+  // state is course-owned and must only be torn down by the final instructor.
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-course:${canvasCourseId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-sync:${course.id}`}))`;
+
+      await tx.enrollment.updateMany({
+        where: {
+          courseId: course.id,
+          userId,
+          role: EnrollmentRole.INSTRUCTOR,
+        },
+        data: { isActive: false },
+      });
+
+      const activeInstructors = await tx.enrollment.count({
+        where: {
+          courseId: course.id,
+          role: EnrollmentRole.INSTRUCTOR,
+          isActive: true,
+        },
+      });
+
+      if (activeInstructors > 0) {
+        return;
+      }
+
+      await tx.enrollment.updateMany({
+        where: {
+          courseId: course.id,
+          externalSource: CANVAS_EXTERNAL_SOURCE,
+          role: { in: [EnrollmentRole.STUDENT, EnrollmentRole.TA] },
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+
+      await deactivateCourseRoster(course.id, tx);
+
+      await tx.course.update({
+        where: { id: course.id },
+        data: { isActive: false, deletedAt: new Date() },
+      });
     },
-    data: { isActive: false },
-  });
-
-  await prisma.enrollment.updateMany({
-    where: {
-      courseId: course.id,
-      externalSource: CANVAS_EXTERNAL_SOURCE,
-      role: { in: [EnrollmentRole.STUDENT, EnrollmentRole.TA] },
-      isActive: true,
-    },
-    data: { isActive: false },
-  });
-
-  await deactivateCourseRoster(course.id);
-
-  const otherActiveInstructors = await prisma.enrollment.count({
-    where: {
-      courseId: course.id,
-      role: EnrollmentRole.INSTRUCTOR,
-      isActive: true,
-      userId: { not: userId },
-    },
-  });
-
-  if (otherActiveInstructors === 0) {
-    await prisma.course.update({
-      where: { id: course.id },
-      data: { isActive: false, deletedAt: new Date() },
-    });
-  }
+    { maxWait: 15_000, timeout: 30_000 },
+  );
 
   return { coreCourseId: course.id };
 }
@@ -142,11 +179,14 @@ async function unsyncSingleCanvasCourse(
  * revoked, etc.) is left untouched rather than unsynced, since the instructor never had a
  * chance to see it in the picker and choose to omit it.
  */
+/** Which Canvas courses this save should start syncing, and which to drop. */
+export type CanvasSyncDelta = { toSync: string[]; toUnsync: string[] };
+
 export function computeCanvasSyncDelta(
   currentlySynced: Iterable<string>,
   canvasCourseIds: string[],
   liveCanvasIds: Iterable<string>,
-): { toSync: string[]; toUnsync: string[] } {
+): CanvasSyncDelta {
   const syncedSet = new Set(currentlySynced);
   const requested = new Set(canvasCourseIds);
   const liveSet = new Set(liveCanvasIds);
@@ -174,7 +214,11 @@ export async function syncCanvasCourses(
     listTeacherCanvasCourses(credentials, fetchImpl),
   ]);
   const liveCanvasIds = liveCourses.map((course) => String(course.id));
-  const { toSync, toUnsync } = computeCanvasSyncDelta(currentlySynced, canvasCourseIds, liveCanvasIds);
+  const { toSync, toUnsync } = computeCanvasSyncDelta(
+    currentlySynced,
+    canvasCourseIds,
+    liveCanvasIds,
+  );
 
   const result: SyncCanvasCoursesResult = {
     synced: [],

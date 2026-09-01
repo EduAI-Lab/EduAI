@@ -1,0 +1,273 @@
+/**
+ * Unit tests: createVariant / updateVariant persist multi-correct MCQ fields
+ * via normalizeMcqCorrectness. Prisma is mocked — no DB required.
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  mockMetaFindFirst,
+  mockExecuteRaw,
+  mockTransaction,
+  mockVariantCreate,
+  mockVariantFindFirst,
+  mockVariantUpdate,
+} = vi.hoisted(() => ({
+  mockMetaFindFirst: vi.fn(),
+  mockExecuteRaw: vi.fn(),
+  mockTransaction: vi.fn(),
+  mockVariantCreate: vi.fn(),
+  mockVariantFindFirst: vi.fn(),
+  mockVariantUpdate: vi.fn(),
+}));
+
+vi.mock("../../src/config/database.js", () => ({
+  prisma: {
+    $transaction: mockTransaction,
+    $executeRaw: mockExecuteRaw,
+    questionMetadata: { findFirst: mockMetaFindFirst },
+    variants: {
+      create: mockVariantCreate,
+      findFirst: mockVariantFindFirst,
+      update: mockVariantUpdate,
+    },
+  },
+}));
+
+vi.mock("../../src/services/courseListService.js", () => ({
+  enrichRowsWithCourse: vi.fn(async (rows) => rows),
+  enrichRowWithCourse: vi.fn(async (row) => row),
+  formatSemesterDisplay: vi.fn(() => null),
+}));
+
+const { createVariant, updateVariant } = await import("../../src/services/questionService.js");
+
+const USER_ID = "cuid-user-1";
+const CHOICES = [
+  { letter: "A", text: "Alpha" },
+  { letter: "B", text: "Beta" },
+  { letter: "C", text: "Gamma" },
+];
+
+describe("questionService MCQ multi-correct persistence", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTransaction.mockImplementation(async (operation) =>
+      operation({
+        $executeRaw: mockExecuteRaw,
+        variants: {
+          findFirst: mockVariantFindFirst,
+          update: mockVariantUpdate,
+        },
+      }),
+    );
+  });
+
+  describe("createVariant", () => {
+    it("multi-correct: sorts correctAnswers, sets answer to first sorted, flag true", async () => {
+      mockMetaFindFirst.mockResolvedValue({ id: 10, type: "MCQ" });
+      mockVariantCreate.mockResolvedValue({ id: 1 });
+
+      await createVariant(
+        10,
+        {
+          questionText: "Pick all that apply",
+          difficulty: "medium",
+          answer: null,
+          choices: CHOICES,
+          selectAllThatApply: true,
+          correctAnswers: ["C", "A"],
+        },
+        USER_ID,
+      );
+
+      expect(mockVariantCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          answer: "A",
+          correctAnswers: ["A", "C"],
+          selectAllThatApply: true,
+          choices: CHOICES,
+        }),
+        include: expect.anything(),
+      });
+    });
+
+    it("single-correct: flag false and correctAnswers null", async () => {
+      mockMetaFindFirst.mockResolvedValue({ id: 10, type: "MCQ" });
+      mockVariantCreate.mockResolvedValue({ id: 2 });
+
+      await createVariant(
+        10,
+        {
+          questionText: "Pick one",
+          difficulty: "easy",
+          answer: "B",
+          choices: CHOICES,
+          selectAllThatApply: false,
+          correctAnswers: ["A", "B"],
+        },
+        USER_ID,
+      );
+
+      expect(mockVariantCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          answer: "B",
+          selectAllThatApply: false,
+          correctAnswers: null,
+        }),
+        include: expect.anything(),
+      });
+    });
+
+    it("non-MCQ: leaves selectAllThatApply false and correctAnswers null", async () => {
+      mockMetaFindFirst.mockResolvedValue({ id: 11, type: "SA" });
+      mockVariantCreate.mockResolvedValue({ id: 3 });
+
+      await createVariant(
+        11,
+        {
+          questionText: "Explain photosynthesis",
+          answer: "Light to chemical energy",
+          selectAllThatApply: true,
+          correctAnswers: ["A"],
+        },
+        USER_ID,
+      );
+
+      expect(mockVariantCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          answer: "Light to chemical energy",
+          selectAllThatApply: false,
+          correctAnswers: null,
+          choices: null,
+        }),
+        include: expect.anything(),
+      });
+    });
+  });
+
+  describe("updateVariant", () => {
+    it("multi-correct update normalizes and persists both fields", async () => {
+      mockVariantFindFirst.mockResolvedValue({
+        id: 5,
+        questionMetadataId: 10,
+        isDraft: true,
+        answer: "A",
+        choices: CHOICES,
+        selectAllThatApply: false,
+        correctAnswers: null,
+        questionMetadata: {
+          id: 10,
+          type: "MCQ",
+          courseId: 1,
+          course: { id: 1, coreCourseId: null },
+        },
+      });
+      mockVariantUpdate.mockResolvedValue({ id: 5 });
+
+      await updateVariant(
+        5,
+        {
+          selectAllThatApply: true,
+          correctAnswers: ["C", "A"],
+        },
+        USER_ID,
+      );
+
+      expect(mockVariantUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            answer: "A",
+            correctAnswers: ["A", "C"],
+            selectAllThatApply: true,
+          }),
+        }),
+      );
+    });
+
+    it("choices-only edit does not re-normalize stored answer", async () => {
+      mockVariantFindFirst.mockResolvedValue({
+        id: 6,
+        questionMetadataId: 10,
+        isDraft: true,
+        answer: null,
+        choices: CHOICES,
+        selectAllThatApply: false,
+        correctAnswers: null,
+        questionMetadata: {
+          id: 10,
+          type: "MCQ",
+          courseId: 1,
+          course: { id: 1, coreCourseId: null },
+        },
+      });
+      mockVariantUpdate.mockResolvedValue({ id: 6 });
+
+      await updateVariant(
+        6,
+        {
+          choices: [
+            { letter: "A", text: "Alpha edited" },
+            { letter: "B", text: "Beta" },
+            { letter: "C", text: "Gamma" },
+          ],
+        },
+        USER_ID,
+      );
+
+      expect(mockVariantUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            choices: [
+              { letter: "A", text: "Alpha edited" },
+              { letter: "B", text: "Beta" },
+              { letter: "C", text: "Gamma" },
+            ],
+          }),
+        }),
+      );
+      const data = mockVariantUpdate.mock.calls[0][0].data;
+      expect(data.answer).toBeUndefined();
+      expect(data.selectAllThatApply).toBeUndefined();
+      expect(data.correctAnswers).toBeUndefined();
+    });
+
+    it("non-MCQ update forces selectAllThatApply false and correctAnswers null", async () => {
+      mockVariantFindFirst.mockResolvedValue({
+        id: 7,
+        questionMetadataId: 11,
+        isDraft: true,
+        answer: "text",
+        choices: null,
+        selectAllThatApply: false,
+        correctAnswers: null,
+        questionMetadata: {
+          id: 11,
+          type: "SA",
+          courseId: 1,
+          course: { id: 1, coreCourseId: null },
+        },
+      });
+      mockVariantUpdate.mockResolvedValue({ id: 7 });
+
+      await updateVariant(
+        7,
+        {
+          selectAllThatApply: true,
+          correctAnswers: ["A", "B"],
+          answer: "Updated SA",
+        },
+        USER_ID,
+      );
+
+      expect(mockVariantUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            answer: "Updated SA",
+            selectAllThatApply: false,
+            correctAnswers: null,
+          }),
+        }),
+      );
+    });
+  });
+});

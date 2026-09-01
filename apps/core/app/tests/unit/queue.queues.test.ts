@@ -21,8 +21,8 @@ beforeEach(() => {
 
 describe("getQueue", () => {
   it("builds one Queue per pool and reuses it across calls", () => {
-    const first = getQueue("ai-jobs:chat");
-    const second = getQueue("ai-jobs:chat");
+    const first = getQueue("ai-jobs-chat");
+    const second = getQueue("ai-jobs-chat");
 
     expect(second).toBe(first);
     expect(queueCtor).toHaveBeenCalledTimes(1);
@@ -35,8 +35,8 @@ describe("getQueue", () => {
     delete globalThis.__aiJobQueues;
     vi.stubEnv("NODE_ENV", "production");
     try {
-      const first = getQueue("ai-jobs:heavy");
-      const second = getQueue("ai-jobs:heavy");
+      const first = getQueue("ai-jobs-heavy");
+      const second = getQueue("ai-jobs-heavy");
 
       expect(second).toBe(first);
       expect(queueCtor).toHaveBeenCalledTimes(1);
@@ -47,6 +47,6 @@ describe("getQueue", () => {
   });
 
   it("keeps separate queues per pool", () => {
-    expect(getQueue("ai-jobs:chat")).not.toBe(getQueue("ai-jobs:heavy"));
+    expect(getQueue("ai-jobs-chat")).not.toBe(getQueue("ai-jobs-heavy"));
   });
 });

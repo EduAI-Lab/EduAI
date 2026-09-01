@@ -1,5 +1,5 @@
 -- BullMQ auto-generated job ids are per-queue counters, so `bullJobId` is only
--- unique within a queue: `ai-jobs:chat` and `ai-jobs:heavy` both hand out "1".
+-- unique within a queue: `ai-jobs-chat` and `ai-jobs-heavy` both hand out "1".
 -- Scope the uniqueness to the queue the job was pushed onto.
 
 -- AlterTable

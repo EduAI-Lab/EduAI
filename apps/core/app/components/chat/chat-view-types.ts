@@ -12,6 +12,32 @@ export type ChatCourseOption = {
   id: string;
   name: string;
   code: string;
+  /**
+   * Optional disambiguation label shown instead of the bare code when a
+   * caller's course list contains more than one offering sharing the same
+   * `code` (Course.code is not globally unique — only (code, startDate,
+   * section) is — #1659 review). Falls back to `code` when absent.
+   */
+  label?: string;
+};
+
+/** Minimal message shape for live chat + in-flight tool/progress detection. */
+export type ChatViewMessage = {
+  id: string;
+  role: string;
+  content: string | { text?: string } | Array<{ type?: string; text?: string }>;
+  parts?: Array<{
+    type?: string;
+    text?: string;
+    toolInvocation?: {
+      toolName?: string;
+      state?: string;
+      toolCallId?: string;
+      args?: unknown;
+    };
+    toolName?: string;
+    state?: string;
+  } | null>;
 };
 
 export type ChatViewSharedProps = {
@@ -19,15 +45,26 @@ export type ChatViewSharedProps = {
   selectedModel: string;
   setSelectedModel: (value: string) => void;
   selectedModelInfo?: ChatModelOption;
+  selectedCourseId: string | null;
   selectedCourseCode: string | null;
-  setSelectedCourseCode: (value: string | null) => void;
+  setSelectedCourseId: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
-  messages: Array<{ id: string; role: string; content: string }>;
+  /**
+   * Which field of `ChatCourseOption` the selector uses to match and emit
+   * through `selectedCourseId`/`setSelectedCourseId` — "code" (default) or
+   * "id". Course-scoped chat overrides this to "id" because its handler and
+   * request payload use course IDs; `selectedCourseCode` remains display-only.
+   * See `ChatCourseOption.label` / chat-input.tsx's `courseSelectionKey`.
+   */
+  courseSelectionKey?: "code" | "id";
+  messages: ChatViewMessage[];
   input: string;
   isLoading: boolean;
   adhdAssist: boolean;
   assistive: boolean;
   onAssistiveChange: (value: boolean) => void;
+  /** True while the latest response is being re-generated for the toggled Assist mode (#1246). */
+  assistBusy?: boolean;
   focusMode: boolean;
   onFocusModeChange: (value: boolean) => void;
   systemPrompt: string | null;
@@ -39,8 +76,29 @@ export type ChatViewSharedProps = {
   onSelectPrompt: (prompt: string) => void;
   isStudentWithCourseChat?: boolean;
   disabledReason?: string;
+  cappedMessageIds?: Set<string>;
+  onContinue?: (messageId: string) => void;
+
   /** Registry ids from X-Routed-Model, keyed by assistant message id. */
   routedModelByMessageId?: Record<string, string>;
   /** In-flight assistant bubble before onFinish assigns message id. */
   streamingRoutedRegistryId?: string | null;
+  /**
+   * Whether the model selector was set to an auto mode ("auto"/"auto-llm")
+   * at the time each assistant message was requested, keyed by message id.
+   * Read this instead of the live `selectedModel` so switching the selector
+   * mid-conversation doesn't retroactively change older messages' labels.
+   */
+  wasAutoRoutedByMessageId?: Record<string, boolean>;
+  /** Whether the in-flight request was made with an auto mode selected. */
+  streamingWasAutoRouted?: boolean;
+  /**
+   * Whether Assist was on for the request that produced each assistant
+   * message, keyed by message id (#1671). Read this instead of the live
+   * `adhdAssist` toggle when deciding how to render a message, so flipping
+   * Assist mid-conversation doesn't retroactively reformat older messages.
+   */
+  adhdAssistByMessageId?: Record<string, boolean>;
+  /** Whether the in-flight request was made with Assist on. */
+  streamingAdhdAssist?: boolean;
 };

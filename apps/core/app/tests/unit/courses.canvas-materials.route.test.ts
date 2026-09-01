@@ -5,7 +5,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/materials.server", () => ({
@@ -21,7 +21,7 @@ vi.mock("~/lib/canvas/materials.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { CanvasStoredCredentialsError } from "~/lib/canvas/integration.server";
 import { discoverCanvasMaterialsForCourse } from "~/lib/canvas/materials.server";
 import { loader } from "~/routes/api/courses.canvas-materials.$";
@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "INSTRUCTOR" },
   } as never);
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: { id: "core-course-1" },
     access: { level: "instructor", rank: 2 },
   } as never);
@@ -57,7 +57,7 @@ describe("courses.canvas-materials loader", () => {
     );
   });
 
-  it("opts into the publish-state recheck when ?recheck=true", async () => {
+  it("keeps GET read-only even when a legacy recheck query is supplied", async () => {
     await loader({
       request: makeRequest(
         "http://localhost/api/courses/core-course-1/canvas-materials?recheck=true",
@@ -69,15 +69,13 @@ describe("courses.canvas-materials loader", () => {
       "user-1",
       "core-course-1",
       undefined,
-      { recheckPublishState: true },
+      { recheckPublishState: false },
     );
   });
 
   it("treats any non-'true' value as not opting in", async () => {
     await loader({
-      request: makeRequest(
-        "http://localhost/api/courses/core-course-1/canvas-materials?recheck=1",
-      ),
+      request: makeRequest("http://localhost/api/courses/core-course-1/canvas-materials?recheck=1"),
       params: { courseId: "core-course-1" },
     } as never);
 

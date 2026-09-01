@@ -1,0 +1,31 @@
+{
+  "env": {
+    "captured_at": "2026-07-22T03:10:43.249Z",
+    "target_label": "ubc-dev",
+    "targets": {
+      "CORE_URL": "https://dev.eduai.ok.ubc.ca",
+      "AITUTOR_URL": "https://dev.aitutor.eduai.ok.ubc.ca",
+      "QM_URL": "https://dev.questionmaker.eduai.ok.ubc.ca"
+    },
+    "git_sha": "7a6bd939",
+    "git_branch": "feat/961-baseline-perf-codequality",
+    "node": "v23.11.0",
+    "platform": "darwin-arm64",
+    "warmup": 3,
+    "samples": 30,
+    "mut_samples": 15,
+    "concurrency": 1,
+    "include_mutations": true,
+    "validate_governor": {
+      "limit": 300,
+      "window_ms": 60000,
+      "applies_to": [
+        "ai-tutor",
+        "qm",
+        "core:sessions/validate"
+      ]
+    },
+    "seed_note": "Run `npm run db:seed:perf` (all three DBs + pool manifests) before each run; deletes consume the pool."
+  },
+  "errors": []
+}

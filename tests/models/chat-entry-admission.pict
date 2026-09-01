@@ -1,0 +1,33 @@
+# docs/PICT_CENSUS.md § S3 — chat-entry-admission
+# POST /api/chat entry gates: auth, proxyUser, admin chatMode, publish/enrollment,
+# course-id source (body / persisted / missing → 404), persisted-chat type mismatch
+# or not-found (410), course-pin conflict (409).
+# Enrollment=none with a real CourseIdSource (body/persisted) is allowed for
+# session (non-admin/service) callers so the no-relationship 403 is reachable;
+# privileged Auth keeps Enrollment=none only with none/body-missing sources.
+Auth:            session, service-key, admin-api-key, none
+ProxyUser:       none, valid, blocked
+ChatMode:        user, admin
+CoursePublished: yes, no
+Enrollment:      none, student, instructor
+CourseIdSource:  none, body, body-missing, persisted
+PersistedChat:   none, ok, type-mismatch, pin-conflict, not-found
+
+IF [Auth] = "none" THEN [ProxyUser] = "none";
+IF [ProxyUser] = "valid" THEN [Auth] = "admin-api-key";
+IF [ProxyUser] = "blocked" THEN [Auth] in {"session", "service-key"};
+IF [PersistedChat] <> "none" THEN [Auth] in {"session", "admin-api-key"};
+IF [PersistedChat] = "type-mismatch" THEN [ChatMode] = "user";
+IF [PersistedChat] = "pin-conflict" THEN [CourseIdSource] = "body";
+IF [PersistedChat] = "pin-conflict" THEN [Enrollment] in {"student", "instructor"};
+IF [PersistedChat] = "not-found" THEN [CourseIdSource] <> "persisted";
+IF [CourseIdSource] = "none" THEN [Enrollment] = "none";
+IF [CourseIdSource] = "body-missing" THEN [Enrollment] = "none";
+IF [CourseIdSource] = "persisted" THEN [PersistedChat] = "ok";
+IF [Enrollment] = "none" AND [CourseIdSource] in {"body", "persisted"} THEN [Auth] = "session";
+IF [Enrollment] = "none" AND [CourseIdSource] in {"body", "persisted"} THEN [ChatMode] = "user";
+IF [Enrollment] = "none" AND [CourseIdSource] in {"body", "persisted"} THEN [ProxyUser] = "none";
+IF [Auth] = "session" AND [ChatMode] = "user" THEN [CourseIdSource] <> "none";
+IF [Auth] = "admin-api-key" AND [ChatMode] = "user" AND [ProxyUser] = "none" THEN [CourseIdSource] <> "none";
+IF [Auth] = "session" AND [Enrollment] = "none" AND [CourseIdSource] in {"none", "body-missing"} THEN [ChatMode] = "admin";
+IF [Auth] = "admin-api-key" AND [Enrollment] = "none" AND [ProxyUser] = "none" THEN [ChatMode] = "admin";

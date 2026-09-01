@@ -1,7 +1,17 @@
-import type { UserRole } from '@eduai/types';
-export type Role = UserRole;
+import type { UserRole } from "@eduai/types";
 
-export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
+/**
+ * Effective role for AI Tutor's UI/routing: the platform `UserRole` plus the
+ * enrollment-derived TA overlay. `@eduai/types`' `UserRole` has no TA (a
+ * course TA is a STUDENT-platform user with a TA course enrollment) — the
+ * server (`server/src/routes/authentication.js`) rewrites `role` to `'TA'`
+ * when the enrollment sync finds a TA-taught course, mirroring Core's own
+ * `EffectiveRole` pattern (#225 AUTH-12). Never compare this to the raw Core
+ * `User.role` — that's `UserRole` and never `'TA'`.
+ */
+export type Role = UserRole | "TA";
+
+export type EnrollmentRole = "STUDENT" | "TA" | "INSTRUCTOR";
 
 export type User = {
   id: string;
@@ -52,6 +62,8 @@ export type ActivityFeedbackRow = {
 
 export type StudentMetricRow = {
   userId: string;
+  /** Resolved from Core; null when Core is unreachable or the user is gone. */
+  studentName?: string | null;
   submissionCount: number;
   correctSubmissionCount: number;
   incorrectSubmissionCount: number;
@@ -62,7 +74,8 @@ export type ActivityAnalyticsRow = {
   activityId: number;
   averageRating?: number | null;
   feedbackCount?: number;
-  difficultyScore?: string | null;
+  difficultyScore?: number | null;
+  difficultyLabel?: string | null;
   activity?: {
     id: number;
     title?: string | null;
@@ -103,15 +116,15 @@ export type AdminEnrollmentData = {
   availableStudentsPage: { total: number; page: number; pageSize: number };
 };
 
-export type BugReportStatus = 'unhandled' | 'in progress' | 'resolved';
+export type BugReportStatus = "unhandled" | "in progress" | "resolved";
 
 export type BugReportType =
-  | 'UI_DISPLAY'
-  | 'FEATURE_NOT_WORKING'
-  | 'PERFORMANCE'
-  | 'CONTENT_ERROR'
-  | 'ACCESS_PERMISSION'
-  | 'OTHER';
+  | "UI_DISPLAY"
+  | "FEATURE_NOT_WORKING"
+  | "PERFORMANCE"
+  | "CONTENT_ERROR"
+  | "ACCESS_PERMISSION"
+  | "OTHER";
 
 export type BugReportContext = {
   courseOfferingId?: number | null;
@@ -151,14 +164,12 @@ export type AdminBugReportRow = {
   reporterName?: string | null;
   reporterEmail?: string | null;
   reporterRole?: Role | null;
-  user?:
-    | {
-        id: string;
-        name: string | null;
-        email: string | null;
-        role: Role | null;
-      }
-    | null;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    role: Role | null;
+  } | null;
   userName?: string | null;
   userEmail?: string | null;
   role?: Role | null;
@@ -176,13 +187,20 @@ export type AdminBugReportRow = {
 
 export type EduAiApiKeyStatus = {
   configured: boolean;
-  source: 'ADMIN' | 'ENV' | 'NONE';
+  source: "ADMIN" | "ENV" | "NONE";
   hasAdminOverride: boolean;
   envConfigured: boolean;
   updatedAt: string | null;
 };
 
-export type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
+export type UserProviderSettingStatus = {
+  providerName: string;
+  isEnabled: boolean;
+  hasKey: boolean;
+  baseUrl: string | null;
+};
+
+export type CostTier = "LOW" | "MEDIUM" | "HIGH";
 
 export type AdminAiModelPolicy = {
   allowedTutorModelIds: string[];
@@ -198,7 +216,7 @@ export type Progress = {
   percentage: number;
 };
 
-export type CompletionStatus = 'correct' | 'incorrect' | 'not_attempted';
+export type CompletionStatus = "correct" | "incorrect" | "not_attempted";
 
 export type Course = {
   id: number;
@@ -222,7 +240,15 @@ export type Course = {
   year?: number | null;
   /** Core-owned instructor guidance for the AI tutor — available but not yet consumed (#1072). */
   aiInstructions?: string | null;
+  /** #225 SEAM-04: set only on the publish/unpublish response when the write
+   *  to Core succeeded but the immediate re-read failed — `isPublished`
+   *  reflects the write, not a confirmed Core read. Absent otherwise. */
+  corePublishStale?: boolean;
   progress?: Progress;
+  /** The viewer's role *on this course* (#1644), set only by `GET /api/courses/:id`.
+   *  Authoritative for gating course-detail staff tabs — distinct from the global
+   *  effective `User.role`, which a TA carries onto every course they can reach. */
+  viewerRole?: Role | null;
 };
 
 export type Module = {
@@ -245,8 +271,29 @@ export type Lesson = {
   position: number;
   isPublished: boolean;
   courseOfferingId?: number;
+  coreOfferingId?: string;
   moduleId?: number;
   progress?: Progress;
+};
+
+/**
+ * The stored answer for an activity. The Prisma column is untyped JSON, so the
+ * object arm names only the two fields the UI reads (the decoder preserves any
+ * others at runtime without describing them), while the scalar arms are legacy
+ * rows holding a bare correct index or a bare expected string. Read it through
+ * `readActivityAnswer` rather than reaching into it directly — a stored field
+ * is not guaranteed to hold the type it is named for.
+ */
+export type ActivityAnswer = ActivityAnswerFields | number | string;
+
+/**
+ * The decoded answer fields the activity UI reads. A field is absent unless it
+ * genuinely held the type it is named for, so callers branch on `undefined`
+ * alone rather than re-checking the value.
+ */
+export type ActivityAnswerFields = {
+  correctIndex?: number;
+  text?: string;
 };
 
 export type Activity = {
@@ -255,9 +302,9 @@ export type Activity = {
   instructionsMd: string;
   position: number;
   question: string;
-  type: 'MCQ' | 'SHORT_TEXT';
+  type: "MCQ" | "SHORT_TEXT";
   options: { choices?: string[] } | null;
-  answer?: any;
+  answer?: ActivityAnswer | null;
   hints: string[];
   promptTemplateId?: number | null;
   promptTemplate?: { id: number; name: string } | null;
@@ -279,8 +326,13 @@ export type PromptTemplate = {
   topP?: number | null;
 };
 
+/**
+ * `Topic.id` is a cuid string in the AI-Tutor database (`Topic.id String @id
+ * @default(cuid())`), and `mapTopic` sends it through unchanged. `number` is
+ * kept in the union only because older call sites compare and stringify it.
+ */
 export type Topic = {
-  id: number;
+  id: string | number;
   name: string;
 };
 
@@ -293,13 +345,13 @@ export type AiModel = {
   costTier?: CostTier | null;
   roleHint?: string | null;
   studentSelectable?: boolean;
-  availability?: 'allowed' | 'admin-only' | 'blocked';
+  availability?: "allowed" | "admin-only" | "blocked";
   isDefaultTutor?: boolean;
 };
 
 export type SuggestedPrompt = {
   id: number;
-  mode: 'teach' | 'guide';
+  mode: "teach" | "guide";
   text: string;
 };
 

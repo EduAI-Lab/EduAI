@@ -10,7 +10,7 @@
  * trigger it.
  */
 import * as React from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate, useRouteLoaderData } from "react-router";
 import {
   IconDashboard,
   IconBooks,
@@ -35,6 +35,7 @@ import {
   buildAppSwitcherGroup,
   type CommandPaletteGroup,
 } from "@eduai/ui";
+import type { loader as rootLoader } from "~/root";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import type { User } from "~/lib/auth/types";
 import type { NavItem, NavGroupItem, NavItemKey } from "~/lib/rbac/types";
@@ -46,11 +47,10 @@ const COURSE_PICKER_QUERY = "page=1&pageSize=200";
 /** Matches the debounce the admin table hooks use, so search feels consistent. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-
 /** Window event that opens the palette — dispatched by the header search button. */
 export const CORE_COMMAND_EVENT = "eduai:open-command";
 
-const NAV_ICONS: Record<NavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
@@ -60,6 +60,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-chat": IconRobot,
+  "instructor-chat": IconRobot,
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,
@@ -68,7 +69,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
   help: IconHelp,
   "ai-tutor": IconMessageChatbot,
-};
+} satisfies Record<NavItemKey, Icon>;
 
 type PaletteCourse = { id: string; code: string; name: string };
 
@@ -84,11 +85,9 @@ export function paletteNavItems(user: User): NavItem[] {
   const settingsItem: NavItem = { key: "settings", title: "Settings", url: "/settings" };
   const flatten = (items: (NavItem | NavGroupItem)[]): NavItem[] =>
     items.flatMap((item) => ("children" in item ? item.children : [item]));
-  return flatten([
-    ...getNavForUser(user),
-    ...getNavSecondaryForUser(user),
-    settingsItem,
-  ]).filter((item) => !item.disabled);
+  return flatten([...getNavForUser(user), ...getNavSecondaryForUser(user), settingsItem]).filter(
+    (item) => !item.disabled,
+  );
 }
 
 /**
@@ -124,7 +123,9 @@ export async function loadPaletteCourses(
  * for unit tests.
  */
 export async function fetchPaletteCourses(search: string): Promise<PaletteCourse[] | null> {
-  const query = search ? `${COURSE_PICKER_QUERY}&search=${encodeURIComponent(search)}` : COURSE_PICKER_QUERY;
+  const query = search
+    ? `${COURSE_PICKER_QUERY}&search=${encodeURIComponent(search)}`
+    : COURSE_PICKER_QUERY;
   try {
     const res = await fetch(`/api/courses?${query}`);
     if (!res.ok) return null;
@@ -150,6 +151,13 @@ export function matchesQuery(value: string, query: string): boolean {
 
 export function CommandPalette({ user }: { user: User }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const coreCourseId = pathname.match(/^\/courses\/([^/]+)/)?.[1] ?? null;
+  // #1666 review (Stavan): Course Assistant must survive navigation beyond
+  // /dashboard — sourced from the root loader (every route shares it) rather
+  // than the raw session `user`, which has no notion of course enrollment.
+  const rootData = useRouteLoaderData<typeof rootLoader>("root");
+  const navUser = { ...user, hasInstructorEnrollment: rootData?.hasInstructorEnrollment };
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
   const [query, setQuery] = React.useState("");
   const coursesLoaded = React.useRef(false);
@@ -184,7 +192,7 @@ export function CommandPalette({ user }: { user: User }) {
     };
   }, [query]);
 
-  const navItems = paletteNavItems(user)
+  const navItems = paletteNavItems(navUser)
     .map((item) => {
       const ItemIcon = NAV_ICONS[item.key] ?? IconArrowRight;
       return {
@@ -197,9 +205,9 @@ export function CommandPalette({ user }: { user: User }) {
     .filter((item) => matchesQuery(item.value, query));
 
   const appGroup = buildAppSwitcherGroup({
-    apps: getLauncherApps(),
+    apps: getLauncherApps(coreCourseId),
     currentAppId: CURRENT_APP_ID,
-    role: user.role,
+    role: rootData?.hasTeachingAssistantEnrollment ? "TA" : user.role,
   });
 
   const groups: CommandPaletteGroup[] = [

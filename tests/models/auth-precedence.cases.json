@@ -1,0 +1,102 @@
+[
+  {
+    "KeyState": "invalid",
+    "CookieState": "nonadmin",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "valid-admin-inactive",
+    "CookieState": "nonadmin",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-nonadmin",
+    "CookieState": "none",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "none",
+    "CookieState": "none",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-admin-inactive",
+    "CookieState": "admin-inactive",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "invalid",
+    "CookieState": "admin-active",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "invalid",
+    "CookieState": "admin-inactive",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-admin-active",
+    "CookieState": "none",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "valid-admin-inactive",
+    "CookieState": "admin-active",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "valid-admin-active",
+    "CookieState": "admin-active",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-nonadmin",
+    "CookieState": "admin-active",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "none",
+    "CookieState": "admin-active",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "valid-admin-active",
+    "CookieState": "admin-inactive",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-admin-active",
+    "CookieState": "nonadmin",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "none",
+    "CookieState": "admin-inactive",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "invalid",
+    "CookieState": "none",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-admin-inactive",
+    "CookieState": "none",
+    "Site": "api-me"
+  },
+  {
+    "KeyState": "valid-nonadmin",
+    "CookieState": "nonadmin",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "none",
+    "CookieState": "nonadmin",
+    "Site": "guard"
+  },
+  {
+    "KeyState": "valid-nonadmin",
+    "CookieState": "admin-inactive",
+    "Site": "guard"
+  }
+]

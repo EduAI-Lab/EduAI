@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 
 const PASSWORD = "SuperSecret1!";
@@ -20,14 +21,20 @@ function uniqueEmail(): string {
   return email;
 }
 
-function signUp(email: string): Promise<Response> {
+async function signUp(email: string): Promise<Response> {
   const base = new Request("http://localhost/auth/register");
   const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: "IsActive Test", email, password: PASSWORD }),
   });
-  return auth.handler(req);
+  const response = await auth.handler(req);
+  if (response.ok) {
+    // This suite exercises isActive, not mailbox verification. Promote its
+    // fixture explicitly, then obtain sessions through normal sign-in.
+    await prisma.user.update({ where: { email }, data: { emailVerified: true } });
+  }
+  return response;
 }
 
 function signIn(email: string, password = PASSWORD): Promise<Response> {
@@ -41,8 +48,11 @@ function signIn(email: string, password = PASSWORD): Promise<Response> {
 }
 
 function cookieHeaderFrom(res: Response): string {
-  const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
-  return setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  const setCookies = res.headers.getSetCookie instanceof Function ? res.headers.getSetCookie() : [];
+  return setCookies
+    .map((c) => c.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
 }
 
 afterAll(async () => {
@@ -78,8 +88,8 @@ describe("#971 — isActive enforcement at sign-in and session guard", () => {
 
   it("invalidates an existing session the moment the user is deactivated", async () => {
     const email = uniqueEmail();
-    const signUpRes = await signUp(email);
-    const cookie = cookieHeaderFrom(signUpRes);
+    await signUp(email);
+    const cookie = cookieHeaderFrom(await signIn(email));
     expect(cookie).toBeTruthy();
 
     const sessionBefore = await auth.api.getSession({ headers: new Headers({ cookie }) });
@@ -93,6 +103,31 @@ describe("#971 — isActive enforcement at sign-in and session guard", () => {
     expect(sessionAfter).toBeNull();
 
     // The orphaned session row is revoked too, not just masked at read time.
+    expect(await prisma.session.findUnique({ where: { token: sessionToken } })).toBeNull();
+  });
+
+  // #946: the per-request memo must not widen that window. It dedupes within
+  // one inbound Request only, so the first resolution of the *next* request is
+  // still a live DB read and the after-hook still fires.
+  it("still invalidates on the next request when sessions are resolved through the request memo", async () => {
+    const email = uniqueEmail();
+    await signUp(email);
+    const cookie = cookieHeaderFrom(await signIn(email));
+    expect(cookie).toBeTruthy();
+
+    const requestOne = new Request("http://localhost/dashboard", { headers: { cookie } });
+    const sessionBefore = await getRequestSession(requestOne);
+    expect(sessionBefore?.user?.email).toBe(email);
+    const sessionToken = sessionBefore!.session.token;
+
+    // Repeat calls inside the same request are served from the memo.
+    expect(await getRequestSession(requestOne)).toBe(sessionBefore);
+
+    await prisma.user.update({ where: { email }, data: { isActive: false } });
+
+    // A new inbound request — new Request object, same cookie.
+    const requestTwo = new Request("http://localhost/dashboard", { headers: { cookie } });
+    expect(await getRequestSession(requestTwo)).toBeNull();
     expect(await prisma.session.findUnique({ where: { token: sessionToken } })).toBeNull();
   });
 });

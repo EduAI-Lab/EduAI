@@ -10,18 +10,14 @@ const COURSES = [
 
 describe("CourseSwitcher", () => {
   it("shows the current course label", () => {
-    render(
-      <CourseSwitcher courses={COURSES} currentId={2} onSelect={() => {}} />,
-    );
+    render(<CourseSwitcher courses={COURSES} currentId={2} onSelect={() => {}} />);
     expect(screen.getByText("MATH 200")).toBeInTheDocument();
     // The dropdown arrow is its own control, separate from the label.
     expect(screen.getByLabelText("Switch course")).toBeInTheDocument();
   });
 
   it("falls back to a placeholder when the current id is unknown", () => {
-    render(
-      <CourseSwitcher courses={COURSES} currentId={999} onSelect={() => {}} />,
-    );
+    render(<CourseSwitcher courses={COURSES} currentId={999} onSelect={() => {}} />);
     expect(screen.getByText("Select course")).toBeInTheDocument();
   });
 
@@ -92,6 +88,43 @@ describe("CourseSwitcher", () => {
       );
       openMenu();
       expect(screen.getByText("No courses found")).toBeInTheDocument();
+    });
+
+    it("shows the loading label instead of the empty label while a search is pending", () => {
+      // An empty list means "not known yet" while a request is in flight. Without
+      // this distinction a host that drops stale rows would claim nothing matched
+      // on every keystroke.
+      render(
+        <CourseSwitcher
+          courses={[]}
+          currentId={2}
+          onSelect={() => {}}
+          onQueryChange={() => {}}
+          loading
+        />,
+      );
+      openMenu();
+
+      expect(screen.getByText("Searching…")).toBeInTheDocument();
+      expect(screen.queryByText("No courses found")).not.toBeInTheDocument();
+    });
+
+    it("keeps rendering rows it was given even while loading", () => {
+      render(
+        <CourseSwitcher
+          courses={COURSES}
+          currentId={2}
+          onSelect={() => {}}
+          onQueryChange={() => {}}
+          loading
+        />,
+      );
+      openMenu();
+
+      // `loading` only governs the empty state — a host that prefers to hold the
+      // previous rows still gets them rendered.
+      expect(screen.getByText("COSC 111")).toBeInTheDocument();
+      expect(screen.queryByText("Searching…")).not.toBeInTheDocument();
     });
   });
 });

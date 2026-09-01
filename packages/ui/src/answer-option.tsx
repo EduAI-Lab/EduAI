@@ -1,7 +1,7 @@
-import type { ReactNode } from "react"
-import { IconCircleCheckFilled, IconCircleXFilled } from "@tabler/icons-react"
+import type { ReactNode } from "react";
+import { IconCircleCheckFilled, IconCircleXFilled } from "@tabler/icons-react";
 
-import { cn } from "./utils"
+import { cn } from "./utils";
 
 /**
  * Visual state of a single lettered answer choice.
@@ -14,47 +14,47 @@ import { cn } from "./utils"
  * brand tokens — a learner reads green = right, red = wrong faster than any
  * design-system colour. This mirrors QuestionMaker's `QuestionCard` correct marker.
  */
-export type AnswerOptionState = "default" | "selected" | "correct" | "incorrect"
+export type AnswerOptionState = "default" | "selected" | "correct" | "incorrect";
 
 export interface AnswerOptionProps {
   /** Letter label e.g. "A". */
-  letter: string
+  letter: string;
   /** Choice body. */
-  children: ReactNode
+  children: ReactNode;
   /** Visual state. Defaults to `default`. */
-  state?: AnswerOptionState
+  state?: AnswerOptionState;
   /** Letter presentation: a boxed chip (interactive players) or plain text (dense preview cards). */
-  letterVariant?: "chip" | "plain"
+  letterVariant?: "chip" | "plain";
   /** Density. `compact` matches QuestionCard's dense rows. */
-  size?: "default" | "compact"
+  size?: "default" | "compact";
   /** When provided the row is interactive (button + `role="radio"`) and calls back on choose. */
-  onSelect?: () => void
+  onSelect?: () => void;
   /** ARIA checked state for the interactive radio. Defaults to `state === "selected"`. */
-  selected?: boolean
-  disabled?: boolean
-  className?: string
+  selected?: boolean;
+  disabled?: boolean;
+  className?: string;
 }
 
-const containerByState: Record<AnswerOptionState, string> = {
+const containerByState = {
   default: "border-border bg-muted/40",
   selected: "border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary",
   correct: "border-[var(--color-success-500)] bg-[var(--color-success-100)]",
   incorrect: "border-destructive/50 bg-destructive/10",
-}
+} satisfies Record<AnswerOptionState, string>;
 
-const chipByState: Record<AnswerOptionState, string> = {
+const chipByState = {
   default: "bg-muted text-muted-foreground",
   selected: "bg-secondary text-secondary-foreground",
   correct: "bg-[var(--color-success-500)] text-white",
   incorrect: "bg-destructive text-destructive-foreground",
-}
+} satisfies Record<AnswerOptionState, string>;
 
-const plainByState: Record<AnswerOptionState, string> = {
+const plainByState = {
   default: "text-muted-foreground",
   selected: "text-secondary",
   correct: "text-[var(--color-success-700)]",
   incorrect: "text-destructive",
-}
+} satisfies Record<AnswerOptionState, string>;
 
 /**
  * Canonical lettered answer choice shared by AI-Tutor's lesson player and
@@ -72,8 +72,8 @@ export function AnswerOption({
   disabled,
   className,
 }: AnswerOptionProps) {
-  const interactive = typeof onSelect === "function"
-  const compact = size === "compact"
+  const interactive = onSelect !== undefined;
+  const compact = size === "compact";
 
   const container = cn(
     "flex w-full items-start gap-3 rounded-[var(--radius-lg)] border text-left transition-colors",
@@ -86,7 +86,7 @@ export function AnswerOption({
     interactive && !disabled && "cursor-pointer",
     disabled && "cursor-default",
     className,
-  )
+  );
 
   const letterNode =
     letterVariant === "chip" ? (
@@ -104,7 +104,7 @@ export function AnswerOption({
       <span className={cn("shrink-0 font-semibold", plainByState[state])} aria-hidden="true">
         {letter}
       </span>
-    )
+    );
 
   const body = (
     <>
@@ -117,10 +117,10 @@ export function AnswerOption({
         <IconCircleXFilled className="mt-0.5 size-5 shrink-0 text-destructive" />
       )}
     </>
-  )
+  );
 
   if (!interactive) {
-    return <div className={container}>{body}</div>
+    return <div className={container}>{body}</div>;
   }
 
   return (
@@ -135,5 +135,5 @@ export function AnswerOption({
     >
       {body}
     </button>
-  )
+  );
 }

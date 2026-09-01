@@ -11,11 +11,13 @@ import type { LoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/root";
 import "./app.css";
 
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicies } from "~/lib/policy.server";
-import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
-import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
+import {
+  getExpiredPasswordRedirect,
+  isPasswordExpiredForUser,
+} from "~/lib/auth/password-expiry.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui/sonner";
@@ -27,6 +29,53 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
+import { hasValidServiceKey } from "~/lib/auth/guards.server";
+
+/**
+ * Parse a URL-like value to its origin, skipping invalid or opaque (`null`)
+ * origins so they cannot join the CSRF allow-list.
+ */
+function parseOrigin(value: string): string | null {
+  try {
+    const origin = new URL(value).origin;
+    return origin === "null" ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Origins allowed to prove same-site intent for cookie-authenticated mutations.
+ *
+ * `request.url` is not a reliable public origin behind TLS-terminating Apache:
+ * `@react-router/express` builds it from `req.protocol`, which stays `http`
+ * because Express does not trust `X-Forwarded-Proto` by default. Browsers then
+ * send `Origin: https://host` while `url.origin` is `http://host`, and a naive
+ * equality check 403s every legitimate mutation. We do not enable `trust proxy`
+ * or trust raw forwarded proto here — those are client-spoofable unless the
+ * proxy layer is locked down.
+ *
+ * `BETTER_AUTH_URL` is the configured public origin (same source as
+ * `authBaseURL`). `request.url`'s origin stays in the set so same-scheme
+ * unit/dev requests still match without that env var.
+ */
+function trustedMutationOrigins(requestUrl: URL): Set<string> {
+  const origins = new Set<string>();
+  const configured =
+    process.env.BETTER_AUTH_URL?.trim() ||
+    import.meta.env.BETTER_AUTH_URL?.trim() ||
+    "http://localhost:3000";
+  const configuredOrigin = parseOrigin(configured);
+  if (configuredOrigin) origins.add(configuredOrigin);
+  const requestOrigin = parseOrigin(requestUrl.origin);
+  if (requestOrigin) origins.add(requestOrigin);
+  return origins;
+}
+
+function originMatchesTrusted(candidate: string, trusted: Set<string>): boolean {
+  const origin = parseOrigin(candidate);
+  return origin !== null && trusted.has(origin);
+}
 
 /**
  * Root middleware — the single request chokepoint that every route matches.
@@ -38,13 +87,60 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
  * CSP (no nonce needed). Skipping HTML here avoids clobbering the nonce'd CSP.
  */
 export const middleware: Route.MiddlewareFunction[] = [
-  async (_args, next) => {
+  async ({ request }, next) => {
+    const url = new URL(request.url);
+    const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
+    const hasCookie = Boolean(request.headers.get("cookie"));
+    const origin = request.headers.get("origin");
+
+    // Origin is the primary browser proof. Referer and Fetch Metadata are
+    // fallback evidence for clients that omit Origin. Missing or malformed
+    // evidence fails closed for ambient-cookie mutations. A non-browser call
+    // may bypass only by proving the configured service key in constant time.
+    // Compare against the trusted origin set, not `url.origin` alone — see
+    // `trustedMutationOrigins` for the TLS-terminating proxy mismatch.
+    if (isUnsafeMethod && hasCookie) {
+      const trusted = trustedMutationOrigins(url);
+      let isSameOrigin = false;
+      if (origin !== null) {
+        isSameOrigin = originMatchesTrusted(origin, trusted);
+      } else {
+        const referer = request.headers.get("referer");
+        if (referer !== null) {
+          isSameOrigin = originMatchesTrusted(referer, trusted);
+        } else {
+          isSameOrigin = request.headers.get("sec-fetch-site") === "same-origin";
+        }
+      }
+
+      if (!isSameOrigin && !hasValidServiceKey(request)) {
+        const blocked = new Response(JSON.stringify({ error: "CROSS_ORIGIN_MUTATION" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+        applySecurityHeaders(blocked.headers, {
+          isProd: process.env.NODE_ENV === "production",
+        });
+        return blocked;
+      }
+    }
+
+    // `.data` is React Router's internal single-fetch transport. This app does
+    // not enable single-fetch (`future.v8_singleFetch`), so no legitimate
+    // client request needs this public URL. Reject every variant rather than
+    // relying on browser navigation headers, which are absent or spoofable on
+    // direct/API-style requests and would otherwise expose loader payloads.
+    if (url.pathname.endsWith(".data")) {
+      const blocked = new Response("Not Found", { status: 404 });
+      applySecurityHeaders(blocked.headers, {
+        isProd: process.env.NODE_ENV === "production",
+      });
+      return blocked;
+    }
+
     const response = await next();
     const isHtml =
-      response.headers
-        .get("content-type")
-        ?.toLowerCase()
-        .includes("text/html") ?? false;
+      response.headers.get("content-type")?.toLowerCase().includes("text/html") ?? false;
     if (!isHtml) {
       applySecurityHeaders(response.headers, {
         isProd: process.env.NODE_ENV === "production",
@@ -52,20 +148,33 @@ export const middleware: Route.MiddlewareFunction[] = [
     }
     return response;
   },
+  // AUTH-06: the loader below only enforces password expiry for the HTML
+  // document (page navigations); `/api/*` resource routes never reach it, so
+  // an expired account could keep calling the API indefinitely. Enforce it
+  // here too, at the same request chokepoint, for every `/api/*` call that
+  // carries a session cookie. `/api/auth/*` (Better Auth's own handler) stays
+  // exempt so an expired user can still sign out or call `changePassword` —
+  // otherwise they'd be locked out with no way to fix it. Requests
+  // authenticated only by `EDUAI_API_KEY` / `x-api-key` (no session cookie)
+  // are unaffected: `getSession` returns null for them, so this never runs
+  // for server-to-server calls from AI Tutor / Question Maker.
+  async ({ request }, next) => {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
+      const session = await getRequestSession(request);
+      if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
+        return new Response(
+          JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+    return next();
+  },
 ];
 
-export const links: Route.LinksFunction = () => [
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  {
-    rel: "preconnect",
-    href: "https://fonts.gstatic.com",
-    crossOrigin: "anonymous",
-  },
-  {
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap",
-  },
-];
+// No `links()` export: Outfit is self-hosted via @fontsource-variable/outfit,
+// imported from @eduai/ui's base.css and bundled with the app stylesheet (#1221).
 
 const GUEST_ROOT_PREFERENCES = {
   assistive: false,
@@ -76,6 +185,17 @@ const GUEST_ROOT_PREFERENCES = {
   // `unitAdmins.canInvite` policy). Resolved server-side and read by the sidebar
   // so the Invitations link doesn't depend on a client-side policy fetch.
   canInvite: false,
+  // #1666 review (Stavan): whether this user holds a real active INSTRUCTOR
+  // enrollment on any course — the route/API already admit such a caller
+  // (platform STUDENT/TA/UNIT_ADMIN included) into /instructor/chat, so the
+  // sidebar/command-palette Course Assistant link must survive navigation
+  // to every route, not just the one page whose own loader happened to
+  // compute it. Resolved once here (root loader) rather than per-route.
+  hasInstructorEnrollment: false,
+  // Core stores course TAs as platform STUDENT users. Project that contextual
+  // role once so shared app launchers can expose Question Maker without also
+  // exposing it to ordinary students.
+  hasTeachingAssistantEnrollment: false,
 } as const;
 
 /**
@@ -83,17 +203,12 @@ const GUEST_ROOT_PREFERENCES = {
  * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  ensureCronSchedulerRunning();
-
   // getSession and getPolicies are independent — run them in parallel so a policy
   // cache-miss does not serialize behind the session lookup on every navigation.
   // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
-  const [session, policies] = await Promise.all([
-    auth.api.getSession({ headers: request.headers }),
-    getPolicies(),
-  ]);
+  const [session, policies] = await Promise.all([getRequestSession(request), getPolicies()]);
 
   if (!session?.user) {
     return { ...GUEST_ROOT_PREFERENCES, policies };
@@ -102,15 +217,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // #339: enforce annual password rotation. Skip the check on /settings and
   // /auth/* so the user can actually reach the change-password form and log out.
   const url = new URL(request.url);
-  const isExempt =
-    url.pathname.startsWith("/settings") ||
-    url.pathname.startsWith("/auth/");
-  if (!isExempt) {
-    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
-    if (expiredRedirect) return expiredRedirect;
-  }
-
-  const row = await prisma.userPreference.findUnique({
+  const isExempt = url.pathname.startsWith("/settings") || url.pathname.startsWith("/auth/");
+  // #1369: the preference lookup and the expiry check depend only on `session.user.id`,
+  // so fire the preference read first and await it last instead of serializing it behind
+  // the expiry check on every authenticated render. `isPasswordExpiredForUser` is memoized
+  // for 60s per process, so the saved round-trip lands on the cache miss — roughly one
+  // render per user per minute — not on every render. The costs are one wasted
+  // (primary-key indexed) preference read in the rare expired case, and a second pool
+  // connection held for the length of the overlap.
+  //
+  // Deliberately not `Promise.all`/`allSettled`: both wait for the preference read to
+  // settle before the expiry redirect can be returned, so a degraded DB would delay the
+  // redirect to /settings by up to the pool timeout (P2024, ~10s). That redirect is the
+  // only route a user has back to the change-password form, so it must not queue behind an
+  // independent read. Awaiting the promise below still surfaces its rejection on the
+  // non-expired path; the bare `.catch` only marks it handled so an early return cannot
+  // raise an unhandled rejection.
+  const preferencePromise = prisma.userPreference.findUnique({
     where: { userId: session.user.id },
     select: {
       assistDefault: true,
@@ -119,13 +242,48 @@ export async function loader({ request }: LoaderFunctionArgs) {
       theme: true,
     },
   });
+  preferencePromise.catch(() => {});
+
+  // #1666 review (Stavan): resolved once per navigation, alongside the
+  // preference read, so the sidebar/command-palette Course Assistant link
+  // is correct on every route — not just the one page that happened to
+  // fetch this caller's courses. ADMIN excluded to match
+  // instructor.chat.tsx's own loader: resolveAccess always resolves ADMIN
+  // to admin-level, never instructor-level, no matter their enrollment, so
+  // an ADMIN can never actually pass /instructor/chat's gate.
+  const teachingEnrollmentsPromise =
+    session.user.role === "ADMIN"
+      ? Promise.resolve([])
+      : prisma.enrollment.findMany({
+          where: {
+            userId: session.user.id,
+            role: { in: ["INSTRUCTOR", "TA"] },
+            isActive: true,
+          },
+          select: { role: true },
+          distinct: ["role"],
+        });
+  teachingEnrollmentsPromise.catch(() => {});
+
+  if (!isExempt) {
+    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
+    if (expiredRedirect) return expiredRedirect;
+  }
+  const [row, teachingEnrollments] = await Promise.all([
+    preferencePromise,
+    teachingEnrollmentsPromise,
+  ]);
+  const hasInstructorEnrollment = teachingEnrollments.some(
+    (enrollment) => enrollment.role === "INSTRUCTOR",
+  );
+  const hasTeachingAssistantEnrollment = teachingEnrollments.some(
+    (enrollment) => enrollment.role === "TA",
+  );
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
   const canInvite =
-    session.user.role === "UNIT_ADMIN"
-      ? (policies["unitAdmins.canInvite"] ?? false)
-      : false;
+    session.user.role === "UNIT_ADMIN" ? (policies["unitAdmins.canInvite"] ?? false) : false;
 
   return {
     assistive: row?.assistDefault ?? false,
@@ -133,6 +291,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
+    hasInstructorEnrollment,
+    hasTeachingAssistantEnrollment,
     policies,
   };
 }
@@ -148,8 +308,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/eduai-graduation.svg" type="image/svg+xml" />
         <Meta />
-        <Links />
+        {/* HydratedRouter does not retain ServerRouter's nonce context. */}
+        <Links nonce={nonce} />
         {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
           nonce={nonce}
@@ -159,7 +321,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
       </head>
       <body>
-        <ThemeProvider>
+        {/* next-themes injects its own inline no-flash script; without the
+            nonce our `script-src` blocks it. */}
+        <ThemeProvider nonce={nonce}>
           {children}
           <Toaster />
         </ThemeProvider>
@@ -194,9 +358,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? "404" : "Error";
     details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
+      error.status === 404 ? "The requested page could not be found." : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

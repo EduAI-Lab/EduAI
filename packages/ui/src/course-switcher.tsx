@@ -5,8 +5,8 @@
  * supplies the course options and the navigation callbacks, so the look and
  * interaction are identical everywhere while routing stays app-specific.
  */
-import * as React from "react"
-import { IconChevronDown, IconCheck, IconLayoutGrid } from "@tabler/icons-react"
+import * as React from "react";
+import { IconChevronDown, IconCheck, IconLayoutGrid } from "@tabler/icons-react";
 
 import {
   DropdownMenu,
@@ -15,34 +15,34 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuLabel,
-} from "./ui/dropdown-menu"
-import { cn } from "./utils"
+} from "./ui/dropdown-menu";
+import { cn } from "./utils";
 
-export type CourseSwitcherId = string | number
+export type CourseSwitcherId = string | number;
 
 export interface CourseSwitcherOption {
-  id: CourseSwitcherId
+  id: CourseSwitcherId;
   /** Primary label (course code, or name when there's no code). */
-  label: string
+  label: string;
   /** Secondary label (full course name), shown under the label. */
-  sublabel?: string
+  sublabel?: string;
 }
 
 export interface CourseSwitcherProps {
-  courses: CourseSwitcherOption[]
-  currentId: CourseSwitcherId
-  onSelect: (id: CourseSwitcherId) => void
+  courses: CourseSwitcherOption[];
+  currentId: CourseSwitcherId;
+  onSelect: (id: CourseSwitcherId) => void;
   /**
    * Click the course name to open the current course's overview. When provided,
    * the name renders as its own clickable control, split from the dropdown arrow
    * so the two actions (open vs. switch) are separate hit targets.
    */
-  onOpenCurrent?: () => void
+  onOpenCurrent?: () => void;
   /** Renders a trailing "view all" row when provided (e.g. go to /courses). */
-  onViewAll?: () => void
-  viewAllLabel?: string
-  listLabel?: string
-  className?: string
+  onViewAll?: () => void;
+  viewAllLabel?: string;
+  listLabel?: string;
+  className?: string;
   /**
    * Opt into a search box above the list (#1143). Presentational only: the host
    * app owns the query and re-fetches `courses` itself, so this component never
@@ -50,10 +50,29 @@ export interface CourseSwitcherProps {
    * course list server-side need this, since the dropdown otherwise only ever
    * shows the first page. Omit it and the switcher renders as before.
    */
-  onQueryChange?: (query: string) => void
-  searchPlaceholder?: string
+  onQueryChange?: (query: string) => void;
+  searchPlaceholder?: string;
   /** Shown in place of the list when `courses` is empty and search is enabled. */
-  emptyLabel?: string
+  emptyLabel?: string;
+  /**
+   * Trigger label to fall back to when `currentId` isn't in `courses`. Required
+   * for search-driven hosts: once the result set narrows to something the
+   * current course doesn't match, deriving the label from the list alone drops
+   * the breadcrumb to "Select course" while the user is still sitting on that
+   * course.
+   */
+  currentLabel?: string;
+  /**
+   * A search request is in flight, so an empty `courses` means "not known yet",
+   * not "nothing matched". Without this the only signal the list has is its own
+   * emptiness, so a host that clears rows while fetching would flash
+   * `emptyLabel` ("No courses match") on every keystroke — the exact false
+   * negative server-side search exists to remove. Purely presentational: the
+   * host owns the pending state, same as it owns the query.
+   */
+  loading?: boolean;
+  /** Shown in place of the list while `loading` and no rows are held. */
+  loadingLabel?: string;
 }
 
 export function CourseSwitcher({
@@ -68,31 +87,34 @@ export function CourseSwitcher({
   onQueryChange,
   searchPlaceholder = "Search courses…",
   emptyLabel = "No courses found",
+  currentLabel,
+  loading = false,
+  loadingLabel = "Searching…",
 }: CourseSwitcherProps) {
-  const current = courses.find((c) => c.id === currentId) ?? null
-  const label = current?.label ?? "Select course"
-  const searchable = Boolean(onQueryChange)
-  const [query, setQuery] = React.useState("")
-  const [open, setOpen] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
+  const current = courses.find((c) => c.id === currentId) ?? null;
+  const label = current?.label ?? currentLabel ?? "Select course";
+  const searchable = Boolean(onQueryChange);
+  const [query, setQuery] = React.useState("");
+  const [open, setOpen] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Clear the query when the menu closes so reopening doesn't show a stale
   // result set under an empty-looking box.
   const handleOpenChange = (next: boolean) => {
-    setOpen(next)
+    setOpen(next);
     if (!next && searchable && query !== "") {
-      setQuery("")
-      onQueryChange?.("")
+      setQuery("");
+      onQueryChange?.("");
     }
-  }
+  };
 
   // Radix focuses the first menu item on open, which would send typing to the
   // menu's own typeahead. Take focus back once it has settled.
   React.useEffect(() => {
-    if (!open || !searchable) return
-    const timer = setTimeout(() => inputRef.current?.focus(), 0)
-    return () => clearTimeout(timer)
-  }, [open, searchable])
+    if (!open || !searchable) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [open, searchable]);
 
   return (
     <div
@@ -130,8 +152,8 @@ export function CourseSwitcher({
                 placeholder={searchPlaceholder}
                 value={query}
                 onChange={(e) => {
-                  setQuery(e.target.value)
-                  onQueryChange?.(e.target.value)
+                  setQuery(e.target.value);
+                  onQueryChange?.(e.target.value);
                 }}
                 // Radix's menu typeahead swallows printable keys, and its
                 // arrow/Home/End handling would move focus out of the input.
@@ -140,25 +162,29 @@ export function CourseSwitcher({
               />
             </div>
           )}
-          <DropdownMenuLabel className="text-xs text-muted-foreground">{listLabel}</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            {listLabel}
+          </DropdownMenuLabel>
           <div className="max-h-72 overflow-y-auto">
             {searchable && courses.length === 0 && (
-              <p className="px-2 py-3 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+              <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+                {loading ? loadingLabel : emptyLabel}
+              </p>
             )}
             {courses.map((c) => {
-              const active = c.id === currentId
+              const active = c.id === currentId;
               return (
                 <DropdownMenuItem
                   key={c.id}
                   onSelect={() => {
-                    if (c.id !== currentId) onSelect(c.id)
+                    if (c.id !== currentId) onSelect(c.id);
                   }}
                   className="flex items-start gap-2"
                 >
                   <IconCheck
                     className={cn(
                       "mt-0.5 size-4 shrink-0",
-                      active ? "text-primary opacity-100" : "opacity-0",
+                      active ? "text-primary-text opacity-100" : "opacity-0",
                     )}
                   />
                   <span className="flex min-w-0 flex-col">
@@ -168,7 +194,7 @@ export function CourseSwitcher({
                     )}
                   </span>
                 </DropdownMenuItem>
-              )
+              );
             })}
           </div>
           {onViewAll && (
@@ -183,5 +209,5 @@ export function CourseSwitcher({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  )
+  );
 }

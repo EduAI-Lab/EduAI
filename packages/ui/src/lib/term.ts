@@ -15,16 +15,28 @@
 // (#1088). `termInfoFromDate` is the one place that does this attribution —
 // use it instead of pairing `termFromMonth` with `date.getFullYear()`.
 
-export const TERM_CODES = ["W1", "W2", "S1", "S2"] as const
+import { isString } from "./primitive-union";
+import { parseDateInputValue } from "./date-input";
 
-export type TermCode = (typeof TERM_CODES)[number]
+export const TERM_CODES = ["W1", "W2", "S1", "S2"] as const;
 
-const TERM_LABELS: Record<TermCode, string> = {
+export type TermCode = (typeof TERM_CODES)[number];
+
+/**
+ * A term and the ACADEMIC year it belongs to — the pair `termInfoFromDate`
+ * attributes together, since a W2 term's year label is one behind its calendar
+ * year. Named so callers pass the two around as one fact instead of re-pairing
+ * a code with whatever year is in scope. Distinct from `TermInfo` below, which
+ * is the loose "carries some term fields" shape the sort helpers accept.
+ */
+export type AcademicTerm = { term: TermCode; year: number };
+
+const TERM_LABELS = {
   W1: "Winter Term 1",
   W2: "Winter Term 2",
   S1: "Summer Term 1",
   S2: "Summer Term 2",
-}
+} satisfies Record<TermCode, string>;
 
 // Chronological rank of a term *within its academic year label*. The UBC
 // academic year runs Summer (May) → Winter Term 1 (Sep) → Winter Term 2 (Jan
@@ -32,10 +44,15 @@ const TERM_LABELS: Record<TermCode, string> = {
 // order S1 < S2 < W1 < W2 is real chronological order — not just a vocabulary
 // convention — as long as `year` is the academic-year label produced by
 // `termInfoFromDate`, not a raw calendar year.
-const TERM_RANK: Record<TermCode, number> = { S1: 0, S2: 1, W1: 2, W2: 3 }
+const TERM_RANK = { S1: 0, S2: 1, W1: 2, W2: 3 } satisfies Record<TermCode, number>;
 
-export function isTermCode(value: unknown): value is TermCode {
-  return typeof value === "string" && (TERM_CODES as readonly string[]).includes(value)
+/**
+ * Callers hold a term string from a form field, a query param, or a database
+ * column, so the input is a possibly-absent string rather than an open
+ * `unknown` — anything that is not yet a string has a parse to do first.
+ */
+export function isTermCode(value: string | null | undefined): value is TermCode {
+  return value != null && (TERM_CODES as readonly string[]).includes(value);
 }
 
 /**
@@ -49,10 +66,10 @@ export function isTermCode(value: unknown): value is TermCode {
  * when you need both term and year from a date.
  */
 export function termFromMonth(month: number): TermCode {
-  if (month >= 8) return "W1" // Sep–Dec
-  if (month >= 4 && month <= 5) return "S1" // May–Jun
-  if (month >= 6 && month <= 7) return "S2" // Jul–Aug
-  return "W2" // Jan–Apr
+  if (month >= 8) return "W1"; // Sep–Dec
+  if (month >= 4 && month <= 5) return "S1"; // May–Jun
+  if (month >= 6 && month <= 7) return "S2"; // Jul–Aug
+  return "W2"; // Jan–Apr
 }
 
 // Terms are UBC-local (Vancouver), not UTC. `Date#getMonth()` reads the
@@ -68,7 +85,7 @@ export function termFromMonth(month: number): TermCode {
 // the browser, letting the two derivations drift apart. Core's
 // `term.server.ts` imports this rather than redeclaring it, so both stay
 // identical by construction.
-export const UBC_TIME_ZONE = "America/Vancouver"
+export const UBC_TIME_ZONE = "America/Vancouver";
 
 function monthInUbcTimeZone(date: Date): number {
   return Number(
@@ -76,7 +93,16 @@ function monthInUbcTimeZone(date: Date): number {
       timeZone: UBC_TIME_ZONE,
       month: "numeric",
     }).format(date),
-  )
+  );
+}
+
+function yearInUbcTimeZone(date: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: UBC_TIME_ZONE,
+      year: "numeric",
+    }).format(date),
+  );
 }
 
 /**
@@ -85,7 +111,7 @@ function monthInUbcTimeZone(date: Date): number {
  * prefer it over `termFromMonth` whenever a real `Date` is available.
  */
 export function termFromDate(date: Date): TermCode {
-  return termFromMonth(monthInUbcTimeZone(date) - 1)
+  return termFromMonth(monthInUbcTimeZone(date) - 1);
 }
 
 /**
@@ -99,10 +125,26 @@ export function termFromDate(date: Date): TermCode {
  * Used for both course-creation defaults ("what term/year is it right now?")
  * and current-term detection in course lists — see `groupCoursesByTerm`.
  */
-export function termInfoFromDate(date: Date): { term: TermCode; year: number } {
-  const term = termFromMonth(date.getMonth())
-  const year = term === "W2" ? date.getFullYear() - 1 : date.getFullYear()
-  return { term, year }
+export function termInfoFromDate(date: Date): AcademicTerm {
+  const term = termFromDate(date);
+  const calendarYear = yearInUbcTimeZone(date);
+  const year = term === "W2" ? calendarYear - 1 : calendarYear;
+  return { term, year };
+}
+
+/**
+ * Derive term and academic year from an `<input type="date">` value
+ * (`YYYY-MM-DD`), returning null when the field is empty or unparseable.
+ *
+ * The parse lives in `date-input.ts` because the timezone trap it avoids is
+ * not term-specific: `new Date("2026-09-01")` is UTC midnight, which is Aug 31
+ * in Vancouver, so it would derive S2 instead of W1.
+ */
+export function termInfoFromDateInput(value: string | null | undefined): AcademicTerm | null {
+  if (!value || !parseDateInputValue(value)) return null;
+  const calendarYear = Number(value.slice(0, 4));
+  const term = termFromMonth(Number(value.slice(5, 7)) - 1);
+  return { term, year: term === "W2" ? calendarYear - 1 : calendarYear };
 }
 
 /**
@@ -124,63 +166,117 @@ export function normalizeTerm(
     // it as UTC midnight and re-deriving via the Vancouver offset can shift it
     // into the previous day (and term) near a month boundary — read the month
     // straight from the string instead of round-tripping through a timezone.
-    if (typeof startDate === "string") {
-      const dateOnly = startDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-      if (dateOnly) return termFromMonth(Number(dateOnly[2]) - 1)
+    if (isString(startDate)) {
+      const dateOnly = startDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnly) return termFromMonth(Number(dateOnly[2]) - 1);
     }
-    const date = startDate instanceof Date ? startDate : new Date(startDate)
-    if (!Number.isNaN(date.getTime())) return termFromDate(date)
+    const date = startDate instanceof Date ? startDate : new Date(startDate);
+    if (!Number.isNaN(date.getTime())) return termFromDate(date);
   }
-  if (typeof raw !== "string") return null
-  const s = raw.trim().toUpperCase()
-  if (!s) return null
-  if (isTermCode(s)) return s
-  if (/\bW1\b|WINTER TERM 1/.test(s)) return "W1"
-  if (/\bW2\b|WINTER TERM 2/.test(s)) return "W2"
-  if (/\bS1\b|SUMMER TERM 1/.test(s)) return "S1"
-  if (/\bS2\b|SUMMER TERM 2/.test(s)) return "S2"
-  if (/FALL|AUTUMN/.test(s)) return "W1"
-  if (/SPRING/.test(s)) return "W2"
-  if (/SUMMER/.test(s)) return "S1"
-  if (/WINTER/.test(s)) return "W2"
-  return null
+  if (!isString(raw)) return null;
+  const s = raw.trim().toUpperCase();
+  if (!s) return null;
+  if (isTermCode(s)) return s;
+  if (/\bW1\b|WINTER TERM 1/.test(s)) return "W1";
+  if (/\bW2\b|WINTER TERM 2/.test(s)) return "W2";
+  if (/\bS1\b|SUMMER TERM 1/.test(s)) return "S1";
+  if (/\bS2\b|SUMMER TERM 2/.test(s)) return "S2";
+  if (/FALL|AUTUMN/.test(s)) return "W1";
+  if (/SPRING/.test(s)) return "W2";
+  if (/SUMMER/.test(s)) return "S1";
+  if (/WINTER/.test(s)) return "W2";
+  return null;
 }
 
 /** Long human label for a term code, e.g. "Winter Term 1". */
 export function termName(term: TermCode): string {
-  return TERM_LABELS[term]
+  return TERM_LABELS[term];
 }
 
 /**
- * Compact UBC-native label, e.g. "2026W1". `year` is taken as-is (the
+ * Compact label, e.g. "2026-27W1" or "2027S1". `year` is taken as-is (the
  * caller's academic-year label — see `termInfoFromDate` for how to derive it
  * from a date) and is not itself reinterpreted here. Falls back to the raw
  * parts when uncanonical.
  */
 export function termLabel(term?: string | null, year?: number | string | null): string {
-  const code = isTermCode(term) ? term : normalizeTerm(term)
-  if (code && year != null) return `${year}${code}`
-  if (code) return code
-  if (year != null) return String(year)
-  const raw = typeof term === "string" ? term.trim() : ""
-  return raw || "No term scheduled"
+  const code = isTermCode(term) ? term : normalizeTerm(term);
+  if (code && year != null) return `${academicYearSpan(code, year)}${code}`;
+  if (code) return code;
+  if (year != null) return String(year);
+  const raw = isString(term) ? term.trim() : "";
+  return raw || "No term scheduled";
 }
 
-/** Long label for headings, e.g. "Winter Term 1 2026" (`year` is the academic-year label, as in `termLabel`). */
+/**
+ * Secondary line for a breadcrumb course-switcher row.
+ *
+ * The row's primary label is the course code (or the name when there is no
+ * code), and a code repeats verbatim across every offering of a course — so the
+ * term goes here, beside the name, to tell this term's course apart from last
+ * term's. Shared by Core, AI Tutor and Question Maker so the three breadcrumbs
+ * cannot drift.
+ *
+ * Returns undefined when there is nothing to add beneath the label.
+ */
+export function courseSwitcherSublabel(course: {
+  code?: string | null;
+  name?: string | null;
+  term?: string | null;
+  year?: number | string | null;
+}): string | undefined {
+  const hasTerm = Boolean(course.term) || course.year != null;
+  const parts = [
+    course.code ? course.name : null,
+    hasTerm ? termLabel(course.term, course.year) : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/**
+ * "2026" for a Summer session, "2026-27" for a Winter one. The second half is
+ * the last two digits of the following year, zero-padded so a century rollover
+ * reads "2099-00" rather than "2099-0".
+ */
+function academicYearSpan(code: TermCode, year: number | string): string {
+  if (code !== "W1" && code !== "W2") {
+    return String(year);
+  }
+  const startYear = Number(year);
+  if (!Number.isFinite(startYear)) {
+    return String(year);
+  }
+  const endYear = String((startYear + 1) % 100).padStart(2, "0");
+  return `${startYear}-${endYear}`;
+}
+
+/**
+ * Long label for headings, e.g. "2026-27 Winter Term 1" or "2027 Summer Term 2".
+ *
+ * A Winter session spans two calendar years -- Term 1 runs Sep-Dec of `year`,
+ * Term 2 Jan-Apr of the year after -- so the label spells both out, the way a
+ * UBC transcript groups courses under "2023-24 Winter Session". Without the
+ * span, a Term 2 label sits next to a January date a year later and reads as
+ * an error unless you already know `year` means the session, not the calendar.
+ * A Summer session sits inside one calendar year and takes no span.
+ *
+ * The compact `termLabel` spans the same way ("2026-27W2"), so the two forms
+ * never disagree about which years a session covers.
+ */
 export function termLabelLong(term?: string | null, year?: number | string | null): string {
-  const code = isTermCode(term) ? term : normalizeTerm(term)
-  if (code && year != null) return `${termName(code)} ${year}`
-  if (code) return termName(code)
-  if (year != null) return String(year)
-  const raw = typeof term === "string" ? term.trim() : ""
-  return raw || "No term scheduled"
+  const code = isTermCode(term) ? term : normalizeTerm(term);
+  if (code && year != null) return `${academicYearSpan(code, year)} ${termName(code)}`;
+  if (code) return termName(code);
+  if (year != null) return String(year);
+  const raw = isString(term) ? term.trim() : "";
+  return raw || "No term scheduled";
 }
 
 export type TermInfo = {
-  term?: string | null
-  year?: number | string | null
-  startDate?: string | Date | null
-}
+  term?: string | null;
+  year?: number | string | null;
+  startDate?: string | Date | null;
+};
 
 /**
  * Numeric sort key, larger = more recent. Always resolves to a
@@ -198,52 +294,51 @@ export type TermInfo = {
  * is present.
  */
 export function termSortKey(info: TermInfo): number {
-  let code: TermCode | null
-  let year: number
+  let code: TermCode | null;
+  let year: number;
   if (info.startDate != null) {
     // A bare "YYYY-MM-DD" string names a calendar date, not an instant —
     // parsing it as UTC midnight and reading local fields can shift it into
     // the previous day (and term/year) near a boundary. Read the fields
     // straight from the string instead (same guard as `normalizeTerm`).
-    const dateOnly =
-      typeof info.startDate === "string"
-        ? info.startDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
-        : null
+    const dateOnly = isString(info.startDate)
+      ? info.startDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      : null;
     if (dateOnly) {
-      code = termFromMonth(Number(dateOnly[2]) - 1)
-      const calendarYear = Number(dateOnly[1])
-      year = code === "W2" ? calendarYear - 1 : calendarYear
-      return year * 10 + TERM_RANK[code]
+      code = termFromMonth(Number(dateOnly[2]) - 1);
+      const calendarYear = Number(dateOnly[1]);
+      year = code === "W2" ? calendarYear - 1 : calendarYear;
+      return year * 10 + TERM_RANK[code];
     }
-    const date = info.startDate instanceof Date ? info.startDate : new Date(info.startDate)
+    const date = info.startDate instanceof Date ? info.startDate : new Date(info.startDate);
     if (!Number.isNaN(date.getTime())) {
-      const derived = termInfoFromDate(date)
-      code = derived.term
-      year = derived.year
+      const derived = termInfoFromDate(date);
+      code = derived.term;
+      year = derived.year;
     } else {
-      code = isTermCode(info.term) ? info.term : normalizeTerm(info.term)
-      year = Number(info.year) || 0
+      code = isTermCode(info.term) ? info.term : normalizeTerm(info.term);
+      year = Number(info.year) || 0;
     }
   } else {
-    code = isTermCode(info.term) ? info.term : normalizeTerm(info.term)
-    year = Number(info.year) || 0
+    code = isTermCode(info.term) ? info.term : normalizeTerm(info.term);
+    year = Number(info.year) || 0;
   }
-  const rank = code ? TERM_RANK[code] : -1
-  return year * 10 + rank
+  const rank = code ? TERM_RANK[code] : -1;
+  return year * 10 + rank;
 }
 
 /** Compare two term-bearing items, most recent first. */
 export function compareByTerm(a: TermInfo, b: TermInfo): number {
-  return termSortKey(b) - termSortKey(a)
+  return termSortKey(b) - termSortKey(a);
 }
 
 export type CourseTermGroup<T> = {
-  /** Canonical compact label, e.g. "2026W1" or "No term scheduled". */
-  label: string
-  /** Long label suitable for section headings, e.g. "Winter Term 1 2026". */
-  labelLong: string
-  items: T[]
-}
+  /** Canonical compact label, e.g. "2026-27W1" or "No term scheduled". */
+  label: string;
+  /** Long label suitable for section headings, e.g. "2026 Winter Term 1". */
+  labelLong: string;
+  items: T[];
+};
 
 /**
  * Group items by canonical term, most recent group first (via `termSortKey`,
@@ -253,23 +348,23 @@ export type CourseTermGroup<T> = {
  */
 export function groupCoursesByTerm<T>(
   items: T[],
-  accessor: (item: T) => TermInfo = (item) => item as unknown as TermInfo,
+  accessor: (item: T) => TermInfo = (item) => item as TermInfo,
 ): CourseTermGroup<T>[] {
-  const groups = new Map<string, { sort: number; group: CourseTermGroup<T> }>()
+  const groups = new Map<string, { sort: number; group: CourseTermGroup<T> }>();
   for (const item of items) {
-    const info = accessor(item)
-    const label = termLabel(info.term, info.year)
-    const existing = groups.get(label)
+    const info = accessor(item);
+    const label = termLabel(info.term, info.year);
+    const existing = groups.get(label);
     if (existing) {
-      existing.group.items.push(item)
+      existing.group.items.push(item);
     } else {
       groups.set(label, {
         sort: termSortKey(info),
         group: { label, labelLong: termLabelLong(info.term, info.year), items: [item] },
-      })
+      });
     }
   }
   return Array.from(groups.values())
     .sort((a, b) => b.sort - a.sort)
-    .map((entry) => entry.group)
+    .map((entry) => entry.group);
 }

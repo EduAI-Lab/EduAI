@@ -1,25 +1,33 @@
-import type { NavItem, NavGroupItem, NavUser } from '~/lib/rbac/types'
+import type { NavItem, NavGroupItem, NavUser } from "~/lib/rbac/types";
 
 const CORE_NAV: NavItem[] = [
-  { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
-  { key: 'courses', title: 'Courses', url: '/courses' },
-]
+  { key: "dashboard", title: "Dashboard", url: "/dashboard" },
+  { key: "courses", title: "Courses", url: "/courses" },
+];
 
-const CHATBOT_NAV_ITEM: NavItem = { key: 'chat', title: 'Course Chat', url: '/chat' }
+const CHATBOT_NAV_ITEM: NavItem = { key: "chat", title: "Course Chat", url: "/chat" };
 
 const ADMIN_NAV: NavItem[] = [
-  { key: 'admin-users', title: 'User Management', url: '/admin/users' },
-  { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
-  { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
-  { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
-  { key: 'admin-settings', title: 'Settings', url: '/admin/settings' },
-  { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
-  { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
-]
+  { key: "admin-users", title: "User Management", url: "/admin/users" },
+  { key: "admin-ai", title: "AI Management", url: "/admin/ai-models" },
+  { key: "admin-bugs", title: "Bug Reports", url: "/admin/bug-reports" },
+  { key: "admin-invites", title: "Invitations", url: "/admin/invitations" },
+  { key: "admin-settings", title: "Settings", url: "/admin/settings" },
+  { key: "admin-logs", title: "Logs", url: "/admin/logs" },
+  { key: "admin-cron", title: "Cron Jobs", url: "/admin/cron-jobs" },
+];
 
 const ADMIN_SECONDARY_NAV: NavItem[] = [
-  { key: 'admin-chat', title: 'Admin Chatbot', url: '/admin/chat' },
-]
+  { key: "admin-chat", title: "Admin Chatbot", url: "/admin/chat" },
+];
+
+// #1659 review: additive alongside "Course Chat" (/chat), the same pattern
+// ADMIN gets its own "Admin Chatbot" entry in addition to the shared one — an
+// instructor still wants the learning-mode assistant for their own studying,
+// plus this course-scoped ops assistant for running their course.
+const INSTRUCTOR_SECONDARY_NAV: NavItem[] = [
+  { key: "instructor-chat", title: "Course Assistant", url: "/instructor/chat" },
+];
 
 /**
  * Unit-admin invitations link. Always shown to UNIT_ADMINs, but greyed-out and
@@ -28,47 +36,36 @@ const ADMIN_SECONDARY_NAV: NavItem[] = [
  * rather than a missing feature (issue #807). The flag values live client-side;
  * the caller resolves them and threads the result here.
  */
-const UNIT_ADMIN_INVITES_KEY = 'unitadmin-invites' as const
+const UNIT_ADMIN_INVITES_KEY = "unitadmin-invites" as const;
 
 /** Options that gate policy-dependent nav items. */
 export type NavOptions = {
   /** Whether `unitAdmins.canInvite` is on (shows the UNIT_ADMIN Invitations link). */
-  canInvite?: boolean
-}
+  canInvite?: boolean;
+};
 
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
 export function getNavForUser(user: NavUser, opts: NavOptions = {}): (NavItem | NavGroupItem)[] {
-  const role = user.role ?? 'STUDENT'
-  const nav = [...CORE_NAV]
+  const role = user.role ?? "STUDENT";
+  const nav = [...CORE_NAV];
 
-  if (role === 'ADMIN') {
-    return [
-      ...nav,
-      { key: 'admin-group' as const, title: 'Administration', children: ADMIN_NAV },
-    ]
+  if (role === "ADMIN") {
+    return [...nav, { key: "admin-group" as const, title: "Administration", children: ADMIN_NAV }];
   }
 
-  if (role === 'UNIT_ADMIN') {
+  if (role === "UNIT_ADMIN") {
     const invites: NavItem = {
       key: UNIT_ADMIN_INVITES_KEY,
-      title: 'Invitations',
-      url: '/unit-admin/invitations',
+      title: "Invitations",
+      url: "/unit-admin/invitations",
       disabled: !opts.canInvite,
-      disabledReason: opts.canInvite
-        ? undefined
-        : 'Turned off by your administrator.',
-    }
-    return [...nav, invites]
+      disabledReason: opts.canInvite ? undefined : "Turned off by your administrator.",
+    };
+    return [...nav, invites];
   }
 
   // INSTRUCTOR, TA, STUDENT — no platform admin section
-  return nav
-}
-
-/** ADMIN / UNIT_ADMIN use global chat; others use course-scoped chat (§10). */
-export function usesGlobalChat(user: NavUser): boolean {
-  const role = user.role ?? 'STUDENT'
-  return role === 'ADMIN' || role === 'UNIT_ADMIN'
+  return nav;
 }
 
 /**
@@ -76,15 +73,22 @@ export function usesGlobalChat(user: NavUser): boolean {
  * AI Tutor) moved to the footer AppLauncher, which enforces the same role gate.
  */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
-  const role = user.role ?? 'STUDENT'
-  const items: NavItem[] = [CHATBOT_NAV_ITEM]
+  const role = user.role ?? "STUDENT";
+  const items: NavItem[] = [CHATBOT_NAV_ITEM];
 
-  if (role === 'ADMIN') {
-    items.push(...ADMIN_SECONDARY_NAV)
+  if (role === "ADMIN") {
+    items.push(...ADMIN_SECONDARY_NAV);
+  }
+
+  // #1666 review: also surfaced for a non-INSTRUCTOR platform role who holds
+  // a real active INSTRUCTOR enrollment somewhere (the route/API already
+  // allow that caller in) — see NavUser.hasInstructorEnrollment.
+  if (role === "INSTRUCTOR" || user.hasInstructorEnrollment) {
+    items.push(...INSTRUCTOR_SECONDARY_NAV);
   }
 
   // In-app user guide — available to everyone (issue #764).
-  items.push({ key: 'help', title: 'Help & guide', url: '/help' })
+  items.push({ key: "help", title: "Help & guide", url: "/help" });
 
-  return items
+  return items;
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { Spinner } from "@eduai/ui";
 import { Link } from "react-router";
-import { IconLoader } from "@tabler/icons-react";
+import { cn } from "~/lib/utils";
+import {} from "@tabler/icons-react";
 
 import { Button } from "@eduai/ui";
 import { Checkbox } from "@eduai/ui";
@@ -92,6 +94,19 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     }
   };
 
+  // A fetch writes courses, rosters and enrollments; closing mid-flight would
+  // leave the dialog unable to report what actually landed, so every dismissal
+  // path is sealed until it settles. The corner X is hidden rather than
+  // disabled to match the footer Close button, which is already disabled here.
+  const preventWhileSyncing = (event: Event) => {
+    if (syncing) event.preventDefault();
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    if (syncing && !next) return;
+    onOpenChange(next);
+  };
+
   const resultSummary = result
     ? [
         result.synced.length > 0 ? `${result.synced.length} synced` : null,
@@ -103,8 +118,14 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     : null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg"
+        showCloseButton={!syncing}
+        onEscapeKeyDown={preventWhileSyncing}
+        onPointerDownOutside={preventWhileSyncing}
+        onInteractOutside={preventWhileSyncing}
+      >
         <DialogHeader>
           <DialogTitle>Fetch from Canvas</DialogTitle>
           <DialogDescription>
@@ -114,11 +135,13 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
 
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-            <IconLoader className="h-4 w-4 animate-spin" />
+            <Spinner />
             Loading your Canvas courses…
           </div>
         ) : courses.length === 0 ? (
-          <p className="py-6 text-sm text-muted-foreground">No Canvas courses found for your account.</p>
+          <p className="py-6 text-sm text-muted-foreground">
+            No Canvas courses found for your account.
+          </p>
         ) : (
           <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
             {courses.map((course) =>
@@ -126,8 +149,25 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
                 <Link
                   key={course.canvasId}
                   to={`/courses/${course.coreCourseId}`}
-                  onClick={() => onOpenChange(false)}
-                  className="flex items-start gap-3 rounded-md border p-3 hover:bg-accent transition-colors"
+                  // Navigating away unmounts the dialog, which is a dismissal
+                  // like any other — so it goes through the same guard rather
+                  // than calling `onOpenChange` directly. `aria-disabled` plus
+                  // a swallowed click is how a link is disabled; `Link` has no
+                  // `disabled`, and dropping the anchor entirely would move
+                  // focus out from under the reader mid-fetch.
+                  aria-disabled={syncing || undefined}
+                  tabIndex={syncing ? -1 : undefined}
+                  onClick={(event) => {
+                    if (syncing) {
+                      event.preventDefault();
+                      return;
+                    }
+                    handleOpenChange(false);
+                  }}
+                  className={cn(
+                    "flex items-start gap-3 rounded-md border p-3 transition-colors",
+                    syncing ? "pointer-events-none opacity-60" : "hover:bg-accent",
+                  )}
                 >
                   <div className="min-w-0 space-y-1">
                     <p className="font-medium leading-snug">{course.name}</p>
@@ -164,7 +204,9 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         {resultSummary && (
-          <p className="text-sm text-green-700 dark:text-green-400">Fetch complete: {resultSummary}.</p>
+          <p className="text-sm text-green-700 dark:text-green-400">
+            Fetch complete: {resultSummary}.
+          </p>
         )}
         {result?.synced.map((entry) => (
           <p key={entry.canvasId} className="text-sm text-muted-foreground">
@@ -183,7 +225,12 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
         ))}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={syncing}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={syncing}
+          >
             Close
           </Button>
           <Button
@@ -193,7 +240,7 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
           >
             {syncing ? (
               <>
-                <IconLoader className="mr-2 h-4 w-4 animate-spin" />
+                <Spinner className="mr-2" />
                 Fetching…
               </>
             ) : (

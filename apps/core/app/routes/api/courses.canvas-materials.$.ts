@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   type AccessLevel,
   type RbacUser,
 } from "~/lib/auth/course-access.server";
@@ -16,10 +15,13 @@ import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
-import { SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
+import { DiscoverCanvasMaterialsSchema, SyncCanvasMaterialsSchema } from "~/lib/canvas/schemas";
 import type { Session } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { withErrorResponse } from "~/lib/errors.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -33,7 +35,7 @@ async function resolveInstructorCanvasMaterialsAccess(
   | { response: Response; user?: never }
   | { response?: never; user: Session["user"]; access: AccessLevel }
 > {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return { response: json(401, { success: false, error: "Unauthorized" }) };
   }
@@ -44,7 +46,7 @@ async function resolveInstructorCanvasMaterialsAccess(
     authorizedUnits: session.user.authorizedUnits ?? undefined,
   };
 
-  const { course, access } = await resolveCourseAccessWithCourse(rbacUser, courseId);
+  const { course, access } = await resolveCourseAccessGate(rbacUser, courseId);
   if (!course) {
     return { response: json(404, { success: false, error: "Course not found" }) };
   }
@@ -56,97 +58,122 @@ async function resolveInstructorCanvasMaterialsAccess(
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.courseId;
-  if (!courseId) {
-    return json(400, { success: false, error: "Course ID is required" });
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      if (!courseId) {
+        return json(400, { success: false, error: "Course ID is required" });
+      }
 
-  const resolved = await resolveInstructorCanvasMaterialsAccess(request, courseId);
-  if (resolved.response) return resolved.response;
+      const resolved = await resolveInstructorCanvasMaterialsAccess(request, courseId);
+      if (resolved.response) return resolved.response;
 
-  try {
-    const recheckPublishState = new URL(request.url).searchParams.get("recheck") === "true";
-    const files = await discoverCanvasMaterialsForCourse(
-      resolved.user.id,
-      courseId,
-      undefined,
-      { recheckPublishState },
-    );
-    return json(200, { success: true, data: { files } });
-  } catch (error) {
-    return mapCanvasMaterialsError(error);
-  }
+      try {
+        const files = await discoverCanvasMaterialsForCourse(
+          resolved.user.id,
+          courseId,
+          undefined,
+          {
+            recheckPublishState: false,
+          },
+        );
+        return json(200, { success: true, data: { files } });
+      } catch (error) {
+        return mapCanvasMaterialsError(error);
+      }
+    },
+    { request },
+  );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const courseId = params.courseId;
-  if (!courseId) {
-    return json(400, { success: false, error: "Course ID is required" });
-  }
+  return withErrorResponse(
+    async () => {
+      const courseId = params.courseId;
+      if (!courseId) {
+        return json(400, { success: false, error: "Course ID is required" });
+      }
 
-  if (request.method !== "POST") {
-    return json(405, { success: false, error: "Method not allowed" });
-  }
+      if (request.method !== "POST") {
+        return json(405, { success: false, error: "Method not allowed" });
+      }
 
-  const resolved = await resolveInstructorCanvasMaterialsAccess(request, courseId);
-  if (resolved.response) return resolved.response;
+      const resolved = await resolveInstructorCanvasMaterialsAccess(request, courseId);
+      if (resolved.response) return resolved.response;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return json(400, { success: false, error: "Invalid JSON body" });
-  }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json(400, { success: false, error: "Invalid JSON body" });
+      }
 
-  const parsed = SyncCanvasMaterialsSchema.safeParse(body);
-  if (!parsed.success) {
-    return json(400, {
-      success: false,
-      error: "Invalid input",
-      details: parsed.error.flatten(),
-    });
-  }
+      if (DiscoverCanvasMaterialsSchema.safeParse(body).success) {
+        try {
+          const files = await discoverCanvasMaterialsForCourse(
+            resolved.user.id,
+            courseId,
+            undefined,
+            { recheckPublishState: true },
+          );
+          return json(200, { success: true, data: { files } });
+        } catch (error) {
+          return mapCanvasMaterialsError(error);
+        }
+      }
 
-  try {
-    const data = await syncSelectedCanvasMaterials(
-      resolved.user.id,
-      courseId,
-      parsed.data.canvasFileIds,
-    );
-    return json(200, { success: true, data });
-  } catch (error) {
-    return mapCanvasMaterialsError(error);
-  }
+      const parsed = SyncCanvasMaterialsSchema.safeParse(body);
+      if (!parsed.success) {
+        return json(400, {
+          success: false,
+          error: "Invalid input",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      try {
+        const data = await syncSelectedCanvasMaterials(
+          resolved.user.id,
+          courseId,
+          parsed.data.canvasFileIds,
+        );
+        return json(200, { success: true, data });
+      } catch (error) {
+        return mapCanvasMaterialsError(error);
+      }
+    },
+    { request },
+  );
 }
 
-function mapCanvasMaterialsError(error: unknown): Response {
-  if (error instanceof CanvasMaterialSyncError) {
-    return json(error.statusCode, { success: false, error: error.message });
+function mapCanvasMaterialsError(cause: unknown): Response {
+  if (cause instanceof CanvasMaterialSyncError) {
+    return json(cause.statusCode, { success: false, error: cause.message });
   }
-  if (error instanceof CanvasNotConnectedError) {
-    return json(400, { success: false, error: error.message });
+  if (cause instanceof CanvasNotConnectedError) {
+    return json(400, { success: false, error: cause.message });
   }
-  if (error instanceof CanvasStoredCredentialsError) {
-    return json(400, { success: false, error: error.message });
+  if (cause instanceof CanvasStoredCredentialsError) {
+    return json(400, { success: false, error: cause.message });
   }
-  if (error instanceof InvalidCanvasCourseAccessError) {
+  if (cause instanceof InvalidCanvasCourseAccessError) {
     return json(403, {
       success: false,
-      error: error.message,
-      invalidCourseIds: error.invalidCourseIds,
+      error: cause.message,
+      invalidCourseIds: cause.invalidCourseIds,
     });
   }
-  if (error instanceof CanvasVerificationError) {
-    return json(error.statusCode, { success: false, error: error.message });
+  if (cause instanceof CanvasVerificationError) {
+    return json(cause.statusCode, { success: false, error: cause.message });
   }
-  if (error instanceof CanvasApiError) {
-    const status = error.statusCode === 401 ? 400 : error.statusCode >= 500 ? 502 : 400;
-    return json(status, { success: false, error: error.message });
+  if (cause instanceof CanvasApiError) {
+    const status = cause.statusCode === 401 ? 400 : cause.statusCode >= 500 ? 502 : 400;
+    return json(status, { success: false, error: cause.message });
   }
   if (process.env.NODE_ENV === "production") {
-    console.error("Canvas material sync failed:", error);
+    console.error("Canvas material sync failed:", cause);
     return json(500, { success: false, error: "Canvas material sync failed" });
   }
-  const message = error instanceof Error ? error.message : "Canvas material sync failed";
+  const message = cause instanceof Error ? cause.message : "Canvas material sync failed";
   return json(500, { success: false, error: message });
 }

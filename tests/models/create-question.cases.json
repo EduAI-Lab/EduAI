@@ -1,0 +1,128 @@
+[
+  {
+    "Validity": "invalid",
+    "Course": "missing",
+    "PrimaryTopic": "deleted",
+    "SecondaryTopicIds": "duplicate-primary",
+    "Type": "SA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "exists",
+    "PrimaryTopic": "missing",
+    "SecondaryTopicIds": "none",
+    "Type": "LA"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "missing",
+    "PrimaryTopic": "missing",
+    "SecondaryTopicIds": "all-missing",
+    "Type": "MCQ"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "exists",
+    "PrimaryTopic": "exists",
+    "SecondaryTopicIds": "all-deleted",
+    "Type": "SA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "missing",
+    "PrimaryTopic": "missing",
+    "SecondaryTopicIds": "valid",
+    "Type": "SA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "exists",
+    "PrimaryTopic": "missing",
+    "SecondaryTopicIds": "duplicate-primary",
+    "Type": "MCQ"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "missing",
+    "PrimaryTopic": "missing",
+    "SecondaryTopicIds": "all-deleted",
+    "Type": "LA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "missing",
+    "PrimaryTopic": "exists",
+    "SecondaryTopicIds": "duplicate-primary",
+    "Type": "LA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "exists",
+    "PrimaryTopic": "deleted",
+    "SecondaryTopicIds": "all-missing",
+    "Type": "LA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "exists",
+    "PrimaryTopic": "missing",
+    "SecondaryTopicIds": "mixed-missing-and-deleted",
+    "Type": "LA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "missing",
+    "PrimaryTopic": "exists",
+    "SecondaryTopicIds": "all-missing",
+    "Type": "SA"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "missing",
+    "PrimaryTopic": "exists",
+    "SecondaryTopicIds": "none",
+    "Type": "MCQ"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "missing",
+    "PrimaryTopic": "deleted",
+    "SecondaryTopicIds": "none",
+    "Type": "SA"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "exists",
+    "PrimaryTopic": "exists",
+    "SecondaryTopicIds": "valid",
+    "Type": "LA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "exists",
+    "PrimaryTopic": "deleted",
+    "SecondaryTopicIds": "valid",
+    "Type": "MCQ"
+  },
+  {
+    "Validity": "invalid",
+    "Course": "missing",
+    "PrimaryTopic": "deleted",
+    "SecondaryTopicIds": "mixed-missing-and-deleted",
+    "Type": "SA"
+  },
+  {
+    "Validity": "valid",
+    "Course": "exists",
+    "PrimaryTopic": "deleted",
+    "SecondaryTopicIds": "all-deleted",
+    "Type": "MCQ"
+  },
+  {
+    "Validity": "valid",
+    "Course": "missing",
+    "PrimaryTopic": "exists",
+    "SecondaryTopicIds": "mixed-missing-and-deleted",
+    "Type": "MCQ"
+  }
+]

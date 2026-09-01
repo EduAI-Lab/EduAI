@@ -16,9 +16,13 @@
  *   - Cost-tier inference is heuristic substring-matching against model name
  *     and id (see `inferCostTier`). New providers/families need entries here
  *     or they'll silently bucket as MEDIUM.
- *   - `resolveTutorModelSelection` throws a 403 (status attached) when a
- *     student requests a model that isn't on the allow-list — routes are
- *     expected to map `error.status` straight to the HTTP response.
+ *   - `resolveTutorModelSelection` always validates against the *catalog-
+ *     reconciled* allow-list (via `getAiModelPolicyState`), never the raw
+ *     stored policy — an empty admin allow-list means "any currently
+ *     available catalog model," not "any string the client sends." It
+ *     throws a 403 (status attached) when a student requests a model that
+ *     isn't allowed — routes are expected to map `error.status` straight to
+ *     the HTTP response.
  *   - Supervisor iteration count is clamped to [1, 5]; 5 is a hard guardrail
  *     against runaway dual-loop costs.
  *   - Defaults if the setting is unset or unparseable: empty allow-list (which
@@ -29,10 +33,12 @@
  * Related: `aiGuidance.js`, `eduaiClient.js`, `systemSettings.js`.
  */
 
-import { listEduAiModels } from './eduaiClient.js';
-import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from './systemSettings.js';
+import { listEduAiModels } from "./eduaiClient.js";
+import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from "./systemSettings.js";
+import { logSafeError } from "../utils/safeErrors.js";
 
-export const DEFAULT_TUTOR_MODEL = 'google:gemini-2.5-flash';
+export const DEFAULT_TUTOR_MODEL = "google:gemini-2.5-flash";
+
 export const DEFAULT_MAX_SUPERVISOR_ITERATIONS = 3;
 // Hard floor/ceiling for supervisor iterations: 0 would disable supervision
 // (use dualLoopEnabled instead), >5 risks runaway cost on a per-request basis.
@@ -58,22 +64,22 @@ function getPreferredDefaultModelId(modelIds) {
  * When new model families launch, add a substring here so the admin UI can
  * surface accurate cost guidance.
  */
-function inferCostTier(modelId = '', modelName = '') {
+function inferCostTier(modelId = "", modelName = "") {
   const normalized = `${modelId} ${modelName}`.toLowerCase();
-  if (/(flash|mini|haiku)/.test(normalized)) return 'LOW';
-  if (/(pro|opus|o1|reasoning)/.test(normalized)) return 'HIGH';
-  return 'MEDIUM';
+  if (/(flash|mini|haiku)/.test(normalized)) return "LOW";
+  if (/(pro|opus|o1|reasoning)/.test(normalized)) return "HIGH";
+  return "MEDIUM";
 }
 
-function inferSummary(modelId = '', modelName = '') {
+function inferSummary(modelId = "", modelName = "") {
   const normalized = `${modelId} ${modelName}`.toLowerCase();
   if (/(flash|mini|haiku)/.test(normalized)) {
-    return 'Fast response with lower cost; good for everyday guidance and short feedback loops.';
+    return "Fast response with lower cost; good for everyday guidance and short feedback loops.";
   }
   if (/(pro|opus|o1|reasoning)/.test(normalized)) {
-    return 'Higher quality reasoning with higher cost; best when you want stricter review or more nuanced tutoring.';
+    return "Higher quality reasoning with higher cost; best when you want stricter review or more nuanced tutoring.";
   }
-  return 'Balanced model that trades cost and quality evenly for general tutoring tasks.';
+  return "Balanced model that trades cost and quality evenly for general tutoring tasks.";
 }
 
 /**
@@ -102,17 +108,17 @@ export function normalizeStoredAiModelPolicy(rawPolicy = {}) {
       ? Array.from(
           new Set(
             rawPolicy.allowedTutorModelIds.filter(
-              (value) => typeof value === 'string' && value.trim(),
+              (value) => typeof value === "string" && value.trim(),
             ),
           ),
         )
       : [],
     defaultTutorModelId:
-      typeof rawPolicy.defaultTutorModelId === 'string' && rawPolicy.defaultTutorModelId.trim()
+      typeof rawPolicy.defaultTutorModelId === "string" && rawPolicy.defaultTutorModelId.trim()
         ? rawPolicy.defaultTutorModelId.trim()
         : null,
     defaultSupervisorModelId:
-      typeof rawPolicy.defaultSupervisorModelId === 'string' &&
+      typeof rawPolicy.defaultSupervisorModelId === "string" &&
       rawPolicy.defaultSupervisorModelId.trim()
         ? rawPolicy.defaultSupervisorModelId.trim()
         : null,
@@ -178,9 +184,9 @@ function mapCatalogModel(model) {
     costTier,
     summary: inferSummary(modelId, model.name),
     roleHint:
-      costTier === 'HIGH'
-        ? 'Stronger supervisor candidate when you want stricter review quality.'
-        : 'Good tutor candidate when you want a responsive student-facing experience.',
+      costTier === "HIGH"
+        ? "Stronger supervisor candidate when you want stricter review quality."
+        : "Good tutor candidate when you want a responsive student-facing experience.",
   };
 }
 
@@ -209,7 +215,7 @@ export async function getStoredAiModelPolicy() {
   try {
     return normalizeStoredAiModelPolicy(JSON.parse(stored.value));
   } catch (error) {
-    console.error('Failed to parse stored AI model policy:', error);
+    logSafeError("Failed to parse stored AI model policy", error);
     return normalizeStoredAiModelPolicy();
   }
 }
@@ -240,11 +246,11 @@ export async function getAiModelPolicyState() {
       availableModelsError: null,
     };
   } catch (error) {
-    console.error('Failed to load AI model catalog:', error);
+    logSafeError("Failed to load AI model catalog", error);
     return {
       policy: resolveAiModelPolicy(storedPolicy, []),
       availableModels: [],
-      availableModelsError: String(error),
+      availableModelsError: "AI model catalog unavailable",
     };
   }
 }
@@ -261,21 +267,21 @@ export async function setAiModelPolicy(policyInput) {
   const nextPolicy = resolveAiModelPolicy(policyInput, availableModelIds);
 
   if (nextPolicy.allowedTutorModelIds.length === 0) {
-    throw new Error('At least one tutor model must be allowed');
+    throw new Error("At least one tutor model must be allowed");
   }
 
   if (
     !nextPolicy.defaultTutorModelId ||
     !nextPolicy.allowedTutorModelIds.includes(nextPolicy.defaultTutorModelId)
   ) {
-    throw new Error('defaultTutorModelId must be one of the allowed tutor models');
+    throw new Error("defaultTutorModelId must be one of the allowed tutor models");
   }
 
   if (
     !nextPolicy.defaultSupervisorModelId ||
     !availableModelIds.includes(nextPolicy.defaultSupervisorModelId)
   ) {
-    throw new Error('defaultSupervisorModelId must reference an available model');
+    throw new Error("defaultSupervisorModelId must reference an available model");
   }
 
   await setSystemSetting(SYSTEM_SETTING_KEYS.AI_MODEL_POLICY, JSON.stringify(nextPolicy));
@@ -284,26 +290,35 @@ export async function setAiModelPolicy(policyInput) {
 
 /**
  * Per-request gate: validate a student's requested tutor model against the
- * stored allow-list. Returns the requested id if allowed, or the policy
- * default if none was requested. Throws Error w/ `status=403` when the
- * requested model is on the catalog but blocked by policy — routes propagate
- * `error.status` directly to the response.
+ * catalog-reconciled allow-list (same reconciliation the admin UI sees via
+ * `getAiModelPolicyState`). Returns the requested id if allowed, or the
+ * policy default if none was requested. Throws Error w/ `status=403` when
+ * the requested model isn't allowed — routes propagate `error.status`
+ * directly to the response.
+ *
+ * Why reconciled, not raw: an empty stored allow-list means "unrestricted,"
+ * but unrestricted still means "any model the live catalog actually offers,"
+ * not any string the client sends — an unreconciled check would let a
+ * caller request a nonexistent/hallucinated model id whenever the admin
+ * hasn't set an explicit allow-list.
  */
 export async function resolveTutorModelSelection(requestedModelId) {
-  const storedPolicy = await getStoredAiModelPolicy();
-  const allowedTutorModelIds = storedPolicy.allowedTutorModelIds;
+  const { policy } = await getAiModelPolicyState();
+  const { allowedTutorModelIds, defaultTutorModelId } = policy;
 
-  if (
-    requestedModelId &&
-    allowedTutorModelIds.length > 0 &&
-    !allowedTutorModelIds.includes(requestedModelId)
-  ) {
-    const error = new Error('Selected tutor model is not allowed');
-    error.status = 403;
-    throw error;
-  }
+  if (!requestedModelId) return defaultTutorModelId || DEFAULT_TUTOR_MODEL;
+  if (allowedTutorModelIds.includes(requestedModelId)) return requestedModelId;
 
-  return requestedModelId || storedPolicy.defaultTutorModelId || DEFAULT_TUTOR_MODEL;
+  // #1645: the admin allow-list is absolute. A student's own (BYOK) provider
+  // key is a fallback for reaching an ALLOWED model when UBC inference is down
+  // (Core's fleet fallback), never a way to run a model the admin left off the
+  // list. So a personal key does not widen this gate — a model not on the
+  // reconciled allow-list is rejected regardless of which keys the request
+  // holds. (`allowedTutorModelIds` is empty ⇒ unrestricted-within-the-catalog,
+  // so a nonexistent/hallucinated id still fails here.)
+  const error = new Error("Selected tutor model is not allowed");
+  error.status = 403;
+  throw error;
 }
 
 /**

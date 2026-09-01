@@ -7,12 +7,27 @@ PartOf=eduai-dev.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-EnvironmentFile=-%h/.config/systemd/user/eduai-dev.env
-Environment=PATH=%h/.volta/bin:/usr/local/bin:/usr/bin:/bin
-Environment=HOME=%h
-Environment=VOLTA_HOME=%h/.volta
-ExecStart=%h/.volta/bin/npm run dev -w question-maker-backend
+User=ssaada08
+Group=eduai-dev
+UMask=0002
+
+WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/extensions/question-maker/app/backend
+# Fallback, for the same reason as eduai-core.service: EnvironmentFile=- is
+# optional, so a missing /etc/eduai/eduai-dev.env must not change behaviour.
+# src/middleware/errorHandler.js gates API stack traces on NODE_ENV ===
+# 'development', so without this an absent file silently strips them on dev.
+# The EnvironmentFile below still wins when it is present.
+Environment=NODE_ENV=development
+EnvironmentFile=-/etc/eduai/eduai-dev.env
+Environment=HOME=/home/ssaada08
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PORT=8000
+
+# The `start` script also runs db:generate + db:migrate:deploy; both move to
+# go-live-build.sh, so this execs the server directly. Keeping migrate out of the
+# unit matters: Restart=always would re-run it on every crash-loop iteration.
+ExecStart=/usr/local/bin/node src/index.js
+
 Restart=always
 RestartSec=5
 TimeoutStartSec=90

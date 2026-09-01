@@ -1,0 +1,35 @@
+/* Let eduai-dev members manage the EduAI units without sudo.
+ *
+ * Installed to /etc/polkit-1/rules.d/49-eduai-dev.rules by
+ * go-live-systemd-install.sh.
+ *
+ * Without this, moving from `systemctl --user` to system units would trade
+ * "only ssaada08 can restart the stack" for "everyone needs a root password",
+ * which defeats the point of the migration.
+ *
+ * s378 runs polkit 0.115, which has the JS rules engine (>= 0.106).
+ *
+ * Scoped deliberately: only eduai-* units, only lifecycle verbs. Members cannot
+ * edit unit files or manage anything else on a box that hosts several other
+ * teams' sites.
+ */
+polkit.addRule(function (action, subject) {
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (!subject.isInGroup("eduai-dev")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var unit = action.lookup("unit");
+    if (!unit || !/^eduai-[A-Za-z0-9-]+\.(service|target)$/.test(unit)) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var verb = action.lookup("verb");
+    if (["start", "stop", "restart", "reload", "reload-or-restart"].indexOf(verb) < 0) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    return polkit.Result.YES;
+});

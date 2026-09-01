@@ -11,20 +11,20 @@
  * copied here, and `reconcileOfferingFromCore` is gone entirely — there is
  * nothing left to reconcile once the row holds no Core-owned data.
  */
-import { prisma } from '../config/database.js';
-import { listEduAiCourses } from './eduaiClient.js';
-import { syncExternalCourseTopics } from './topicSync.js';
-import { syncCourseEnrollments } from './enrollmentSync.js';
+import { prisma } from "../config/database.js";
+import { listEduAiCourses } from "./eduaiClient.js";
+import { syncExternalCourseTopics } from "./topicSync.js";
+import {
+  AUTO_SYNC_TIMEOUT_MS,
+  syncCourseEnrollments,
+  withCourseEnrollmentLock,
+} from "./enrollmentSync.js";
+import { logSafeError } from "../utils/safeErrors.js";
 
-const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
-const AUTO_ENROLL_ROLES = new Set(['STUDENT', 'TA']);
-const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
-const STUDENT_ENROLLMENT_ROLE = 'STUDENT';
-const TA_ENROLLMENT_ROLE = 'TA';
-
-function isTeachingCoreCourse(coreCourse) {
-  return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
-}
+const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR"]);
+const AUTO_ENROLL_ROLES = new Set(["STUDENT", "TA"]);
+const STUDENT_ENROLLMENT_ROLE = "STUDENT";
+const TA_ENROLLMENT_ROLE = "TA";
 
 function isStudentCoreCourse(coreCourse) {
   return (coreCourse?.callerEnrollmentRole ?? STUDENT_ENROLLMENT_ROLE) === STUDENT_ENROLLMENT_ROLE;
@@ -64,7 +64,7 @@ async function ensureOfferingFromCore(coreCourse) {
  */
 export async function ensureOfferingAnchors(coreCourseIds) {
   const ids = Array.from(
-    new Set((coreCourseIds ?? []).filter((id) => typeof id === 'string' && id)),
+    new Set((coreCourseIds ?? []).filter((id) => typeof id === "string" && id)),
   );
   if (ids.length === 0) return;
 
@@ -87,6 +87,15 @@ export async function ensureOfferingAnchors(coreCourseIds) {
  * enrollments. Mirrors POST /api/courses/import-external without the HTTP layer.
  */
 export async function importExternalCourseForUser(instructor, externalCourse) {
+  if (instructor?.role === "INSTRUCTOR" && externalCourse?.callerEnrollmentRole !== "INSTRUCTOR") {
+    const error = new Error("CORE_COURSE_INSTRUCTOR_REQUIRED");
+    error.status = 403;
+    error.code = "CORE_COURSE_INSTRUCTOR_REQUIRED";
+    throw error;
+  }
+  const shouldLinkInstructor =
+    instructor?.role === "INSTRUCTOR" && externalCourse?.callerEnrollmentRole === "INSTRUCTOR";
+
   const alreadyImported = await prisma.courseOffering.findFirst({
     where: { coreOfferingId: externalCourse.id },
   });
@@ -94,16 +103,18 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
   if (alreadyImported) {
     // Ensure the instructor is linked to the existing course (handles seeded
     // courses and courses already imported by another user).
-    await prisma.courseInstructor.upsert({
-      where: {
-        userId_courseOfferingId: {
-          userId: instructor.id,
-          courseOfferingId: alreadyImported.id,
+    if (shouldLinkInstructor) {
+      await prisma.courseInstructor.upsert({
+        where: {
+          userId_courseOfferingId: {
+            userId: instructor.id,
+            courseOfferingId: alreadyImported.id,
+          },
         },
-      },
-      create: { courseOfferingId: alreadyImported.id, userId: instructor.id, role: 'LEAD' },
-      update: {},
-    });
+        create: { courseOfferingId: alreadyImported.id, userId: instructor.id, role: "LEAD" },
+        update: {},
+      });
+    }
 
     return { offering: alreadyImported, created: false };
   }
@@ -117,13 +128,15 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
         },
       });
 
-      await tx.courseInstructor.create({
-        data: {
-          courseOfferingId: offering.id,
-          userId: instructor.id,
-          role: 'LEAD',
-        },
-      });
+      if (shouldLinkInstructor) {
+        await tx.courseInstructor.create({
+          data: {
+            courseOfferingId: offering.id,
+            userId: instructor.id,
+            role: "LEAD",
+          },
+        });
+      }
 
       return offering;
     });
@@ -132,7 +145,7 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
     // can insert this coreOfferingId between our findFirst miss and the
     // create — explicit add is an idempotent ENSURE (unified contract), so
     // the loser adopts the winner's row instead of surfacing an error.
-    if (err?.code === 'P2002') {
+    if (err?.code === "P2002") {
       return importExternalCourseForUser(instructor, externalCourse);
     }
     throw err;
@@ -140,14 +153,19 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
 
   const [topicResult, enrollmentResult] = await Promise.allSettled([
     syncExternalCourseTopics(created.id),
-    syncCourseEnrollments(created.id),
+    syncCourseEnrollments(created.id, {
+      signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+    }),
   ]);
 
-  if (topicResult.status === 'rejected') {
-    console.error('[eduai] Failed to sync topics for auto-imported course', topicResult.reason);
+  if (topicResult.status === "rejected") {
+    logSafeError("[eduai] Failed to sync topics for auto-imported course", topicResult.reason);
   }
-  if (enrollmentResult.status === 'rejected') {
-    console.error('[eduai] Failed to sync enrollments for auto-imported course', enrollmentResult.reason);
+  if (enrollmentResult.status === "rejected") {
+    logSafeError(
+      "[eduai] Failed to sync enrollments for auto-imported course",
+      enrollmentResult.reason,
+    );
   }
 
   return { offering: created, created: true };
@@ -173,8 +191,8 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
       // #1041: import reconciles against every course the caller can see.
       coreCourses = await listEduAiCourses({ cookie, all: true });
     } catch (err) {
-      console.error('[eduai] Auto-import skipped: could not list Core courses', err);
-      return { imported: 0, skipped: 0, error: err.message };
+      logSafeError("[eduai] Auto-import skipped: could not list Core courses", err);
+      return { imported: 0, skipped: 0, error: "Core course listing unavailable" };
     }
   }
 
@@ -196,12 +214,15 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
   let skipped = 0;
 
   for (const coreCourse of coreCourses) {
-    if (!coreCourse?.id || typeof coreCourse.id !== 'string') {
+    if (!coreCourse?.id || typeof coreCourse.id !== "string") {
       skipped++;
       continue;
     }
 
-    if (!isTeachingCoreCourse(coreCourse)) {
+    // Platform role and per-course role are independent. A platform
+    // INSTRUCTOR who is only a TA in this particular course must retain TA
+    // access, but must never be promoted into the authoring LEAD mirror.
+    if (coreCourse.callerEnrollmentRole !== "INSTRUCTOR") {
       skipped++;
       continue;
     }
@@ -220,13 +241,15 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
         skipped++;
       }
     } catch (err) {
-      console.error('[eduai] Auto-import failed for Core course', coreCourse.id, err);
+      logSafeError("[eduai] Auto-import failed for Core course", err);
       skipped++;
     }
   }
 
   if (imported > 0) {
-    console.info(`[eduai] Auto-imported ${imported} taught course(s) for instructor ${instructor.id}`);
+    console.info(
+      `[eduai] Auto-imported ${imported} taught course(s) for instructor ${instructor.id}`,
+    );
   }
 
   let synced = 0;
@@ -240,16 +263,19 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
   for (const offering of offerings) {
     const [topicResult, enrollmentResult] = await Promise.allSettled([
       syncExternalCourseTopics(offering.id),
-      syncCourseEnrollments(offering.id, { course: offering }),
+      syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      }),
     ]);
 
-    if (topicResult.status === 'rejected') {
-      console.error('[eduai] Topic sync failed for course', offering.id, topicResult.reason);
+    if (topicResult.status === "rejected") {
+      logSafeError("[eduai] Topic sync failed for course", topicResult.reason);
     }
-    if (enrollmentResult.status === 'rejected') {
-      console.error('[eduai] Enrollment sync failed for course', offering.id, enrollmentResult.reason);
+    if (enrollmentResult.status === "rejected") {
+      logSafeError("[eduai] Enrollment sync failed for course", enrollmentResult.reason);
     }
-    if (topicResult.status === 'fulfilled' || enrollmentResult.status === 'fulfilled') {
+    if (topicResult.status === "fulfilled" || enrollmentResult.status === "fulfilled") {
       synced++;
     }
   }
@@ -276,8 +302,13 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
       // #1041: import reconciles against every course the caller can see.
       coreCourses = await listEduAiCourses({ cookie, all: true });
     } catch (err) {
-      console.error('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
-      return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
+      logSafeError("[eduai] Student enrollment mirror skipped: could not list Core courses", err);
+      return {
+        enrolled: 0,
+        skipped: 0,
+        removed: 0,
+        error: "Core enrollment listing unavailable",
+      };
     }
   }
 
@@ -286,10 +317,10 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   }
 
   const studentCourses = coreCourses.filter(
-    (course) => course?.id && typeof course.id === 'string' && isStudentCoreCourse(course),
+    (course) => course?.id && typeof course.id === "string" && isStudentCoreCourse(course),
   );
   const taCourses = coreCourses.filter(
-    (course) => course?.id && typeof course.id === 'string' && isTaCoreCourse(course),
+    (course) => course?.id && typeof course.id === "string" && isTaCoreCourse(course),
   );
 
   let enrolled = 0;
@@ -298,23 +329,16 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   for (const coreCourse of taCourses) {
     try {
       const offering = await ensureOfferingFromCore(coreCourse);
-      await prisma.courseEnrollment.upsert({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: offering.id,
-            userId: student.id,
-          },
-        },
-        update: { role: TA_ENROLLMENT_ROLE },
-        create: {
-          courseOfferingId: offering.id,
-          userId: student.id,
-          role: TA_ENROLLMENT_ROLE,
-        },
+      // The broad course list is only a candidate set. Reconcile the
+      // authoritative per-course roster while holding the same lock used by
+      // live authorization; never upsert from a stale list snapshot.
+      await syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
       });
       enrolled++;
     } catch (err) {
-      console.error('[eduai] TA enrollment mirror failed for Core course', coreCourse.id, err);
+      logSafeError("[eduai] TA enrollment mirror failed for Core course", err);
       skipped++;
     }
   }
@@ -322,37 +346,35 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   for (const coreCourse of studentCourses) {
     try {
       const offering = await ensureOfferingFromCore(coreCourse);
-      await prisma.courseEnrollment.upsert({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: offering.id,
-            userId: student.id,
-          },
-        },
-        update: { role: STUDENT_ENROLLMENT_ROLE },
-        create: {
-          courseOfferingId: offering.id,
-          userId: student.id,
-          role: STUDENT_ENROLLMENT_ROLE,
-        },
+      // See the TA path above: Core's course-list response must not be used
+      // as an enrollment write snapshot after live authorization has run.
+      await syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
       });
       enrolled++;
     } catch (err) {
-      console.error('[eduai] Student enrollment mirror failed for Core course', coreCourse.id, err);
+      logSafeError("[eduai] Student enrollment mirror failed for Core course", err);
       skipped++;
     }
   }
 
-  const activeCoreIds = new Set(studentCourses.map((course) => course.id));
+  const activeStudentCoreIds = new Set(studentCourses.map((course) => course.id));
+  const activeTaCoreIds = new Set(taCourses.map((course) => course.id));
 
-  // Guard: if Core returned no courses (deploy blip, permission hiccup, empty filter),
-  // skip pruning to avoid deleting every mirrored student enrollment.
-  if (activeCoreIds.size === 0) {
+  // Guard: if Core returned no courses at all (deploy blip, permission hiccup,
+  // empty filter), skip pruning to avoid deleting every mirrored enrollment.
+  if (activeStudentCoreIds.size === 0 && activeTaCoreIds.size === 0) {
     return { enrolled, skipped, removed: 0 };
   }
 
+  // Both STUDENT and TA rows are pruned here (#1173 review) — this mirror is
+  // the only one hit on every /api/me and GET /courses request, so a TA row
+  // left out would keep a revoked TA locally privileged until the nightly
+  // reconciliation or a targeted course-detail read (which runs
+  // syncCourseEnrollments, the other place TA rows get pruned).
   const localEnrollments = await prisma.courseEnrollment.findMany({
-    where: { userId: student.id, role: STUDENT_ENROLLMENT_ROLE },
+    where: { userId: student.id, role: { in: [STUDENT_ENROLLMENT_ROLE, TA_ENROLLMENT_ROLE] } },
     include: {
       courseOffering: {
         select: { coreOfferingId: true },
@@ -360,23 +382,32 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
     },
   });
 
-  const staleOfferingIds = localEnrollments
-    .filter((enrollment) => {
-      const coreId = enrollment.courseOffering.coreOfferingId;
-      return coreId && !activeCoreIds.has(coreId);
-    })
-    .map((enrollment) => enrollment.courseOfferingId);
+  const staleOfferingIds = [
+    ...new Set(
+      localEnrollments
+        .filter((enrollment) => {
+          const coreId = enrollment.courseOffering.coreOfferingId;
+          if (!coreId) return false;
+          const activeIds =
+            enrollment.role === TA_ENROLLMENT_ROLE ? activeTaCoreIds : activeStudentCoreIds;
+          return !activeIds.has(coreId);
+        })
+        .map((enrollment) => enrollment.courseOfferingId),
+    ),
+  ];
 
   let removed = 0;
-  if (staleOfferingIds.length > 0) {
-    const result = await prisma.courseEnrollment.deleteMany({
-      where: {
-        userId: student.id,
-        role: STUDENT_ENROLLMENT_ROLE,
-        courseOfferingId: { in: staleOfferingIds },
-      },
-    });
-    removed = result.count;
+  for (const courseOfferingId of staleOfferingIds) {
+    const result = await withCourseEnrollmentLock(courseOfferingId, (db) =>
+      db.courseEnrollment.deleteMany({
+        where: {
+          userId: student.id,
+          role: { in: [STUDENT_ENROLLMENT_ROLE, TA_ENROLLMENT_ROLE] },
+          courseOfferingId,
+        },
+      }),
+    );
+    removed += result.count;
   }
 
   if (enrolled > 0 || removed > 0) {
@@ -390,7 +421,7 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
 
 export function coreCoursesIncludeTaEnrollment(coreCourses) {
   if (!Array.isArray(coreCourses)) return false;
-  return coreCourses.some((course) => course?.callerEnrollmentRole === 'TA');
+  return coreCourses.some((course) => course?.callerEnrollmentRole === "TA");
 }
 
 /**
@@ -415,36 +446,40 @@ export async function userHasCoreTaEnrollment(cookie, coreCourses) {
 // ---------------------------------------------------------------------------
 // Shared mirror runner — the ONE way any route triggers the Core auto-import
 // mirror (unified extension contract, #1072). The mirror is a background side
-// effect (Core list fetch + local anchor/enrollment writes + per-offering
-// topic/enrollment sub-syncs); no response may depend on or wait for it.
-// Throttled to once per window per user and fired without awaiting, so list
-// and /me responses never pay the serial Core waterfall. A freshly-imported
-// course therefore appears on the caller's NEXT request — the same documented
-// trade-off as Question Maker's runCoreImportMirror.
+// effect for callers such as /api/me, but concurrent callers must share the
+// same promise so a second route cannot observe local rows while the first
+// mirror is still writing them.
 const MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
 const lastMirrorAtByUser = new Map();
+const inFlightMirrorByUser = new Map();
 
 export function runCoreMirror(authUser, cookie, sharedOptions = {}) {
+  const inFlight = inFlightMirrorByUser.get(authUser.id);
+  if (inFlight) return inFlight;
+
   const now = Date.now();
   const last = lastMirrorAtByUser.get(authUser.id) ?? 0;
-  if (now - last < MIRROR_THROTTLE_MS) return;
+  if (now - last < MIRROR_THROTTLE_MS) return Promise.resolve();
   lastMirrorAtByUser.set(authUser.id, now);
 
-  // Invoke both synchronously (so callers/tests can observe the calls) but do
-  // not await — the mirror runs in the background. A user is either an
-  // INSTRUCTOR (taught) or a STUDENT/TA (enrolled), so only one actually does
-  // work; running them in parallel is safe.
-  void Promise.allSettled([
+  // A user is either an INSTRUCTOR (taught) or a STUDENT/TA (enrolled), so
+  // only one actually does work; running both branches in parallel is safe.
+  const mirror = Promise.allSettled([
     importTaughtCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
-      console.error('[eduai] Auto-import taught courses failed', err),
+      logSafeError("[eduai] Auto-import taught courses failed", err),
     ),
     importEnrolledCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
-      console.error('[eduai] Student enrollment mirror failed', err),
+      logSafeError("[eduai] Student enrollment mirror failed", err),
     ),
-  ]);
+  ]).finally(() => {
+    inFlightMirrorByUser.delete(authUser.id);
+  });
+  inFlightMirrorByUser.set(authUser.id, mirror);
+  return mirror;
 }
 
 /** Test-only: clears the per-user mirror throttle so each test starts fresh. */
 export function resetCoreMirrorThrottleForTests() {
   lastMirrorAtByUser.clear();
+  inFlightMirrorByUser.clear();
 }

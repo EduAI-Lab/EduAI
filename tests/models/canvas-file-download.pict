@@ -1,0 +1,16 @@
+# docs/PICT_CENSUS.md § S5 — canvas-file-download
+# Canvas authenticated file download transport (client.server.ts fetchCanvasFileBytes).
+Transport:     ok, network-error, http-4xx, http-5xx
+AuthHeader:    present, absent
+Redirect:      none, same-host, cross-host
+RedirectAuth:  drop, keep
+ByteLimit:     under, over
+
+IF [Redirect] = "none" THEN [RedirectAuth] = "keep";
+IF [Redirect] = "none" THEN [ByteLimit] = "under";
+IF [ByteLimit] = "over" THEN [Redirect] <> "none";
+IF [RedirectAuth] = "drop" THEN [Redirect] <> "none";
+IF [AuthHeader] = "absent" THEN [Redirect] = "none";
+IF [Transport] = "network-error" THEN [Redirect] = "none";
+IF [Transport] = "network-error" THEN [ByteLimit] = "under";
+IF [Redirect] = "cross-host" AND [Transport] = "ok" THEN [ByteLimit] = "under";

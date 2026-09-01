@@ -9,12 +9,10 @@
  * choice carries across the Core, AI Tutor, and Question Maker apps via the
  * shared storage key. Read/write theme through `useTheme` from `@eduai/ui`.
  */
+import type { PreferenceUpdates } from "~/lib/user-preferences";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-import {
-  DEFAULT_UI_PREFERENCES,
-  type UiDensity,
-} from "~/lib/ui-preferences";
+import { DEFAULT_UI_PREFERENCES, type UiDensity } from "~/lib/ui-preferences";
 
 type UiPreferencesContextValue = {
   motionReduced: boolean;
@@ -25,7 +23,7 @@ type UiPreferencesContextValue = {
 
 const UiPreferencesContext = createContext<UiPreferencesContextValue | null>(null);
 
-function persistPreferencePatch(body: Record<string, unknown>) {
+function persistPreferencePatch(body: PreferenceUpdates) {
   fetch("/api/preferences", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -98,12 +96,40 @@ export function useUiPreferences(): UiPreferencesContextValue {
   return ctx;
 }
 
-/** Safe for leaf components in tests — falls back to system preference when no provider. */
+/**
+ * The OS-level `prefers-reduced-motion` setting, read in an effect rather than
+ * during render so the server render and the first client render agree.
+ */
+function useSystemMotionReduced(): boolean {
+  const [systemReduced, setSystemReduced] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!query) return;
+    setSystemReduced(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setSystemReduced(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  return systemReduced;
+}
+
+/**
+ * Whether to stop animating: the account preference OR the OS setting.
+ *
+ * Both signals have to count. Public pages are read by signed-out visitors
+ * whose account preference is the `false` default, so honouring only that would
+ * leave someone who asked their OS for reduced motion watching the animation
+ * anyway (WCAG 2.2.2); and a signed-in reader who set the preference in
+ * Settings expects it honoured whatever their OS says.
+ *
+ * Safe for leaf components in tests — with no provider only the OS half counts.
+ */
 export function useMotionReducedPreference(): boolean {
   const ctx = useContext(UiPreferencesContext);
-  if (ctx) return ctx.motionReduced;
-  if (typeof window === "undefined") return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const systemReduced = useSystemMotionReduced();
+  return (ctx?.motionReduced ?? false) || systemReduced;
 }
 
 export { DEFAULT_UI_PREFERENCES };

@@ -3,12 +3,13 @@
  * (Combobox), secondary topics (MultiSelect), and an optional description/label.
  * Built for the full-page layout; uses @eduai/ui primitives + CSS vars only.
  */
-import { Label, Input, Combobox, MultiSelect } from '@eduai/ui';
+import { useState } from "react";
+import { Label, Input, Button, Combobox, MultiSelect } from "@eduai/ui";
 
-import type { QuestionDifficulty, ReasoningLevel } from '../../types/question';
-import type { Topic } from '../../types/topic';
-import { DifficultySlider } from './DifficultySlider';
-import { ReasoningSelector } from './ReasoningSelector';
+import type { QuestionDifficulty, ReasoningLevel } from "../../types/question";
+import type { Topic } from "../../types/topic";
+import { DifficultySlider } from "./DifficultySlider";
+import { ReasoningSelector } from "./ReasoningSelector";
 
 export interface ComposerMetadataValue {
   difficulty: QuestionDifficulty;
@@ -32,6 +33,7 @@ interface ComposerMetadataFieldsProps {
   onPrimaryTopicChange: (value: string) => void;
   onSecondaryTopicsChange: (value: string[]) => void;
   onDescriptionChange: (value: string) => void;
+  onCreateTopic?: (name: string) => Promise<Topic>;
 }
 
 export function ComposerMetadataFields({
@@ -47,7 +49,32 @@ export function ComposerMetadataFields({
   onPrimaryTopicChange,
   onSecondaryTopicsChange,
   onDescriptionChange,
+  onCreateTopic,
 }: ComposerMetadataFieldsProps) {
+  const [newTopicName, setNewTopicName] = useState("");
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [topicCreationError, setTopicCreationError] = useState<string | null>(null);
+  const [showTopicCreator, setShowTopicCreator] = useState(false);
+
+  const handleCreateTopic = async () => {
+    const name = newTopicName.trim();
+    if (!name || !onCreateTopic) return;
+
+    setCreatingTopic(true);
+    setTopicCreationError(null);
+    try {
+      const topic = await onCreateTopic(name);
+      setNewTopicName("");
+      onPrimaryTopicChange(topic.id);
+      setShowTopicCreator(false);
+    } catch (error) {
+      console.error("Failed to create topic", error);
+      setTopicCreationError("Could not create topic. Try a different name.");
+    } finally {
+      setCreatingTopic(false);
+    }
+  };
+
   const topicOptions = topics.map((t) => ({ value: t.id.toString(), label: t.name }));
   const secondaryOptions = topics
     .filter((t) => t.id.toString() !== value.primaryTopicId)
@@ -57,7 +84,12 @@ export function ComposerMetadataFields({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_3fr]">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="composer-difficulty" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Difficulty</Label>
+          <Label
+            htmlFor="composer-difficulty"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Difficulty
+          </Label>
           <DifficultySlider
             id="composer-difficulty"
             value={value.difficulty}
@@ -67,7 +99,12 @@ export function ComposerMetadataFields({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="composer-reasoning" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Reasoning level</Label>
+          <Label
+            htmlFor="composer-reasoning"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Reasoning level
+          </Label>
           <ReasoningSelector
             id="composer-reasoning"
             value={value.reasoningLevel}
@@ -82,29 +119,91 @@ export function ComposerMetadataFields({
           Primary topic <span className="text-destructive">*</span>
         </Label>
         {primaryTopicReadOnly ? (
-          <p className="py-2.5 text-sm text-muted-foreground">{primaryTopicName ?? `Topic ${value.primaryTopicId}`}</p>
+          <p className="py-2.5 text-sm text-muted-foreground">
+            {primaryTopicName ?? `Topic ${value.primaryTopicId}`}
+          </p>
         ) : (
           <>
             <Combobox
               options={topicOptions}
               value={value.primaryTopicId || null}
-              onValueChange={(v) => onPrimaryTopicChange(v ?? '')}
-              placeholder={topicsLoading ? 'Loading topics…' : topics.length === 0 ? 'No topics available' : 'Select primary topic'}
+              onValueChange={(v) => onPrimaryTopicChange(v ?? "")}
+              placeholder={
+                topicsLoading
+                  ? "Loading topics…"
+                  : topics.length === 0
+                    ? "No topics available"
+                    : "Select primary topic"
+              }
               searchPlaceholder="Search topics…"
               emptyText="No topics found"
               disabled={disabled || topics.length === 0}
             />
             {topics.length === 0 && !topicsLoading && (
-              <p className="text-xs text-muted-foreground">No topics yet. Add them in Core, then re-sync.</p>
+              <p className="text-xs text-muted-foreground">
+                No topics yet. Add one below to continue.
+              </p>
             )}
-            {errors?.primaryTopic && <p className="text-xs text-destructive">{errors.primaryTopic}</p>}
+            {onCreateTopic && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  aria-expanded={showTopicCreator}
+                  aria-controls="composer-topic-creator"
+                  onClick={() => {
+                    setShowTopicCreator((open) => !open);
+                    setTopicCreationError(null);
+                  }}
+                  disabled={disabled || creatingTopic}
+                >
+                  {showTopicCreator ? "Cancel" : "Add topic"}
+                </Button>
+                {showTopicCreator && (
+                  <div id="composer-topic-creator" className="flex gap-2">
+                    <Input
+                      value={newTopicName}
+                      onChange={(event) => {
+                        setNewTopicName(event.target.value);
+                        if (topicCreationError) setTopicCreationError(null);
+                      }}
+                      placeholder="New topic name"
+                      aria-label="New topic name"
+                      disabled={disabled || creatingTopic}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleCreateTopic();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleCreateTopic()}
+                      disabled={disabled || creatingTopic || !newTopicName.trim()}
+                    >
+                      {creatingTopic ? "Adding…" : "Add"}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+            {topicCreationError && <p className="text-xs text-destructive">{topicCreationError}</p>}
+            {errors?.primaryTopic && (
+              <p className="text-xs text-destructive">{errors.primaryTopic}</p>
+            )}
           </>
         )}
       </div>
 
       <div className="flex flex-col gap-1.5">
         <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Secondary topics <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+          Secondary topics{" "}
+          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
         </Label>
         <MultiSelect
           options={secondaryOptions}
@@ -118,8 +217,12 @@ export function ComposerMetadataFields({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="composer-description" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Description / label <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+        <Label
+          htmlFor="composer-description"
+          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+        >
+          Description / label{" "}
+          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
         </Label>
         <Input
           id="composer-description"

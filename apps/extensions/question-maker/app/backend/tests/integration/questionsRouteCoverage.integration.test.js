@@ -1,0 +1,961 @@
+/**
+ * Coverage-focused route tests for questions.js (issue #1217: questions.js was
+ * the single largest uncovered file — 82 uncovered statements). questionRbac.test.js
+ * already covers ordinary STUDENT denial, enrollment-scoped TA access, and the INSTRUCTOR
+ * edit-any-question case; this file exercises the remaining branches: stats/export
+ * course-access gates, PUT/DELETE validation and TA-own-only enforcement, generate/
+ * extract/extract-save/approve validation, and the order routes' assessment-in-course
+ * check.
+ *
+ * Same mocked-DB pattern as questionRbac.test.js — no live Core or test DB required.
+ */
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import supertest from "supertest";
+
+const {
+  mockUpdate,
+  mockDelete,
+  mockCreate,
+  mockList,
+  mockStats,
+  mockGetById,
+  mockEnrich,
+  mockCreateMultiple,
+  mockUpdateOrder,
+  mockRemoveFromAssessment,
+  mockSaveExtracted,
+  mockGenerateQuestions,
+  mockExtractQuestions,
+  mockQuestionFindOne,
+  mockCourseFindOne,
+  mockAssessmentFindOne,
+  mockEnrollments,
+  mockVisibleCourseWhere,
+} = vi.hoisted(() => ({
+  mockUpdate: vi.fn(),
+  mockDelete: vi.fn().mockResolvedValue(true),
+  mockCreate: vi.fn(),
+  mockList: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
+  mockStats: vi.fn().mockResolvedValue({ total: 0 }),
+  mockGetById: vi.fn(),
+  mockEnrich: vi.fn(async (rows) => rows),
+  mockCreateMultiple: vi.fn(),
+  mockUpdateOrder: vi.fn(),
+  mockRemoveFromAssessment: vi.fn(),
+  mockSaveExtracted: vi.fn(),
+  mockGenerateQuestions: vi.fn(),
+  mockExtractQuestions: vi.fn(),
+  mockQuestionFindOne: vi.fn(),
+  mockCourseFindOne: vi.fn(),
+  mockAssessmentFindOne: vi.fn(),
+  mockEnrollments: vi.fn(),
+  mockVisibleCourseWhere: vi.fn(),
+}));
+
+vi.mock("../../src/services/authService.js", () => ({
+  findOrCreateUser: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("../../src/config/settings.js", () => {
+  const cfg = {
+    coreUrl: "http://core.test",
+    eduaiApiKey: "k",
+    corsOrigins: ["*"],
+    nodeEnv: "test",
+    logLevel: "silent",
+    maxQuestions: 5,
+    qmAiProviderCallLimit: 4,
+    qmAiOperationDeadlineMs: 50,
+  };
+  return { config: cfg, default: cfg };
+});
+
+vi.mock("../../src/services/questionService.js", () => ({
+  createQuestion: mockCreate,
+  getQuestionsByUser: mockList,
+  enrichQuestionRows: mockEnrich,
+  getQuestionById: mockGetById,
+  updateQuestion: mockUpdate,
+  deleteQuestion: mockDelete,
+  createMultipleQuestions: mockCreateMultiple,
+  getQuestionStats: mockStats,
+  updateQuestionOrder: mockUpdateOrder,
+  removeQuestionFromAssessment: mockRemoveFromAssessment,
+  saveExtractedQuestions: mockSaveExtracted,
+  normalizePrimaryTopicId: (v) => (v ? String(v) : null),
+}));
+
+vi.mock("../../src/services/aiService.js", () => ({
+  generateQuestions: mockGenerateQuestions,
+  extractQuestionsFromText: mockExtractQuestions,
+  AI_PROVIDERS: { GROQ: "groq" },
+}));
+
+vi.mock("../../src/services/coreApiService.js", () => ({
+  getCourseEnrollmentsFromCore: mockEnrollments,
+  getCourseFromCore: vi.fn().mockResolvedValue({ id: "cuid-core-course", department: "COSC" }),
+  getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
+}));
+
+vi.mock("../../src/services/courseListService.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveVisibleCourseWhereForUser: mockVisibleCourseWhere,
+}));
+
+vi.mock("../../src/config/database.js", () => ({
+  prisma: {
+    course: { findUnique: mockCourseFindOne },
+    questionMetadata: { findUnique: mockQuestionFindOne },
+    assessments: { findUnique: mockAssessmentFindOne },
+    variants: {},
+    assessmentSections: {},
+    topics: {},
+  },
+}));
+
+const { default: app } = await import("../../src/app.js");
+const { resetQmAiAdmissionForTests } = await import("../../src/middleware/aiAdmission.js");
+const request = () => supertest.agent(app).set("Authorization", "Bearer k");
+
+const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const ADMIN = { id: "admin-1", role: "ADMIN", email: "admin@t.co", name: "Admin" };
+// Not the course owner and not enrolled — used to exercise the "insufficient
+// course access" branch (the local-owner fallback only applies to explicitly
+// unlinked QM-native courses).
+const OUTSIDER_INSTRUCTOR = { id: "inst-2", role: "INSTRUCTOR", email: "i2@t.co", name: "I2" };
+// Real course TA: platform role STUDENT + course enrollment TA (#225 AUTH-12).
+const TA = { id: "ta-1", role: "STUDENT", email: "t@t.co", name: "TA" };
+const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
+
+const COURSE = { id: 1, userId: "inst-1", coreCourseId: "cuid-core-course" };
+const OTHER_COURSE = { id: 2, userId: "other-owner", coreCourseId: "cuid-other-course" };
+
+function authAs(user, enrollRole) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }),
+  );
+  mockEnrollments.mockResolvedValue({
+    enrollments: enrollRole ? [{ studentId: user.id, role: enrollRole, isActive: true }] : [],
+  });
+  mockCourseFindOne.mockResolvedValue(COURSE);
+}
+
+function loadQuestion(createdBy) {
+  mockQuestionFindOne.mockResolvedValue({ id: 7, createdBy, course: COURSE });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetQmAiAdmissionForTests();
+  mockDelete.mockResolvedValue(true);
+  mockVisibleCourseWhere.mockResolvedValue({ userId: INSTRUCTOR.id });
+});
+afterEach(() => vi.restoreAllMocks());
+
+describe("GET /api/questions/stats", () => {
+  it("returns 404 when the course does not exist", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockCourseFindOne.mockResolvedValue(null);
+
+    const res = await request(app)
+      .get("/api/questions/stats?courseId=999")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 when the caller lacks TA access", async () => {
+    authAs(OUTSIDER_INSTRUCTOR, null);
+
+    const res = await request(app)
+      .get("/api/questions/stats?courseId=1")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("scopes stats by course when courseId is supplied", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockStats.mockResolvedValue({ total: 4 });
+
+    const res = await request(app)
+      .get("/api/questions/stats?courseId=1")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockStats).toHaveBeenCalledWith(COURSE.userId, { courseId: COURSE.id });
+  });
+
+  it("scopes global stats to every course visible to a non-owner instructor", async () => {
+    authAs(INSTRUCTOR, null);
+    mockStats.mockResolvedValue({ total: 1 });
+    const courseWhere = {
+      accessGrants: { some: { userId: INSTRUCTOR.id, role: "INSTRUCTOR" } },
+    };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions/stats").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(INSTRUCTOR, {
+      cookie: "session=v",
+      includeOwnerFallback: true,
+    });
+    expect(mockStats).toHaveBeenCalledWith(INSTRUCTOR.id, {
+      courseId: undefined,
+      courseWhere,
+    });
+  });
+
+  it("scopes global stats for a platform STUDENT course TA", async () => {
+    authAs(TA, null);
+    const courseWhere = { accessGrants: { some: { userId: TA.id, role: "TA" } } };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions/stats").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(TA, {
+      cookie: "session=v",
+      includeOwnerFallback: false,
+    });
+    expect(mockStats).toHaveBeenCalledWith(TA.id, {
+      courseId: undefined,
+      courseWhere,
+    });
+  });
+});
+
+describe("GET /api/questions global visibility", () => {
+  it("uses the full ADMIN course visibility predicate instead of ownership", async () => {
+    authAs(ADMIN, null);
+    mockVisibleCourseWhere.mockResolvedValue({});
+
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(ADMIN, {
+      cookie: "session=v",
+      includeOwnerFallback: true,
+    });
+    expect(mockList).toHaveBeenCalledWith(ADMIN.id, expect.objectContaining({ courseWhere: {} }));
+  });
+
+  it("uses permitted non-owner courses for an instructor", async () => {
+    authAs(INSTRUCTOR, null);
+    const courseWhere = {
+      accessGrants: { some: { userId: INSTRUCTOR.id, role: "INSTRUCTOR" } },
+    };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith(
+      INSTRUCTOR.id,
+      expect.objectContaining({ courseId: undefined, courseWhere }),
+    );
+  });
+
+  it("uses visible TA courses for a platform STUDENT without owner fallback", async () => {
+    authAs(TA, null);
+    const courseWhere = { accessGrants: { some: { userId: TA.id, role: "TA" } } };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(TA, {
+      cookie: "session=v",
+      includeOwnerFallback: false,
+    });
+    expect(mockList).toHaveBeenCalledWith(
+      TA.id,
+      expect.objectContaining({ courseId: undefined, courseWhere }),
+    );
+  });
+
+  it("returns 200 with an empty predicate path for an ordinary platform STUDENT", async () => {
+    authAs(STUDENT, null);
+    const courseWhere = {
+      accessGrants: { some: { userId: STUDENT.id, role: { in: ["INSTRUCTOR", "TA"] } } },
+    };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(STUDENT, {
+      cookie: "session=v",
+      includeOwnerFallback: false,
+    });
+    expect(mockList).toHaveBeenCalledWith(
+      STUDENT.id,
+      expect.objectContaining({ courseId: undefined, courseWhere }),
+    );
+  });
+});
+
+describe("GET /api/questions/export", () => {
+  it("requires courseId", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app).get("/api/questions/export").set("Cookie", "session=v");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/courseId is required/);
+  });
+
+  it("rejects an unsupported format", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .get("/api/questions/export?courseId=1&format=xml")
+      .set("Cookie", "session=v");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/format must be/);
+  });
+
+  it("returns 404 when the course does not exist", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockCourseFindOne.mockResolvedValue(null);
+    const res = await request(app)
+      .get("/api/questions/export?courseId=1")
+      .set("Cookie", "session=v");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 when the caller lacks TA access", async () => {
+    authAs(OUTSIDER_INSTRUCTOR, null);
+    const res = await request(app)
+      .get("/api/questions/export?courseId=1")
+      .set("Cookie", "session=v");
+    expect(res.status).toBe(403);
+  });
+
+  it("exports JSON by default", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockList.mockResolvedValueOnce({
+      items: [{ id: 1, type: "MCQ" }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    });
+
+    const res = await request(app)
+      .get("/api/questions/export?courseId=1")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: 1, type: "MCQ" }]);
+  });
+
+  it("exports CSV with one row per variant, escaping embedded commas/quotes", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockList.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          type: "MCQ",
+          description: "Has, a comma",
+          primaryTopicId: "t1",
+          variants: [
+            {
+              id: 10,
+              questionText: 'What is "pi"?',
+              difficulty: "easy",
+              reasoningLevel: "factual",
+              answer: "3.14",
+              choices: [{ letter: "A", text: "3.14" }],
+              isDraft: false,
+              isAiGenerated: true,
+            },
+          ],
+        },
+        { id: 2, type: "SA", description: "No variants", primaryTopicId: "t2", variants: [] },
+      ],
+      total: 2,
+      limit: 500,
+      offset: 0,
+    });
+
+    const res = await request(app)
+      .get("/api/questions/export?courseId=1&format=csv")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/csv/);
+    expect(res.headers["content-disposition"]).toContain("questions-course-1.csv");
+    expect(res.text).toContain('"Has, a comma"');
+    expect(res.text).toContain('"What is ""pi""?"');
+    // Question with no variants still emits a row.
+    expect(res.text.split("\r\n")).toHaveLength(3); // header + 2 rows
+  });
+});
+
+describe("PUT /api/questions/:id", () => {
+  // TA own-only behavior is covered in questionRbac.test.js and the real-Postgres
+  // qmTaAuthorization.integration.test.js; these cases focus on payload validation.
+
+  it("rejects a non-integer courseId", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .put("/api/questions/7")
+      .set("Cookie", "session=v")
+      .send({ courseId: "not-a-number" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Valid courseId is required/);
+  });
+
+  it("rejects an empty primaryTopicId", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .put("/api/questions/7")
+      .set("Cookie", "session=v")
+      .send({ primaryTopicId: "" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Valid primaryTopicId is required/);
+  });
+
+  it("rejects an invalid type", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .put("/api/questions/7")
+      .set("Cookie", "session=v")
+      .send({ type: "ESSAY" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid question type/);
+  });
+
+  it("rejects an empty update payload", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app).put("/api/questions/7").set("Cookie", "session=v").send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/No valid fields provided to update/);
+  });
+
+  it("applies questionOrder/isAiGenerated/isDraft updates", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockUpdate.mockResolvedValue({ id: 7 });
+
+    const res = await request(app)
+      .put("/api/questions/7")
+      .set("Cookie", "session=v")
+      .send({ questionOrder: { 1: 2 }, isAiGenerated: true, isDraft: false });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      "7",
+      COURSE.userId,
+      expect.objectContaining({ questionOrder: { 1: 2 }, isAiGenerated: true, isDraft: false }),
+    );
+  });
+});
+
+// DELETE /api/questions/:id has no additional branches to cover beyond PUT's
+// dead-code denyTaNotOwner note above and the shared resourceAccess gate.
+
+describe("POST /api/questions/generate", () => {
+  it("requires a prompt", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/generate")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1 });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects numQuestions above the configured max", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/generate")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, prompt: "x", numQuestions: 999 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cannot exceed/);
+  });
+
+  it("generates questions on success", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockGenerateQuestions.mockResolvedValue([{ id: "q1" }]);
+
+    const res = await request(app)
+      .post("/api/questions/generate")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, prompt: "Generate some questions", numQuestions: 3 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: "q1" }]);
+  });
+});
+
+describe("POST /api/questions/extract", () => {
+  it("requires text content", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "   " });
+    expect(res.status).toBe(400);
+  });
+
+  it("extracts questions on success", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockExtractQuestions.mockResolvedValue([{ id: "extracted-1" }]);
+
+    const res = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: "extracted-1" }]);
+    expect(mockExtractQuestions).toHaveBeenCalledWith(
+      "Some OCR text",
+      1,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        cookie: "session=v",
+        signal: expect.any(AbortSignal),
+        deadlineAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("reserves the full four-call worst case for one chunk", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockExtractQuestions.mockResolvedValue([]);
+
+    const first = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+    const second = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(second.body.code).toBe("QM_AI_PROVIDER_BUDGET_EXCEEDED");
+  });
+
+  it("cancels extraction at the shared operation deadline", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockExtractQuestions.mockImplementation(
+      (_text, _courseId, _model, _apiKeys, { signal }) =>
+        new Promise((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+
+    const res = await request(app)
+      .post("/api/questions/extract")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, text: "Some OCR text" });
+
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe("QM_AI_OPERATION_DEADLINE");
+    expect(mockExtractQuestions).toHaveBeenCalledOnce();
+  });
+});
+
+describe("POST /api/questions/extract/save", () => {
+  it("requires at least one question", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/extract/save")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questions: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects more questions than the configured max", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const questions = Array.from({ length: 6 }, (_, i) => ({ description: `q${i}` }));
+    const res = await request(app)
+      .post("/api/questions/extract/save")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questions });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Cannot save more than/);
+  });
+
+  it("saves extracted questions on success", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockSaveExtracted.mockResolvedValue({ questions: [{ id: 1 }, { id: 2 }] });
+
+    const res = await request(app)
+      .post("/api/questions/extract/save")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questions: [{ description: "a" }, { description: "b" }] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data).toHaveLength(2);
+  });
+});
+
+describe("POST /api/questions/approve", () => {
+  it("requires authentication before validating the request target", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+
+    const res = await request(app).post("/api/questions/approve").send({ questions: [] });
+
+    expect(res.status).toBe(401);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("requires a non-empty questions array", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ questions: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Questions array is required");
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", {}],
+    ["non-numeric", { courseId: "not-a-number" }],
+    ["zero", { courseId: 0 }],
+    ["negative", { courseId: -1 }],
+    ["non-integer", { courseId: 1.5 }],
+  ])("rejects a %s top-level course target", async (_label, target) => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ ...target, questions: [{ courseId: 1, primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Valid courseId is required");
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("accepts a positive-integer classId as the legacy target alias", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockCreateMultiple.mockResolvedValue([{ id: 1 }]);
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ classId: "1", questions: [{ primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(201);
+    expect(mockCourseFindOne).toHaveBeenCalledWith({ where: { id: 1 } });
+  });
+
+  it("rejects when a question is missing primaryTopicId", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questions: [{ description: "no topic" }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/valid primaryTopicId/);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the target course does not exist", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockCourseFindOne.mockResolvedValue(null);
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: 999, questions: [{ primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(404);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("rejects a caller whose target-course access is below TA", async () => {
+    authAs(OUTSIDER_INSTRUCTOR, "STUDENT");
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questions: [{ primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("rejects a course STUDENT (platform STUDENT, no TA access)", async () => {
+    authAs(STUDENT, "STUDENT");
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questions: [{ primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("prevents a caller authorized for course A from targeting course B", async () => {
+    authAs(OUTSIDER_INSTRUCTOR, "INSTRUCTOR");
+    mockCourseFindOne.mockImplementation(({ where }) =>
+      Promise.resolve(where.id === COURSE.id ? COURSE : OTHER_COURSE),
+    );
+    mockEnrollments.mockImplementation((coreCourseId) =>
+      Promise.resolve({
+        enrollments:
+          coreCourseId === COURSE.coreCourseId
+            ? [{ studentId: OUTSIDER_INSTRUCTOR.id, role: "INSTRUCTOR", isActive: true }]
+            : [],
+      }),
+    );
+
+    const courseAResponse = await request(app)
+      .get(`/api/questions/stats?courseId=${COURSE.id}`)
+      .set("Cookie", "session=v");
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: OTHER_COURSE.id, questions: [{ primaryTopicId: "t1" }] });
+
+    expect(courseAResponse.status).toBe(200);
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("rejects a per-question course override before writing", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({
+        courseId: COURSE.id,
+        questions: [{ courseId: OTHER_COURSE.id, primaryTopicId: "t1" }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/must match the authorized target course/);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("rejects a per-question classId override before writing", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({
+        courseId: COURSE.id,
+        questions: [{ classId: OTHER_COURSE.id, primaryTopicId: "t1" }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for a same-owner target when Core access cannot be resolved", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    mockEnrollments.mockRejectedValue(new Error("Core unavailable"));
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: COURSE.id, questions: [{ primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it("authorizes a real course TA (platform STUDENT, TA enrollment) in their own course", async () => {
+    authAs(TA, "TA");
+    mockCreateMultiple.mockResolvedValue([{ id: 1 }]);
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: COURSE.id, questions: [{ primaryTopicId: "t1" }] });
+
+    expect(res.status).toBe(201);
+    expect(mockCreateMultiple).toHaveBeenCalledWith(
+      COURSE.userId,
+      expect.arrayContaining([expect.objectContaining({ courseId: COURSE.id, createdBy: TA.id })]),
+    );
+  });
+
+  it("saves an authorized batch under the course owner while preserving caller authorship", async () => {
+    authAs(OUTSIDER_INSTRUCTOR, "INSTRUCTOR");
+    mockCreateMultiple.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({
+        courseId: 1,
+        questions: [
+          { primaryTopicId: "t1", description: "a" },
+          { primaryTopicId: "t2", description: "b" },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data).toHaveLength(2);
+    expect(mockCreateMultiple).toHaveBeenCalledWith(COURSE.userId, [
+      expect.objectContaining({
+        courseId: COURSE.id,
+        primaryTopicId: "t1",
+        createdBy: OUTSIDER_INSTRUCTOR.id,
+      }),
+      expect.objectContaining({
+        courseId: COURSE.id,
+        primaryTopicId: "t2",
+        createdBy: OUTSIDER_INSTRUCTOR.id,
+      }),
+    ]);
+  });
+
+  it("rejects approval batches above config.maxQuestions before access or mutation", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const questions = Array.from({ length: 6 }, (_, index) => ({
+      primaryTopicId: `topic-${index + 1}`,
+      description: `question ${index + 1}`,
+    }));
+
+    const res = await request(app)
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
+      .send({ courseId: COURSE.id, questions });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cannot approve more than 5/i);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+    expect(mockEnrollments).not.toHaveBeenCalled();
+  });
+});
+
+describe("PUT /api/questions/:id/order", () => {
+  it("requires assessmentId and orderNumber", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    const res = await request(app)
+      .put("/api/questions/7/order")
+      .set("Cookie", "session=v")
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when the assessment does not belong to the authorized course", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockAssessmentFindOne.mockResolvedValue({ id: 5, courseId: 999 });
+
+    const res = await request(app)
+      .put("/api/questions/7/order")
+      .set("Cookie", "session=v")
+      .send({ assessmentId: 5, orderNumber: 1 });
+
+    expect(res.status).toBe(404);
+    expect(mockUpdateOrder).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a non-integer assessmentId", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .put("/api/questions/7/order")
+      .set("Cookie", "session=v")
+      .send({ assessmentId: "not-a-number", orderNumber: 1 });
+
+    expect(res.status).toBe(404);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["infinite", "Infinity"],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ])("rejects %s orderNumber before the assessment lookup", async (_label, orderNumber) => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .put("/api/questions/7/order")
+      .set("Cookie", "session=v")
+      .send({ assessmentId: 5, orderNumber });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/positive safe integer/i);
+    expect(mockAssessmentFindOne).not.toHaveBeenCalled();
+    expect(mockUpdateOrder).not.toHaveBeenCalled();
+  });
+
+  it("updates the order on success", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockAssessmentFindOne.mockResolvedValue({ id: 5, courseId: COURSE.id });
+    mockUpdateOrder.mockResolvedValue({ id: 7, questionOrder: { 5: 1 } });
+
+    const res = await request(app)
+      .put("/api/questions/7/order")
+      .set("Cookie", "session=v")
+      .send({ assessmentId: 5, orderNumber: 1 });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateOrder).toHaveBeenCalledWith("7", 5, 1, COURSE.userId);
+  });
+});
+
+describe("DELETE /api/questions/:id/order/:assessmentId", () => {
+  it("returns 404 when the assessment does not belong to the authorized course", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockAssessmentFindOne.mockResolvedValue(null);
+
+    const res = await request(app).delete("/api/questions/7/order/5").set("Cookie", "session=v");
+
+    expect(res.status).toBe(404);
+    expect(mockRemoveFromAssessment).not.toHaveBeenCalled();
+  });
+
+  it("removes the question from the assessment order on success", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockAssessmentFindOne.mockResolvedValue({ id: 5, courseId: COURSE.id });
+    mockRemoveFromAssessment.mockResolvedValue({ id: 7 });
+
+    const res = await request(app).delete("/api/questions/7/order/5").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(mockRemoveFromAssessment).toHaveBeenCalledWith("7", "5", COURSE.userId);
+  });
+});
+
+describe("GET /api/questions/:id", () => {
+  it("returns the question after passing the resource access gate", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockGetById.mockResolvedValue({ id: 7, description: "x" });
+
+    const res = await request(app).get("/api/questions/7").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ id: 7, description: "x" });
+  });
+});

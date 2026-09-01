@@ -6,26 +6,43 @@
  * (PUT isDraft:false) or discards the rest (DELETE), without leaving the page.
  * Only approved variants count toward assembly readiness.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
+import { Spinner } from "@eduai/ui";
 import {
-  IconCircleCheck, IconCircleCheckFilled, IconLoader2, IconSparkles, IconTrash, IconCircleX,
-} from '@tabler/icons-react';
+  IconCircleCheck,
+  IconCircleCheckFilled,
+  IconSparkles,
+  IconTrash,
+  IconCircleX,
+} from "@tabler/icons-react";
 import {
-  Button, Badge, Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle, cn,
-} from '@eduai/ui';
-import { questionService } from '../../services/questionService';
-import { useToast } from '@/components/ui/use-toast';
+  Button,
+  Badge,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  cn,
+} from "@eduai/ui";
+import { questionService } from "../../services/questionService";
+import { describeVariantError } from "../../lib/variantErrors";
 import {
   DIFFICULTY_META,
   difficultyChipClass,
   difficultySolidClass,
   normalizeDifficulty,
-} from '../../lib/difficulty';
-import type { QuestionDifficulty } from '../../types/question';
-import type { GenerateBankVariantsResult, GeneratedVariantPreview } from '../../services/assessmentVariantService';
+} from "../../lib/difficulty";
+import type { QuestionDifficulty } from "../../types/question";
+import type {
+  GenerateBankVariantsResult,
+  GeneratedVariantPreview,
+} from "../../services/assessmentVariantService";
+import { markCorrectChoices } from "../../lib/mcq";
+import { toast } from "sonner";
 
-type VariantStatus = 'pending' | 'approving' | 'approved' | 'discarding' | 'discarded';
+type VariantStatus = "pending" | "approving" | "approved" | "discarding" | "discarded";
 
 interface ReviewGroup {
   questionMetadataId: number;
@@ -47,22 +64,23 @@ interface Props {
 const DifficultyPill = ({ level }: { level: QuestionDifficulty }) => (
   <span
     className={cn(
-      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold capitalize',
+      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold capitalize",
       difficultyChipClass[level],
     )}
   >
-    <span className={cn('size-1.5 rounded-full', difficultySolidClass[level])} />
+    <span className={cn("size-1.5 rounded-full", difficultySolidClass[level])} />
     {DIFFICULTY_META[level].label}
   </span>
 );
 
 /** Tiny uppercase section heading — echoes the view modal's `Question` / `Answer` labels. */
 const SectionLabel = ({ children }: { children: React.ReactNode }) => (
-  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{children}</p>
+  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+    {children}
+  </p>
 );
 
 export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onReviewed }: Props) {
-  const { toast } = useToast();
   const [statuses, setStatuses] = useState<Record<number, VariantStatus>>({});
   const [hydrating, setHydrating] = useState(false);
 
@@ -92,7 +110,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
 
     // Optimistic: show everything pending until the live state lands.
     const optimistic: Record<number, VariantStatus> = {};
-    for (const g of groups) for (const v of g.variants) optimistic[v.id] = 'pending';
+    for (const g of groups) for (const v of g.variants) optimistic[v.id] = "pending";
     setStatuses(optimistic);
 
     const questionIds = Array.from(new Set(groups.map((g) => g.questionMetadataId)));
@@ -110,11 +128,16 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         for (const g of groups) {
           const q = byQuestion.get(g.questionMetadataId);
           for (const v of g.variants) {
-            if (q == null) { next[v.id] = 'pending'; continue; } // fetch failed — can't tell
+            if (q == null) {
+              next[v.id] = "pending";
+              continue;
+            } // fetch failed — can't tell
             const live = (q.variants ?? []).find((x) => x.id === v.id);
-            if (!live) next[v.id] = 'discarded';            // deleted from the bank
-            else if (live.isDraft === false) next[v.id] = 'approved'; // already reviewed
-            else next[v.id] = 'pending';
+            if (!live)
+              next[v.id] = "discarded"; // deleted from the bank
+            else if (live.isDraft === false)
+              next[v.id] = "approved"; // already reviewed
+            else next[v.id] = "pending";
           }
         }
         setStatuses(next);
@@ -123,58 +146,68 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [open, groups]);
 
   const allVariants = useMemo(() => groups.flatMap((g) => g.variants), [groups]);
-  const pendingVariants = allVariants.filter((v) => (statuses[v.id] ?? 'pending') === 'pending');
-  const approvedCount = allVariants.filter((v) => statuses[v.id] === 'approved').length;
-  const discardedCount = allVariants.filter((v) => statuses[v.id] === 'discarded').length;
-  const busy = allVariants.some((v) => statuses[v.id] === 'approving' || statuses[v.id] === 'discarding');
+  const pendingVariants = allVariants.filter((v) => (statuses[v.id] ?? "pending") === "pending");
+  const approvedCount = allVariants.filter((v) => statuses[v.id] === "approved").length;
+  const discardedCount = allVariants.filter((v) => statuses[v.id] === "discarded").length;
+  const busy = allVariants.some(
+    (v) => statuses[v.id] === "approving" || statuses[v.id] === "discarding",
+  );
 
   const setStatus = (id: number, status: VariantStatus) =>
     setStatuses((prev) => ({ ...prev, [id]: status }));
 
   const approve = async (id: number) => {
-    setStatus(id, 'approving');
+    setStatus(id, "approving");
     try {
       await questionService.updateVariant(id, { isDraft: false });
-      setStatus(id, 'approved');
+      setStatus(id, "approved");
       onReviewed?.();
     } catch (e: unknown) {
-      const err = e as { response?: { status?: number; data?: { error?: string } } };
+      const err = e as {
+        response?: { status?: number; data?: { error?: string; code?: string } };
+      };
       // Already reviewed (server lock) → treat approve as a no-op success, not an error.
       // Keeps the action idempotent if the live state drifted under a stale dialog.
-      if (err?.response?.status === 409 || err?.response?.data?.error === 'VARIANT_LOCKED') {
-        setStatus(id, 'approved');
+      //
+      // Narrowed to that one code on purpose: 409 alone is no longer a single
+      // situation. A lost publish race answers VARIANT_CONFLICT with the same
+      // status after rolling its Core push back, and reporting that as
+      // "approved" would tell the instructor a question is published when it
+      // is not (#1652 review).
+      const code = err?.response?.data?.code ?? err?.response?.data?.error;
+      if (code === "VARIANT_LOCKED") {
+        setStatus(id, "approved");
         onReviewed?.();
         return;
       }
-      setStatus(id, 'pending');
-      toast({
-        variant: 'destructive',
-        title: 'Could not approve variant',
+      setStatus(id, "pending");
+      toast.error("Could not approve variant", {
         description:
           err?.response?.status === 403
-            ? 'Only instructors can approve. Try again.'
-            : 'Could not approve this variant. Please try again.',
+            ? "Only instructors can approve. Try again."
+            : describeVariantError(err),
       });
     }
   };
 
   const discard = async (id: number) => {
-    setStatus(id, 'discarding');
+    setStatus(id, "discarding");
     try {
       await questionService.deleteVariant(id);
-      setStatus(id, 'discarded');
+      setStatus(id, "discarded");
       onReviewed?.();
     } catch (e: unknown) {
-      setStatus(id, 'pending');
-      toast({
-        variant: 'destructive',
-        title: 'Could not discard variant',
+      setStatus(id, "pending");
+      toast.error("Could not discard variant", {
         description:
-          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
+          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          "Try again.",
       });
     }
   };
@@ -191,33 +224,39 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
   /** MCQ option grid — mirrors the view modal's choice cards (letter chip + correct highlight). */
   const renderChoices = (v: GeneratedVariantPreview) => {
     if (!Array.isArray(v.choices) || v.choices.length === 0) return null;
+    const correctFlags = markCorrectChoices(v.answer, v.choices, {
+      selectAllThatApply: v.selectAllThatApply,
+      correctAnswers: v.correctAnswers,
+    });
     return (
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
         {v.choices.map((c, i) => {
           const letter = c.letter ?? String.fromCharCode(65 + i);
-          const isAnswer =
-            v.answer != null &&
-            (String(v.answer).trim() === letter || String(v.answer).trim() === c.text?.trim());
+          const isAnswer = correctFlags[i];
           return (
             <div
               key={`${letter}-${i}`}
               className={cn(
-                'flex items-center gap-2.5 rounded-[var(--radius-lg)] border px-3 py-2.5 transition-colors',
+                "flex items-center gap-2.5 rounded-[var(--radius-lg)] border px-3 py-2.5 transition-colors",
                 isAnswer
-                  ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]'
-                  : 'border-border bg-muted/40',
+                  ? "border-[var(--color-success-500)] bg-[var(--color-success-100)]"
+                  : "border-border bg-muted/40",
               )}
             >
               <span
                 className={cn(
-                  'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                  isAnswer ? 'bg-[var(--color-success-500)] text-white' : 'bg-muted text-muted-foreground',
+                  "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                  isAnswer
+                    ? "bg-[var(--color-success-500)] text-white"
+                    : "bg-muted text-muted-foreground",
                 )}
               >
                 {letter}
               </span>
               <span className="flex-1 text-sm text-foreground">{c.text}</span>
-              {isAnswer && <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />}
+              {isAnswer && (
+                <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />
+              )}
             </div>
           );
         })}
@@ -226,24 +265,32 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!busy) onOpenChange(o);
+      }}
+    >
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         {/* ── Header: identity + intent (mirrors the view modal) ── */}
         <DialogHeader className="space-y-2 border-b border-border px-6 py-5 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-lg font-semibold leading-snug">
-            <IconSparkles className="size-5 text-primary" />
+            <IconSparkles className="size-5 text-primary-text" />
             Review generated variants
           </DialogTitle>
           <DialogDescription className="leading-relaxed">
-            {allVariants.length} draft variant(s) were generated. Approve the ones you want — only approved
-            variants count toward readiness. Discard the rest. Nothing is marked reviewed automatically.
+            {allVariants.length} draft variant(s) were generated. Approve the ones you want — only
+            approved variants count toward readiness. Discard the rest. Nothing is marked reviewed
+            automatically.
           </DialogDescription>
         </DialogHeader>
 
         {/* ── Body: one section per source question, card per variant ── */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {groups.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">No variants were generated.</p>
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              No variants were generated.
+            </p>
           ) : (
             <div className="flex flex-col gap-7 px-6 py-6">
               {groups.map((g) => (
@@ -251,29 +298,30 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                   {/* Source-question header — type chip + description title, like the view modal meta row */}
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="muted" className="shrink-0 gap-1">
-                      {g.type ?? 'Question'} #{g.questionMetadataId}
+                      {g.type ?? "Question"} #{g.questionMetadataId}
                     </Badge>
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                      {g.description?.trim() || 'Untitled question'}
+                      {g.description?.trim() || "Untitled question"}
                     </span>
                   </div>
 
                   <div className="space-y-3">
                     {g.variants.map((v) => {
-                      const status = statuses[v.id] ?? 'pending';
+                      const status = statuses[v.id] ?? "pending";
                       const diff = normalizeDifficulty(v.difficulty);
-                      const isApproved = status === 'approved';
-                      const isDiscarded = status === 'discarded';
-                      const inFlight = status === 'approving' || status === 'discarding';
+                      const isApproved = status === "approved";
+                      const isDiscarded = status === "discarded";
+                      const inFlight = status === "approving" || status === "discarding";
                       const hasChoices = Array.isArray(v.choices) && v.choices.length > 0;
                       return (
                         <div
                           key={v.id}
                           className={cn(
-                            'rounded-[var(--radius-lg)] border p-4 transition-colors',
-                            isApproved && 'border-[var(--color-success-500)] bg-[var(--color-success-100)]/40',
-                            isDiscarded && 'border-border bg-muted/40 opacity-60',
-                            !isApproved && !isDiscarded && 'border-border bg-card',
+                            "rounded-[var(--radius-lg)] border p-4 transition-colors",
+                            isApproved &&
+                              "border-[var(--color-success-500)] bg-[var(--color-success-100)]/40",
+                            isDiscarded && "border-border bg-muted/40 opacity-60",
+                            !isApproved && !isDiscarded && "border-border bg-card",
                           )}
                         >
                           {/* Card header: difficulty/reasoning chips (left) + lifecycle actions (right) */}
@@ -303,8 +351,8 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                                   disabled={inFlight || hydrating}
                                   onClick={() => void approve(v.id)}
                                 >
-                                  {status === 'approving' ? (
-                                    <IconLoader2 className="size-4 animate-spin" />
+                                  {status === "approving" ? (
+                                    <Spinner />
                                   ) : (
                                     <IconCircleCheck className="size-4" />
                                   )}
@@ -318,8 +366,8 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                                   disabled={inFlight || hydrating}
                                   onClick={() => void discard(v.id)}
                                 >
-                                  {status === 'discarding' ? (
-                                    <IconLoader2 className="size-4 animate-spin" />
+                                  {status === "discarding" ? (
+                                    <Spinner />
                                   ) : (
                                     <IconTrash className="size-4" />
                                   )}
@@ -365,21 +413,33 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         <DialogFooter className="flex-row items-center justify-between gap-2 border-t border-border px-6 py-4 sm:justify-between">
           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
             {hydrating ? (
-              <><IconLoader2 className="size-4 animate-spin" /> Checking current status…</>
+              <>
+                <Spinner /> Checking current status…
+              </>
             ) : (
               <>
                 <span className="font-medium text-success-700">{approvedCount}</span> approved
                 {discardedCount > 0 && <> · {discardedCount} discarded</>}
-                {' · '}{pendingVariants.length} pending
+                {" · "}
+                {pendingVariants.length} pending
               </>
             )}
           </span>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => onOpenChange(false)}
+            >
               Done
             </Button>
-            <Button type="button" disabled={busy || hydrating || pendingVariants.length === 0} onClick={() => void approveAll()}>
-              {busy ? <IconLoader2 className="mr-2 size-4 animate-spin" /> : <IconCircleCheck className="mr-2 size-4" />}
+            <Button
+              type="button"
+              disabled={busy || hydrating || pendingVariants.length === 0}
+              onClick={() => void approveAll()}
+            >
+              {busy ? <Spinner className="mr-2" /> : <IconCircleCheck className="mr-2 size-4" />}
               Approve all ({pendingVariants.length})
             </Button>
           </div>

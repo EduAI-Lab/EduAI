@@ -1,4 +1,6 @@
+import type { JsonValue } from "~/lib/json-value";
 import { UserRole, type Prisma } from "@prisma/client";
+import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
 import {
   paginatedResponse,
@@ -14,7 +16,7 @@ import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
@@ -22,6 +24,14 @@ import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
+import { ensureDefaultBank } from "~/lib/question-banks/server";
+import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
+import {
+  COURSE_PUBLIC_SELECT,
+  COURSE_SERVICE_SELECT,
+  COURSE_STAFF_SELECT,
+  serializeCourseForApi,
+} from "./dto.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -32,7 +42,8 @@ import {
   type UpdateCourseTopicInput,
   type DeleteCourseTopicInput,
 } from "./schemas";
-
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { asJsonObject } from "~/lib/json-value";
 
 async function parseCreateCourseBody(
   request: Request,
@@ -41,18 +52,27 @@ async function parseCreateCourseBody(
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    let body: unknown;
+    let body: JsonValue;
     try {
-      body = await request.json();
+      // SAFETY: `Request#json` resolves to whatever the client sent; naming it
+      // `JsonValue` claims only what JSON parsing already guarantees.
+      body = (await request.json()) as JsonValue;
     } catch {
-      return { ok: false as const, response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }) };
+      return {
+        ok: false as const,
+        response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }),
+      };
     }
-    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
-      body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
+    const bodyFields = asJsonObject(body);
+    if (opts?.forceInstructorUserIds?.length && bodyFields) {
+      body = { ...bodyFields, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);
     if (!parsed.success) {
-      return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+      return {
+        ok: false as const,
+        response: validationErrorFromZod(parsed.error),
+      };
     }
     return { ok: true as const, data: parsed.data };
   }
@@ -65,7 +85,7 @@ async function parseCreateCourseBody(
 
   if (instructorUserIds.length === 0) {
     const rawInstructorUserIds = formData.get("instructorUserIds");
-    if (typeof rawInstructorUserIds === "string" && rawInstructorUserIds) {
+    if (!(rawInstructorUserIds instanceof File) && rawInstructorUserIds) {
       try {
         const parsed = JSON.parse(rawInstructorUserIds);
         if (Array.isArray(parsed)) {
@@ -101,7 +121,10 @@ async function parseCreateCourseBody(
 
   const parsed = CreateCourseSchema.safeParse(data);
   if (!parsed.success) {
-    return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+    return {
+      ok: false as const,
+      response: validationErrorFromZod(parsed.error),
+    };
   }
   return { ok: true as const, data: parsed.data };
 }
@@ -115,7 +138,10 @@ async function parseCreateCourseBody(
 // ---------------------------------------------------------------------------
 
 type RagSettingsCacheEntry = {
-  value: { ragTopK: number | null; ragSimilarityThreshold: number | null } | null;
+  value: {
+    ragTopK: number | null;
+    ragSimilarityThreshold: number | null;
+  } | null;
   expiresAt: number;
 };
 
@@ -137,6 +163,96 @@ function pruneRagSettingsCache(): void {
 /** Drop a single course's entry so the next read fetches fresh data from DB. */
 export function invalidateCourseRagSettingsCache(courseId: string): void {
   ragSettingsCache.delete(courseId);
+}
+
+// ---------------------------------------------------------------------------
+// Per-course topic-name cache
+//
+// Course-scope classification (course-scope-guardrail.ts) loads topic names
+// on every browser course-chat turn. Same TTL/invalidation shape as the RAG
+// settings cache above to avoid a DB round-trip on that critical path.
+// ---------------------------------------------------------------------------
+
+type CourseTopicNamesCacheEntry = {
+  value: string[];
+  expiresAt: number;
+};
+
+const courseTopicNamesCache = new Map<string, CourseTopicNamesCacheEntry>();
+
+function pruneCourseTopicNamesCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of courseTopicNamesCache) {
+    if (entry.expiresAt <= now) courseTopicNamesCache.delete(key);
+  }
+}
+
+/** Drop a single course's cached topic names so the next read fetches fresh data. */
+export function invalidateCourseTopicNamesCache(courseId: string): void {
+  courseTopicNamesCache.delete(courseId);
+}
+
+/**
+ * Cached topic-name lookup for a course. Backed by getCourseTopics so it stays
+ * consistent with the deletedAt: null filter used everywhere else. Cached in
+ * memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (reuses the RAG settings TTL —
+ * both are low-churn, read-heavy per-course settings) to avoid a DB
+ * round-trip on every course-chat turn.
+ */
+export async function getCourseTopicNamesCached(courseId: string): Promise<string[]> {
+  pruneCourseTopicNamesCache();
+
+  const now = Date.now();
+  const cached = courseTopicNamesCache.get(courseId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const topics = await getCourseTopics(courseId);
+  const value = topics.map((topic) => topic.name);
+
+  courseTopicNamesCache.set(courseId, {
+    value,
+    expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS,
+  });
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// Course-list search + filter parsing (#1263)
+//
+// Repeated `status`, `term`, and `department` query params narrow the WHOLE
+// accessible dataset before `count`/`skip`/`take`, so a match that sorts past
+// page 1 is found instead of being reported absent. Values use the same
+// `<term>::<year>` key shape `buildTermFilterGroup` emits in packages/ui.
+// ---------------------------------------------------------------------------
+
+/** The two values the Status dimension accepts (mirrors buildStatusFilterGroup). */
+const COURSE_STATUS_VALUES = ["published", "draft"] as const;
+
+/** Upper bound on how many values one repeatable filter param may carry. */
+const MAX_FILTER_VALUES = 25;
+
+/** Parse a `<term>::<year>` filter key into its parts, or null when malformed. */
+function parseTermKey(value: string): { term: string; year: number } | null {
+  const parts = value.split("::");
+  if (parts.length !== 2) return null;
+  const term = parts[0].trim();
+  const year = Number(parts[1].trim());
+  if (!term || !Number.isInteger(year) || year < 0) return null;
+  return { term, year };
+}
+
+/** Read a repeatable multi-select param, de-duped and blank-stripped. */
+function parseRepeatedValues(searchParams: URLSearchParams, key: string): string[] {
+  return [
+    ...new Set(
+      searchParams
+        .getAll(key)
+        .map((v) => v.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 /**
@@ -168,7 +284,7 @@ export async function getCourses(request: Request) {
     if (serviceKeyGuard) return serviceKeyGuard;
     caller = { kind: "serviceKey" };
   } else {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -194,7 +310,36 @@ export async function getCourses(request: Request) {
 
   const isActiveParam = searchParams.get("isActive");
 
-  /** Narrow an access-scoped filter with the caller's `ids`/`search` selectors. */
+  // #1263: parse repeatable filter params and validate before any query so a
+  // malformed value 400s instead of silently narrowing (or widening) the set.
+  const statusValues = parseRepeatedValues(searchParams, "status");
+  const termValues = parseRepeatedValues(searchParams, "term");
+  const departmentValues = parseRepeatedValues(searchParams, "department");
+
+  if (
+    statusValues.length > MAX_FILTER_VALUES ||
+    termValues.length > MAX_FILTER_VALUES ||
+    departmentValues.length > MAX_FILTER_VALUES
+  ) {
+    return apiError(400, "FILTER_TOO_MANY", {
+      filters: `At most ${MAX_FILTER_VALUES} values per filter`,
+    });
+  }
+  for (const value of statusValues) {
+    if (!(COURSE_STATUS_VALUES as readonly string[]).includes(value)) {
+      return apiError(400, "FILTER_INVALID", { status: `Unsupported value "${value}"` });
+    }
+  }
+  const termKeys: { term: string; year: number }[] = [];
+  for (const value of termValues) {
+    const key = parseTermKey(value);
+    if (!key) {
+      return apiError(400, "FILTER_INVALID", { term: 'Expected "<term>::<year>"' });
+    }
+    termKeys.push(key);
+  }
+
+  /** Narrow an access-scoped filter with the caller's `ids`/`search`/filter selectors. */
   const withSelectors = (base: Prisma.CourseWhereInput): Prisma.CourseWhereInput => {
     const and: Prisma.CourseWhereInput[] = [base];
     if (idsResult.ids) and.push({ id: { in: idsResult.ids } });
@@ -207,12 +352,38 @@ export async function getCourses(request: Request) {
         ],
       });
     }
+    // #1263: OR within a group, AND across groups, AND with the auth scope.
+    if (statusValues.length > 0) {
+      and.push({ OR: statusValues.map((v) => ({ isPublished: v === "published" })) });
+    }
+    if (termKeys.length > 0) {
+      and.push({ OR: termKeys.map(({ term, year }) => ({ term, year })) });
+    }
+    if (departmentValues.length > 0) {
+      and.push({ department: { in: departmentValues } });
+    }
     return and.length === 1 ? base : { AND: and };
   };
 
+  // STUDENT accounts can hold a TA enrollment on one course and a STUDENT
+  // enrollment on another.  The list itself only needs public metadata for a
+  // platform-STUDENT caller; the role-aware detail endpoint provides the
+  // staff configuration for an actual TA course.  Other session roles use the
+  // staff projection because their course-management list edits AI settings.
+  const select =
+    caller.kind === "serviceKey"
+      ? COURSE_SERVICE_SELECT
+      : caller.user.role === "STUDENT"
+        ? COURSE_PUBLIC_SELECT
+        : COURSE_STAFF_SELECT;
+
   const listCourses = async (where: Prisma.CourseWhereInput) => {
     if (!pagination) {
-      const rows = await prisma.course.findMany({ where, orderBy: { code: "asc" } });
+      const rows = await prisma.course.findMany({
+        where,
+        orderBy: { code: "asc" },
+        select,
+      });
       return { rows, total: rows.length };
     }
     const [total, rows] = await prisma.$transaction([
@@ -222,6 +393,7 @@ export async function getCourses(request: Request) {
         orderBy: { code: "asc" },
         skip: pagination.skip,
         take: pagination.take,
+        select,
       }),
     ]);
     return { rows, total };
@@ -230,7 +402,8 @@ export async function getCourses(request: Request) {
   // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
   if (caller.kind === "serviceKey") {
     const { rows, total } = await listCourses(withSelectors({ deletedAt: null }));
-    return pagination ? paginatedResponse(rows, total, pagination) : unpagedResponse(rows);
+    const data = rows.map((row) => serializeCourseForApi(row, { audience: "service" }));
+    return pagination ? paginatedResponse(data, total, pagination) : unpagedResponse(data);
   }
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
@@ -250,14 +423,82 @@ export async function getCourses(request: Request) {
     select: { courseId: true, role: true },
   });
   const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
-  const coursesWithCallerRole = courses.map((course) => ({
-    ...course,
-    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
-  }));
+  const coursesWithCallerRole = courses.map((course) => {
+    const callerEnrollmentRole = roleByCourseId.get(course.id) ?? null;
+    // Audience follows the resolved course relationship, not merely the
+    // platform role.  A platform INSTRUCTOR/UNIT_ADMIN can still hold a
+    // STUDENT enrollment on another course; that row must remain public.
+    const audience =
+      caller.user.role === "ADMIN" ||
+      (caller.user.role === "UNIT_ADMIN" && callerEnrollmentRole !== "STUDENT") ||
+      callerEnrollmentRole === "TA" ||
+      callerEnrollmentRole === "INSTRUCTOR"
+        ? "staff"
+        : "student";
+    return serializeCourseForApi(course, {
+      audience,
+      callerEnrollmentRole,
+    });
+  });
 
   return pagination
     ? paginatedResponse(coursesWithCallerRole, total, pagination)
     : unpagedResponse(coursesWithCallerRole);
+}
+
+/**
+ * GET /api/courses/facets — filter option values for the course list (#1263).
+ *
+ * Returns `{ status: string[], term: string[], department: string[] }`, keyed by
+ * the filter-group ids `CourseListView` consumes. Values come from the caller's
+ * WHOLE accessible set (reusing `buildCourseListFilter`, never the current
+ * page) so a dropdown cannot offer — or leak — metadata from a course the
+ * caller cannot see. Scalar-only projection: no full Course rows are fetched.
+ */
+export async function getCourseFacets(request: Request) {
+  const session = await getRequestSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Same scope as the list response, so facets can never disagree with (or
+  // widen) what `getCourses` would return for this caller.
+  const where = await buildCourseListFilter(session.user, false);
+
+  const rows = await prisma.course.findMany({
+    where,
+    select: { isPublished: true, term: true, year: true, department: true },
+  });
+
+  const statuses = new Set<string>();
+  const termByKey = new Map<string, { term: string; year: number }>();
+  const departments = new Set<string>();
+
+  for (const row of rows) {
+    statuses.add(row.isPublished ? "published" : "draft");
+    if (row.term && row.year != null) {
+      // Key shape must byte-match `buildTermFilterGroup` (`${term}::${year}`).
+      const key = `${row.term}::${row.year}`;
+      if (!termByKey.has(key)) termByKey.set(key, { term: row.term, year: row.year });
+    }
+    if (row.department) departments.add(row.department);
+  }
+
+  // Most-recent-first terms (mirrors the list's term section order); the client
+  // still re-sorts via `optionSortKey`, so this only pins a stable order.
+  const term = [...termByKey.values()]
+    .sort(compareByTerm)
+    .map(({ term: t, year }) => `${t}::${year}`);
+  const department = [...departments].sort((a, b) => a.localeCompare(b));
+
+  return jsonResponse(200, {
+    status: COURSE_STATUS_VALUES.filter((value) => statuses.has(value)),
+    term,
+    department,
+  });
 }
 
 /**
@@ -268,7 +509,7 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
@@ -348,10 +589,18 @@ export async function createCourse(request: Request) {
       })),
     });
 
+    await ensureDefaultBank(created.id, tx);
+
     return created;
   });
 
-  return jsonResponse(201, course);
+  // #1624: a course must never exist with zero topics — Question Maker requires
+  // one to author against. Canvas-imported courses get this from the import
+  // path; a hand-created course has no material and so no analysis job, which is
+  // exactly the case that was left with nothing.
+  await ensureCourseHasTopic(course.id);
+
+  return jsonResponse(201, serializeCourseForApi(course, { audience: "staff", detail: true }));
 }
 
 /**
@@ -359,7 +608,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -376,7 +625,7 @@ export async function updateCourse(request: Request, courseId: string) {
     return validationErrorFromZod(result.error);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
+  const { course, access } = await resolveCourseAccessGate(user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -408,10 +657,13 @@ export async function updateCourse(request: Request, courseId: string) {
         aiInstructions: result.data.aiInstructions,
       },
     });
-    return new Response(JSON.stringify(updated), {
-      status: 200,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return new Response(
+      JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" } as const,
+      },
+    );
   }
 
   if (!access || access.rank < 2) {
@@ -464,7 +716,12 @@ export async function updateCourse(request: Request, courseId: string) {
       }
       await tx.enrollment.upsert({
         where: { courseId_userId: { courseId, userId: newInstructorId! } },
-        create: { courseId, userId: newInstructorId!, role: "INSTRUCTOR", isActive: true },
+        create: {
+          courseId,
+          userId: newInstructorId!,
+          role: "INSTRUCTOR",
+          isActive: true,
+        },
         update: { role: "INSTRUCTOR", isActive: true },
       });
     }
@@ -474,10 +731,13 @@ export async function updateCourse(request: Request, courseId: string) {
     });
   });
 
-  return new Response(JSON.stringify(updated), {
-    status: 200,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return new Response(
+    JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    },
+  );
 }
 
 /**
@@ -485,7 +745,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -493,7 +753,7 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -553,8 +813,14 @@ export async function deleteCourse(request: Request, courseId: string) {
  * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
  */
 export async function setPublishState(request: Request, courseId: string, publish: boolean) {
-  // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+  // A forwarded user session remains the actor even when a trusted extension
+  // also supplies its service key as server provenance. Resolve the session
+  // once so bearer presence cannot bypass user access or publish policy.
+  const session = await getRequestSession(request);
+
+  // Service-only requests retain trusted extension access. Invalid bearer
+  // credentials still fail the guard.
+  if (!session?.user && request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
 
@@ -573,14 +839,16 @@ export async function setPublishState(request: Request, courseId: string, publis
       where: { id: courseId },
       data: { isPublished: publish },
     });
-    return new Response(JSON.stringify(updated), {
-      status: 200,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return new Response(
+      JSON.stringify(serializeCourseForApi(updated, { audience: "service", detail: true })),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" } as const,
+      },
+    );
   }
 
   // User session path (admin UI / direct API access)
-  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -588,7 +856,7 @@ export async function setPublishState(request: Request, courseId: string, publis
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -620,15 +888,20 @@ export async function setPublishState(request: Request, courseId: string, publis
     where: { id: courseId },
     data: { isPublished: publish },
   });
-  return new Response(JSON.stringify(updated), {
-    status: 200,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return new Response(
+    JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    },
+  );
 }
 
 export async function getCourse(courseId: string, includeDeleted = false) {
   return prisma.course.findFirst({
-    where: { id: courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    // An `undefined` filter is Prisma's "no constraint", so the soft-delete
+    // gate is stated on the field rather than hidden behind a spread.
+    where: { id: courseId, deletedAt: includeDeleted ? undefined : null },
   });
 }
 
@@ -656,6 +929,72 @@ export async function getAccessibleCourseCodes(user: {
   return courses.map((course) => course.code);
 }
 
+/** A course row plus the caller's enrollment role on it, as `listCoursesForUser` returns. */
+type CourseWithCallerRole = Prisma.CourseGetPayload<object> & {
+  callerEnrollmentRole: Prisma.EnrollmentGetPayload<object>["role"] | null;
+};
+
+/**
+ * Data-only course listing for in-process server callers (the dashboard loader)
+ * that already hold the session user and need the same access-scoped page +
+ * `total` GET /api/courses returns, without an HTTP round trip.
+ *
+ * Mirrors the session path of {@link getCourses}: `buildCourseListFilter` access
+ * scoping, an optional `isActive` narrowing, and the per-row caller-enrollment
+ * annotation. It deliberately omits the `?ids=`/`?search=`/`includeDeleted`
+ * lookup surfaces and the service-key path — those are HTTP-only concerns the
+ * dashboard never uses. Pass `countOnly: true` for a `total`-only read: it skips
+ * the page fetch and the enrollment annotation entirely and returns `courses: []`.
+ */
+export async function listCoursesForUser(
+  // Same access-scoping input `buildCourseListFilter` takes (a session user
+  // satisfies it) — deliberately its loose `RbacUser`, not `rbac/types`'.
+  user: Parameters<typeof buildCourseListFilter>[0],
+  opts: { page?: number; pageSize?: number; isActive?: boolean; countOnly?: boolean } = {},
+) {
+  const { page = 1, pageSize = 25, isActive, countOnly = false } = opts;
+
+  const base = await buildCourseListFilter(user);
+  const where: Prisma.CourseWhereInput =
+    isActive === undefined ? base : { AND: [base, { isActive }] };
+
+  if (countOnly) {
+    return { courses: [] as CourseWithCallerRole[], total: await prisma.course.count({ where }) };
+  }
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.course.count({ where }),
+    prisma.course.findMany({
+      where,
+      orderBy: { code: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  // No rows means no enrollment annotation to build — an `in: []` lookup would
+  // round-trip to Postgres only to return nothing.
+  if (rows.length === 0) {
+    return { courses: rows.map((course) => ({ ...course, callerEnrollmentRole: null })), total };
+  }
+
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: {
+      userId: user.id,
+      isActive: true,
+      courseId: { in: rows.map((course) => course.id) },
+    },
+    select: { courseId: true, role: true },
+  });
+  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
+  const courses = rows.map((course) => ({
+    ...course,
+    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
+  }));
+
+  return { courses, total };
+}
+
 /**
  * Returns only the RAG-tuning fields for a course.
  * Both fields are nullable — callers should fall back to global defaults when null.
@@ -664,9 +1003,10 @@ export async function getAccessibleCourseCodes(user: {
  * to avoid a DB round-trip on every RAG query. Call invalidateCourseRagSettingsCache()
  * after any write to keep the cache consistent.
  */
-export async function getCourseRagSettings(
-  courseId: string,
-): Promise<{ ragTopK: number | null; ragSimilarityThreshold: number | null } | null> {
+export async function getCourseRagSettings(courseId: string): Promise<{
+  ragTopK: number | null;
+  ragSimilarityThreshold: number | null;
+} | null> {
   pruneRagSettingsCache();
 
   const now = Date.now();
@@ -680,25 +1020,111 @@ export async function getCourseRagSettings(
     select: { ragTopK: true, ragSimilarityThreshold: true },
   });
 
-  ragSettingsCache.set(courseId, { value, expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS });
+  ragSettingsCache.set(courseId, {
+    value,
+    expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS,
+  });
   return value;
 }
 
+/**
+ * How many source materials a topic reports (#1624).
+ *
+ * Bounded because provenance is a review aid, not a manifest: a reviewer needs
+ * to see what a suggestion came from, and an AI-derived topic can cite its whole
+ * sampled set. The count below is returned unbounded so the UI can say "and 3
+ * more" rather than silently truncating.
+ */
+export const TOPIC_SOURCE_PROJECTION_LIMIT = 5;
+
+/**
+ * The materials a generated topic was derived from, shaped for the review UI.
+ *
+ * Empty for human-created topics and for the SYSTEM fallback, which have no
+ * sources — so this adds nothing to the shape of a pre-#1624 topic.
+ */
+const topicSourceInclude = {
+  sources: {
+    take: TOPIC_SOURCE_PROJECTION_LIMIT,
+    orderBy: { createdAt: "asc" },
+    select: {
+      materialId: true,
+      material: { select: { title: true } },
+    },
+  },
+  _count: { select: { sources: true } },
+} as const;
+
+type TopicWithSourceRows = {
+  sources: { materialId: string; material: { title: string } | null }[];
+  _count: { sources: number };
+};
+
+/** Flatten Prisma's nested source rows into the `{ materialId, title }` the client reads. */
+function withSourceProjection<T extends TopicWithSourceRows>(topic: T) {
+  const { sources, _count, ...rest } = topic;
+  return {
+    ...rest,
+    sources: sources.map((source) => ({
+      materialId: source.materialId,
+      title: source.material?.title ?? null,
+    })),
+    sourceCount: _count.sources,
+  };
+}
+
+/**
+ * Topics for a course, without provenance.
+ *
+ * Deliberately lean, and kept that way: the hot callers are the chat
+ * course-scope prompt (behind `getCourseTopicNamesCached`) and the agent tools,
+ * which want names and nothing else. Joining every topic's source materials
+ * onto those reads would buy them a per-topic join and a count they never look
+ * at — provenance is a review concern, so the review-facing reads opt into it
+ * through the `WithSources` variants below.
+ */
 export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
-    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: { courseId, deletedAt: includeDeleted ? undefined : null },
     orderBy: { name: "asc" },
   });
 }
 
-export async function getCourseTopic(
+/** Topics for a course, each carrying the bounded source projection (#1624). */
+export async function getCourseTopicsWithSources(courseId: string, includeDeleted = false) {
+  const topics = await prisma.courseTopic.findMany({
+    where: { courseId, deletedAt: includeDeleted ? undefined : null },
+    orderBy: { name: "asc" },
+    include: topicSourceInclude,
+  });
+  return topics.map(withSourceProjection);
+}
+
+export async function getCourseTopic(courseId: string, topicId: string, includeDeleted = false) {
+  return prisma.courseTopic.findFirst({
+    where: {
+      id: topicId,
+      courseId,
+      deletedAt: includeDeleted ? undefined : null,
+    },
+  });
+}
+
+/** One topic, carrying the bounded source projection (#1624). */
+export async function getCourseTopicWithSources(
   courseId: string,
   topicId: string,
   includeDeleted = false,
 ) {
-  return prisma.courseTopic.findFirst({
-    where: { id: topicId, courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+  const topic = await prisma.courseTopic.findFirst({
+    where: {
+      id: topicId,
+      courseId,
+      deletedAt: includeDeleted ? undefined : null,
+    },
+    include: topicSourceInclude,
   });
+  return topic ? withSourceProjection(topic) : null;
 }
 
 export async function createCourseTopic(
@@ -734,6 +1160,7 @@ export async function createCourseTopic(
       },
     });
 
+    invalidateCourseTopicNamesCache(courseId);
     return { status: "201", topic } as const;
   } catch (error: any) {
     if (error?.code === "P2002") {
@@ -777,6 +1204,7 @@ export async function updateCourseTopic(
       where: { id: topicId },
       data: { name: parsed.data.name.trim() },
     });
+    invalidateCourseTopicNamesCache(courseId);
     return { status: "200", topic } as const;
   } catch (error: any) {
     if (error?.code === "P2002") {
@@ -816,8 +1244,10 @@ export async function deleteCourseTopic(
     where: {
       courseId,
       deletedAt: null,
-      ...(topicId ? { id: topicId } : {}),
-      ...(name ? { name } : {}),
+      // Whichever identifier the caller supplied narrows the lookup; the other
+      // stays `undefined`, which Prisma reads as "no constraint".
+      id: topicId || undefined,
+      name: name || undefined,
     },
     select: { id: true, name: true },
   });
@@ -826,10 +1256,36 @@ export async function deleteCourseTopic(
     return { status: "404" } as const;
   }
 
+  // #1624: a course must never reach zero live topics — Question Maker needs one
+  // to author against. Deleting a real topic is fine, because the fallback is
+  // recreated underneath (below). Deleting the fallback when it is all that is
+  // left is refused outright: a freshly created course holds exactly
+  // `Uncategorized` and nothing else, so this is reachable, and the alternative
+  // — soft-deleting it and letting `ensureCourseHasTopic` restore the very same
+  // row — would report 204 for a delete that achieved nothing.
+  if (target.name === FALLBACK_TOPIC_NAME) {
+    const otherLiveTopic = await prisma.courseTopic.findFirst({
+      where: { courseId, deletedAt: null, id: { not: target.id } },
+      select: { id: true },
+    });
+    if (!otherLiveTopic) {
+      return { status: "409", error: "LAST_TOPIC_PROTECTED" } as const;
+    }
+  }
+
   await prisma.courseTopic.update({
     where: { id: target.id },
     data: { deletedAt: new Date(), deletedBy: deletedBy || null },
   });
 
+  // Deleting a real topic may have emptied the course; the fallback comes back
+  // underneath so authoring is never blocked. Not called for the fallback
+  // itself: it only gets here with another live topic present, and recreating
+  // it would undo the instructor's deliberate removal of an unused row.
+  if (target.name !== FALLBACK_TOPIC_NAME) {
+    await ensureCourseHasTopic(courseId);
+  }
+
+  invalidateCourseTopicNamesCache(courseId);
   return { status: "204", topic: target } as const;
 }

@@ -1,8 +1,8 @@
-import { cn } from "~/lib/utils"
-import { Button } from "@eduai/ui"
-import { Input } from "@eduai/ui"
-import { Label } from "@eduai/ui"
-import type { SignInInput } from "~/lib/auth"
+import { cn } from "~/lib/utils";
+import { Button } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import type { SignInInput } from "~/lib/auth";
 
 export interface LoginFormProps extends React.ComponentProps<"div"> {
   fieldErrors?: Partial<Record<keyof SignInInput, string>>;
@@ -38,20 +38,10 @@ export function LoginForm({
             disabled={isLoading}
             className={fieldErrors?.email ? "border-destructive" : ""}
           />
-          {fieldErrors?.email && (
-            <p className="text-sm text-destructive">{fieldErrors.email}</p>
-          )}
+          {fieldErrors?.email && <p className="text-sm text-destructive">{fieldErrors.email}</p>}
         </div>
         <div className="grid gap-3">
-          <div className="flex items-center">
-            <Label htmlFor="password">Password</Label>
-            <a
-              href="#"
-              className="ml-auto text-sm underline-offset-4 hover:underline"
-            >
-              Forgot your password?
-            </a>
-          </div>
+          <Label htmlFor="password">Password</Label>
           <Input
             id="password"
             name="password"
@@ -77,5 +67,5 @@ export function LoginForm({
         </div>
       )}
     </div>
-  )
+  );
 }

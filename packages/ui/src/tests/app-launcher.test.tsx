@@ -24,12 +24,7 @@ const APPS: LauncherApp[] = [
 function renderSwitcher(props: Partial<React.ComponentProps<typeof BrandSwitcher>> = {}) {
   return render(
     <SidebarProvider>
-      <BrandSwitcher
-        logo={<span>EduAI</span>}
-        apps={APPS}
-        currentAppId="core"
-        {...props}
-      />
+      <BrandSwitcher logo={<span>EduAI</span>} apps={APPS} currentAppId="core" {...props} />
     </SidebarProvider>,
   );
 }
@@ -43,21 +38,14 @@ describe("visibleAppsForRole — RBAC gate", () => {
     expect(ids).not.toContain("question-maker");
   });
 
-  it.each(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"])(
-    "shows Question Maker to %s",
-    (role) => {
-      const ids = visibleAppsForRole(APPS, role).map((a) => a.id);
-      expect(ids).toContain("question-maker");
-    },
-  );
+  it.each(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN", "TA"])("shows Question Maker to %s", (role) => {
+    const ids = visibleAppsForRole(APPS, role).map((a) => a.id);
+    expect(ids).toContain("question-maker");
+  });
 
   it("hides role-gated apps when the role is null/undefined", () => {
-    expect(visibleAppsForRole(APPS, null).map((a) => a.id)).not.toContain(
-      "question-maker",
-    );
-    expect(visibleAppsForRole(APPS, undefined).map((a) => a.id)).not.toContain(
-      "question-maker",
-    );
+    expect(visibleAppsForRole(APPS, null).map((a) => a.id)).not.toContain("question-maker");
+    expect(visibleAppsForRole(APPS, undefined).map((a) => a.id)).not.toContain("question-maker");
   });
 
   it("always keeps apps without a roles restriction", () => {
@@ -79,17 +67,13 @@ describe("BrandSwitcher — trigger", () => {
   it("shows the app-switcher (waffle) button when 2+ apps are accessible", () => {
     // Student sees Core + AI Tutor → switchable.
     renderSwitcher({ role: "STUDENT" });
-    expect(
-      screen.getByRole("button", { name: /switch app/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /switch app/i })).toBeInTheDocument();
   });
 
   it("hides the switcher button when only one app is accessible", () => {
     // Single-app list → nothing to switch to → no waffle button.
     renderSwitcher({ apps: [APPS[0]], role: "STUDENT" });
-    expect(
-      screen.queryByRole("button", { name: /switch app/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /switch app/i })).not.toBeInTheDocument();
   });
 });
 

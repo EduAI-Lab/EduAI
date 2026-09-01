@@ -1,7 +1,7 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
-import { baseVitestConfig } from './vitest.shared';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+import { baseVitestConfig } from "./vitest.shared";
 
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
 const base = baseVitestConfig(coreDir);
@@ -10,6 +10,21 @@ export default defineConfig({
   ...base,
   test: {
     ...base.test,
-    include: ['app/tests/unit/**/*.test.{ts,tsx}'],
+    include: ["app/tests/unit/**/*.test.{ts,tsx}"],
+    // Core has hundreds of test files whose imports dominate wall time. Leave
+    // capacity for the concurrently running UI and integration test processes.
+    fileParallelism: true,
+    maxWorkers: process.env.CI ? 2 : undefined,
+    env: {
+      // Plain object spread (see vitest.shared.ts's own comment on this
+      // pattern) — `env` fully replaces rather than merges, so base's
+      // NODE_OPTIONS must be spread in explicitly here too.
+      ...base.test?.env,
+      VITEST_SKIP_PRISMA_EAGER_CONNECT: "1",
+      // Route fixtures intentionally reuse identities such as `user-1`.
+      // Keep unrelated unit files from sharing a small Redis bucket; focused
+      // limiter suites override this with their own explicit thresholds.
+      CHAT_RATE_LIMIT: "1000000",
+    },
   },
 });

@@ -1,87 +1,73 @@
-import * as React from "react"
-import { useEffect, useState } from "react"
-import { type Icon, IconChevronDown } from "@tabler/icons-react"
+import * as React from "react";
+import { useEffect, useState } from "react";
+import { type Icon, IconChevronDown } from "@tabler/icons-react";
 
-import {
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuItem,
-} from "./ui/sidebar"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "./ui/tooltip"
+import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuItem } from "./ui/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
-const SIDEBAR_ACTIVE_BG = "oklch(0.248 0.055 259)"
-const SIDEBAR_HOVER_BG = "oklch(0.218 0.050 259)"
-const SIDEBAR_TEXT_MUTED = "rgba(255,255,255,0.82)"
+const SIDEBAR_ACTIVE_BG = "var(--color-sidebar-active)";
+const SIDEBAR_HOVER_BG = "var(--color-sidebar-hover)";
+const SIDEBAR_TEXT_MUTED = "rgba(255,255,255,0.82)";
 
 export interface NavMainItem {
-  title: string
-  url: string
-  icon?: Icon
-  external?: boolean
+  title: string;
+  url: string;
+  icon?: Icon;
+  external?: boolean;
   /** Optional status dot (e.g. cron-job health). Color is app-supplied; kept a
    * plain union so this shared component stays decoupled from any app hook. */
-  badge?: "green" | "orange" | "red"
+  badge?: "green" | "orange" | "red";
   /** Render greyed-out and non-navigating with a tooltip (admin policy off — #807). */
-  disabled?: boolean
+  disabled?: boolean;
   /** Tooltip text shown on a disabled item. */
-  disabledReason?: string
+  disabledReason?: string;
 }
 
 export interface NavGroupItem {
-  title: string
-  icon?: Icon
-  children: NavMainItem[]
+  title: string;
+  icon?: Icon;
+  children: NavMainItem[];
 }
 
 export interface NavMainProps {
-  items: (NavMainItem | NavGroupItem)[]
-  currentPath: string
-  LinkComponent?: React.ElementType
+  items: (NavMainItem | NavGroupItem)[];
+  currentPath: string;
+  LinkComponent?: React.ElementType;
 }
 
 function isGroup(item: NavMainItem | NavGroupItem): item is NavGroupItem {
-  return "children" in item
+  return "children" in item;
 }
 
 function isActive(pathname: string, url: string) {
-  return pathname === url || pathname.startsWith(url + "/")
+  return pathname === url || pathname.startsWith(url + "/");
 }
 
 function shouldAutoExpandGroup(item: NavGroupItem, pathname: string) {
-  return item.children.some((child) => isActive(pathname, child.url))
+  return item.children.some((child) => isActive(pathname, child.url));
 }
 
-export function NavMain({
-  items,
-  currentPath,
-  LinkComponent = "a",
-}: NavMainProps) {
+export function NavMain({ items, currentPath, LinkComponent = "a" }: NavMainProps) {
   // Manual expand/collapse overrides. Cleared on navigation so route-based
   // auto-expand can take over without fighting stale toggle state.
-  const [toggleOverrides, setToggleOverrides] = useState<Record<string, boolean>>({})
+  const [toggleOverrides, setToggleOverrides] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    setToggleOverrides({})
-  }, [currentPath])
+    setToggleOverrides({});
+  }, [currentPath]);
 
   function isGroupExpanded(item: NavGroupItem) {
-    if (item.title in toggleOverrides) return toggleOverrides[item.title]
-    return shouldAutoExpandGroup(item, currentPath)
+    if (item.title in toggleOverrides) return toggleOverrides[item.title];
+    return shouldAutoExpandGroup(item, currentPath);
   }
 
   function toggleGroup(item: NavGroupItem) {
-    const nextExpanded = !isGroupExpanded(item)
-    setToggleOverrides((prev) => ({ ...prev, [item.title]: nextExpanded }))
+    const nextExpanded = !isGroupExpanded(item);
+    setToggleOverrides((prev) => ({ ...prev, [item.title]: nextExpanded }));
   }
 
   const linkClassName =
-    "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+    "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none";
 
   return (
     <SidebarGroup>
@@ -89,7 +75,7 @@ export function NavMain({
         <SidebarMenu>
           {items.map((item) => {
             if (isGroup(item)) {
-              const groupExpanded = isGroupExpanded(item)
+              const groupExpanded = isGroupExpanded(item);
 
               return (
                 <SidebarMenuItem key={item.title}>
@@ -108,11 +94,10 @@ export function NavMain({
                       border: "none",
                     }}
                     onMouseEnter={(e) => {
-                      ;(e.currentTarget as HTMLButtonElement).style.background =
-                        SIDEBAR_HOVER_BG
+                      (e.currentTarget as HTMLButtonElement).style.background = SIDEBAR_HOVER_BG;
                     }}
                     onMouseLeave={(e) => {
-                      ;(e.currentTarget as HTMLButtonElement).style.background = "transparent"
+                      (e.currentTarget as HTMLButtonElement).style.background = "transparent";
                     }}
                   >
                     {item.icon && <item.icon size={16} strokeWidth={1.75} />}
@@ -131,15 +116,15 @@ export function NavMain({
                   {groupExpanded && (
                     <SidebarMenu>
                       {item.children.map((child) => {
-                        const childActive = isActive(currentPath, child.url)
+                        const childActive = isActive(currentPath, child.url);
                         const badgeBg =
                           child.badge === "green"
-                            ? "#22c55e"
+                            ? "var(--color-badge-green)"
                             : child.badge === "orange"
-                              ? "#f97316"
+                              ? "var(--color-badge-orange)"
                               : child.badge === "red"
-                                ? "#ef4444"
-                                : undefined
+                                ? "var(--color-badge-red)"
+                                : undefined;
 
                         return (
                           <SidebarMenuItem key={child.title}>
@@ -157,14 +142,13 @@ export function NavMain({
                               }}
                               onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                                 if (!childActive) {
-                                  ;(e.currentTarget as HTMLElement).style.background =
-                                    SIDEBAR_HOVER_BG
+                                  (e.currentTarget as HTMLElement).style.background =
+                                    SIDEBAR_HOVER_BG;
                                 }
                               }}
                               onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
                                 if (!childActive) {
-                                  ;(e.currentTarget as HTMLElement).style.background =
-                                    "transparent"
+                                  (e.currentTarget as HTMLElement).style.background = "transparent";
                                 }
                               }}
                             >
@@ -197,32 +181,31 @@ export function NavMain({
                               )}
                             </LinkComponent>
                           </SidebarMenuItem>
-                        )
+                        );
                       })}
                     </SidebarMenu>
                   )}
                 </SidebarMenuItem>
-              )
+              );
             }
 
-            const itemActive =
-              !item.external && isActive(currentPath, item.url)
+            const itemActive = !item.external && isActive(currentPath, item.url);
             const linkStyle = {
               background: itemActive ? SIDEBAR_ACTIVE_BG : "transparent",
               color: itemActive ? "#fff" : SIDEBAR_TEXT_MUTED,
               fontWeight: itemActive ? 500 : 400,
               transition: "background 120ms",
               paddingLeft: "16px",
-            } as const
+            } as const;
 
             const badgeBg =
               item.badge === "green"
-                ? "#22c55e"
+                ? "var(--color-badge-green)"
                 : item.badge === "orange"
-                  ? "#f97316"
+                  ? "var(--color-badge-orange)"
                   : item.badge === "red"
-                    ? "#ef4444"
-                    : undefined
+                    ? "var(--color-badge-red)"
+                    : undefined;
 
             const linkBody = (
               <>
@@ -254,7 +237,7 @@ export function NavMain({
                   />
                 )}
               </>
-            )
+            );
 
             if (item.disabled) {
               return (
@@ -278,7 +261,7 @@ export function NavMain({
                     </Tooltip>
                   </TooltipProvider>
                 </SidebarMenuItem>
-              )
+              );
             }
 
             return (
@@ -291,13 +274,12 @@ export function NavMain({
                     rel="noopener noreferrer"
                     onMouseEnter={(e) => {
                       if (!itemActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          SIDEBAR_HOVER_BG
+                        (e.currentTarget as HTMLAnchorElement).style.background = SIDEBAR_HOVER_BG;
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!itemActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background = "transparent"
+                        (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
                       }
                     }}
                   >
@@ -312,14 +294,12 @@ export function NavMain({
                     style={linkStyle}
                     onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                       if (!itemActive) {
-                        ;(e.currentTarget as HTMLElement).style.background =
-                          SIDEBAR_HOVER_BG
+                        (e.currentTarget as HTMLElement).style.background = SIDEBAR_HOVER_BG;
                       }
                     }}
                     onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
                       if (!itemActive) {
-                        ;(e.currentTarget as HTMLElement).style.background =
-                          "transparent"
+                        (e.currentTarget as HTMLElement).style.background = "transparent";
                       }
                     }}
                   >
@@ -327,10 +307,10 @@ export function NavMain({
                   </LinkComponent>
                 )}
               </SidebarMenuItem>
-            )
+            );
           })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
-  )
+  );
 }

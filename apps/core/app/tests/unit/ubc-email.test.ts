@@ -43,4 +43,13 @@ describe("isUbcEmail (#567)", () => {
   it("rejects emails with multiple @ signs", () => {
     expect(isUbcEmail("a@evil.com@student.ubc.ca")).toBe(false);
   });
+
+  // Edge-case audit #225 (AUTH-16): Unicode homoglyph domain and trailing-dot FQDN.
+  it("rejects a homoglyph ubc.ca domain (Cyrillic с)", () => {
+    expect(isUbcEmail("you@ub\u0441.ca")).toBe(false);
+  });
+
+  it("rejects a trailing-dot ubc.ca domain", () => {
+    expect(isUbcEmail("you@ubc.ca.")).toBe(false);
+  });
 });

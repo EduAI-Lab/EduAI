@@ -16,9 +16,9 @@
  *     the host has no sync affordance for linked courses (ai-tutor case).
  *   - Otherwise renders a "Create topic" button that opens a create dialog.
  */
-import { useState } from "react"
-import { IconLoader2, IconPlus, IconRefresh } from "@tabler/icons-react"
-import { Button } from "./ui/button"
+import { useState } from "react";
+import { IconLoader2, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
@@ -26,45 +26,45 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog"
-import { Input } from "./ui/input"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip"
+} from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const HERO_BUTTON_CLASS =
-  "border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white backdrop-blur-sm"
+  "border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white backdrop-blur-sm";
 
 export interface CourseTopicsHeroActionProps {
   /** Renders nothing when false — caller has no manage permission for topics. */
-  canManage: boolean
+  canManage: boolean;
   /** True when the course is linked to an EduAI Core course (sync-eligible). */
-  isLinked: boolean
+  isLinked: boolean;
   /**
    * Sync handler. When provided and `isLinked`, a sync button renders instead
    * of the create-topic affordance. Omit entirely when the host app has no
    * sync endpoint (e.g. ai-tutor) — linked courses then render nothing.
    */
-  onSync?: () => Promise<void>
+  onSync?: () => Promise<void>;
   /** Controlled syncing/loading state (host owns the async call). */
-  isSyncing?: boolean
+  isSyncing?: boolean;
   /** Tooltip text for the sync button; omit both tooltip props to render without a tooltip. */
-  syncTooltip?: string
+  syncTooltip?: string;
   /** Tooltip text for the create-topic button; omit both tooltip props to render without a tooltip. */
-  createTooltip?: string
+  createTooltip?: string;
   /** Create-topic handler. Throw/reject to signal failure. */
-  onCreateTopic: (name: string) => Promise<void>
+  onCreateTopic: (name: string) => Promise<void>;
   /** Copy for the create dialog description. */
-  createDialogDescription?: string
+  createDialogDescription?: string;
   /** Show a generic inline error line in the create dialog on failure. */
-  showInlineCreateError?: boolean
+  showInlineCreateError?: boolean;
   /** Called after a successful create (dialog is already closed/reset). */
-  onCreateSuccess?: (name: string) => void
+  onCreateSuccess?: (name: string) => void;
   /** Called after a failed create, in addition to any inline error text. */
-  onCreateError?: (error: unknown) => void
+  onCreateError?: (cause: unknown) => void;
   /**
    * Called when the user submits an empty topic name, in addition to any
    * inline error text. Message is "Topic name cannot be empty."
    */
-  onCreateValidationError?: (message: string) => void
+  onCreateValidationError?: (message: string) => void;
 }
 
 export function CourseTopicsHeroAction({
@@ -81,49 +81,49 @@ export function CourseTopicsHeroAction({
   onCreateError,
   onCreateValidationError,
 }: CourseTopicsHeroActionProps) {
-  const [createOpen, setCreateOpen] = useState(false)
-  const [newTopicName, setNewTopicName] = useState("")
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  if (!canManage) return null
-  if (isLinked && !onSync) return null
+  if (!canManage) return null;
+  if (isLinked && !onSync) return null;
 
   const closeAndResetDialog = (open: boolean) => {
-    if (creating) return
-    setCreateOpen(open)
+    if (creating) return;
+    setCreateOpen(open);
     if (!open) {
-      setNewTopicName("")
-      setCreateError(null)
+      setNewTopicName("");
+      setCreateError(null);
     }
-  }
+  };
 
   const handleCreateTopic = async () => {
-    const name = newTopicName.trim()
+    const name = newTopicName.trim();
     if (!name) {
-      const message = "Topic name cannot be empty."
+      const message = "Topic name cannot be empty.";
       if (showInlineCreateError) {
-        setCreateError(message)
+        setCreateError(message);
       }
-      onCreateValidationError?.(message)
-      return
+      onCreateValidationError?.(message);
+      return;
     }
-    setCreating(true)
-    setCreateError(null)
+    setCreating(true);
+    setCreateError(null);
     try {
-      await onCreateTopic(name)
-      setNewTopicName("")
-      setCreateOpen(false)
-      onCreateSuccess?.(name)
+      await onCreateTopic(name);
+      setNewTopicName("");
+      setCreateOpen(false);
+      onCreateSuccess?.(name);
     } catch (error) {
       if (showInlineCreateError) {
-        setCreateError("Could not create topic. Try a different name.")
+        setCreateError("Could not create topic. Try a different name.");
       }
-      onCreateError?.(error)
+      onCreateError?.(error);
     } finally {
-      setCreating(false)
+      setCreating(false);
     }
-  }
+  };
 
   const button =
     isLinked && onSync ? (
@@ -151,10 +151,10 @@ export function CourseTopicsHeroAction({
         <IconPlus className="size-4" aria-hidden="true" />
         Create topic
       </Button>
-    )
+    );
 
-  const isSyncButton = isLinked && !!onSync
-  const tooltip = isSyncButton ? syncTooltip : createTooltip
+  const isSyncButton = isLinked && !!onSync;
+  const tooltip = isSyncButton ? syncTooltip : createTooltip;
 
   return (
     <>
@@ -182,7 +182,11 @@ export function CourseTopicsHeroAction({
               onChange={(e) => setNewTopicName(e.target.value)}
               autoFocus
             />
-            <Button onClick={() => void handleCreateTopic()} disabled={creating} className="shrink-0">
+            <Button
+              onClick={() => void handleCreateTopic()}
+              disabled={creating}
+              className="shrink-0"
+            >
               {creating && <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />}
               Create
             </Button>
@@ -196,5 +200,5 @@ export function CourseTopicsHeroAction({
         </DialogContent>
       </Dialog>
     </>
-  )
+  );
 }

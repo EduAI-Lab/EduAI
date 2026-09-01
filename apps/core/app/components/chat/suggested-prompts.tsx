@@ -23,13 +23,11 @@ const STARTERS: { label: string; prompt: string }[] = [
   },
   {
     label: "Practice problems",
-    prompt:
-      "Create a few practice problems for what I'm studying so I can check my understanding.",
+    prompt: "Create a few practice problems for what I'm studying so I can check my understanding.",
   },
   {
     label: "Summarize readings",
-    prompt:
-      "Summarize the key points from this week's material in a short, scannable list.",
+    prompt: "Summarize the key points from this week's material in a short, scannable list.",
   },
 ];
 

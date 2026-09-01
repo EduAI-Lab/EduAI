@@ -1,16 +1,18 @@
 import prisma from "~/lib/prisma.server";
 import type { Prisma } from "@prisma/client";
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import {
   paginatedResponse,
   parsePaginationParams,
   parseSearchParam,
 } from "~/lib/pagination.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { withNoStore } from "~/lib/api/cache-control.server";
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -32,7 +34,7 @@ export async function handleAiModelsApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user) {
         if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
           const serviceKeyGuard = await requireServiceKey(request);
@@ -80,11 +82,14 @@ export async function handleAiModelsApiRequest(request: Request) {
           take: pagination.take,
         }),
       ]);
-      return paginatedResponse(models, total, pagination);
+      // #1453: ADMIN-only, and the browser cache key is method + URL with no
+      // session or role component, so a stored body would be served to the next
+      // caller on the same profile before the role check above ever runs.
+      return withNoStore(paginatedResponse(models, total, pagination));
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -104,6 +109,20 @@ export async function handleAiModelsApiRequest(request: Request) {
         );
       }
 
+      // Auto routing's tier pool is CHAT-only (loadTierRows in routing/tiers.ts
+      // filters `type: "CHAT"`), so a tier set on any other model type would
+      // never take effect — reject it up front rather than let it sit unused.
+      if (
+        result.data.routerTier !== null &&
+        result.data.routerTier !== undefined &&
+        result.data.type !== "CHAT"
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Only CHAT models can have an Auto Routing Tier" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
       try {
         const model = await prisma.aIModel.create({
           data: result.data,
@@ -111,6 +130,7 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -147,7 +167,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         return apiError(400, "MODEL_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -167,10 +187,19 @@ export async function handleAiModelsApiRequest(request: Request) {
 
       const nextType = result.data.type ?? existingModel.type;
       const nextSupportsTools = result.data.supportsTools ?? existingModel.supportsTools;
+      const nextRouterTier =
+        result.data.routerTier !== undefined ? result.data.routerTier : existingModel.routerTier;
 
       if (nextSupportsTools && nextType !== "CHAT") {
         return new Response(
           JSON.stringify({ error: "Only CHAT models can have supportsTools enabled" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (nextRouterTier !== null && nextType !== "CHAT") {
+        return new Response(
+          JSON.stringify({ error: "Only CHAT models can have an Auto Routing Tier" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -183,6 +212,7 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -222,7 +252,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         return apiError(400, "MODEL_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -232,6 +262,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         const model = await prisma.aIModel.delete({
           where: { id: modelId },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({

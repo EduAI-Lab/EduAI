@@ -2,8 +2,8 @@
  * User-facing messages for course material upload failures (#54).
  * Full errors are still logged server-side; never expose Prisma internals in the UI.
  */
-export function toMaterialUploadUserMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+export function toMaterialUploadUserMessage(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
 
   if (/prisma\.\$(executeRaw|queryRaw)|PrismaClient|Raw query failed/i.test(message)) {
     return "Couldn't save this material's search data due to a database error. Please try again or contact support.";

@@ -62,13 +62,13 @@ export function mapCoreAdminUser(user) {
   const createdAt = user?.createdAt;
   return {
     id: user.id,
-    name: user.name ?? '',
-    email: user.email ?? '',
+    name: user.name ?? "",
+    email: user.email ?? "",
     role: user.role,
     createdAt:
       createdAt instanceof Date
         ? createdAt.toISOString()
-        : typeof createdAt === 'string'
+        : typeof createdAt === "string"
           ? createdAt
           : createdAt
             ? String(createdAt)
@@ -105,13 +105,41 @@ export function mapCourseOffering(offering, coreCourse) {
     code: core?.code ?? null,
     description: core?.description ?? null,
     department: core?.department ?? null,
-    isPublished: typeof core?.isPublished === 'boolean' ? core.isPublished : false,
+    isPublished: typeof core?.isPublished === "boolean" ? core.isPublished : false,
     startDate: core?.startDate ?? null,
     endDate: core?.endDate ?? null,
     term: core?.term ?? null,
-    year: typeof core?.year === 'number' ? core.year : null,
-    aiInstructions: typeof core?.aiInstructions === 'string' ? core.aiInstructions : null,
+    year: typeof core?.year === "number" ? core.year : null,
+    aiInstructions: typeof core?.aiInstructions === "string" ? core.aiInstructions : null,
   };
+}
+
+/**
+ * `mapCourseOffering` variant for the publish/unpublish routes (#225 SEAM-04).
+ *
+ * Those routes write the publish state through to Core, then re-read it back
+ * for the response. `resolveCoreCourseById` already fails soft on that
+ * re-read (`{ course: null, coreUnavailable: true }`), but handing a `null`
+ * `coreCourse` straight to `mapCourseOffering` degrades `isPublished` to
+ * `false` — a write that just succeeded would come back looking like a
+ * failure (split-brain: Core is actually in the new state, the caller is
+ * told otherwise). Trust the just-completed write over a failed re-read:
+ * only fall back to `knownPublished` when `coreUnavailable` is true, and mark
+ * the DTO as stale so the client can distinguish it from a confirmed read.
+ * A successful re-read (`coreUnavailable: false`) always wins, in case Core's
+ * state has already moved again by the time the read happens.
+ */
+export function mapCourseOfferingAfterPublishWrite(
+  offering,
+  { course: coreCourse, coreUnavailable },
+  knownPublished,
+) {
+  const dto = mapCourseOffering(offering, coreCourse);
+  if (coreUnavailable) {
+    dto.isPublished = knownPublished;
+    dto.corePublishStale = true;
+  }
+  return dto;
 }
 
 export function mapModule(module) {
@@ -129,9 +157,9 @@ export function mapModule(module) {
  * Map a Lesson row to its public DTO.
  *
  * Why: `courseOfferingId` is not stored on Lesson directly — it comes via
- * the parent Module. The fallback chain accepts either a row that includes
- * `module: { courseOfferingId }` (the common eager-load shape) or a
- * pre-flattened row, so callers don't have to standardize their queries.
+ * the parent Module. `coreOfferingId` comes from that module's CourseOffering
+ * when the caller loads it. The fallback chains also accept pre-flattened rows,
+ * so callers don't have to standardize their queries.
  */
 export function mapLesson(lesson) {
   return {
@@ -141,6 +169,8 @@ export function mapLesson(lesson) {
     position: lesson.position,
     isPublished: lesson.isPublished,
     courseOfferingId: lesson.module?.courseOfferingId ?? lesson.courseOfferingId ?? undefined,
+    coreOfferingId:
+      lesson.module?.courseOffering?.coreOfferingId ?? lesson.coreOfferingId ?? undefined,
     moduleId: lesson.moduleId ?? lesson.module?.id ?? undefined,
   };
 }
@@ -161,7 +191,10 @@ export function mapLesson(lesson) {
  *                            always emits the object form so the client can
  *                            assume one shape.
  *   - `answer`            — Correct answer (string for MCQ index, free text
- *                            for short-answer, etc.). `null` if unset.
+ *                            for short-answer, etc.). Included only when a
+ *                            caller explicitly opts into the staff/authoring
+ *                            shape with `{ includeAnswer: true }`; omitted
+ *                            by default (including all student views).
  *   - `hints`             — Always an array; non-array values become `[]` so
  *                            the client can `.map` without a guard.
  *   - `secondaryTopics`   — Flattened from the M:N join rows
@@ -180,9 +213,12 @@ export function mapLesson(lesson) {
  * but the client cannot safely consume freeform JSON. This mapper is the
  * contract that turns the blob into a stable, typed DTO.
  */
-export function mapActivity(activity) {
+export function mapActivity(activity, options = {}) {
+  // Answer keys are opt-in. A safe default means a new caller cannot expose
+  // `config.answer` simply by forgetting to pass a viewer role.
+  const includeAnswer = typeof options === "object" && options?.includeAnswer === true;
   const config = activity.config ?? {};
-  return {
+  const mapped = {
     id: activity.id,
     title: activity.title,
     instructionsMd: activity.instructionsMd,
@@ -193,11 +229,11 @@ export function mapActivity(activity) {
       : null,
     // Fallback chain spans three generations of activity authoring.
     question: config.question ?? config.prompt ?? activity.instructionsMd,
-    type: config.questionType ?? 'MCQ',
+    type: config.questionType ?? "MCQ",
     // Always emit `{ choices: string[] }` so the client has one shape to
     // render. Legacy array-form options remain valid on read.
     options: (() => {
-      if (!('options' in config) || config.options == null) return null;
+      if (!("options" in config) || config.options == null) return null;
       if (Array.isArray(config.options)) {
         return { choices: config.options };
       }
@@ -206,7 +242,6 @@ export function mapActivity(activity) {
       }
       return null;
     })(),
-    answer: config.answer ?? null,
     // Coerce non-array hints to `[]` so the client can iterate safely.
     hints: Array.isArray(config.hints) ? config.hints : [],
     mainTopic: activity.mainTopic
@@ -227,11 +262,17 @@ export function mapActivity(activity) {
     enableTeachMode: activity.enableTeachMode ?? true,
     enableGuideMode: activity.enableGuideMode ?? true,
     enableCustomMode: activity.enableCustomMode ?? false,
-    customPrompt: typeof activity.customPrompt === 'string' ? activity.customPrompt : null,
+    customPrompt: typeof activity.customPrompt === "string" ? activity.customPrompt : null,
     customPromptTitle:
-      typeof activity.customPromptTitle === 'string' ? activity.customPromptTitle : null,
+      typeof activity.customPromptTitle === "string" ? activity.customPromptTitle : null,
     completionStatus: activity.completionStatus ?? undefined,
   };
+
+  if (includeAnswer) {
+    mapped.answer = config.answer ?? null;
+  }
+
+  return mapped;
 }
 
 /**
@@ -249,5 +290,42 @@ export function mapProgressData(progressResult) {
     completed: progressResult.completed ?? 0,
     total: progressResult.total ?? 0,
     percentage: progressResult.percentage ?? 0,
+  };
+}
+
+/**
+ * Map an Activity row (with `lesson.title` + `lesson.module.title` included)
+ * to the compact "importable activity" DTO the cross-lesson import picker
+ * consumes. Distinct from `mapActivity` — the picker only needs identity and
+ * provenance labels, not the full normalized activity payload.
+ *
+ * Related: `app/lib/api.ts` `ImportableActivity`.
+ */
+export function mapImportableActivity(activity) {
+  const config = activity.config ?? {};
+  return {
+    id: activity.id,
+    title: activity.title ?? config.question ?? activity.instructionsMd,
+    type: config.questionType ?? "MCQ",
+    lessonId: activity.lessonId,
+    lessonTitle: activity.lesson?.title ?? null,
+    moduleTitle: activity.lesson?.module?.title ?? null,
+  };
+}
+
+/**
+ * Map a Topic row to its public DTO.
+ *
+ * Why: topics were historically serialized as raw Prisma rows (the only
+ * entity without a mapper). As of #1043 the topics endpoint paginates and
+ * both the sync and local-read paths funnel through here so the wire shape
+ * is stable. The client contract (`app/lib/types.ts` `Topic`) is only
+ * `{ id, name }`; `id` is a cuid string and the client coerces it with
+ * `String(...)` at every read site.
+ */
+export function mapTopic(topic) {
+  return {
+    id: topic.id,
+    name: topic.name,
   };
 }

@@ -1,5 +1,10 @@
 import { parseModelIdentifier } from "~/lib/ai/provider-types";
-import { getServerHealth, invalidateFleetHealthCacheForUrl, serverHostsModel } from "./health";
+import {
+  getServerHealth,
+  invalidateFleetHealthCacheForUrl,
+  recordFleetHostFailure,
+  serverHostsModel,
+} from "./health";
 import { fleetRoutingEnabled, getServersForJobType, heavyFleetConfigured } from "./registry";
 import {
   jobTypeForWorkloadFeature,
@@ -12,6 +17,8 @@ type ResolveFleetInputBase = {
   resolvedModelId: string;
   /** Skip these server ids (Slice 2 retry after a failed host). */
   excludeServerIds?: string[];
+  /** Stable request/session key for cross-process chat affinity. */
+  affinityKey?: string;
 };
 
 export type ResolveFleetInput =
@@ -47,11 +54,66 @@ function nextRoundRobinIndex(pool: "interactive" | "background"): number {
   return current;
 }
 
+/** Small deterministic hash (FNV-1a); stable across Core workers. */
+function fnv1a(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Rendezvous (highest random weight) hashing: score every eligible server by
+ * hashing the affinity key together with that server's id, and pick the
+ * highest score. Unlike `hash(key) % eligible.length`, this only remaps keys
+ * that actually resolved to the removed/added host — every other key keeps
+ * scoring highest for the same server it always did, so a single host
+ * ejection (or recovery) reshuffles roughly 1/N of affinity keys instead of
+ * nearly all of them.
+ */
+function affinityServer<T extends { id: string }>(value: string, eligible: T[]): T {
+  let best = eligible[0]!;
+  let bestScore = fnv1a(`${value}#${best.id}`);
+  for (let index = 1; index < eligible.length; index += 1) {
+    const candidate = eligible[index]!;
+    const score = fnv1a(`${value}#${candidate.id}`);
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 function pickReason(jobType: JobType): string {
   if (jobType === "background" && heavyFleetConfigured()) {
     return "background-round-robin";
   }
   return "interactive-round-robin";
+}
+
+function pickServer(
+  eligible: Array<{ id: string; baseUrl: string }>,
+  jobType: JobType,
+  affinityKey: string | undefined,
+) {
+  const pool = poolCursorKey(jobType);
+  const normalizedAffinityKey = affinityKey?.trim();
+  if (normalizedAffinityKey) {
+    return {
+      server: affinityServer(normalizedAffinityKey, eligible),
+      reason:
+        jobType === "background" && heavyFleetConfigured()
+          ? "background-affinity"
+          : "interactive-affinity",
+    };
+  }
+  return {
+    server: eligible[nextRoundRobinIndex(pool) % eligible.length]!,
+    reason: pickReason(jobType),
+  };
 }
 
 /**
@@ -64,8 +126,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
   const parsed = parseModelIdentifier(input.resolvedModelId);
   if (!parsed || parsed.providerId !== "vllm") return null;
 
-  const jobType =
-    input.jobType ?? jobTypeForWorkloadFeature(input.feature);
+  const jobType = input.jobType ?? jobTypeForWorkloadFeature(input.feature);
   const candidates = getServersForJobType(jobType);
   if (candidates.length === 0) {
     throw new FleetUnavailableError("No fleet servers configured for this workload");
@@ -79,9 +140,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
       health: await getServerHealth(server.baseUrl),
     })),
   );
-  const excluded = new Set(
-    (input.excludeServerIds ?? []).map((id) => id.trim()).filter(Boolean),
-  );
+  const excluded = new Set((input.excludeServerIds ?? []).map((id) => id.trim()).filter(Boolean));
   const eligible = healthResults
     .filter(
       ({ server, health }) =>
@@ -97,14 +156,12 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     );
   }
 
-  const pool = poolCursorKey(jobType);
-  const server = eligible[nextRoundRobinIndex(pool) % eligible.length]!;
+  const { server, reason } = pickServer(eligible, jobType, input.affinityKey);
 
   return {
     serverId: server.id,
     baseUrl: server.baseUrl,
-    energySidecarUrl: server.energySidecarUrl,
-    reason: excluded.size > 0 ? `${pickReason(jobType)}-retry` : pickReason(jobType),
+    reason: excluded.size > 0 ? `${reason}-retry` : reason,
   };
 }
 
@@ -116,13 +173,16 @@ export async function resolveFleetHostAfterFailure(input: {
   failedPick: FleetPick;
   resolvedModelId: string;
   jobType: JobType;
+  affinityKey?: string;
 }): Promise<FleetPick | null> {
   invalidateFleetHealthCacheForUrl(input.failedPick.baseUrl);
+  recordFleetHostFailure(input.failedPick.baseUrl);
   try {
     return await resolveFleetHost({
       jobType: input.jobType,
       resolvedModelId: input.resolvedModelId,
       excludeServerIds: [input.failedPick.serverId],
+      affinityKey: input.affinityKey,
     });
   } catch (err) {
     if (err instanceof FleetUnavailableError) return null;

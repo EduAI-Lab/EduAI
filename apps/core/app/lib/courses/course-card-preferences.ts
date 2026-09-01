@@ -1,14 +1,21 @@
 /** Canvas-style preset swatches — re-exported from shared UI theme tokens. */
 export { COURSE_COLOR_PRESETS as COURSE_CARD_COLOR_PRESETS } from "@eduai/ui";
 
+import { asJsonObject, asText, parseJsonText } from "~/lib/json-value";
 import { resolvePaletteAccent } from "@eduai/ui";
+import { isBrowser } from "@eduai/ui/runtime-env";
 
 export type CourseCardPreference = {
   color?: string;
   nickname?: string;
 };
 
-export type CourseCardPreferencesMap = Record<string, CourseCardPreference>;
+/**
+ * Every course the user has customised, keyed by course id. A `Map` rather than
+ * an object because the key is a course id off a row — a lookup can miss, and
+ * saying so is the whole contract here.
+ */
+export type CourseCardPreferencesMap = Map<string, CourseCardPreference>;
 
 export const COURSE_CARD_PREFERENCES_KEY = "eduai:course-card-display";
 
@@ -43,35 +50,40 @@ export function normalizeCourseCardColor(value: string): string | null {
 }
 
 export function readCourseCardPreferences(): CourseCardPreferencesMap {
-  if (typeof window === "undefined") return {};
+  if (!isBrowser()) return new Map();
   try {
     const raw = window.localStorage.getItem(COURSE_CARD_PREFERENCES_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const result: CourseCardPreferencesMap = {};
-    for (const [id, entry] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      const fields = entry as Record<string, unknown>;
+    if (!raw) return new Map();
+    const parsed = asJsonObject(parseJsonText(raw));
+    if (!parsed) return new Map();
+    const result: CourseCardPreferencesMap = new Map();
+    for (const [id, entry] of Object.entries(parsed)) {
+      const fields = asJsonObject(entry);
+      if (!fields) continue;
       const validated: CourseCardPreference = {};
-      if (typeof fields.nickname === "string") validated.nickname = fields.nickname;
-      if (typeof fields.color === "string") validated.color = fields.color;
-      result[id] = validated;
+      const nickname = asText(fields.nickname);
+      if (nickname !== null) validated.nickname = nickname;
+      const color = asText(fields.color);
+      if (color !== null) validated.color = color;
+      result.set(id, validated);
     }
     return result;
   } catch {
-    return {};
+    return new Map();
   }
 }
 
 export function writeCourseCardPreferences(prefs: CourseCardPreferencesMap): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowser()) return;
   try {
-    if (Object.keys(prefs).length === 0) {
+    if (prefs.size === 0) {
       window.localStorage.removeItem(COURSE_CARD_PREFERENCES_KEY);
       return;
     }
-    window.localStorage.setItem(COURSE_CARD_PREFERENCES_KEY, JSON.stringify(prefs));
+    window.localStorage.setItem(
+      COURSE_CARD_PREFERENCES_KEY,
+      JSON.stringify(Object.fromEntries(prefs)),
+    );
   } catch {
     // Quota or privacy mode — ignore silently; cards keep defaults.
   }
@@ -81,9 +93,7 @@ export function getCourseDisplayName(
   officialName: string,
   preference?: CourseCardPreference,
 ): string {
-  const nickname = preference?.nickname
-    ? normalizeCourseNickname(preference.nickname)
-    : "";
+  const nickname = preference?.nickname ? normalizeCourseNickname(preference.nickname) : "";
   return nickname || officialName;
 }
 
@@ -106,13 +116,13 @@ export function mergeCourseCardPreference(
   courseId: string,
   update: CourseCardPreference | null,
 ): CourseCardPreferencesMap {
-  const next = { ...current };
+  const next = new Map(current);
   if (update === null) {
-    delete next[courseId];
+    next.delete(courseId);
     return next;
   }
 
-  const merged: CourseCardPreference = { ...next[courseId], ...update };
+  const merged: CourseCardPreference = { ...next.get(courseId), ...update };
   if (merged.nickname !== undefined) {
     const normalized = normalizeCourseNickname(merged.nickname);
     if (normalized) merged.nickname = normalized;
@@ -125,9 +135,9 @@ export function mergeCourseCardPreference(
   }
 
   if (!merged.color && !merged.nickname) {
-    delete next[courseId];
+    next.delete(courseId);
   } else {
-    next[courseId] = merged;
+    next.set(courseId, merged);
   }
   return next;
 }

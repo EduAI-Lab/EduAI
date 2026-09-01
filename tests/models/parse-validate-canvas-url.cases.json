@@ -1,0 +1,97 @@
+[
+  {
+    "UrlForm": "https-host",
+    "HostClass": "ipv6-literal",
+    "ExtraPath": "query-ssrf"
+  },
+  {
+    "UrlForm": "http-host",
+    "HostClass": "ipv4-public",
+    "ExtraPath": "traversal"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "ipv6-literal",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "http-host",
+    "HostClass": "ipv4-private",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "http-host",
+    "HostClass": "ipv4-private",
+    "ExtraPath": "query-ssrf"
+  },
+  {
+    "UrlForm": "with-userinfo",
+    "HostClass": "public-dns",
+    "ExtraPath": "query-ssrf"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "public-dns",
+    "ExtraPath": "traversal"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "ipv4-public",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "ipv4-public",
+    "ExtraPath": "query-ssrf"
+  },
+  {
+    "UrlForm": "http-host",
+    "HostClass": "localhost",
+    "ExtraPath": "traversal"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "ipv4-private",
+    "ExtraPath": "traversal"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "ipv6-literal",
+    "ExtraPath": "traversal"
+  },
+  {
+    "UrlForm": "http-host",
+    "HostClass": "public-dns",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "relative",
+    "HostClass": "public-dns",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "with-userinfo",
+    "HostClass": "public-dns",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "opaque",
+    "HostClass": "public-dns",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "localhost",
+    "ExtraPath": "none"
+  },
+  {
+    "UrlForm": "with-userinfo",
+    "HostClass": "public-dns",
+    "ExtraPath": "traversal"
+  },
+  {
+    "UrlForm": "https-host",
+    "HostClass": "localhost",
+    "ExtraPath": "query-ssrf"
+  }
+]

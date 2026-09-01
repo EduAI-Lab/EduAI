@@ -8,7 +8,14 @@ import {
   buildDepartmentFilterGroup,
 } from "../course-list-view";
 
-type Course = { id: number; title: string; code: string; term: string; year: number; published: boolean };
+type Course = {
+  id: number;
+  title: string;
+  code: string;
+  term: string;
+  year: number;
+  published: boolean;
+};
 
 const COURSES: Course[] = [
   { id: 1, title: "Algorithms", code: "COSC 320", term: "W1", year: 2026, published: true },
@@ -46,7 +53,7 @@ describe("CourseListView", () => {
     renderList();
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
     // Current term leads; the rest keep their normal most-recent-first order.
-    expect(headings).toEqual(["2026W1", "2026W2", "2025W1"]);
+    expect(headings).toEqual(["2026-27W1", "2026-27W2", "2025-26W1"]);
     expect(screen.getAllByTestId("card")).toHaveLength(3);
     // "Current term" reflects real calendar date, not just the newest group.
     expect(screen.getByText(/Current term · 1 course/)).toBeInTheDocument();
@@ -146,7 +153,7 @@ describe("course filter builders", () => {
   it("buildTermFilterGroup encodes term+year and labels it compactly", () => {
     const g = buildTermFilterGroup<C>((x) => ({ term: x.term, year: x.year }));
     expect(g.getValue(c({ term: "W2", year: 2026 }))).toBe("W2::2026");
-    expect(g.optionLabel?.("W2::2026")).toBe("2026W2");
+    expect(g.optionLabel?.("W2::2026")).toBe("2026-27W2");
     // More recent terms sort first (negated key).
     expect(g.optionSortKey?.("W2::2026")).toBeLessThan(g.optionSortKey?.("W1::2025") as number);
   });
@@ -163,5 +170,140 @@ describe("course filter builders", () => {
     expect(g.getValue(c({ dept: "COSC" }))).toBe("COSC");
     expect(g.getValue(c({ dept: null }))).toBeNull();
     expect(g.optionLabel?.("COSC")).toBe("Computer Science");
+  });
+});
+
+/**
+ * Controlled (server-driven) mode — #1208.
+ *
+ * The contract these pin down: when the host controls a dimension it has already
+ * filtered server-side, so the component must NOT filter again (that would drop
+ * rows the server deliberately returned), and the dropdowns must offer the host's
+ * full value set rather than whatever the current page happens to contain.
+ */
+describe("CourseListView — controlled mode", () => {
+  it("does not apply getSearchText when search is controlled", () => {
+    // A query that matches nothing locally still renders every row, because the
+    // server is the one that filtered.
+    renderList({ searchValue: "zzz-no-local-match", onSearchChange: () => {} });
+
+    expect(screen.getAllByTestId("card")).toHaveLength(3);
+  });
+
+  it("reports the controlled search value in the input", () => {
+    renderList({ searchValue: "algo", onSearchChange: () => {} });
+
+    expect(screen.getByLabelText("Search courses")).toHaveValue("algo");
+  });
+
+  it("calls onSearchChange instead of filtering internally", () => {
+    const onSearchChange = vi.fn();
+    renderList({ searchValue: "", onSearchChange });
+
+    fireEvent.change(screen.getByLabelText("Search courses"), { target: { value: "data" } });
+
+    expect(onSearchChange).toHaveBeenCalledWith("data");
+    // Still showing everything — the parent decides what comes back next.
+    expect(screen.getAllByTestId("card")).toHaveLength(3);
+  });
+
+  it("does not apply filter groups when filters are controlled", () => {
+    // "draft" would locally match only Databases; controlled mode must not filter.
+    renderList({
+      filterGroups: [buildStatusFilterGroup<Course>((c) => c.published)],
+      selectedFilters: { status: ["draft"] },
+      onFilterChange: () => {},
+      availableValues: { status: ["published", "draft"] },
+    });
+
+    expect(screen.getAllByTestId("card")).toHaveLength(3);
+  });
+
+  it("still applies matchesFilter in controlled mode", () => {
+    // matchesFilter is a host predicate, not a toolbar dimension.
+    renderList({
+      searchValue: "",
+      onSearchChange: () => {},
+      matchesFilter: (c) => c.published,
+    });
+
+    expect(screen.getAllByTestId("card")).toHaveLength(2);
+  });
+
+  it("derives dropdown options from availableValues, not the current page", () => {
+    // Only one term is present in `courses`, but the host knows about three.
+    // Without availableValues, hideWhenSingle would drop the dropdown entirely.
+    renderList({
+      courses: [COURSES[0]],
+      filterGroups: [buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year }))],
+      selectedFilters: {},
+      onFilterChange: () => {},
+      availableValues: { term: ["W1::2026", "W2::2026", "W1::2025"] },
+    });
+
+    expect(screen.getByText("Term")).toBeInTheDocument();
+  });
+
+  it("keeps the toolbar visible when a controlled search returns zero rows", () => {
+    // Otherwise the user is stranded: no search box means no way to clear the
+    // query that emptied the list.
+    renderList({ courses: [], searchValue: "zzz", onSearchChange: () => {} });
+
+    expect(screen.getByLabelText("Search courses")).toBeInTheDocument();
+    expect(screen.getByText("No courses match")).toBeInTheDocument();
+  });
+
+  it("still shows the bare empty state when there is no query and no courses", () => {
+    renderList({ courses: [], searchValue: "", onSearchChange: () => {} });
+
+    expect(screen.getByText("No courses yet")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Search courses")).not.toBeInTheDocument();
+  });
+
+  it("reports the server total rather than the page length", () => {
+    renderList({ searchValue: "cosc", onSearchChange: () => {}, totalCount: 47 });
+
+    expect(screen.getByText(/47 courses found/)).toBeInTheDocument();
+  });
+
+  it("clears each controlled dimension via onFilterChange", () => {
+    const onSearchChange = vi.fn();
+    const onFilterChange = vi.fn();
+    renderList({
+      searchValue: "algo",
+      onSearchChange,
+      filterGroups: [buildStatusFilterGroup<Course>((c) => c.published)],
+      selectedFilters: { status: ["draft"] },
+      onFilterChange,
+      availableValues: { status: ["published", "draft"] },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /clear/i }));
+
+    expect(onSearchChange).toHaveBeenCalledWith("");
+    expect(onFilterChange).toHaveBeenCalledWith("status", []);
+  });
+
+  it("prefers onClearAll when provided", () => {
+    const onClearAll = vi.fn();
+    const onSearchChange = vi.fn();
+    renderList({ searchValue: "algo", onSearchChange, onClearAll });
+
+    fireEvent.click(screen.getByRole("button", { name: /clear/i }));
+
+    expect(onClearAll).toHaveBeenCalled();
+    expect(onSearchChange).not.toHaveBeenCalled();
+  });
+
+  it("controls search and filters independently", () => {
+    // Search controlled, filters NOT — the local status filter must still work.
+    renderList({
+      searchValue: "",
+      onSearchChange: () => {},
+      filterGroups: [buildStatusFilterGroup<Course>((c) => c.published)],
+      matchesFilter: (c) => c.published,
+    });
+
+    expect(screen.getAllByTestId("card")).toHaveLength(2);
   });
 });

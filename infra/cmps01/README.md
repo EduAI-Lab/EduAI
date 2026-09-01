@@ -1,17 +1,29 @@
 # cmps01 — vLLM multi-model proxy (LiteLLM)
 
-**Goal:** Run **two vLLM containers** (one per GPU) but expose **one HTTP port** (`8001`) to dev/EduAI so IT only opens a single firewall rule.
+Last verified: 2026-08-31
+
+Fleet topology and the host-specific CMPS02/CMPS03 state are summarized in
+[`../inference/README.md`](../inference/README.md). This file remains the
+implementation runbook for the CMPS01 Docker/LiteLLM/nginx deployment.
+
+**Goal:** Run one vLLM container per assigned GPU while exposing one authenticated
+HTTP port (`8001`) to EduAI. Raw vLLM backends remain on localhost; nginx and
+LiteLLM provide the public edge.
 
 ```text
 dev (s378) ──HTTP :8001──► cmps01 eduai-edge-proxy (nginx)
                                 ├── /v1/*     → LiteLLM 127.0.0.1:18091
-                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, 7B)
-                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, 32B AWQ)
+                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, Qwen3.5 2B)
+                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, Qwen3.5 9B)
                                 └── /energy/* → energy-meter 127.0.0.1:9100
 Ollama :11434 — unchanged
 ```
 
-EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Research energy uses **`ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy`** (same firewall port).
+EduAI's single-host fallback uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`**.
+The shared-development fleet can additionally use `VLLM_FLEET_CHAT_URLS` for
+approved CMPS endpoints; those endpoints still expose the same authenticated
+port-8001 contract. Research energy uses
+**`ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy`** (same firewall port).
 
 ### Internal paths (`/energy/`, `/ollama/`) — not public APIs
 
@@ -24,7 +36,20 @@ Backends stay on **localhost** (`:9100`, `:11434`). Nginx on `:8001` path-routes
 
 **Ollama direct port:** keep Ollama bound to **`127.0.0.1:11434`** on cmps01 so `:11434` is not a public bypass. Only nginx `:8001/ollama/` should be reachable from s378.
 
-`/v1/*` stays behind LiteLLM’s bearer token (`vllm-local`). Copy `infra/cmps01/.env.example` → `.env` on cmps01 before running `./deploy-edge-proxy.sh`.
+`/v1/*` stays behind LiteLLM’s bearer token. That token is **`CMPS01_INTERNAL_KEY`** (rendered into LiteLLM `master_key` by `deploy-edge-proxy.sh`) — **not** the old example `vllm-local`. Copy `infra/cmps01/.env.example` → `.env` on cmps01, replace the example key with `openssl rand -hex 32`, then run `./deploy-edge-proxy.sh`.
+
+### Key validation
+
+`deploy-edge-proxy.sh` and `migrate.sh` exit **before** any Docker stop/start if `CMPS01_INTERNAL_KEY` is unset, empty, or equal to a known example value (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`). The fatal message never prints the supplied secret. Migration validates at the top of the script so a bad key cannot tear down running vLLM containers before rejection.
+
+On s378 set **both** to the same value:
+
+```bash
+CMPS01_INTERNAL_KEY=<secret from cmps01 .env>
+VLLM_API_KEY=<same secret>   # required for /v1; production has no vllm-local fallback
+```
+
+Unit test for the denylist: `bash infra/cmps01/tests/check-example-secrets.test.sh`.
 
 ---
 
@@ -32,12 +57,23 @@ Backends stay on **localhost** (`:9100`, `:11434`). Nginx on `:8001` path-routes
 
 | Docker name | Host bind | Served model (`/v1/models` → `id`) | Notes |
 | --- | --- | --- | --- |
-| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen2.5-7b-instruct` | GPU 0, Qwen 7B Instruct |
-| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen2.5-32b-instruct` | GPU 1, 32B AWQ + tool-call flags |
+| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen3.5-2b-instruct` | GPU 0, Qwen3.5 2B Instruct |
+| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen3.5-9b-instruct` | GPU 1, Qwen3.5 9B + tool-call flags |
 | **`eduai-vllm-proxy`** | `127.0.0.1:18091` (LiteLLM) | routes both ids | internal only |
 | **`eduai-edge-proxy`** | host `:8001` (nginx) | `/v1/*` → LiteLLM, `/energy/*` → sidecar | public |
 
 Backends are **localhost only**; **nginx** is the only public listener on **`8001`**.
+
+The live host audit on 2026-08-31 found `eduai-vllm` and `eduai-vllm-t3` running
+with `vllm/vllm-openai:latest`, plus an embedding container on `127.0.0.1:18003`.
+The authenticated edge returned HTTP 200 and advertised the two Qwen model IDs
+and `mxbai-embed-large`. The repository migration procedure below targets the
+versioned `v0.27.1` image; do not assume that target and the live image tag or
+runtime flags are identical. Capture `docker inspect` output before replacing a
+live container and record the resulting model ID, image, GPU, and max context.
+The same audit showed Ollama listening on `*:11434`, which does not match the
+localhost-only security contract below. Reconcile that binding and re-run
+`verify-edge-security.sh` before treating the host as compliant.
 
 **Why `network_mode: host`?** Backends bind `127.0.0.1:18001/18002`. Bridge-networked containers cannot reach those ports on Linux. Host networking lets LiteLLM and nginx use loopback backends.
 
@@ -56,17 +92,18 @@ s378 `apps/core/.env` (dev server at `206.87.25.229`):
 ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
 OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama
 CMPS01_INTERNAL_KEY=<same secret as cmps01 .env>
+VLLM_API_KEY=<same secret as CMPS01_INTERNAL_KEY>
 ```
 
 After deploy, run `./verify-edge-security.sh` on cmps01. From a laptop, `/energy/` and `/ollama/` should return **403** (or fail to connect if campus firewall blocks you).
 
 ---
 
-## Migration checklist
+## Repository-managed migration or replacement
 
 Use this order on **cmps01** (SSH). Expect **~10–30+ min** per container while weights load after recreate.
 
-### Step 0 — Save current run commands
+### Step 0 — Capture the live state
 
 Before stopping anything, capture how each container was started:
 
@@ -83,8 +120,8 @@ Copy the output — your new `docker run` lines must use the **same** `--model`,
 Quick model check (optional):
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models | jq '.data[].id'
-curl -s http://127.0.0.1:8002/v1/models | jq '.data[].id'
+curl -s http://127.0.0.1:18001/v1/models | jq '.data[].id'
+curl -s http://127.0.0.1:18002/v1/models | jq '.data[].id'
 ```
 
 ### Step 1 — Stop and remove old containers
@@ -104,37 +141,42 @@ chmod +x migrate.sh
 ./migrate.sh
 ```
 
-The script uses the **exact flags from `docker inspect`** (Mar 2026), including 32B tool-calling options.
+The repository script is the reproducible deployment target. It includes the
+Qwen3.5 tool-calling options used by the 9B target. It is not a guarantee that a
+live host has already been migrated to those exact flags.
 
 ### Step 2 — Recreate backends (localhost only)
 
-Captured from `docker inspect` on cmps01:
+The repository-managed target commands are:
 
 ```bash
-# GPU 0 — 7B (was eduai-vllm on :8001)
+# GPU 0 — Qwen3.5 2B on the localhost backend port :18001
 docker run -d --name eduai-vllm --gpus '"device=0"' \
   -p 127.0.0.1:18001:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --served-model-name qwen2.5-7b-instruct \
+  vllm/vllm-openai:v0.27.1 \
+  --model Qwen/Qwen3.5-2B \
+  --served-model-name qwen3.5-2b-instruct \
   --host 0.0.0.0 \
   --port 8000
 
-# GPU 1 — 32B AWQ + tool calling (was eduai-vllm-t3 on :8002)
+# GPU 1 — Qwen3.5 9B + tool calling on the localhost backend port :18002
 docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   -p 127.0.0.1:18002:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-32B-Instruct-AWQ \
-  --served-model-name qwen2.5-32b-instruct \
+  vllm/vllm-openai:v0.27.1 \
+  --model Qwen/Qwen3.5-9B \
+  --served-model-name qwen3.5-9b-instruct \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \
-  --max-model-len 16384 \
+  --max-model-len 32768 \
   --enable-auto-tool-choice \
   --tool-call-parser hermes
 ```
+
+The Qwen3.5 9B target above uses `--max-model-len 32768`. Keep the model,
+served-name, GPU, and context-length choices together when changing it.
 
 Wait for logs (`docker logs -f eduai-vllm` / `eduai-vllm-t3`) until Uvicorn is ready, then:
 
@@ -143,68 +185,79 @@ curl -s http://127.0.0.1:18001/v1/models | jq '.data[].id'
 curl -s http://127.0.0.1:18002/v1/models | jq '.data[].id'
 ```
 
-### Step 3 — Start LiteLLM proxy on public :8001
+### Step 3 — Deploy the edge proxy on public :8001
 
 Copy this `infra/cmps01` folder to cmps01 (or `git pull` the repo), then:
 
 ```bash
 cd /path/to/EduAICoreLearning/infra/cmps01
-docker compose up -d
+./deploy-edge-proxy.sh
 ```
+
+Do not run `docker compose up -d` directly here — `litellm-config.runtime.yaml` is
+gitignored and only exists after `deploy-edge-proxy.sh` renders it from
+`litellm-config.yaml.template`. Running compose first makes Docker create a
+directory at that path instead, which then breaks the next `deploy-edge-proxy.sh`
+run (`envsubst ... > litellm-config.runtime.yaml` fails with "Is a directory")
+until it's manually removed.
 
 Verify **both** models through the proxy:
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
-# expect: qwen2.5-7b-instruct
-#         qwen2.5-32b-instruct
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
+# expect: qwen3.5-2b-instruct
+#         qwen3.5-9b-instruct
 ```
 
 From dev (after firewall):
 
 ```bash
-curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
 ```
 
 ### Step 4 — EduAI dev server (`apps/core/.env` on s378)
 
 ```env
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<same secret as CMPS01_INTERNAL_KEY>"
 ```
 
 Use **`http://`** not `https://`. Restart the dev server (tmux).
 
-```bash
-cd apps/core
-npm run vllm:smoke
-npx prisma db seed   # registers vllm provider only (not individual models)
-```
+Do not run a full Core seed to register a vLLM provider on a shared server. Use
+the s378 deployer's reference-seed step and the Admin model-registration flow.
 
 ### Step 5 — App
 
-1. **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → register **`qwen2.5-7b-instruct`** and **`qwen2.5-32b-instruct`** (one save per model)
-2. Chat: **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (availability follows server `.env`, no Settings toggle)
+1. **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → register **`qwen3.5-2b-instruct`** and **`qwen3.5-9b-instruct`** (one save per model)
+2. Chat: **`vllm:qwen3.5-2b-instruct`** or **`vllm:qwen3.5-9b-instruct`** (availability follows server `.env`, no Settings toggle)
 3. Do **not** re-add the same `modelId` (409 Conflict). Use **Refresh list** only when registering a *new* served name from cmps01.
 
 ### Step 6 — IT / firewall
 
-- **Keep:** dev → cmps01 **TCP 8001** (LiteLLM)  
-- **Optional remove:** **8002** from firewall (backends no longer public)  
-- **Unchanged:** Ollama **11434** if already open  
+- **Keep:** dev → cmps01 **TCP 8001** (authenticated nginx/LiteLLM edge)
+- **Do not expose:** backend ports `18001`, `18002`, `18003`, or LiteLLM `18091`
+- **Do not treat:** `8002` as a current inference edge; it is not part of the
+  repository-managed port map
+- **Expected:** Ollama `11434` is localhost-only; an all-interface listener is
+  a security drift that must be resolved before opening or retaining access
 
 ---
 
 ## LiteLLM config
 
-See [`litellm-config.yaml`](./litellm-config.yaml). Backends:
+See [`litellm-config.yaml.template`](./litellm-config.yaml.template) — the source of
+truth; `deploy-edge-proxy.sh` renders it to the gitignored `litellm-config.runtime.yaml`
+that the container actually reads. Backends:
 
 | `model_name` | Backend URL (proxy uses host network) |
 | --- | --- |
-| `qwen2.5-7b-instruct` | `http://127.0.0.1:18001/v1` |
-| `qwen2.5-32b-instruct` | `http://127.0.0.1:18002/v1` |
+| `qwen3.5-2b-instruct` | `http://127.0.0.1:18001/v1` |
+| `qwen3.5-9b-instruct` | `http://127.0.0.1:18002/v1` |
 
-After editing config: `docker compose restart` in this directory.
+After editing `litellm-config.yaml.template`: re-run `./deploy-edge-proxy.sh` in this
+directory to re-render `litellm-config.runtime.yaml` and restart the proxy — a bare
+`docker compose restart` won't pick up template edits.
 
 ---
 
@@ -217,10 +270,10 @@ One vLLM container = one loaded model. To expose another model through the **sam
 | Decide | Example |
 | --- | --- |
 | **GPU** | Free GPU, or stop/replace an existing backend |
-| **Host port** | Next free port: `18003`, `18004`, … (backends stay on `127.0.0.1`) |
-| **HF weights** | e.g. `Qwen/Qwen2.5-14B-Instruct` |
-| **`--served-model-name`** | Short id for API — e.g. `qwen2.5-14b-instruct` (must match EduAI `modelId`) |
-| **Container name** | e.g. `eduai-vllm-14b` |
+| **Host port** | Next free port: `18004`, `18005`, … (backends stay on `127.0.0.1`; `18003` is the current embedding service) |
+| **HF weights** | The reviewed Hugging Face model selected for the host |
+| **`--served-model-name`** | A stable API id (must match the EduAI `modelId`) |
+| **Container name** | A stable host-local name that does not collide with an existing container |
 
 Check GPU memory: `nvidia-smi`. Do not overload a GPU that already runs a large model.
 
@@ -229,48 +282,50 @@ Check GPU memory: `nvidia-smi`. Do not overload a GPU that already runs a large 
 SSH to cmps01. Template (adjust GPU, model, flags):
 
 ```bash
-docker run -d --name eduai-vllm-14b --gpus '"device=0"' \
-  -p 127.0.0.1:18003:8000 \
+docker run -d --name eduai-vllm-new --gpus '"device=0"' \
+  -p 127.0.0.1:18004:8000 \
   --restart unless-stopped \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-14B-Instruct \
-  --served-model-name qwen2.5-14b-instruct \
+  vllm/vllm-openai:v0.27.1 \
+  --model REVIEWED_HUGGING_FACE_MODEL \
+  --served-model-name STABLE_SERVED_MODEL_ID \
   --host 0.0.0.0 \
   --port 8000
 ```
 
-Wait until ready (`docker logs -f eduai-vllm-14b`), then:
+Wait until ready (`docker logs -f eduai-vllm-new`), then:
 
 ```bash
-curl -s http://127.0.0.1:18003/v1/models | jq '.data[].id'
-# expect: "qwen2.5-14b-instruct"
+curl -s http://127.0.0.1:18004/v1/models | jq '.data[].id'
+# expect the reviewed stable served model id
 ```
 
 Direct chat smoke:
 
 ```bash
-curl -s http://127.0.0.1:18003/v1/chat/completions \
+curl -s http://127.0.0.1:18004/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5-14b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
+  -d '{"model":"STABLE_SERVED_MODEL_ID","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
 ```
 
 ### Step 2 — Register in LiteLLM
 
-Edit `~/cmps01/litellm-config.yaml` — add a block (copy an existing entry, change names and port):
+Edit `~/cmps01/litellm-config.yaml.template` — add a block (copy an existing entry, change names and port), then re-run `./deploy-edge-proxy.sh` so `litellm-config.runtime.yaml` is re-rendered:
 
 ```yaml
-  - model_name: qwen2.5-14b-instruct
+  - model_name: STABLE_SERVED_MODEL_ID
     litellm_params:
-      model: openai/qwen2.5-14b-instruct
-      api_base: http://127.0.0.1:18003/v1
+      model: openai/STABLE_SERVED_MODEL_ID
+      api_base: http://127.0.0.1:18004/v1
+      # This key is for the local vLLM backend; it is not the public master key.
       api_key: vllm-local
 ```
 
-Restart proxy:
+Restart proxy — a bare `docker compose restart` won't pick up the template edit
+(see the note above), so re-run the deploy script instead:
 
 ```bash
 cd ~/cmps01
-docker compose restart
+./deploy-edge-proxy.sh
 ```
 
 ### Step 3 — Verify through proxy
@@ -278,20 +333,20 @@ docker compose restart
 On cmps01:
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
 # should include the new id alongside existing models
 
 curl -s http://127.0.0.1:8001/v1/chat/completions \
-  -H "Authorization: Bearer vllm-local" \
+  -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5-14b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
+  -d '{"model":"STABLE_SERVED_MODEL_ID","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
 ```
 
 From dev (s378):
 
 ```bash
-curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
-cd apps/core && VLLM_MODEL=qwen2.5-14b-instruct npm run vllm:smoke
+curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
+cd apps/core && VLLM_MODEL=STABLE_SERVED_MODEL_ID npm run vllm:smoke
 ```
 
 `VLLM_BASE_URL` on dev **does not change** — still `http://cmps01.ok.ubc.ca:8001`.
@@ -301,7 +356,7 @@ cd apps/core && VLLM_MODEL=qwen2.5-14b-instruct npm run vllm:smoke
 **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick the new id → save.  
 (Duplicate `modelId` returns **409 Conflict** — use the existing row.)
 
-Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`).
+Chat model id: **`vllm:<served-model-name>`**. Register the exact stable served id.
 
 ### Step 5 — Use in the app
 
@@ -312,17 +367,18 @@ Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`)
 
 | Goal | Action |
 | --- | --- |
-| **Add** model (keep 7B + 32B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
+| **Add** model (keep Qwen3.5 2B + 9B) | New GPU or enough VRAM; next free backend port; new LiteLLM row |
 | **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI Admin |
-| **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml`; `docker compose restart`; deactivate row in Admin |
+| **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml.template`; re-run `./deploy-edge-proxy.sh`; deactivate row in Admin |
 
 ### Port map (convention)
 
 | Port | Current use |
 | --- | --- |
-| `18001` | `eduai-vllm` — 7B |
-| `18002` | `eduai-vllm-t3` — 32B AWQ |
-| `18003+` | Next backends |
+| `18001` | `eduai-vllm` — Qwen3.5 2B |
+| `18002` | `eduai-vllm-t3` — Qwen3.5 9B |
+| `18003` | Current CMPS01 embedding backend (`mxbai-embed-large`) |
+| `18004+` | Next additional vLLM backends; confirm the port is free first |
 | `8001` | LiteLLM proxy (public) — **never** bind a raw vLLM backend here |
 
 ---

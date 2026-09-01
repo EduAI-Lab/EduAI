@@ -1,0 +1,19 @@
+# docs/PICT_CENSUS.md § S7 — resolveChatReadAccess (#1186)
+# lib/chat-history/server.ts:129 — single-chat read gate shared by GET /api/chats/:id and
+# /api/chats/:id/messages. Dims per the S7 oracle note: owner x admin x courseId x
+# access-level x policy-flag x owner-active-student.
+Owner:             yes, no
+Admin:             yes, no
+CourseId:          present, null
+AccessLevel:       none, student, ta, instructor, unit
+PolicyFlag:        on, off
+OwnerActiveStudent: yes, no
+
+# AccessLevel only means anything when the chat is course-scoped.
+IF [CourseId] = "null" THEN [AccessLevel] = "none";
+IF [CourseId] = "null" THEN [PolicyFlag] = "on";
+IF [CourseId] = "null" THEN [OwnerActiveStudent] = "yes";
+# courseChatViewPolicyKey gates none/student/ta to "never" regardless of the flag.
+IF [AccessLevel] in {"none", "student", "ta"} THEN [PolicyFlag] = "on";
+# OwnerActiveStudent only matters once the gate is actually open (instructor/unit + flag on).
+IF ([AccessLevel] <> "instructor" AND [AccessLevel] <> "unit") OR [PolicyFlag] = "off" THEN [OwnerActiveStudent] = "yes";

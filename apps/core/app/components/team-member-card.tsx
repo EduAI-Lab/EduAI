@@ -1,80 +1,157 @@
-import { Card } from "@eduai/ui";
-import type { TeamMember } from "~/routes/team";
-import { IconTerminal, IconCode, IconBraces } from "@tabler/icons-react";
+import { useState } from "react";
+import { Badge, Card, Dialog, DialogContent, DialogTitle } from "@eduai/ui";
+import { IconArrowRight, IconBriefcase, IconSparkles, IconTools } from "@tabler/icons-react";
+import type { TeamMember } from "~/config/team";
 
 export interface TeamMemberCardProps {
   member: TeamMember;
-  index: number;
 }
 
-export function TeamMemberCard({ member, index }: TeamMemberCardProps) {
+/**
+ * Stand-in portrait for members who would rather not publish a photo. It lives
+ * in `public/`, which is served from the site root — the same `/public` prefix
+ * strip the roster entries get below.
+ */
+const ANONYMOUS_PORTRAIT = "/anonymous.jpg";
+
+/**
+ * The member's photo, or the shared stand-in when they have not set one. The
+ * card face and the dialog render the same image at different sizes, so the
+ * sizing classes come in from the caller.
+ */
+function MemberPortrait({ member, className }: { member: TeamMember; className: string }) {
   return (
-    <Card className="relative bg-card/80 backdrop-blur-sm border border-border shadow-2xl overflow-hidden group hover:border-green-500/50 transition-all duration-300">
+    <img
+      src={member.image ? member.image.replace("/public", "") : ANONYMOUS_PORTRAIT}
+      alt={member.name}
+      loading="lazy"
+      className={`object-cover ${className} ${member.imagePosition ?? "object-top"}`}
+    />
+  );
+}
 
+/**
+ * One roster entry in the homepage team grid.
+ *
+ * The grid face is deliberately sleek: the portrait carries a subtle position
+ * tag (the member's title) top-right and their name on a gradient scrim, with a
+ * quiet "View profile" affordance so the whole card reads as clickable. The
+ * biography, contribution, tech, and signature line live one click away in the
+ * dialog. Every surface reads from the shared tokens (@eduai/ui base.css) so
+ * the card follows the theme toggle.
+ */
+export function TeamMemberCard({ member }: TeamMemberCardProps) {
+  const [open, setOpen] = useState(false);
 
-      <div className="lg:flex items-center p-8 gap-8">
-        <div className="lg:w-1/4 mb-6 lg:mb-0">
-          <div className="relative w-63 h-82 mx-auto overflow-hidden rounded-lg border-2 border-border group-hover:border-green-500/50 transition-all duration-300">
-            <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <img
-              src={member.image.replace('/public', '')}
-              alt={member.name}
-              className="object-cover w-full h-full transform group-hover:scale-105 transition-transform duration-300"
-            />
-            <div className="absolute inset-0 bg-gradient-to-tr from-background/60 to-transparent"></div>
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background p-2">
+  return (
+    <>
+      {/* The card is NOT `role="button"`: that would make its subtree
+          presentational, so the member's name would stop being reachable as a
+          heading. The clickable surface is the real <button> at the bottom;
+          the card only forwards a mouse click to it as a convenience. */}
+      <Card
+        onClick={() => setOpen(true)}
+        className="group flex cursor-pointer flex-col overflow-hidden transition-colors hover:border-primary-text focus-within:ring-2 focus-within:ring-ring"
+      >
+        <div className="relative aspect-[4/5] w-full bg-muted">
+          <MemberPortrait member={member} className="h-full w-full" />
 
-            </div>
+          {/* Scrim so the overlaid name stays legible over any portrait. */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"
+          />
+
+          <span className="absolute right-2.5 top-2.5 inline-flex max-w-[70%] items-center rounded-full bg-black/25 px-2 py-0.5 text-[10px] font-medium tracking-wide text-white/85 backdrop-blur-sm">
+            {member.position}
+          </span>
+
+          <div className="absolute inset-x-3 bottom-3">
+            <h3 className="text-[15.5px] font-bold leading-tight tracking-tight text-white drop-shadow-sm">
+              {member.name}
+            </h3>
+            <p className="mt-0.5 text-xs font-medium text-white/80">{member.title}</p>
           </div>
         </div>
 
-        <div className="lg:w-3/4">
-          <div className="flex items-center gap-2 mb-4">
-            <IconTerminal className="h-5 w-5 text-green-400" />
-            <h3 className="text-2xl font-bold text-foreground">{member.name}</h3>
-          </div>
+        {/* Twenty of these buttons sit on the page, so the member's name goes
+            into the accessible name to keep them distinguishable in a list of
+            links and buttons, without changing the visible label. */}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
+          aria-label={`View profile: ${member.name}`}
+          className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-[12px] font-medium text-muted-foreground outline-none transition-colors group-hover:text-primary-text"
+        >
+          <span>View profile</span>
+          <IconArrowRight
+            aria-hidden="true"
+            className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+          />
+        </button>
+      </Card>
 
-          <div className="pl-4 border-l-2 border-border mb-6">
-            <p className="text-muted-foreground">{member.biography}</p>
-          </div>
-
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-2">
-              <IconCode className="h-4 w-4 text-blue-400" />
-              <h4 className="text-lg font-semibold text-foreground">Contribution</h4>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+          <div className="flex max-h-[85vh] flex-col sm:flex-row">
+            {/* Portrait: full height down the left, content scrolls on the right. */}
+            <div className="relative w-full shrink-0 bg-muted sm:w-2/5 sm:self-stretch">
+              <MemberPortrait member={member} className="h-56 w-full sm:h-full" />
             </div>
-            <div className="pl-6 text-muted-foreground">{member.contribution}</div>
-          </div>
 
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-2">
-              <IconBraces className="h-4 w-4 text-purple-400" />
-              <h4 className="text-lg font-semibold text-foreground">Tech stack</h4>
-            </div>
-            <div className="flex flex-wrap gap-2 pl-6">
-              {member.techStack.map((tech) => (
-                <span
-                  key={tech}
-                  className="px-3 py-1 rounded-md text-sm font-mono bg-muted text-green-400 border border-border hover:border-green-500/50 hover:bg-muted/70 transition-colors duration-200"
-                >
-                  {tech}
-                </span>
-              ))}
+            <div className="scrollbar-hover flex flex-1 flex-col gap-5 overflow-y-auto p-6">
+              <div>
+                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+                  {member.name}
+                </DialogTitle>
+                <p className="mt-0.5 text-sm font-medium text-primary-text">{member.title}</p>
+                <p className="mt-0.5 text-sm font-medium text-primary-text">{member.position}</p>
+              </div>
+
+              <p className="text-sm leading-relaxed text-muted-foreground">{member.biography}</p>
+
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <IconBriefcase className="h-4 w-4 text-primary-text" />
+                  <h4 className="text-sm font-medium text-foreground">Contribution</h4>
+                </div>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {member.contribution}
+                </p>
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <IconTools className="h-4 w-4 text-primary-text" />
+                  <h4 className="text-sm font-medium text-foreground">Tech stack</h4>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {member.techStack.map((tech) => (
+                    <Badge key={tech} variant="outline">
+                      {tech}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <IconSparkles className="h-4 w-4 text-primary-text" />
+                  <h4 className="text-sm font-medium text-foreground">Signature line</h4>
+                </div>
+                <pre className="overflow-x-auto rounded-[var(--radius-md)] border border-border bg-muted px-3 py-2">
+                  <code className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
+                    {member.codeSnippet}
+                  </code>
+                </pre>
+              </div>
             </div>
           </div>
-
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <IconTerminal className="h-4 w-4 text-green-400" />
-              <h4 className="text-lg font-semibold text-foreground">Signature element</h4>
-            </div>
-            <pre className="bg-muted p-4 rounded-lg overflow-x-auto border border-border group-hover:border-green-500/30 transition-colors duration-300">
-              <code className="text-green-400 font-mono text-sm">{member.codeSnippet}</code>
-            </pre>
-          </div>
-        </div>
-      </div>
-
-    </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -9,8 +9,8 @@
  * cookie issued by Core is accepted and rejected correctly across service
  * boundaries, and that a logout in any service invalidates access everywhere.
  */
-import { test, expect } from '@playwright/test';
-import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from '../../playwright.config';
+import { test, expect } from "@playwright/test";
+import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from "../../playwright.config";
 import {
   signUp,
   signOut,
@@ -19,19 +19,19 @@ import {
   DEFAULT_PASSWORD,
   checkStatus,
   createInstructor,
-} from '../helpers/auth';
-import { createQmCourseForInstructor } from '../helpers/qm-courses';
+} from "../helpers/auth";
+import { createQmCourseForInstructor } from "../helpers/qm-courses";
 
 // ---------------------------------------------------------------------------
 // Session propagation — one Core sign-in unlocks all three backends
 // ---------------------------------------------------------------------------
 
-test.describe('Single session across all three services', () => {
-  test('Core session cookie grants access to Core, AI Tutor, and QM simultaneously', async ({
+test.describe("Single session across all three services", () => {
+  test("Core session cookie grants access to Core, AI Tutor, and QM simultaneously", async ({
     request,
   }) => {
-    const email = uniqueEmail('journey-all');
-    await signUp(request, { email, name: 'Journey User' });
+    const email = uniqueEmail("journey-all");
+    await signUp(request, { email, name: "Journey User" });
 
     // Core
     const coreRes = await request.get(`${CORE_URL}/api/me`);
@@ -49,12 +49,13 @@ test.describe('Single session across all three services', () => {
     expect((await qmRes.json()).user.email).toBe(email);
   });
 
-  test('each service returns the same user identity (email, role)', async ({ request }) => {
-    const email = uniqueEmail('journey-identity');
-    await signUp(request, { email, name: 'Identity Check' });
+  test("each service returns the same user identity (email, role)", async ({ request }) => {
+    const email = uniqueEmail("journey-identity");
+    await signUp(request, { email, name: "Identity Check" });
 
     const coreBody = (await (await request.get(`${CORE_URL}/api/me`)).json()) as {
-      email: string; role: string;
+      email: string;
+      role: string;
     };
     const tutorBody = (await (await request.get(`${AI_TUTOR_API_URL}/api/me`)).json()) as {
       user: { email: string; role: string };
@@ -72,7 +73,7 @@ test.describe('Single session across all three services', () => {
     expect(qmBody.user.role).toBe(coreBody.role);
   });
 
-  test('without a session, all three services reject with 401', async ({ request }) => {
+  test("without a session, all three services reject with 401", async ({ request }) => {
     // No sign-in — fresh context
     const [coreStatus, tutorStatus, qmStatus] = await Promise.all([
       request.get(`${CORE_URL}/api/me`).then((r) => r.status()),
@@ -90,9 +91,9 @@ test.describe('Single session across all three services', () => {
 // Sign-out cascade — logout via Core invalidates access everywhere
 // ---------------------------------------------------------------------------
 
-test.describe('Sign-out cascade via Core', () => {
-  test('Core sign-out invalidates access on Core, AI Tutor, and QM', async ({ request }) => {
-    const email = uniqueEmail('cascade-core');
+test.describe("Sign-out cascade via Core", () => {
+  test("Core sign-out invalidates access on Core, AI Tutor, and QM", async ({ request }) => {
+    const email = uniqueEmail("cascade-core");
     await signUp(request, { email });
 
     // All three work before sign-out
@@ -113,39 +114,39 @@ test.describe('Sign-out cascade via Core', () => {
 // Sign-out cascade — logout via extension proxies to Core
 // ---------------------------------------------------------------------------
 
-test.describe('Sign-out cascade via AI Tutor', () => {
-  test('AI Tutor logout invalidates the Core session', async ({ request }) => {
-    const email = uniqueEmail('cascade-tutor');
+test.describe("Sign-out cascade via AI Tutor", () => {
+  test("AI Tutor logout invalidates the Core session", async ({ request }) => {
+    const email = uniqueEmail("cascade-tutor");
     await signUp(request, { email });
 
     // Sign out via AI Tutor
     const logoutRes = await request.post(`${AI_TUTOR_API_URL}/api/logout`);
-    await checkStatus(logoutRes, 200, 'AI Tutor POST /api/logout');
+    await checkStatus(logoutRes, 200, "AI Tutor POST /api/logout");
 
     // Core should now reject — body shown on failure to reveal if session persists
     const afterCore = await request.get(`${CORE_URL}/api/me`);
-    await checkStatus(afterCore, 401, 'Core /api/me after AI Tutor logout cascade');
+    await checkStatus(afterCore, 401, "Core /api/me after AI Tutor logout cascade");
     // AI Tutor itself should also reject (Core session gone)
     const afterTutor = await request.get(`${AI_TUTOR_API_URL}/api/me`);
-    await checkStatus(afterTutor, 401, 'AI Tutor /api/me after logout cascade');
+    await checkStatus(afterTutor, 401, "AI Tutor /api/me after logout cascade");
   });
 });
 
-test.describe('Sign-out cascade via Question Maker', () => {
-  test('QM logout invalidates the Core session', async ({ request }) => {
-    const email = uniqueEmail('cascade-qm');
+test.describe("Sign-out cascade via Question Maker", () => {
+  test("QM logout invalidates the Core session", async ({ request }) => {
+    const email = uniqueEmail("cascade-qm");
     await signUp(request, { email });
 
     // Sign out via Question Maker
     const logoutRes = await request.post(`${QM_BACKEND_URL}/api/auth/logout`);
-    await checkStatus(logoutRes, 200, 'QM POST /api/auth/logout');
+    await checkStatus(logoutRes, 200, "QM POST /api/auth/logout");
 
     // Core should now reject — body shown on failure to reveal if session persists
     const afterCore = await request.get(`${CORE_URL}/api/me`);
-    await checkStatus(afterCore, 401, 'Core /api/me after QM logout cascade');
+    await checkStatus(afterCore, 401, "Core /api/me after QM logout cascade");
     // QM itself should also reject
     const afterQM = await request.get(`${QM_BACKEND_URL}/api/auth/me`);
-    await checkStatus(afterQM, 401, 'QM /api/auth/me after logout cascade');
+    await checkStatus(afterQM, 401, "QM /api/auth/me after logout cascade");
   });
 });
 
@@ -153,9 +154,9 @@ test.describe('Sign-out cascade via Question Maker', () => {
 // Re-authentication — sign back in after logout
 // ---------------------------------------------------------------------------
 
-test.describe('Re-authentication after logout', () => {
-  test('can re-access all services after signing back in to Core', async ({ request }) => {
-    const email = uniqueEmail('reauth-cross');
+test.describe("Re-authentication after logout", () => {
+  test("can re-access all services after signing back in to Core", async ({ request }) => {
+    const email = uniqueEmail("reauth-cross");
     const { password } = await signUp(request, { email });
 
     await signOut(request);
@@ -180,8 +181,8 @@ test.describe('Re-authentication after logout', () => {
 // Data isolation — each user only sees their own data
 // ---------------------------------------------------------------------------
 
-test.describe('User data isolation across services', () => {
-  test('two users each see only their own QM courses', async ({ playwright }) => {
+test.describe("User data isolation across services", () => {
+  test("two users each see only their own QM courses", async ({ playwright }) => {
     // Each APIRequestContext has its own isolated cookie jar (no browser needed).
     const req1 = await playwright.request.newContext();
     const req2 = await playwright.request.newContext();
@@ -194,40 +195,44 @@ test.describe('User data isolation across services', () => {
       // callers so this test still exercises real list isolation: each user
       // gets their own Core-linked anchor via the shared helper (creates a
       // distinctly-named Core course, then posts the QM anchor as them).
-      await createInstructor(req1, { prefix: 'isolation-u1' });
-      await createInstructor(req2, { prefix: 'isolation-u2' });
+      await createInstructor(req1, { prefix: "isolation-u1" });
+      await createInstructor(req2, { prefix: "isolation-u2" });
 
-      await createQmCourseForInstructor(playwright, req1, { name: 'User 1 Course' });
-      await createQmCourseForInstructor(playwright, req2, { name: 'User 2 Course' });
+      await createQmCourseForInstructor(playwright, req1, { name: "User 1 Course" });
+      await createQmCourseForInstructor(playwright, req2, { name: "User 2 Course" });
 
       // Each user only sees their own courses
       // Pagination params are required on this list (#1044).
-      const raw1 = await (await req1.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`)).json();
-      const raw2 = await (await req2.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`)).json();
+      const raw1 = await (
+        await req1.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`)
+      ).json();
+      const raw2 = await (
+        await req2.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`)
+      ).json();
 
-      const courses1: Array<{ name: string }> = Array.isArray(raw1) ? raw1 : raw1?.data ?? [];
-      const courses2: Array<{ name: string }> = Array.isArray(raw2) ? raw2 : raw2?.data ?? [];
+      const courses1: Array<{ name: string }> = Array.isArray(raw1) ? raw1 : (raw1?.data ?? []);
+      const courses2: Array<{ name: string }> = Array.isArray(raw2) ? raw2 : (raw2?.data ?? []);
 
-      expect(courses1.some((c) => c.name === 'User 1 Course')).toBe(true);
-      expect(courses1.some((c) => c.name === 'User 2 Course')).toBe(false);
+      expect(courses1.some((c) => c.name === "User 1 Course")).toBe(true);
+      expect(courses1.some((c) => c.name === "User 2 Course")).toBe(false);
 
-      expect(courses2.some((c) => c.name === 'User 2 Course')).toBe(true);
-      expect(courses2.some((c) => c.name === 'User 1 Course')).toBe(false);
+      expect(courses2.some((c) => c.name === "User 2 Course")).toBe(true);
+      expect(courses2.some((c) => c.name === "User 1 Course")).toBe(false);
     } finally {
       await req1.dispose();
       await req2.dispose();
     }
   });
 
-  test('two users see separate Core profiles', async ({ playwright }) => {
+  test("two users see separate Core profiles", async ({ playwright }) => {
     const req1 = await playwright.request.newContext();
     const req2 = await playwright.request.newContext();
 
     try {
-      const email1 = uniqueEmail('iso-profile-u1');
-      const email2 = uniqueEmail('iso-profile-u2');
-      await signUp(req1, { email: email1, name: 'User One' });
-      await signUp(req2, { email: email2, name: 'User Two' });
+      const email1 = uniqueEmail("iso-profile-u1");
+      const email2 = uniqueEmail("iso-profile-u2");
+      await signUp(req1, { email: email1, name: "User One" });
+      await signUp(req2, { email: email2, name: "User Two" });
 
       const me1 = await (await req1.get(`${CORE_URL}/api/me`)).json();
       const me2 = await (await req2.get(`${CORE_URL}/api/me`)).json();

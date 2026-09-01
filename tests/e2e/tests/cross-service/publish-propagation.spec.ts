@@ -21,11 +21,12 @@
  * localhost:* origins automatically, so the same request context authenticates
  * against Core (port 3000) and AI Tutor (port 4000) simultaneously.
  */
-import { test, expect, type APIRequestContext } from '@playwright/test';
-import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
-import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
-import { importAtCourseForInstructor } from '../helpers/at-courses';
-import { canSeeCoreCourse } from '../helpers/core-courses';
+import { test, expect, type APIRequestContext } from "@playwright/test";
+import { AI_TUTOR_API_URL, CORE_URL } from "../../playwright.config";
+import { createAdmin, createInstructor, registerUser } from "../helpers/auth";
+import { importAtCourseForInstructor } from "../helpers/at-courses";
+import { canSeeCoreCourse } from "../helpers/core-courses";
+import { atListData, atListResponse } from "../helpers/at-pagination";
 
 async function getMyId(request: APIRequestContext): Promise<string> {
   const res = await request.get(`${CORE_URL}/api/me`);
@@ -39,28 +40,28 @@ const RUN_SUFFIX = Date.now().toString().slice(-5);
 // Shared user identity
 // ---------------------------------------------------------------------------
 
-test.describe('Cross-service shared user identity (Core userId in AT enrollment)', () => {
-  test('student enrolled in AT using their Core userId can see a published AT course', async ({
+test.describe("Cross-service shared user identity (Core userId in AT enrollment)", () => {
+  test("student enrolled in AT using their Core userId can see a published AT course", async ({
     playwright,
   }) => {
     const instrCtx = await playwright.request.newContext();
     const studentCtx = await playwright.request.newContext();
 
     try {
-      await createInstructor(instrCtx, { prefix: 'cs-identity-instr' });
-      await registerUser(studentCtx, { prefix: 'cs-identity-student' });
+      await createInstructor(instrCtx, { prefix: "cs-identity-instr" });
+      await registerUser(studentCtx, { prefix: "cs-identity-student" });
 
       // Get the student's Core user ID — this is the same ID used in AT enrollments
       const { id: coreStudentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
       // INSTRUCTOR imports a Core-linked AT course
       const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, instrCtx, {
-        name: 'Identity Test Course',
+        name: "Identity Test Course",
       });
 
       // Enroll the student using their Core user ID
       const enrollRes = await instrCtx.post(`${AT}/api/admin/courses/${courseId}/enrollments`, {
-        data: { userId: coreStudentId, role: 'STUDENT' },
+        data: { userId: coreStudentId, role: "STUDENT" },
       });
       expect(enrollRes.status()).toBe(201);
 
@@ -68,10 +69,8 @@ test.describe('Cross-service shared user identity (Core userId in AT enrollment)
       await instrCtx.patch(`${AT}/api/courses/${courseId}/publish`);
 
       // The student's Core session is sufficient to see the AT course
-      const listRes = await studentCtx.get(`${AT}/api/courses`);
-      expect(listRes.status()).toBe(200);
-      const courses = await listRes.json();
-      expect(courses.some((c: any) => c.id === courseId)).toBe(true);
+      const courses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(courses.some((c) => c.id === courseId)).toBe(true);
     } finally {
       await instrCtx.dispose();
       await studentCtx.dispose();
@@ -83,8 +82,8 @@ test.describe('Cross-service shared user identity (Core userId in AT enrollment)
 // Independent enrollment tracking
 // ---------------------------------------------------------------------------
 
-test.describe('Core and AI Tutor enrollment tracks are independent', () => {
-  test('student enrolled in a Core course is NOT automatically enrolled in a native AT course', async ({
+test.describe("Core and AI Tutor enrollment tracks are independent", () => {
+  test("student enrolled in a Core course is NOT automatically enrolled in a native AT course", async ({
     playwright,
   }) => {
     const adminCtx = await playwright.request.newContext();
@@ -92,9 +91,9 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
     const studentCtx = await playwright.request.newContext();
 
     try {
-      await createAdmin(adminCtx, { prefix: 'cs-indep-admin' });
-      await createInstructor(instrCtx, { prefix: 'cs-indep-instr' });
-      await registerUser(studentCtx, { prefix: 'cs-indep-student' });
+      await createAdmin(adminCtx, { prefix: "cs-indep-admin" });
+      await createInstructor(instrCtx, { prefix: "cs-indep-instr" });
+      await registerUser(studentCtx, { prefix: "cs-indep-student" });
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
       const instrId = await getMyId(instrCtx);
@@ -102,13 +101,13 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
       // Create and publish a Core course; enroll the student there
       const coreCreateRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
         form: {
-          name: 'CS Indep Course',
+          name: "CS Indep Course",
           code: `CS-399-${RUN_SUFFIX}`,
-          section: '001',
-          term: 'W1',
-          year: '2026',
-          startDate: '2026-09-08',
-          department: 'COSC',
+          section: "001",
+          term: "W1",
+          year: "2026",
+          startDate: "2026-09-08",
+          department: "COSC",
           instructorUserIds: instrId,
         },
       });
@@ -116,7 +115,7 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
       const { id: coreCourseId } = await coreCreateRes.json();
 
       await adminCtx.post(`${CORE_URL}/api/courses/${coreCourseId}/enrollments`, {
-        data: { userId: studentId, role: 'STUDENT' },
+        data: { userId: studentId, role: "STUDENT" },
       });
       await adminCtx.patch(`${CORE_URL}/api/courses/${coreCourseId}/publish`);
 
@@ -125,16 +124,14 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
 
       // INSTRUCTOR imports a separate Core-linked AT course (not the Core-enrolled course)
       const { atCourseId } = await importAtCourseForInstructor(playwright, instrCtx, {
-        name: 'Native AT Course',
-        code: 'AT-INDEP',
+        name: "Native AT Course",
+        code: "AT-INDEP",
       });
       await instrCtx.patch(`${AT}/api/courses/${atCourseId}/publish`);
 
       // Student is NOT enrolled in the AT course — it should not appear in their AT list
-      const atList = await studentCtx.get(`${AT}/api/courses`);
-      expect(atList.status()).toBe(200);
-      const atCourses = await atList.json();
-      expect(atCourses.some((c: any) => c.id === atCourseId)).toBe(false);
+      const atCourses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(atCourses.some((c) => c.id === atCourseId)).toBe(false);
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
@@ -147,40 +144,40 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
 // Role propagation
 // ---------------------------------------------------------------------------
 
-test.describe('Core role changes propagate to AI Tutor immediately', () => {
-  test('INSTRUCTOR promoted in Core can create AT content without a separate AT login', async ({
+test.describe("Core role changes propagate to AI Tutor immediately", () => {
+  test("INSTRUCTOR promoted in Core can create AT content without a separate AT login", async ({
     request,
     playwright,
   }) => {
     // createInstructor promotes via Core's /api/e2e/promote then re-signs in;
     // the resulting session is verified immediately in AT with no extra steps.
-    await createInstructor(request, { prefix: 'cs-role-instr' });
+    await createInstructor(request, { prefix: "cs-role-instr" });
 
     const { atCourseId } = await importAtCourseForInstructor(playwright, request, {
-      name: 'Role Propagation Course',
+      name: "Role Propagation Course",
     });
 
     const res = await request.post(`${AT}/api/courses/${atCourseId}/modules`, {
-      data: { title: 'Module after Core import' },
+      data: { title: "Module after Core import" },
     });
     expect(res.status()).toBe(201);
   });
 
-  test('ADMIN promoted in Core can access AT admin-only routes', async ({ request }) => {
-    await createAdmin(request, { prefix: 'cs-role-admin' });
+  test("ADMIN promoted in Core can access AT admin-only routes", async ({ request }) => {
+    await createAdmin(request, { prefix: "cs-role-admin" });
 
     const usersRes = await request.get(`${AT}/api/admin/users`);
     expect(usersRes.status()).toBe(200);
 
-    const coursesRes = await request.get(`${AT}/api/admin/courses`);
+    const coursesRes = await atListResponse(request, `${AT}/api/admin/courses`);
     expect(coursesRes.status()).toBe(200);
   });
 
-  test('STUDENT in Core is blocked from AT INSTRUCTOR-only routes', async ({ request }) => {
-    await registerUser(request, { prefix: 'cs-role-student' });
+  test("STUDENT in Core is blocked from AT INSTRUCTOR-only routes", async ({ request }) => {
+    await registerUser(request, { prefix: "cs-role-student" });
 
     const res = await request.post(`${AT}/api/courses`, {
-      data: { title: 'Should Be Blocked' },
+      data: { title: "Should Be Blocked" },
     });
     expect(res.status()).toBe(403);
   });

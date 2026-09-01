@@ -4,7 +4,7 @@
  *   npm run re-embed:course -- --list
  *   npm run re-embed:course -- <courseId-or-code>
  *
- * See docs/rag-ai/LOCAL-EMBEDDINGS.md
+ * See docs/rag-ai/EMBEDDINGS.md
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -104,7 +104,9 @@ async function main() {
 
   if ("notFound" in resolved) {
     console.error(`Course not found: ${resolved.ref}`);
-    console.error("(Lookup accepts the internal id or exact course code, e.g. COSC 111 — not a partial nickname.)");
+    console.error(
+      "(Lookup accepts the internal id or exact course code, e.g. COSC 111 — not a partial nickname.)",
+    );
     if (resolved.suggestions.length > 0) {
       console.error("\nDid you mean one of these?");
       for (const c of resolved.suggestions) {

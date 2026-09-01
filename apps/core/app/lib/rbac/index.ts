@@ -8,7 +8,7 @@ export type {
   NavGroupItem,
   NavItemKey,
   NavUser,
-} from './types'
+} from "./types";
 export {
   canCreateCourse,
   canEditCourse,
@@ -27,6 +27,6 @@ export {
   manageEnrollmentsPolicyKey,
   canViewCourseChats,
   isStudentAccess,
-} from './permissions'
-export type { ChatViewGate } from './permissions'
-export { getNavForUser, getNavSecondaryForUser } from './nav'
+} from "./permissions";
+export type { ChatViewGate } from "./permissions";
+export { getNavForUser, getNavSecondaryForUser } from "./nav";

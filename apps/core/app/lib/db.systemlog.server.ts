@@ -4,8 +4,15 @@
  * System logging must never block user-facing mutations. These helpers therefore guarantee
  * a console fallback when DB writes fail so operational diagnostics are still preserved.
  */
+import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { normalizePagination } from "~/lib/pagination.server";
+import { z } from "zod";
+import {
+  redactErrorForConsole,
+  redactSecretValuesInString,
+  sanitizeSensitiveData,
+} from "~/lib/redact.server";
 
 export type SystemLogLevel = "ERROR" | "WARN" | "INFO";
 
@@ -48,7 +55,7 @@ export type SystemLogListParams = {
 export type SystemLogRow = Awaited<ReturnType<typeof prisma.systemLog.findFirst>>;
 
 function buildSystemLogWhere(params: SystemLogListParams) {
-  const where: Record<string, unknown> = {};
+  const where: Prisma.SystemLogWhereInput = {};
 
   if (params.level) {
     where.level = params.level;
@@ -60,28 +67,34 @@ function buildSystemLogWhere(params: SystemLogListParams) {
     where.code = { contains: params.code.trim() };
   }
   if (params.dateFrom || params.dateTo) {
+    // An `undefined` bound is Prisma's "no constraint", so an open-ended range
+    // states both ends rather than omitting one.
     where.createdAt = {
-      ...(params.dateFrom ? { gte: params.dateFrom } : {}),
-      ...(params.dateTo ? { lte: params.dateTo } : {}),
+      gte: params.dateFrom ?? undefined,
+      lte: params.dateTo ?? undefined,
     };
   }
 
   return where;
 }
 
-function normalizeErrorMetadata(error: unknown): { errorName: string | null; stack: string | null } {
+/** What a log line records about a throwable: its name and stack, when it has them. */
+type ErrorMetadata = { errorName: string | null; stack: string | null };
+
+function normalizeErrorMetadata(cause: unknown): ErrorMetadata {
   // Normalizing unknown errors keeps diagnostics useful even when throwables are non-Error values.
-  if (error instanceof Error) {
+  if (cause instanceof Error) {
     return {
-      errorName: error.name || "Error",
-      stack: error.stack ?? null,
+      errorName: cause.name || "Error",
+      stack: cause.stack ?? null,
     };
   }
 
-  if (typeof error === "string") {
+  const text = z.string().safeParse(cause);
+  if (text.success) {
     return {
       errorName: "Error",
-      stack: error,
+      stack: text.data,
     };
   }
 
@@ -92,16 +105,27 @@ function normalizeErrorMetadata(error: unknown): { errorName: string | null; sta
 }
 
 export async function createSystemLog(input: CreateSystemLogInput): Promise<void> {
+  // Redact here rather than in the logging facade: this is the single chokepoint every system
+  // log passes through, and `stack` only exists once `normalizeErrorMetadata` has derived it
+  // from the thrown value. Error strings routinely embed URLs with `?access_token=` and
+  // connection strings with `//user:pass@`.
+  //
+  // `details` is normally already sanitized by the facade; re-running it covers direct callers.
+  // Re-application is idempotent because `[REDACTED]` matches none of the patterns.
+  const safeMessage = redactSecretValuesInString(input.message);
+  const safeStack = input.stack ? redactSecretValuesInString(input.stack) : null;
+  const safeDetails = sanitizeSensitiveData(input.details ?? null);
+
   try {
     await prisma.systemLog.create({
       data: {
         level: input.level,
         source: input.source,
         code: input.code,
-        message: input.message,
+        message: safeMessage,
         errorName: input.errorName ?? null,
-        stack: input.stack ?? null,
-        details: (input.details ?? null) as any,
+        stack: safeStack,
+        details: safeDetails as any,
         actorUserId: input.actorUserId ?? null,
         actorRole: input.actorRole ?? null,
         requestId: input.requestId ?? null,
@@ -113,13 +137,14 @@ export async function createSystemLog(input: CreateSystemLogInput): Promise<void
       },
     });
   } catch (error) {
-    // Console fallback preserves the event even when DB is unhealthy.
+    // Console fallback preserves the event even when DB is unhealthy. It must redact too —
+    // a connection failure is exactly the case where the driver error carries DB credentials.
     console.error("[SYSTEM_LOG_WRITE_FAILED]", {
       code: input.code,
       source: input.source,
       level: input.level,
-      message: input.message,
-      error,
+      message: safeMessage,
+      error: redactErrorForConsole(error),
     });
   }
 }
@@ -137,7 +162,7 @@ export async function createSystemError(input: CreateSystemErrorInput): Promise<
 }
 
 export async function listSystemLogs(
-  params: SystemLogListParams
+  params: SystemLogListParams,
 ): Promise<{ rows: SystemLogRow[]; total: number }> {
   const { safePageSize, skip } = normalizePagination(params.page, params.pageSize);
   const where = buildSystemLogWhere(params);

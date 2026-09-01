@@ -5,6 +5,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const routingSettingsMock = vi.hoisted(() => ({
+  getRoutingModelSettings: vi.fn(),
+}));
+
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
@@ -23,32 +27,50 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
+// #1571: the admin chatMode gate re-checks isActive against the DB. Default the
+// mocked admin to active; the deactivated-admin test overrides it to false.
+vi.mock("~/lib/api-keys/access.server", () => ({
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
+vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
+    user: { create: vi.fn(), findUnique: vi.fn() },
+    externalUser: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   },
+}));
+
+vi.mock("~/lib/policy.server", () => ({
+  getPolicy: vi.fn(),
 }));
 
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
+import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import type { JsonObject } from "~/lib/json-value";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
 type Access = { level: string; rank: number } | null;
 
-function mockAccess(access: Access, course: object | null = COURSE) {
+function mockAccess(access: Access, course: CourseGateFixture | null = COURSE) {
   vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
 }
 
-function makeArgs(body: object) {
+function makeArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -63,9 +85,18 @@ function makeArgs(body: object) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  // vi.clearAllMocks() resets call history but NOT implementations, so a test
+  // that stubs an admin api-key session leaks it into every later test. Restore
+  // the default here rather than at each call site.
+  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
+  routingSettingsMock.getRoutingModelSettings.mockResolvedValue({
+    autoLlmEnabled: true,
+    autoRulesEnabled: false,
+  });
 });
 
 describe("POST /api/chat — §10 course gate (#302)", () => {
@@ -75,9 +106,62 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("rejects the legacy auto-hybrid mode before course or model routing", async () => {
+    const res = await action(makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Unsupported routing model",
+      details: 'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects Auto when the administrator disables LLM routing", async () => {
+    routingSettingsMock.getRoutingModelSettings.mockResolvedValue({
+      autoLlmEnabled: false,
+      autoRulesEnabled: false,
+    });
+
+    const res = await action(makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: "Routing model disabled",
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects Auto (rules) when the administrator disables rule routing", async () => {
+    const res = await action(makeArgs({ messages: [], model: "auto", courseId: "c1" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: "Routing model disabled",
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when the course does not exist", async () => {
     mockAccess(null, null);
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+
+  it("returns 404 when the course was soft-deleted mid-chat (#225 RAG-09)", async () => {
+    // Soft-deleted courses resolve the same as missing: { course: null, access: null }.
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: "chat-soft-deleted",
+      userId: "u1",
+      courseId: "c1",
+      chatbotType: null,
+    } as never);
+    mockAccess(null, null);
+    const res = await action(
+      makeArgs({
+        messages: [{ id: "m1", role: "user", content: "Follow-up question" }],
+        courseId: "c1",
+        chatId: "chat-soft-deleted",
+      }),
+    );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
   });
@@ -108,6 +192,21 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));
     expect(res.status).toBe(200);
     expect((await res.json()).chatId).toBeNull();
+  });
+
+  it("uses the selected course id when duplicate course codes exist", async () => {
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(
+      makeArgs({ messages: [], courseId: "course-2", courseCode: "COSC 101" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "course-2",
+    );
   });
 
   it("admits a TA even when the course is unpublished", async () => {
@@ -203,8 +302,18 @@ describe("POST /api/chat — admin chatMode gate", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN" },
     } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
   });
 
   it("rejects a valid service key for admin chatMode", async () => {
@@ -238,11 +347,148 @@ describe("POST /api/chat — admin chatMode gate", () => {
   });
 });
 
+// #1659: instructor mode is scoped to ONE published course the caller
+// actually teaches. Unlike admin mode, a course is always required, and the
+// authorization decision reuses the same resolveCourseAccessWithCourse
+// result every other course-scoped route reads — access.level === "instructor"
+// means "an active INSTRUCTOR enrollment on this exact course", regardless of
+// the caller's platform-wide UserRole.
+describe("POST /api/chat — instructor chatMode gate (#1659)", () => {
+  it("returns 400 COURSE_REQUIRED when instructor chatMode omits a course", async () => {
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("requires a course for instructor mode even for a server-to-server (service-key) caller — unlike learning/admin mode (#1659 review)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null); // valid service key
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("admits an INSTRUCTOR of a published course they teach (allow)", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("denies an instructor-level caller when the course is unpublished (deny: unpublished)", async () => {
+    mockAccess({ level: "instructor", rank: 2 }, { ...COURSE, isPublished: false });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a caller with no relationship to the course (deny: other course)", async () => {
+    mockAccess(null);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a STUDENT-level enrollment on this course (not their course to run ops on)", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a TA-level enrollment on this course", async () => {
+    mockAccess({ level: "ta", rank: 1 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies ADMIN-level access without a real INSTRUCTOR enrollment on this course (use /admin/chat instead)", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("denies UNIT_ADMIN-level access without a real INSTRUCTOR enrollment on this course", async () => {
+    mockAccess({ level: "unit", rank: 3 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 when the course does not exist", async () => {
+    mockAccess(null, null);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+});
+
+// Edge-case audit #225 (RAG-03): chat isolation guards (foreign chatId,
+// cross-course follow-up) were enforced in the route but untested there.
+describe("POST /api/chat — chat isolation guards (#225 RAG-03)", () => {
+  beforeEach(() => {
+    // Reset the api-key guard to "no api-key session" so the acting user is the
+    // STUDENT from getSession (other describe blocks leave an admin override).
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+  });
+
+  it("returns 410 when the chatId does not belong to the acting user", async () => {
+    // findFirst is ownership-scoped ({ id, userId }); a foreign/nonexistent
+    // chat resolves to null and must not leak another user's history.
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue(null);
+
+    const res = await action(
+      makeArgs({ messages: [], chatId: "someone-elses-chat", courseId: "c1" }),
+    );
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toEqual({ error: "Chat not found", chatDeleted: true });
+    // Blocked before course access is ever resolved.
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("scopes the chat lookup to the acting user's id", async () => {
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue(null);
+
+    await action(makeArgs({ messages: [], chatId: "chat-x", courseId: "c1" }));
+
+    expect(prisma.chat.findFirst).toHaveBeenCalledWith({
+      where: { id: "chat-x", userId: "u1" },
+    });
+  });
+
+  it("returns 409 COURSE_MISMATCH when a follow-up turn names a different course", async () => {
+    // A persisted chat is pinned to its course; switching would split RAG
+    // context and history across courses.
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: "chat-1",
+      userId: "u1",
+      courseId: "c1",
+      chatbotType: null,
+    } as never);
+
+    const res = await action(makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "COURSE_MISMATCH" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/chat — proxyUser delegation", () => {
-  it("returns 403 when proxyUser is sent without a verified admin API key session", async () => {
+  beforeEach(() => {
+    // These tests drive `resolveProxyUser` directly, so they need a verified
+    // admin API-key session (the only way to reach the proxyUser flow at all)
+    // rather than the STUDENT cookie session from the outer `beforeEach`.
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN" },
     } as never);
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: null,
+      session: { user: { id: "a1", role: "ADMIN" } } as never,
+    });
+    vi.mocked(prisma.externalUser.findUnique).mockResolvedValue(null as never);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+  });
+
+  it("returns 403 when proxyUser is sent without a verified admin API key session", async () => {
     vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
     mockAccess({ level: "admin", rank: 3 });
     const res = await action(
@@ -254,5 +500,267 @@ describe("POST /api/chat — proxyUser delegation", () => {
     );
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "proxyUser requires admin API key access" });
+  });
+
+  // Edge-case audit #225 (AUTH-01) [SECURITY]: `proxyUser.email` used to be
+  // looked up against existing EduAI accounts and adopted wholesale — role
+  // included — letting a delegating caller impersonate any instructor/admin
+  // merely by naming their email. There must be no code path that resolves an
+  // *existing* account by email alone.
+  it("never inherits an existing instructor/admin's role via proxyUser.email (email alone cannot escalate)", async () => {
+    // No (provider, externalUserId) mapping exists yet, so this is a "new
+    // identity" resolution. Simulate the supplied email already belonging to
+    // a real instructor account: user creation collides on the unique email
+    // constraint instead of silently binding to (and inheriting) that account.
+    vi.mocked(prisma.user.create).mockRejectedValue({ code: "P2002" });
+
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: {
+          id: "external-1",
+          provider: "aitutor",
+          email: "real-instructor@ubc.ca",
+        },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Failed to resolve proxy user");
+    // Never binds to the colliding account, so course access is never
+    // resolved against it (i.e., never runs as the instructor).
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    // The only lookup performed is the (provider, externalUserId) mapping —
+    // there is no email-based user lookup that could adopt an existing role.
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  // AUTH-03 [SECURITY]: auto-creating a brand-new proxy user is account
+  // creation and must clear the same bar as self-registration.
+  it("refuses to auto-create a proxy user with a non-UBC email (fail-closed)", async () => {
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: { id: "external-2", provider: "aitutor", email: "student@gmail.com" },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Failed to resolve proxy user");
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to auto-create a proxy user with no email at all (fail-closed)", async () => {
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: { id: "external-3", provider: "aitutor" },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to auto-create a proxy user while auth.allowPublicRegistration is off, even with a UBC email", async () => {
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: { id: "external-4", provider: "aitutor", email: "new-student@student.ubc.ca" },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("creates a least-privilege STUDENT proxy identity for a vetted new UBC email", async () => {
+    vi.mocked(prisma.user.create).mockResolvedValue({
+      id: "new-proxy-user",
+      email: "new-student@student.ubc.ca",
+      name: "new-student@student.ubc.ca",
+      role: "STUDENT",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.externalUser.create).mockResolvedValue({} as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: { id: "external-5", provider: "aitutor", email: "new-student@student.ubc.ca" },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        email: "new-student@student.ubc.ca",
+        name: "new-student@student.ubc.ca",
+        role: "STUDENT",
+        isActive: true,
+      },
+    });
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "new-proxy-user", role: "STUDENT" }),
+      "c1",
+    );
+  });
+
+  it("reuses the existing (provider, externalUserId) mapping's user without any email lookup", async () => {
+    vi.mocked(prisma.externalUser.findUnique).mockResolvedValue({
+      id: "mapping-1",
+      provider: "aitutor",
+      externalUserId: "external-6",
+      email: "existing@student.ubc.ca",
+      user: {
+        id: "mapped-user",
+        email: "existing@student.ubc.ca",
+        name: "existing@student.ubc.ca",
+        role: "STUDENT",
+        isActive: true,
+      },
+    } as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: { id: "external-6", provider: "aitutor", email: "existing@student.ubc.ca" },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "mapped-user", role: "STUDENT" }),
+      "c1",
+    );
+  });
+});
+
+describe("POST /api/chat — bounded ingress", () => {
+  it("rejects a body that exceeds the byte budget before routing or persistence", async () => {
+    const body = JSON.stringify({
+      model: "auto-hybrid",
+      messages: [],
+      oversized: "x".repeat(2 * 1024 * 1024 + 1),
+    });
+    const args = {
+      request: new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Deliberately omit Content-Length so the stream byte cap is exercised.
+        },
+        body,
+      }),
+      params: {},
+      context: {} as never,
+    } as any;
+
+    const res = await action(args);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Chat request body exceeds size limit",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized message list before routing or persistence", async () => {
+    const body = {
+      model: "auto-hybrid",
+      messages: Array.from({ length: 101 }, (_, index) => ({
+        id: `message-${index}`,
+        role: "user",
+        content: "hi",
+      })),
+    };
+    const args = makeArgs(body);
+
+    const res = await action(args);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "messages exceeds maximum count",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
+
+// §19 chat system prompt layering (#1606): a custom system prompt is APPENDED to
+// the EduAI base prompt rather than replacing it, so no caller can delete the
+// assistant's identity, the instructor's response style, or the course-scope
+// guardrail. The composition itself is asserted in
+// course-response-style.route.test.ts; these cover admission and persistence.
+describe("POST /api/chat — §19 system prompt layering (#1606)", () => {
+  const PROMPT = "Reply in bullet points.";
+
+  const send = (body: JsonObject = {}) =>
+    action(makeArgs({ messages: [], courseId: "c1", systemPrompt: PROMPT, ...body }));
+
+  function mockRole(role: string) {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role } } as never);
+  }
+
+  it.each([
+    ["student", 0],
+    ["ta", 1],
+    ["instructor", 2],
+    ["unit", 3],
+    ["admin", 4],
+  ])("admits %s access — layering makes the prompt safe for every role", async (level, rank) => {
+    mockAccess({ level, rank });
+    const res = await send();
+    expect(res.status).not.toBe(403);
+  });
+
+  it("no longer rejects a student's prompt (the #1606 403 gate was replaced by layering)", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await send();
+    expect(res.status).not.toBe(403);
+    expect(await res.text()).not.toContain("SYSTEM_PROMPT_FORBIDDEN");
+  });
+
+  it("still enforces the course gate before reaching prompt handling", async () => {
+    // Layering relaxes WHAT a prompt can do, not WHO may open a course chat.
+    mockAccess(null);
+    const res = await send();
+    expect(res.status).toBe(403);
+  });
+
+  it("leaves ordinary messages untouched when no prompt is sent", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeArgs({ messages: [], courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("a student cookie plus bearer is still a browser caller, not a sessionless service-key caller", async () => {
+    // isServiceKeyCaller only fires when there is no session. A Bearer header
+    // on a real cookie must not skip COURSE_REQUIRED or switch to replace.
+    const args = makeArgs({ messages: [], systemPrompt: PROMPT });
+    args.request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer valid-service-key",
+      },
+      body: JSON.stringify({ messages: [], systemPrompt: PROMPT }),
+    });
+
+    const res = await action(args);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(requireServiceKey).not.toHaveBeenCalled();
   });
 });

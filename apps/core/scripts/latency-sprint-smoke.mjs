@@ -8,7 +8,7 @@
  *   node ./scripts/latency-sprint-smoke.mjs
  *
  * Optional:
- *   CHAT_SMOKE_TOOL_MODEL=vllm:qwen2.5-32b-instruct
+ *   CHAT_SMOKE_TOOL_MODEL=vllm:qwen3.5-9b-instruct
  *   CHAT_SMOKE_COURSE_CODE="COSC 121"
  */
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,7 @@ import { performance } from "node:perf_hooks";
 const BASE = (process.env.CHAT_SMOKE_URL || "https://dev.eduai.ok.ubc.ca").replace(/\/$/, "");
 const EMAIL = process.env.CHAT_SMOKE_EMAIL || "admin@eduai.local";
 const PASSWORD = process.env.CHAT_SMOKE_PASSWORD;
-const TOOL_MODEL = process.env.CHAT_SMOKE_TOOL_MODEL || "vllm:qwen2.5-32b-instruct";
+const TOOL_MODEL = process.env.CHAT_SMOKE_TOOL_MODEL || "vllm:qwen3.5-9b-instruct";
 const COURSE_CODE = process.env.CHAT_SMOKE_COURSE_CODE || "COSC 121";
 
 const MAGIC_PHRASES = [
@@ -41,7 +41,7 @@ function skip(msg) {
 
 async function login() {
   if (!PASSWORD) {
-    throw new Error("Set CHAT_SMOKE_PASSWORD (seed default: EduAI2026! on dev)");
+    throw new Error("Set CHAT_SMOKE_PASSWORD to the explicit local seed password");
   }
   const body = new URLSearchParams({ email: EMAIL, password: PASSWORD });
   const res = await fetch(`${BASE}/auth/login`, {
@@ -142,7 +142,9 @@ async function checkSelectedModelUsed(cookie) {
   if (res.status !== 200) return fail(`chat-only HTTP ${res.status}`);
   const routed = res.headers.get("X-Routed-Model");
   if (routed) {
-    return fail(`X-Routed-Model=${routed} (server should use the selected model, not route elsewhere)`);
+    return fail(
+      `X-Routed-Model=${routed} (server should use the selected model, not route elsewhere)`,
+    );
   }
   return pass(`Selected model used with no tier override (${ms} ms)`);
 }

@@ -1,0 +1,121 @@
+[
+  {
+    "PlatformRole": "STUDENT",
+    "Enrollment": "instructor",
+    "Published": "yes",
+    "UnitMatch": "in-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "ADMIN",
+    "Enrollment": "none",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "ADMIN",
+    "Enrollment": "student",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "INSTRUCTOR",
+    "Enrollment": "instructor",
+    "Published": "yes",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "UNIT_ADMIN",
+    "Enrollment": "none",
+    "Published": "yes",
+    "UnitMatch": "out-of-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "STUDENT",
+    "Enrollment": "none",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "UNIT_ADMIN",
+    "Enrollment": "instructor",
+    "Published": "no",
+    "UnitMatch": "out-of-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "UNIT_ADMIN",
+    "Enrollment": "student",
+    "Published": "yes",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "UNIT_ADMIN",
+    "Enrollment": "ta",
+    "Published": "yes",
+    "UnitMatch": "out-of-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "STUDENT",
+    "Enrollment": "ta",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "ADMIN",
+    "Enrollment": "ta",
+    "Published": "yes",
+    "UnitMatch": "in-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "STUDENT",
+    "Enrollment": "student",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "ADMIN",
+    "Enrollment": "instructor",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "INSTRUCTOR",
+    "Enrollment": "student",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "INSTRUCTOR",
+    "Enrollment": "none",
+    "Published": "yes",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  },
+  {
+    "PlatformRole": "UNIT_ADMIN",
+    "Enrollment": "student",
+    "Published": "no",
+    "UnitMatch": "out-of-unit",
+    "Site": "ai-tutor"
+  },
+  {
+    "PlatformRole": "INSTRUCTOR",
+    "Enrollment": "ta",
+    "Published": "no",
+    "UnitMatch": "in-unit",
+    "Site": "core"
+  }
+]

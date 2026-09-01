@@ -1,9 +1,35 @@
-const store = new Map<string, number[]>();
+import type { JsonValue } from "~/lib/json-value";
+import { randomUUID } from "node:crypto";
+import { rateLimitRedis } from "~/lib/queue/connection.server";
 
 /**
- * Number(process.env.X ?? fallback) only falls back on null/undefined — an
- * empty string ("") skips the fallback and parses to 0. Guard against that
- * here so a blank env value can't silently zero out a limit or window.
+ * Per-process fallback used by session validation and Redis-backed limits.
+ * Each hit carries its own `token` (alongside its timestamp) so a specific
+ * charge can be refunded by identity rather than by position — see
+ * {@link refundRateLimitCharge}.
+ */
+const store = new Map<string, Array<{ ts: number; token: string }>>();
+
+export type RateLimitResult = {
+  limited: boolean;
+  retryAfter: number;
+  /**
+   * The exact charge this call made — present only when `limited` is false
+   * (a charge actually happened). Pass it to {@link refundRateLimitCharge}
+   * to undo precisely this charge, never a concurrent one (#1547 review).
+   */
+  reservationToken?: string;
+};
+
+export type ChatRateLimitConfig = {
+  limit: number;
+  windowMs: number;
+};
+
+/**
+ * Number(process.env.X ?? fallback) only falls back on null/undefined. Guard
+ * against blank and non-finite values so configuration cannot silently become
+ * zero or NaN.
  */
 export function parseEnvInt(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === "") return fallback;
@@ -11,60 +37,215 @@ export function parseEnvInt(value: string | undefined, fallback: number): number
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-// Bounds the store (#990): a plain unbounded Map leaks memory in a
-// single-process deployment, since a key with one hit and no return visit is
-// never removed. STALE_ENTRY_MS is comfortably larger than any configured
-// window so a sweep never evicts a key with an active hit count.
+export function getChatRateLimitConfig(): ChatRateLimitConfig {
+  const legacyWindowMs = parseEnvInt(process.env.CHAT_RATE_WINDOW_MS, 60_000);
+  return {
+    limit: parseEnvInt(process.env.CHAT_RATE_LIMIT, 100),
+    windowMs: parseEnvInt(process.env.CHAT_RATE_LIMIT_WINDOW_MS, legacyWindowMs),
+  };
+}
+
+// Bound the process-local fallback (#990). The stale window (1 hour) is
+// larger than the ~60s burst limiter. The local-chatbot daily cap (#1547)
+// reuses this store with a 24-hour window: if Redis is down and the store
+// exceeds MAX_STORE_KEYS, a chat-daily:* key idle between 1h and 24h can
+// be evicted, which resets that user's count. That fails open (more
+// messages, not fewer). Redis stays authoritative when it is healthy.
 const MAX_STORE_KEYS = parseEnvInt(process.env.RATE_LIMIT_MAX_KEYS, 50_000);
 const STALE_ENTRY_MS = 60 * 60_000;
-// Eviction below targets 90% of the cap rather than exactly MAX_STORE_KEYS,
-// so a sweep isn't immediately re-triggered by the next insert once the
-// store is sitting right at the cap under sustained load.
 const EVICTION_TARGET_KEYS = Math.floor(MAX_STORE_KEYS * 0.9);
+const REDIS_OPERATION_TIMEOUT_MS = 300;
+
+const SLIDING_WINDOW_SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window_ms = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local member = ARGV[4]
+local cutoff = now - window_ms
+
+redis.call("ZREMRANGEBYSCORE", key, "-inf", cutoff)
+local count = redis.call("ZCARD", key)
+
+if count >= limit then
+  local oldest = redis.call("ZRANGE", key, 0, 0, "WITHSCORES")
+  local retry_after = 1
+  if oldest[2] then
+    retry_after = math.max(1, math.ceil((tonumber(oldest[2]) + window_ms - now) / 1000))
+  end
+  redis.call("PEXPIRE", key, window_ms)
+  return {1, retry_after}
+end
+
+redis.call("ZADD", key, now, member)
+redis.call("PEXPIRE", key, window_ms)
+return {0, 0}
+`;
 
 function evictStaleEntries(now: number): void {
   for (const [key, hits] of store) {
     const lastHit = hits[hits.length - 1];
-    if (lastHit === undefined || now - lastHit > STALE_ENTRY_MS) {
+    if (lastHit === undefined || now - lastHit.ts > STALE_ENTRY_MS) {
       store.delete(key);
     }
   }
 }
 
-export function isRateLimited(
+function boundMemoryStore(now: number): void {
+  if (store.size <= MAX_STORE_KEYS) return;
+
+  evictStaleEntries(now);
+  // Updating a Map value does not change insertion order, so this remains the
+  // existing oldest-inserted fallback rather than claiming true LRU behavior.
+  for (const oldestKey of store.keys()) {
+    if (store.size <= EVICTION_TARGET_KEYS) break;
+    store.delete(oldestKey);
+  }
+}
+
+function checkMemoryRateLimit(
   key: string,
-  limit = Number(process.env.SESSION_VALIDATE_RATE_LIMIT ?? 300),
-  windowMs = 60_000
-): boolean {
-  const now = Date.now();
-  const hits = (store.get(key) ?? []).filter((t) => now - t < windowMs);
+  limit: number,
+  windowMs: number,
+  now = Date.now(),
+): RateLimitResult {
+  const hits = (store.get(key) ?? []).filter((hit) => now - hit.ts < windowMs);
   if (hits.length >= limit) {
     store.set(key, hits);
-    return true;
+    const oldestHit = hits[0]?.ts ?? now;
+    return {
+      limited: true,
+      retryAfter: Math.max(1, Math.ceil((oldestHit + windowMs - now) / 1000)),
+    };
   }
-  hits.push(now);
+
+  const token = `mem:${now}:${randomUUID()}`;
+  hits.push({ ts: now, token });
   store.set(key, hits);
+  boundMemoryStore(now);
+  return { limited: false, retryAfter: 0, reservationToken: token };
+}
 
-  if (store.size > MAX_STORE_KEYS) {
-    evictStaleEntries(now);
-    // Sweep alone may not be enough if every key is still "hot" — fall back
-    // to evicting the oldest-inserted keys down to EVICTION_TARGET_KEYS
-    // (not just MAX_STORE_KEYS) so this branch doesn't re-run on nearly
-    // every request while size hovers at the cap.
-    //
-    // This is oldest-inserted, not LRU (Map.set on an existing key doesn't
-    // move it in iteration order), and the store is shared across all
-    // isRateLimited callers (IP-keyed session-validate limiter included), so
-    // a flood of distinct keys could in theory evict another key's counter
-    // early. Acceptable at the current 50k default; revisit if that stops
-    // being true.
-    for (const oldestKey of store.keys()) {
-      if (store.size <= EVICTION_TARGET_KEYS) break;
-      store.delete(oldestKey);
-    }
+async function withOperationTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Redis rate-limit operation timed out")),
+          REDIS_OPERATION_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+/**
+ * The reply of the rate-limit Lua script: `[limited, retryAfter]`. Typed as
+ * JSON rather than `unknown` because a Redis reply is scalars and arrays, and
+ * this is the shape the script is written to return.
+ */
+function parseRedisResult(value: JsonValue | undefined): RateLimitResult {
+  if (!Array.isArray(value) || value.length < 2) {
+    throw new Error("Invalid Redis rate-limit response");
+  }
+  const limited = Number(value[0]);
+  const retryAfter = Number(value[1]);
+  if (!Number.isFinite(limited) || !Number.isFinite(retryAfter)) {
+    throw new Error("Invalid Redis rate-limit values");
+  }
+  return {
+    limited: limited === 1,
+    retryAfter: limited === 1 ? Math.max(1, Math.ceil(retryAfter)) : 0,
+  };
+}
+
+/**
+ * Check a shared sliding-window limit. Redis is authoritative when healthy;
+ * the bounded process-local store preserves protection during Redis failures.
+ */
+export async function checkRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitResult> {
+  const normalizedWindowMs = Math.max(1, Math.floor(windowMs));
+  if (limit <= 0) {
+    return { limited: true, retryAfter: Math.max(1, Math.ceil(normalizedWindowMs / 1000)) };
   }
 
-  return false;
+  const normalizedLimit = Math.max(1, Math.floor(limit));
+  const now = Date.now();
+  // Generated client-side and reused as both the ZADD member (script) and
+  // the returned reservation token — the script never needs to echo it back.
+  const member = `${now}:${randomUUID()}`;
+  try {
+    const result = await withOperationTimeout(
+      rateLimitRedis.eval(
+        SLIDING_WINDOW_SCRIPT,
+        1,
+        key,
+        now,
+        normalizedWindowMs,
+        normalizedLimit,
+        member,
+      ),
+    );
+    // SAFETY: a Redis reply is scalars and arrays — exactly what `JsonValue`
+    // covers — and the shape is checked field by field inside.
+    const parsed = parseRedisResult(result as JsonValue);
+    return parsed.limited ? parsed : { ...parsed, reservationToken: member };
+  } catch {
+    return checkMemoryRateLimit(key, normalizedLimit, normalizedWindowMs, now);
+  }
+}
+
+/**
+ * Undo a specific `checkRateLimit` charge, identified by the
+ * `reservationToken` that call returned (#1547 Bedrock overflow
+ * interaction, #1547 review). Used when a reservation was taken against one
+ * quota (e.g. the local daily cap) but the turn actually executed
+ * elsewhere, so it should not count.
+ *
+ * Removes that exact charge — never a concurrent one. The earlier
+ * "remove whatever is currently newest" version was a real race: a second,
+ * unrelated request's charge landing between this request's charge and its
+ * refund would get refunded instead, while this request's own (unwanted)
+ * charge stayed counted. `ZREM key token` is a single atomic Redis command
+ * against the exact member, so there is no read-then-write window for a
+ * concurrent charge to land in.
+ *
+ * `removed === 0` (member not found — e.g. the charge actually landed in the
+ * memory fallback while Redis was briefly down) falls through to check the
+ * memory store too, so a charge/refund pair that straddles a Redis
+ * blip is still resolved correctly instead of silently no-op'ing.
+ */
+export async function refundRateLimitCharge(key: string, reservationToken: string): Promise<void> {
+  try {
+    const removed = await withOperationTimeout(rateLimitRedis.zrem(key, reservationToken));
+    if (removed > 0) return;
+  } catch {
+    // Fall through to the memory store below.
+  }
+  const hits = store.get(key);
+  if (!hits) return;
+  const index = hits.findIndex((hit) => hit.token === reservationToken);
+  if (index !== -1) hits.splice(index, 1);
+}
+
+/**
+ * Existing synchronous session-validation limiter. Its API and half-open
+ * window behavior remain unchanged for current callers.
+ */
+export function isRateLimited(
+  key: string,
+  limit = parseEnvInt(process.env.SESSION_VALIDATE_RATE_LIMIT, 300),
+  windowMs = 60_000,
+): boolean {
+  return checkMemoryRateLimit(key, limit, windowMs).limited;
 }
 
 /** Clears in-memory rate limit state between tests. */

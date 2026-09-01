@@ -1,7 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import {
   buildCourseListFilter,
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   type RbacUser,
 } from "~/lib/auth/course-access.server";
 import { getCourseTopics, getCourseTopic } from "~/lib/courses/server";
@@ -45,8 +45,10 @@ type ToolError = { error: string };
 async function requireCourseAccess(
   user: RbacUser,
   courseId: string,
-): Promise<{ course: NonNullable<Awaited<ReturnType<typeof resolveCourseAccessWithCourse>>["course"]> } | ToolError> {
-  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
+): Promise<
+  { course: NonNullable<Awaited<ReturnType<typeof resolveCourseAccessGate>>["course"]> } | ToolError
+> {
+  const { course, access } = await resolveCourseAccessGate(user, courseId);
   if (!course) {
     return { error: "COURSE_NOT_FOUND" };
   }
@@ -103,11 +105,7 @@ export async function listAccessibleCourseTopics(user: RbacUser, courseId: strin
 }
 
 /** Same RBAC as GET /api/courses/:id/topics/:topicId. */
-export async function getAccessibleCourseTopic(
-  user: RbacUser,
-  courseId: string,
-  topicId: string,
-) {
+export async function getAccessibleCourseTopic(user: RbacUser, courseId: string, topicId: string) {
   const gate = await requireCourseAccess(user, courseId);
   if ("error" in gate) {
     return gate;

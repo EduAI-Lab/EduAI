@@ -2,7 +2,7 @@
   "minLines": 5,
   "minTokens": 50,
   "reporters": ["json", "html", "console"],
-  "output": "docs/perf/baseline/duplication",
+  "output": "docs/perf/backend/baseline/duplication",
   "gitignore": true,
   "absolute": false,
   "ignore": [

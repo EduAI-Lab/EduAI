@@ -1,16 +1,16 @@
-import { ReactNode } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { QmRoleBanner } from '@/components/rbac/QmRoleBanner';
-import type { QmRoleView } from '@/lib/rbac';
+import { ReactNode } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { QmRoleBanner } from "@/components/rbac/QmRoleBanner";
+import type { QmRoleView } from "@/lib/rbac";
 
 type QmHomeShellProps = {
   children: ReactNode;
 };
 
 function roleToView(role: string | undefined): QmRoleView {
-  if (role === 'ADMIN') return 'admin';
-  if (role === 'UNIT_ADMIN') return 'unit-admin';
-  return 'instructor';
+  if (role === "ADMIN") return "admin";
+  if (role === "UNIT_ADMIN") return "unit-admin";
+  return "instructor";
 }
 
 /** Role-aware wrapper for the question bank / assessments workspace. */

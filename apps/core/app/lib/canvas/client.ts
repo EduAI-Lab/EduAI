@@ -5,10 +5,7 @@ import type {
   SyncCanvasCoursesInput,
   SyncCanvasCoursesResult,
 } from "~/lib/canvas/schemas";
-import type {
-  CanvasMaterialDiscoverItem,
-  SyncCanvasMaterialsResult,
-} from "@eduai/types";
+import type { CanvasMaterialDiscoverItem, SyncCanvasMaterialsResult } from "@eduai/types";
 
 export type {
   CanvasCoursePickerItem,
@@ -28,13 +25,12 @@ type CanvasApiBody<T = unknown> = {
 };
 
 async function parseCanvasResponse<T>(response: Response): Promise<CanvasApiBody<T>> {
+  // SAFETY: These same-origin Core endpoints share the Canvas response envelope;
+  // route tests cover each endpoint's concrete data payload.
   return response.json() as Promise<CanvasApiBody<T>>;
 }
 
-async function canvasRequest<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<CanvasApiBody<T>> {
+async function canvasRequest<T>(path: string, init?: RequestInit): Promise<CanvasApiBody<T>> {
   const response = await fetch(`/api/canvas/${path}`, {
     ...init,
     credentials: "include",
@@ -81,7 +77,9 @@ export async function listCanvasCourses(): Promise<CanvasCoursePickerItem[]> {
   return body.data?.courses ?? [];
 }
 
-export async function syncCanvasCourses(input: SyncCanvasCoursesInput): Promise<SyncCanvasCoursesResult> {
+export async function syncCanvasCourses(
+  input: SyncCanvasCoursesInput,
+): Promise<SyncCanvasCoursesResult> {
   const body = await canvasRequest<SyncCanvasCoursesResult>("sync", {
     method: "POST",
     body: JSON.stringify(input),
@@ -107,7 +105,7 @@ async function courseCanvasMaterialsRequest<T>(
     },
   });
 
-  const body = (await response.json()) as { success: boolean; data?: T; error?: string };
+  const body = await parseCanvasResponse<T>(response);
   if (!response.ok || body.success === false) {
     throw new Error(body.error ?? "Canvas material request failed");
   }
@@ -118,13 +116,9 @@ async function courseCanvasMaterialsRequest<T>(
 export async function discoverCanvasMaterials(
   courseId: string,
 ): Promise<CanvasMaterialDiscoverItem[]> {
-  // `recheck=true` opts into the server re-checking already-imported materials'
-  // publish state (a write) — the dialog's Discover action is the deliberate
-  // trigger for that; see the loader's GET-safety note in materials.server.ts.
   const body = await courseCanvasMaterialsRequest<{ files: CanvasMaterialDiscoverItem[] }>(
     courseId,
-    { method: "GET" },
-    { recheck: "true" },
+    { method: "POST", body: JSON.stringify({ intent: "discover" }) },
   );
   return body.data?.files ?? [];
 }
@@ -150,13 +144,16 @@ export async function excludeCanvasMaterial(courseId: string, canvasFileId: stri
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ canvasFileId }),
   });
-  const body = (await response.json()) as { success: boolean; error?: string };
+  const body = await parseCanvasResponse(response);
   if (!response.ok || body.success === false) {
     throw new Error(body.error ?? "Failed to exclude Canvas file");
   }
 }
 
-export async function unexcludeCanvasMaterial(courseId: string, canvasFileId: string): Promise<void> {
+export async function unexcludeCanvasMaterial(
+  courseId: string,
+  canvasFileId: string,
+): Promise<void> {
   const response = await fetch(`/api/courses/${courseId}/canvas-materials/exclusions`, {
     method: "DELETE",
     credentials: "include",
@@ -164,8 +161,8 @@ export async function unexcludeCanvasMaterial(courseId: string, canvasFileId: st
     body: JSON.stringify({ canvasFileId }),
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "Failed to un-exclude Canvas file");
+    const body = await parseCanvasResponse(response).catch(() => null);
+    throw new Error(body?.error ?? "Failed to un-exclude Canvas file");
   }
 }
 

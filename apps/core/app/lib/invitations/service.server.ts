@@ -1,4 +1,5 @@
 import type { Invitation } from "@prisma/client";
+import { z } from "zod";
 
 import prisma from "~/lib/prisma.server";
 import { auth, authBaseURL } from "~/lib/auth/server";
@@ -10,12 +11,10 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { buildInvitationEmail } from "~/lib/email/templates/invitation";
 import { generateInviteToken, hashToken } from "~/lib/invitations/token.server";
-import type {
-  AcceptInvitationInput,
-  CreateInvitationInput,
-} from "~/lib/invitations/schemas";
+import type { AcceptInvitationInput, CreateInvitationInput } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
+const signupResponseSchema = z.object({ user: z.object({ id: z.string().min(1) }) });
 
 /** Invitation shape safe to return over the API — never includes `tokenHash`. */
 export type PublicInvitation = Omit<Invitation, "tokenHash"> & {
@@ -48,6 +47,13 @@ export type AcceptInvitationResult =
     }
   | { ok: false; status: number; error: string };
 
+class InvitationConsumeLostRaceError extends Error {
+  constructor() {
+    super("Invitation was changed while it was being accepted");
+    this.name = "InvitationConsumeLostRaceError";
+  }
+}
+
 function expiryHours(): number {
   const raw = process.env.INVITE_EXPIRY_HOURS;
   const parsed = raw ? Number(raw) : NaN;
@@ -61,6 +67,34 @@ function buildAcceptUrl(token: string): string {
 function toPublic(invitation: Invitation): PublicInvitation {
   const { tokenHash: _tokenHash, ...rest } = invitation;
   return { ...rest, isExpired: rest.expiresAt.getTime() < Date.now() };
+}
+
+async function readSignupUserId(response: Response): Promise<string | null> {
+  const body: unknown = await response.json().catch(() => null);
+  const result = signupResponseSchema.safeParse(body);
+  return result.success ? result.data.user.id : null;
+}
+
+type AcceptInvitationFailure = Extract<AcceptInvitationResult, { ok: false }>;
+
+async function classifyInvitationConsumeRace(
+  invitationId: string,
+  token: string,
+): Promise<AcceptInvitationFailure> {
+  const current = await prisma.invitation.findUnique({ where: { id: invitationId } });
+  if (!current || current.tokenHash !== hashToken(token)) {
+    return { ok: false, status: 409, error: "INVALID_TOKEN" };
+  }
+  if (current.status === "REVOKED") {
+    return { ok: false, status: 409, error: "INVITATION_REVOKED" };
+  }
+  if (current.status === "ACCEPTED") {
+    return { ok: false, status: 409, error: "INVITATION_USED" };
+  }
+  if (current.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, status: 409, error: "INVITATION_EXPIRED" };
+  }
+  return { ok: false, status: 409, error: "INVALID_TOKEN" };
 }
 
 /** Send the invitation email; never throws (a delivery failure is logged). */
@@ -158,10 +192,27 @@ export async function resendInvitation(
 
   const { token, tokenHash } = generateInviteToken();
   const expiresAt = new Date(Date.now() + expiryHours() * 60 * 60 * 1000);
-  const updated = await prisma.invitation.update({
-    where: { id },
-    data: { tokenHash, expiresAt },
-  });
+  let updated: Invitation;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      // Rotate only while the row is still pending. An accept/revoke that wins
+      // the race makes this conditional write a no-op instead of resurrecting
+      // or rotating a consumed invitation.
+      const changed = await tx.invitation.updateMany({
+        where: { id, status: "PENDING" },
+        data: { tokenHash, expiresAt },
+      });
+      if (changed.count !== 1) throw new InvitationConsumeLostRaceError();
+      const row = await tx.invitation.findUnique({ where: { id } });
+      if (!row) throw new InvitationConsumeLostRaceError();
+      return row;
+    });
+  } catch (error) {
+    if (error instanceof InvitationConsumeLostRaceError) {
+      return { ok: false, status: 409, error: "NOT_PENDING" };
+    }
+    throw error;
+  }
 
   const acceptUrl = buildAcceptUrl(token);
   const emailDelivered = await emailInvite(updated, acceptUrl, invitedBy?.name);
@@ -182,9 +233,9 @@ const INVITATIONS_LIST_LIMIT = 500;
  * `invitedById` to scope the list to a single inviter (used so a UNIT_ADMIN only
  * sees the invitations they sent).
  */
-export async function listInvitations(
-  opts?: { invitedById?: string },
-): Promise<PublicInvitation[]> {
+export async function listInvitations(opts?: {
+  invitedById?: string;
+}): Promise<PublicInvitation[]> {
   // Fail closed: a scope object MUST carry a non-empty id. Otherwise a future
   // falsy value would silently collapse the filter to "all invitations".
   if (opts && !opts.invitedById) return [];
@@ -217,17 +268,33 @@ export async function revokeInvitation(
   if (invitation.status !== "PENDING") {
     return { ok: false, status: 409, error: "NOT_PENDING" };
   }
-  const updated = await prisma.invitation.update({
-    where: { id },
-    data: { status: "REVOKED" },
-  });
+  let updated: Invitation;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const changed = await tx.invitation.updateMany({
+        where: { id, status: "PENDING" },
+        data: { status: "REVOKED" },
+      });
+      if (changed.count !== 1) throw new InvitationConsumeLostRaceError();
+      const row = await tx.invitation.findUnique({ where: { id } });
+      if (!row) throw new InvitationConsumeLostRaceError();
+      return row;
+    });
+  } catch (error) {
+    if (error instanceof InvitationConsumeLostRaceError) {
+      return { ok: false, status: 409, error: "NOT_PENDING" };
+    }
+    throw error;
+  }
   return { ok: true, invitation: toPublic(updated) };
 }
 
 /** Validate a raw token for the accept page; never reveals the token hash. */
 export async function getInvitationByToken(
   token: string,
-): Promise<{ ok: true; invitation: PublicInvitation } | { ok: false; status: number; error: string }> {
+): Promise<
+  { ok: true; invitation: PublicInvitation } | { ok: false; status: number; error: string }
+> {
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashToken(token) },
   });
@@ -272,7 +339,7 @@ export async function acceptInvitation(
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
-  // Create the credential account + session through Better Auth. The marker
+  // Create the credential account through Better Auth. The marker
   // header exempts this from the public-registration gate (§6a): an invitee was
   // vetted by an admin/unit-admin, so account creation must work even when
   // `auth.allowPublicRegistration` is off.
@@ -289,28 +356,33 @@ export async function acceptInvitation(
     }),
   });
 
-  const response = await auth.handler(authRequest);
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => ({}))) as {
-      message?: string;
-      code?: string;
-    };
+  const signupResponse = await auth.handler(authRequest);
+  if (!signupResponse.ok) {
     return {
       ok: false,
-      status: response.status === 422 ? 409 : response.status,
-      error: detail.code || detail.message || "SIGNUP_FAILED",
+      status: signupResponse.status === 422 ? 409 : signupResponse.status,
+      error: "SIGNUP_FAILED",
     };
   }
 
-  // Sign-up just created the user; fetch it by its unique email to get the id.
-  const created = await prisma.user.findUnique({ where: { email: invite.email } });
-  if (!created) {
+  const createdId = await readSignupUserId(signupResponse);
+  if (!createdId) {
     return { ok: false, status: 500, error: "ACCOUNT_NOT_CREATED" };
   }
 
-  // Promote the account and consume the invite. If this fails after sign-up
-  // succeeded, roll the new user back (account/sessions cascade) so the invite
-  // stays usable — otherwise a retry would dead-end on USER_EXISTS as STUDENT.
+  // Better Auth deliberately returns a successful synthetic user for duplicate
+  // emails. Only the exact id returned by this sign-up proves ownership of the
+  // account that this request may promote or roll back.
+  const created = await prisma.user.findUnique({ where: { id: createdId } });
+  if (!created || created.email !== invite.email) {
+    return { ok: false, status: 409, error: "USER_EXISTS" };
+  }
+
+  // Promote the account and consume the invite. The final write is conditional
+  // on the exact invitation id + original token hash + PENDING status + expiry
+  // snapshot. If revoke/resend/another accept wins first, no stale accept can
+  // overwrite it. If this transaction loses, roll the newly-created account
+  // (and its Better Auth account row) back before returning.
   let updatedUser: { id: string; email: string; role: string };
   try {
     updatedUser = await prisma.$transaction(async (tx) => {
@@ -323,14 +395,24 @@ export async function acceptInvitation(
         },
         select: { id: true, email: true, role: true },
       });
-      await tx.invitation.update({
-        where: { id: invite.id },
+      const consumed = await tx.invitation.updateMany({
+        where: {
+          id: invite.id,
+          tokenHash: hashToken(input.token),
+          status: "PENDING",
+          // Preserve the existing exact-expiry contract: getInvitationByToken
+          // treats an invite at its expiry instant as still valid. Equality
+          // also fences this consume to the original snapshot, so a resend
+          // cannot be mistaken for the invitation that was displayed.
+          expiresAt: { equals: invite.expiresAt, gte: new Date() },
+        },
         data: {
           status: "ACCEPTED",
           acceptedAt: new Date(),
           acceptedUserId: user.id,
         },
       });
+      if (consumed.count !== 1) throw new InvitationConsumeLostRaceError();
       return user;
     });
   } catch (error) {
@@ -340,11 +422,26 @@ export async function acceptInvitation(
       .catch((cleanupError) =>
         console.error("[invitations] rollback of invited account failed", cleanupError),
       );
+    if (error instanceof InvitationConsumeLostRaceError) {
+      return classifyInvitationConsumeRace(invite.id, input.token);
+    }
     return { ok: false, status: 500, error: "SIGNUP_FAILED" };
   }
 
+  // Requiring email verification intentionally suppresses Better Auth's
+  // sign-up session. Invitation acceptance proves mailbox control and marks
+  // the account verified above, so create its session through the normal
+  // credential sign-in endpoint after the promotion transaction commits.
+  const signInRequest = buildAuthSubRequest("/api/auth/sign-in/email", request, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: invite.email, password: input.password }),
+  });
+  const signInResponse = await auth.handler(signInRequest);
   const headers = new Headers();
-  appendAuthSetCookies(response, headers);
+  if (signInResponse.ok) {
+    appendAuthSetCookies(signInResponse, headers);
+  }
 
   return { ok: true, headers, invitationId: invite.id, user: updatedUser };
 }

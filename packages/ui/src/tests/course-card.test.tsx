@@ -15,7 +15,7 @@ describe("CourseCard", () => {
         year={2024}
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("CPSC 110")).toBeInTheDocument();
     expect(screen.getByText("Computation, Programs, and Programming")).toBeInTheDocument();
@@ -32,7 +32,7 @@ describe("CourseCard", () => {
         year={2024}
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("No description yet")).toBeInTheDocument();
   });
@@ -47,7 +47,7 @@ describe("CourseCard", () => {
         year={2025}
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText(/2025S1/)).toBeInTheDocument();
   });
@@ -61,7 +61,7 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("Published")).toBeInTheDocument();
 
@@ -73,7 +73,7 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={false}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("Draft")).toBeInTheDocument();
   });
@@ -88,7 +88,7 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("Computer Science (CPSC)")).toBeInTheDocument();
   });
@@ -103,7 +103,7 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("Enrolled")).toBeInTheDocument();
     expect(screen.getByText("Starred")).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe("CourseCard", () => {
           showEdit: true,
           onEdit: vi.fn(),
         }}
-      />
+      />,
     );
     expect(screen.getByLabelText("Course actions")).toBeInTheDocument();
   });
@@ -141,7 +141,7 @@ describe("CourseCard", () => {
           showEdit: true,
           onEdit,
         }}
-      />
+      />,
     );
     // Verify the action menu button exists
     expect(screen.getByLabelText("Course actions")).toBeInTheDocument();
@@ -162,7 +162,7 @@ describe("CourseCard", () => {
           isPublished: true,
           onPublishToggle,
         }}
-      />
+      />,
     );
     expect(screen.getByText("Published")).toBeInTheDocument();
 
@@ -179,7 +179,7 @@ describe("CourseCard", () => {
           isPublished: false,
           onPublishToggle,
         }}
-      />
+      />,
     );
     expect(screen.getByText("Draft")).toBeInTheDocument();
   });
@@ -198,7 +198,7 @@ describe("CourseCard", () => {
           showDelete: true,
           onDelete,
         }}
-      />
+      />,
     );
     // Verify the action menu button exists when showDelete is true
     expect(screen.getByLabelText("Course actions")).toBeInTheDocument();
@@ -214,7 +214,7 @@ describe("CourseCard", () => {
         isPublished={true}
         href="/courses/1"
         className="custom-card-class"
-      />
+      />,
     );
     const card = container.querySelector(".custom-card-class");
     expect(card).toBeInTheDocument();
@@ -229,9 +229,11 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
-    expect(screen.getByLabelText("CPSC 110 Computation, Programs, and Programming")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("CPSC 110 Computation, Programs, and Programming"),
+    ).toBeInTheDocument();
   });
 
   it("renders a colour hero header band", () => {
@@ -243,7 +245,7 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByTestId("course-card-hero")).toBeInTheDocument();
   });
@@ -259,7 +261,7 @@ describe("CourseCard", () => {
         term="Winter"
         isPublished={true}
         href="/courses/1"
-      />
+      />,
     );
     expect(screen.getByText("My CS")).toBeInTheDocument();
     const card = container.firstElementChild as HTMLElement;

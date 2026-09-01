@@ -13,9 +13,8 @@ describe("CourseColorBar", () => {
   it("applies the correct color variable for each index", () => {
     for (let i = 0; i < COURSE_COLORS.length; i++) {
       const { container } = render(<CourseColorBar index={i} />);
-      const bar = container.querySelector("div");
-      const style = bar?.getAttribute("style");
-      expect(style).toContain(`background: ${COURSE_COLORS[i]}`);
+      const bar = container.querySelector("div") as HTMLElement;
+      expect(bar.style.getPropertyValue("--course-bar")).toBe(COURSE_COLORS[i]);
     }
   });
 
@@ -24,14 +23,12 @@ describe("CourseColorBar", () => {
     const { container } = render(<CourseColorBar index={indexBeyondLength} />);
     const bar = container.querySelector("div");
     const expectedColor = COURSE_COLORS[indexBeyondLength % COURSE_COLORS.length];
-    const style = bar?.getAttribute("style");
-    expect(style).toContain(`background: ${expectedColor}`);
+    expect((bar as HTMLElement).style.getPropertyValue("--course-bar")).toBe(expectedColor);
   });
 
   it("renders with the first color at index 0", () => {
     const { container } = render(<CourseColorBar index={0} />);
-    const bar = container.querySelector("div");
-    const style = bar?.getAttribute("style");
-    expect(style).toContain(`background: ${COURSE_COLORS[0]}`);
+    const bar = container.querySelector("div") as HTMLElement;
+    expect(bar.style.getPropertyValue("--course-bar")).toBe(COURSE_COLORS[0]);
   });
 });

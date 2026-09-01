@@ -1,4 +1,6 @@
 {
+  "source": ["tests/e2e/package.json"],
+  "sourceMode": "extend",
   "versionGroups": [
     {
       "label": "QM legacy toolchain — major upgrade tracked separately",
@@ -8,10 +10,7 @@
         "vitest",
         "@vitest/coverage-v8",
         "tailwindcss",
-        "tailwind-merge",
-        "express",
-        "supertest",
-        "dotenv"
+        "tailwind-merge"
       ],
       "isIgnored": true
     },
@@ -28,6 +27,12 @@
     {
       "label": "AI SDK — intentionally split (Core v4, AI Tutor v5)",
       "dependencies": ["ai"],
+      "isIgnored": true
+    },
+    {
+      "label": "express — intentionally split (ai-tutor-server v5, qm-backend/example-extension v4)",
+      "packages": ["ai-tutor-server", "question-maker-backend", "@eduai/example-extension"],
+      "dependencies": ["express"],
       "isIgnored": true
     },
     {

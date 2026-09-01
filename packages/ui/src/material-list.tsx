@@ -1,8 +1,8 @@
-import type * as React from "react"
-import { IconFileText } from "@tabler/icons-react"
-import { cn } from "./utils"
-import { EmptyState } from "./empty-state"
-import { MaterialStatusIcon, MaterialStatusChip, type MaterialStatus } from "./material-status"
+import type * as React from "react";
+import { IconFileText } from "@tabler/icons-react";
+import { cn } from "./utils";
+import { EmptyState } from "./empty-state";
+import { MaterialStatusIcon, MaterialStatusChip, type MaterialStatus } from "./material-status";
 
 /**
  * Minimal shape a course-material row needs to render. Apps own the richer
@@ -10,45 +10,45 @@ import { MaterialStatusIcon, MaterialStatusChip, type MaterialStatus } from "./m
  * pass those through unchanged via a subtype, this only reads what it draws.
  */
 export interface MaterialListItem {
-  id: string
+  id: string;
   /** Display name / title of the file. */
-  name: string
-  status: MaterialStatus
+  name: string;
+  status: MaterialStatus;
   /** Used to tint the file-type chip; falls back to a neutral color. */
-  mimeType?: string
+  mimeType?: string;
   /** Pre-formatted size string, e.g. "1.2 MB". Apps own their own formatter. */
-  sizeLabel?: string
+  sizeLabel?: string;
   /** Pre-formatted date string, e.g. "7/21/2026". */
-  dateLabel?: string
+  dateLabel?: string;
   /** Override the whole subtitle line instead of composing size/date. */
-  meta?: React.ReactNode
+  meta?: React.ReactNode;
 }
 
 export interface MaterialListProps<T extends MaterialListItem = MaterialListItem> {
-  items: T[]
+  items: T[];
   /** Defaults to "Course materials". */
-  title?: React.ReactNode
+  title?: React.ReactNode;
   /**
    * Show the labelled `MaterialStatusChip` alongside the status icon.
    * Student-facing views typically want the icon only (`showChip={false}`).
    */
-  showChip?: boolean
+  showChip?: boolean;
   /** Header action buttons (upload, sync, embedding settings, ...). */
-  headerActions?: React.ReactNode
+  headerActions?: React.ReactNode;
   /** Per-item trailing actions (rename/delete/visibility), role-gated by the caller. */
-  renderItemActions?: (item: T) => React.ReactNode
+  renderItemActions?: (item: T) => React.ReactNode;
   /** Make the item name clickable (e.g. open a preview dialog). */
-  onItemClick?: (item: T) => void
+  onItemClick?: (item: T) => void;
   /** Override the empty-state block entirely; defaults to a shared EmptyState. */
-  emptyState?: React.ReactNode
+  emptyState?: React.ReactNode;
   /** Copy shown by the default empty state. */
-  emptyStateDescription?: React.ReactNode
+  emptyStateDescription?: React.ReactNode;
   /** Color for the file-type chip; defaults to a neutral muted tone. */
-  fileTypeColor?: (item: T) => string
-  className?: string
+  fileTypeColor?: (item: T) => string;
+  className?: string;
 }
 
-const DEFAULT_FILE_COLOR = "var(--muted-foreground)"
+const DEFAULT_FILE_COLOR = "var(--muted-foreground)";
 
 /**
  * Shared "course materials" list: header + unified file-count line +
@@ -68,7 +68,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
   fileTypeColor,
   className,
 }: MaterialListProps<T>) {
-  const readyCount = items.filter((m) => m.status === "READY").length
+  const readyCount = items.filter((m) => m.status === "READY").length;
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
@@ -85,24 +85,24 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
       </div>
 
       {items.length === 0 ? (
-        emptyState ?? (
+        (emptyState ?? (
           <EmptyState
             icon={<IconFileText size={22} stroke={1.5} />}
             title="No materials yet"
             description={emptyStateDescription}
           />
-        )
+        ))
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((item) => {
-            const clickable = !!onItemClick && item.status === "READY"
+            const clickable = !!onItemClick && item.status === "READY";
             return (
               <div
                 key={item.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
+                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card"
               >
                 <div
-                  className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
+                  className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0"
                   style={{ background: fileTypeColor?.(item) ?? DEFAULT_FILE_COLOR }}
                 >
                   <IconFileText size={14} color="white" stroke={2} />
@@ -131,16 +131,16 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
                     )
                   )}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {showChip && <MaterialStatusChip status={item.status} />}
                   <MaterialStatusIcon status={item.status} />
                   {renderItemActions?.(item)}
                 </div>
               </div>
-            )
+            );
           })}
         </div>
       )}
     </div>
-  )
+  );
 }

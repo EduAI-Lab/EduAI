@@ -1,6 +1,8 @@
 // @vitest-environment node
 // Learning-chat stream errors must be logged server-side too, not just admin chat (#989).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -9,12 +11,16 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -28,7 +34,10 @@ vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
   chatbotTypeFromMode: vi.fn().mockReturnValue("learning"),
   createChatTools: vi.fn().mockReturnValue({}),
+  isPrivilegedChatMode: vi.fn().mockReturnValue(false),
   parseChatMode: vi.fn().mockReturnValue("learning"),
+  pickCoreAdminChatTools: vi.fn((tools) => tools),
+  ADMIN_CORE_TOOL_NAMES: [],
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -46,7 +55,10 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   }),
 }));
 
-vi.mock("~/lib/ai/providers.server", () => ({
+vi.mock("~/lib/ai/providers.server", async () => ({
+  ...(await vi.importActual<typeof import("~/lib/ai/providers.server")>(
+    "~/lib/ai/providers.server",
+  )),
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
     maxTokens: null,
@@ -78,22 +90,24 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
 }));
 
-import { streamText } from "ai";
+import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { REDACTED_VALUE } from "~/lib/redact.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
+let lateStreamErrorMessage: ((cause: unknown) => string) | undefined;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
@@ -105,7 +119,7 @@ function makeRequest(body: object) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",
@@ -126,6 +140,7 @@ function lastOnError(): ((args: { error: unknown }) => void) | undefined {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  lateStreamErrorMessage = undefined;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -157,6 +172,12 @@ beforeEach(() => {
       id: "resp-1",
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
+    toDataStreamResponse: vi.fn(
+      ({ getErrorMessage }: { getErrorMessage?: (cause: unknown) => string }) => {
+        lateStreamErrorMessage = getErrorMessage;
+        return new Response("stream", { status: 200 });
+      },
+    ),
   } as never);
 });
 
@@ -174,13 +195,57 @@ describe("Learning-chat stream error logging (#989)", () => {
 
     const onError = lastOnError();
     expect(onError).toBeDefined();
-    onError?.({ error: new Error("provider blew up mid-stream") });
+    const providerError = new Error(
+      "provider blew up mid-stream https://provider.test/v1?api_key=chat-provider-secret",
+    );
+    providerError.name = "AI_APICallError";
+    onError?.({ error: providerError });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    const streamErrorCall = consoleErrorSpy.mock.calls.find(
+      ([message]) => message === "[chat-api] stream error",
+    );
+    expect(streamErrorCall).toEqual([
       "[chat-api] stream error",
-      expect.objectContaining({ error: "provider blew up mid-stream" }),
+      expect.objectContaining({
+        error: "LLM stream failed",
+        diagnostic: expect.objectContaining({
+          name: "AI_APICallError",
+          message: expect.stringContaining(REDACTED_VALUE),
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("chat-provider-secret");
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("serializes the stable provider body through the late stream error channel", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+    expect(res.status).toBe(200);
+
+    const message = lateStreamErrorMessage?.(
+      new APICallError({
+        message: "upstream error containing sk-do-not-leak",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-do-not-leak" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "20" },
+        responseBody: "private body",
+        isRetryable: true,
+      }),
     );
 
+    expect(message).toBe(
+      JSON.stringify({
+        error: "Provider is temporarily unavailable",
+        code: "PROVIDER_UNAVAILABLE",
+        retryable: true,
+        provider: "vllm",
+      }),
+    );
+    expect(message).not.toContain("sk-do-not-leak");
     consoleErrorSpy.mockRestore();
   });
 });

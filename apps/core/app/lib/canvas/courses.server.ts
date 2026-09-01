@@ -1,9 +1,6 @@
-import { EnrollmentRole } from "@prisma/client";
+import { EnrollmentRole, Prisma } from "@prisma/client";
 import type { CanvasCourseApi, CanvasIntegrationCredentials } from "~/lib/canvas/client.server";
-import {
-  CANVAS_EXTERNAL_SOURCE,
-  listTeacherCanvasCourses,
-} from "~/lib/canvas/client.server";
+import { CANVAS_EXTERNAL_SOURCE, listTeacherCanvasCourses } from "~/lib/canvas/client.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
 import type { CanvasCoursePickerItem } from "~/lib/canvas/schemas";
 import {
@@ -13,6 +10,10 @@ import {
   inferUbcTermStartFromEndDate,
 } from "~/lib/canvas/term.server";
 import prisma from "~/lib/prisma.server";
+import { ensureDefaultBank } from "~/lib/question-banks/server";
+import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
+
+type DbClient = typeof prisma | Prisma.TransactionClient;
 
 export class CanvasNotConnectedError extends Error {
   constructor() {
@@ -39,11 +40,11 @@ function parseCanvasIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** A course's run: it always has a start, and may have no declared end. */
+export type CanvasCourseDates = { startDate: Date; endDate: Date | null };
+
 /** Course dates from course fields first, then enrollment term start date. */
-export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
-  startDate: Date;
-  endDate: Date | null;
-} {
+export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): CanvasCourseDates {
   const term = canvasCourse.term;
   const termEndDate = parseCanvasIsoDate(term?.end_at);
   const startDate =
@@ -58,8 +59,7 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
     );
   }
 
-  const endDate =
-    parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
+  const endDate = parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
 
   return { startDate, endDate };
 }
@@ -67,6 +67,10 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
 export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
   const { startDate, endDate } = resolveCanvasCourseDates(canvasCourse);
   const term = ubcTermFromDate(startDate);
+
+  // CANVAS-06 (#225 / #1195): respect Canvas workflow_state. An unpublished
+  // Canvas course must not become student-visible in EduAI.
+  const isPublished = canvasCourse.workflow_state !== "unpublished";
 
   return {
     externalId: String(canvasCourse.id),
@@ -83,8 +87,7 @@ export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
     lastSyncedAt: new Date(),
     deletedAt: null as Date | null,
     isActive: true,
-    // Canvas-synced courses are visible to linked students once roster enrollments exist.
-    isPublished: true,
+    isPublished,
   };
 }
 
@@ -157,41 +160,86 @@ export async function listCanvasCoursesWithSyncState(
 }
 
 /** Upserts a Core course from a Canvas course payload. */
-export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) {
+export async function upsertCoreCourseFromCanvas(
+  canvasCourse: CanvasCourseApi,
+  db: DbClient = prisma,
+) {
   const fields = mapCanvasCourseToCoreFields(canvasCourse);
-
-  const existing = await prisma.course.findFirst({
-    where: {
+  const externalIdentity = {
+    externalSource_externalId: {
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: fields.externalId,
     },
-  });
+  } as const;
+  const updates = {
+    name: fields.name,
+    code: fields.code,
+    section: fields.section,
+    term: fields.term,
+    year: fields.year,
+    startDate: fields.startDate,
+    endDate: fields.endDate,
+    lastSyncedAt: fields.lastSyncedAt,
+    deletedAt: null,
+    isActive: true,
+    isPublished: fields.isPublished,
+  };
 
-  if (existing) {
+  try {
+    // The external identity unique key lets Prisma issue a database-native
+    // upsert, so concurrent first syncs converge even when Canvas snapshots
+    // differ in code or dates (and therefore in the legacy course triplet).
+    const course = await db.course.upsert({
+      where: externalIdentity,
+      create: fields,
+      update: updates,
+    });
+    // Native upsert does not report create-vs-update; ensureDefaultBank is
+    // idempotent and race-safe, so newly synced courses always converge on a
+    // default question bank even when concurrent first syncs race here.
+    await ensureDefaultBank(course.id, db);
+    // #1624: a default bank is not enough to author against — Question Maker
+    // also requires a topic. Provisioning runs later and asynchronously, so the
+    // fallback is created here, up front, rather than leaving a window where a
+    // freshly synced course is a hard authoring blocker. Also idempotent.
+    await ensureCourseHasTopic(course.id, db);
+    return course;
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+
+    // PostgreSQL aborts an interactive transaction after a constraint error.
+    // Let its owner retry the whole transaction instead of querying through
+    // this unusable client. Root-client calls are independent transactions, so
+    // their existing winner-adoption path remains safe.
+    if (db !== prisma) {
+      throw error;
+    }
+
+    // Some Prisma/database execution paths can still report the losing insert
+    // as P2002. Adopt only a row with the same external identity; if none
+    // exists, the conflict belongs to another invariant (for example a manual
+    // course with the same code/start/section) and must remain visible.
+    const winner = await prisma.course.findUnique({ where: externalIdentity });
+    if (!winner) {
+      throw error;
+    }
+
     return prisma.course.update({
-      where: { id: existing.id },
-      data: {
-        name: fields.name,
-        code: fields.code,
-        section: fields.section,
-        term: fields.term,
-        year: fields.year,
-        startDate: fields.startDate,
-        endDate: fields.endDate,
-        lastSyncedAt: fields.lastSyncedAt,
-        deletedAt: null,
-        isActive: true,
-        isPublished: true,
-      },
+      where: { id: winner.id },
+      data: updates,
     });
   }
-
-  return prisma.course.create({ data: fields });
 }
 
 /** Ensures the syncing instructor has an active INSTRUCTOR enrollment on the course. */
-export async function ensureInstructorEnrollment(courseId: string, userId: string) {
-  return prisma.enrollment.upsert({
+export async function ensureInstructorEnrollment(
+  courseId: string,
+  userId: string,
+  db: DbClient = prisma,
+) {
+  return db.enrollment.upsert({
     where: {
       courseId_userId: { courseId, userId },
     },

@@ -1,36 +1,23 @@
 /**
  * Bug report submission and admin listing API.
  */
-import { hasAttachmentContent } from '@eduai/types';
-import api from './api';
+import api, { type QueryParams } from "./api";
+import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from "@eduai/ui";
+import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from "@eduai/ui";
 
 export type BugReportType =
-  | 'UI_DISPLAY'
-  | 'FEATURE_NOT_WORKING'
-  | 'PERFORMANCE'
-  | 'CONTENT_ERROR'
-  | 'ACCESS_PERMISSION'
-  | 'OTHER';
+  | "UI_DISPLAY"
+  | "FEATURE_NOT_WORKING"
+  | "PERFORMANCE"
+  | "CONTENT_ERROR"
+  | "ACCESS_PERMISSION"
+  | "OTHER";
 
-export interface BugReportRow {
-  id: string;
-  description: string;
-  bugType: BugReportType | null;
-  status: string;
-  source?: string;
-  consoleLogs: string | null;
-  networkLogs: string | null;
-  screenshot: string | null;
-  /** List rows omit blobs (#979); flags say whether detail fetch will return them. */
-  hasConsoleLogs?: boolean;
-  hasNetworkLogs?: boolean;
-  hasScreenshot?: boolean;
-  pageUrl: string | null;
-  userAgent: string | null;
-  isAnonymous: boolean;
-  user?: { email: string };
-  createdAt: string;
-}
+/**
+ * The admin surface consumes the shared row shape directly — QM's backend is a
+ * pure proxy to Core's endpoint, so there is no QM-specific payload to declare.
+ */
+export type BugReportRow = AdminBugReportRow;
 
 export interface SubmitBugReportPayload {
   description: string;
@@ -43,80 +30,39 @@ export interface SubmitBugReportPayload {
   isAnonymous: boolean;
 }
 
-const CORE_TO_UI_STATUS: Record<string, string> = {
-  UNHANDLED: 'unhandled',
-  IN_PROGRESS: 'in progress',
-  RESOLVED: 'resolved',
-};
-
-const UI_TO_CORE_STATUS: Record<string, string> = {
-  unhandled: 'UNHANDLED',
-  'in progress': 'IN_PROGRESS',
-  resolved: 'RESOLVED',
-};
-
-function mapCoreReport(report: Record<string, unknown>): BugReportRow {
-  const status = String(report.status ?? 'UNHANDLED');
-  const consoleLogs = (report.consoleLogs as string | null) ?? null;
-  const networkLogs = (report.networkLogs as string | null) ?? null;
-  const screenshot = (report.screenshot as string | null) ?? null;
-  return {
-    id: String(report.id),
-    description: String(report.description ?? ''),
-    bugType: (report.bugType as BugReportType | null) ?? null,
-    status: CORE_TO_UI_STATUS[status] ?? status.toLowerCase(),
-    source: report.source != null ? String(report.source) : undefined,
-    consoleLogs,
-    networkLogs,
-    screenshot,
-    hasConsoleLogs: hasAttachmentContent(
-      consoleLogs,
-      typeof report.hasConsoleLogs === 'boolean' ? report.hasConsoleLogs : undefined,
-    ),
-    hasNetworkLogs: hasAttachmentContent(
-      networkLogs,
-      typeof report.hasNetworkLogs === 'boolean' ? report.hasNetworkLogs : undefined,
-    ),
-    hasScreenshot: hasAttachmentContent(
-      screenshot,
-      typeof report.hasScreenshot === 'boolean' ? report.hasScreenshot : undefined,
-    ),
-    pageUrl: (report.pageUrl as string | null) ?? null,
-    userAgent: (report.userAgent as string | null) ?? null,
-    isAnonymous: Boolean(report.isAnonymous),
-    user:
-      report.userEmail != null
-        ? { email: String(report.userEmail) }
-        : undefined,
-    createdAt: String(report.createdAt ?? new Date().toISOString()),
-  };
-}
-
+/**
+ * Core's payload keeps the reporter under `userName`/`userEmail` and the
+ * course/module/lesson/activity ids inside the `context` JSON blob, while the
+ * shared triage view reads `reporter*` and expects those ids flattened onto the
+ * row. `normalizeAdminBugReportRow` does that mapping (status casing included)
+ * and is shared with Core's client so the two cannot drift.
+ */
 export const bugReportApi = {
   async submit(payload: SubmitBugReportPayload): Promise<{ id: number }> {
-    const res = await api.post('/api/bug-reports', payload);
+    const res = await api.post("/api/bug-reports", payload);
     return res.data.data;
   },
 
   async list(options?: { source?: string; limit?: number }): Promise<BugReportRow[]> {
-    const params: Record<string, string | number> = { limit: options?.limit ?? 100 };
+    const params: QueryParams = {};
+    params.limit = options?.limit ?? 100;
     if (options?.source) {
       params.source = options.source;
     }
-    const res = await api.get('/api/admin/bug-reports', { params });
+    const res = await api.get("/api/admin/bug-reports", { params });
     const payload = res.data.data;
     const reports = Array.isArray(payload?.reports) ? payload.reports : [];
-    return reports.map((row: Record<string, unknown>) => mapCoreReport(row));
+    return reports.map((row: RawAdminBugReport) => normalizeAdminBugReportRow(row));
   },
 
   /** Full detail including diagnostic blobs (list rows only carry has* flags). */
   async get(bugId: string): Promise<BugReportRow> {
     const res = await api.get(`/api/admin/bug-reports/${bugId}`);
-    return mapCoreReport(res.data.data as Record<string, unknown>);
+    return normalizeAdminBugReportRow(res.data.data as RawAdminBugReport);
   },
 
   async updateStatus(bugId: string, status: string): Promise<void> {
-    const coreStatus = UI_TO_CORE_STATUS[status] ?? status.toUpperCase().replace(' ', '_');
+    const coreStatus = UI_STATUS_TO_CORE[status as BugReportStatus] ?? status;
     await api.patch(`/api/admin/bug-reports/${bugId}`, { status: coreStatus });
   },
 };

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState } from "react";
+import { Spinner } from "@eduai/ui";
 import {
   Badge,
   Button,
@@ -9,16 +10,16 @@ import {
   CardTitle,
   Input,
   Label,
-} from '@eduai/ui';
-import { IconCheck, IconExternalLink, IconLoader2, IconTrash } from '@tabler/icons-react';
-import { useApiKeys } from '~/hooks/use-api-keys';
-import { PROVIDERS, maskApiKey, type ProviderId } from '~/lib/provider-keys';
+} from "@eduai/ui";
+import { IconCheck, IconExternalLink, IconTrash } from "@tabler/icons-react";
+import { useApiKeys } from "~/hooks/use-api-keys";
+import { PROVIDERS, maskApiKey, type ProviderId } from "~/lib/provider-keys";
 
 /**
  * Settings → Providers. BYOK key management, moved out of the chat's old
  * blocking setup wall into Settings where the rest of the platform keeps it
- * (Core's Providers tab). Keys live only in this browser; the chat reads them
- * via the same `useApiKeys` hook.
+ * (Core's Providers tab). The chat reads the current account's browser-stored
+ * keys via the same `useApiKeys` hook.
  */
 export function ProvidersSettings() {
   const { loaded, getKey, hasKey, setKey, removeKey, validateKey } = useApiKeys();
@@ -27,20 +28,28 @@ export function ProvidersSettings() {
   const [errors, setErrors] = useState<Record<string, string | null>>({});
 
   const save = async (provider: ProviderId) => {
-    const draft = (drafts[provider] ?? '').trim();
+    const draft = (drafts[provider] ?? "").trim();
     if (!draft) return;
     setValidating(provider);
     setErrors((e) => ({ ...e, [provider]: null }));
     try {
-      const result = await validateKey(provider, draft);
-      if (!result.valid) {
-        setErrors((e) => ({ ...e, [provider]: result.error || 'Invalid API key' }));
+      let result;
+      try {
+        result = await validateKey(provider, draft);
+      } catch {
+        setErrors((e) => ({ ...e, [provider]: "Could not validate API key" }));
         return;
       }
-      setKey(provider, draft);
-      setDrafts((d) => ({ ...d, [provider]: '' }));
-    } catch {
-      setErrors((e) => ({ ...e, [provider]: 'Could not validate API key' }));
+      if (!result.valid) {
+        setErrors((e) => ({ ...e, [provider]: result.error || "Invalid API key" }));
+        return;
+      }
+      try {
+        await setKey(provider, draft);
+        setDrafts((d) => ({ ...d, [provider]: "" }));
+      } catch {
+        setErrors((e) => ({ ...e, [provider]: "Could not save API key" }));
+      }
     } finally {
       setValidating(null);
     }
@@ -51,8 +60,9 @@ export function ProvidersSettings() {
       <CardHeader>
         <CardTitle>Model providers</CardTitle>
         <CardDescription>
-          Add your own AI provider key to power the AI Study Buddy. Keys are stored only in this
-          browser and sent directly to the model — never saved on our servers.
+          Add your own AI provider key to power the AI Study Buddy. Keys are stored securely in Core
+          for this account and sent through EduAI services to the selected provider when you
+          validate a key or use AI.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -81,12 +91,19 @@ export function ProvidersSettings() {
                 </a>
               </div>
 
+              {p.note && <p className="text-xs text-muted-foreground">{p.note}</p>}
+
               {configured ? (
                 <div className="flex items-center gap-2">
                   <div className="flex-1 rounded-[var(--radius-md)] border border-border bg-muted/40 px-3 py-2 font-mono text-sm text-muted-foreground">
                     {maskApiKey(getKey(p.id))}
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeKey(p.id)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void removeKey(p.id)}
+                  >
                     <IconTrash className="h-4 w-4" /> Remove
                   </Button>
                 </div>
@@ -95,7 +112,7 @@ export function ProvidersSettings() {
                   <div className="flex gap-2">
                     <Input
                       type="password"
-                      value={drafts[p.id] ?? ''}
+                      value={drafts[p.id] ?? ""}
                       onChange={(e) => {
                         const value = e.target.value;
                         setDrafts((d) => ({ ...d, [p.id]: value }));
@@ -113,10 +130,10 @@ export function ProvidersSettings() {
                     >
                       {busy ? (
                         <>
-                          <IconLoader2 className="h-4 w-4 animate-spin" /> Checking…
+                          <Spinner /> Checking…
                         </>
                       ) : (
-                        'Save'
+                        "Save"
                       )}
                     </Button>
                   </div>

@@ -395,8 +395,7 @@ These exist in the real codebase but have no visual reference here. Implement us
 | `/auth/register` | `register-form.tsx` | Mirror login card design; same UBC-branded shell |
 | `/admin/ai-models` | `admin.ai-models.tsx` | Same data table pattern as `/admin/users` |
 | `/admin/bug-reports` | `BugReportsAdminView` | Same table pattern; triage status column |
-| `/team` | `team.tsx` | Team member cards; low priority |
-| `/` | `home.tsx` | Landing / redirect; minimal currently |
+| `/` | `home.tsx` | Single-scroll landing page: hero, about, approach, products, research, team |
 | `/onboarding/student-id` | `student-id-onboarding-form.tsx` | See `ui_kits/core/Onboarding.jsx` for reference |
 | Canvas dashboard card | `CanvasDashboardCard.tsx` | Appended below dashboard for instructor/admin |
 | Canvas sync dialog | `CanvasCourseSyncDialog.tsx` | Course picker dialog for Canvas sync |

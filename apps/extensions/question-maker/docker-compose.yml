@@ -1,19 +1,14 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
     container_name: eduquery-postgres
-    env_file:
-      - .env
     environment:
       POSTGRES_DB: eduquery
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD_PRODUCTION: ${POSTGRES_PASSWORD_PRODUCTION}
-    ports:
-      - "55432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_PRODUCTION:?POSTGRES_PASSWORD_PRODUCTION must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -39,20 +34,24 @@ services:
   # Backend API
   backend:
     build:
-      context: ./app/backend
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: apps/extensions/question-maker/app/backend/Dockerfile
     container_name: eduquery-backend
     env_file:
       - .env
     environment:
+      # The image inserts and URL-encodes the raw password before startup.
+      DATABASE_URL: postgresql://postgres@postgres:5432/eduquery
       LOG_LEVEL: warn
+      NODE_ENV: production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_PRODUCTION:?POSTGRES_PASSWORD_PRODUCTION must be set}
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/readyz"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -77,18 +76,24 @@ services:
   # Frontend
   frontend:
     build:
-      context: ./app/frontend
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: apps/extensions/question-maker/app/frontend/Dockerfile
+      args:
+        # Vite reads these only while building; runtime env_file values cannot
+        # change an already-compiled browser bundle.
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_CORE_URL: ${VITE_CORE_URL:-https://eduai.ok.ubc.ca}
+        VITE_AI_TUTOR_URL: ${VITE_AI_TUTOR_URL:-https://ai-tutor.eduai.ok.ubc.ca}
+        VITE_QUESTION_MAKER_URL: ${VITE_QUESTION_MAKER_URL:-https://qm.eduai.ok.ubc.ca}
+        VITE_CANVAS_TEST_MODE: ${VITE_CANVAS_TEST_MODE:-false}
     container_name: eduquery-frontend
-    env_file:
-      - .env
     ports:
-      - "3005:80"
+      - "3005:8080"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/healthz.html"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz.html"]
       interval: 30s
       timeout: 10s
       retries: 3
