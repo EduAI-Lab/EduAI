@@ -74,6 +74,18 @@ export function applySecurityHeaders(
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 
+  // Keep the team roster's photos out of Google Images. `noimageindex` tells a
+  // crawler not to index any image embedded in this document, while leaving the
+  // page itself indexable. It only applies to HTML documents (the ones that
+  // carry a nonce) — a JSON resource response embeds no images.
+  //
+  // This deliberately does NOT go in robots.txt: a `Disallow` stops the crawler
+  // from fetching the images at all, which also stops it from ever seeing that
+  // they should be dropped, so anything already indexed would stay indexed.
+  if (opts.nonce) {
+    headers.set("X-Robots-Tag", "noimageindex");
+  }
+
   if (opts.isProd) {
     headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     headers.set(

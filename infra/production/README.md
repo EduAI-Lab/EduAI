@@ -1,46 +1,108 @@
-# EduAI Core production bootstrap
+# Production deployment
 
-This directory contains the production Core deployment templates. They are intentionally separate from the existing legacy checkout on `s348`:
+Last verified: 2026-08-31
 
-`/srv/www/my.eduai.ok.ubc.ca`
+This directory describes the production release contract for `s348.ok.ubc.ca`.
+The production host is separate from shared development and uses a release
+symlink, host-managed PostgreSQL/Redis, systemd, and Apache. The checklist is the
+preflight companion; this file is the deployment procedure and architecture index.
 
-Do not reset, clean, or pull over that directory until it has been backed up and the replacement deployment has passed validation.
+## Production layout
+
+The live release layout is:
+
+```text
+/srv/www/eduai-production/releases/<release-id>
+/srv/www/eduai-production/current -> /srv/www/eduai-production/releases/<release-id>
+```
+
+The supported application units are:
+
+| Unit | Component | Expected port |
+| --- | --- | ---: |
+| `eduai-core` | Core web application | `127.0.0.1:3000` |
+| `eduai-aitutor-server` | AI Tutor API | `127.0.0.1:4000` |
+| `eduai-qm-backend` | Question Maker backend | `0.0.0.0:8000` in the current deployment |
+| `eduai-cron-worker` | Core scheduled-maintenance worker | none |
+
+Apache terminates public HTTPS and proxies or serves the configured vhosts. The
+production database and Redis are normally host-managed on `127.0.0.1:5432` and
+`127.0.0.1:6379`. The production queue is currently disabled; enabling it requires
+an explicit configuration and operational review.
+
+The public hostnames are:
+
+- Core: `https://my.eduai.ok.ubc.ca`
+- AI Tutor: `https://aitutor.eduai.ok.ubc.ca`
+- Question Maker: `https://questionmaker.eduai.ok.ubc.ca`
+
+## Verified host snapshot
+
+The 2026-08-31 audit found the current symlink resolving to release
+`ec9036dda` (short commit `ec9036d` on `main`). Core, AI Tutor, and Question
+Maker units were enabled on the host; Apache2 and Docker were active, with the
+expected PostgreSQL and Redis listeners on ports 5432 and 6379. Re-run the
+preflight and health checks before treating any later release as ready.
+
+## What the repository currently manages
+
+The repository includes production templates and a restricted helper for Core,
+AI Tutor, Question Maker, and the Core cron worker:
+
+- `infra/production/core.env.example`
+- `infra/production/ai-tutor.env.example`
+- `infra/production/systemd/`
+- `infra/production/apache/`
+- `infra/production/admin-helper.sh`
+- `infra/production/preflight.sh`
+- `infra/cron/`
+
+The current `eduai-production-admin` allow-list manages Core, AI Tutor, Question
+Maker's narrowly scoped install/enable/restart actions, Redis, release
+activation, Apache reload, and the cron worker. It does not provide a general
+Question Maker provisioning shell or a `provision-qm` action. Question Maker's
+application deployment documentation remains authoritative for its database and
+build procedure:
+[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
+
+The old PM2-oriented application scripts are not the production runbook. Do not
+use `apps/core/deploy.sh` or `apps/extensions/ai-tutor/deploy.sh` against the
+release symlink.
 
 ## Read-only preflight
 
-Run [`preflight.sh`](./preflight.sh) on the production host before any privileged provisioning:
+Run the repository preflight on the production host before changing privileged
+configuration:
 
 ```bash
+cd /srv/www/eduai-production/current
 bash infra/production/preflight.sh
 ```
 
-The script checks installed tools, runtime versions, filesystem paths, the legacy checkout state, service/listener state, release artifacts, PostgreSQL/Redis, local health endpoints, cmps01–03 reachability, and the public URLs. It does not modify files, services, databases, or environment values.
+Also confirm:
 
-## Target layout
-
-The replacement deployment uses a release layout:
-
-```text
-/srv/www/eduai-production/
-├── current -> releases/<commit>
-├── releases/<commit>/
-└── shared/
+```bash
+readlink -f /srv/www/eduai-production/current
+git -C /srv/www/eduai-production/current log -1 --oneline
+systemctl --no-pager --full status eduai-core eduai-aitutor-server eduai-qm-backend
+systemctl --no-pager --full status apache2 docker
+ss -lntp
 ```
 
-The application service runs from `current`. The old checkout remains available until the new deployment is accepted.
+Do not print environment files while inspecting them. Verify the presence,
+ownership, and permissions of `/etc/eduai/eduai-core.env` and the AI Tutor
+environment files without exposing their values.
 
 ## Application cron worker
 
 The Admin → Cron Jobs page is backed by the dedicated
 `eduai-cron-worker.service`; it is not driven by the web process and does not
 use a user crontab. The worker reads Core's database environment, dispatches
-the allow-listed jobs, and runs shell jobs as the unprivileged `eduai-cron`
-user. `Restart=always` keeps the worker itself running, while the application
-services retain their own systemd restart policies.
+allow-listed jobs, and runs shell jobs as the unprivileged `eduai-cron` user.
+`Restart=always` keeps the worker itself running, while the application services
+retain their own systemd restart policies.
 
-Before enabling it on production, an administrator must create
-`/etc/eduai/cron.env` from [`infra/cron/cron.env.example`](../cron/cron.env.example)
-with real host-specific values (`root:eduai-cron`, mode `0640`), create the
+Before enabling it on production, create `/etc/eduai/cron.env`, create the
 `eduai-cron` user and its backup/log directories, and install the root-owned
 worker template through [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md). Then run:
 
@@ -50,206 +112,112 @@ sudo -n /usr/local/sbin/eduai-production-admin enable-cron-worker
 sudo -n /usr/local/sbin/eduai-production-admin restart-cron-worker
 ```
 
-Review any stale `RUNNING` records in Admin → Cron Jobs before restarting the
-worker; it dispatches pending admin-triggered runs when it starts.
+Review stale `RUNNING` records in Admin → Cron Jobs before restarting the worker;
+it dispatches pending admin-triggered runs when it starts.
 
-## Production configuration
+## Provisioning prerequisites
 
-- Public URL: `https://my.eduai.ok.ubc.ca`
-- Internal Core port: `127.0.0.1:3000`
-- PostgreSQL: private production database, not the legacy checkout's database
-- Redis: private production Redis instance for the optional BullMQ worker
-- Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; this PR's validated application template uses cmps01 for the Qwen3.5 interactive fleet and cmps02 for the retained Qwen2.5 32B Assist Auto model; cmps03 remains outside this rollout pending firewall and inventory validation
-- AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
-- Shared auth: `COOKIE_DOMAIN=.ok.ubc.ca` is required across the sibling Core and extension hosts; confirm no unrelated `*.ok.ubc.ca` service should receive this cookie before enabling it
-- Question Maker: `https://questionmaker.eduai.ok.ubc.ca`, static frontend (same pattern as AI Tutor) plus API on `127.0.0.1:8000`
-- Application cron: `eduai-cron-worker.service`, with schedules managed by the Admin → Cron Jobs page
+Complete [`PROVISIONING_CHECKLIST.md`](./PROVISIONING_CHECKLIST.md) before the
+first release or any host rebuild. It covers:
 
-## One-time server preparation
+- service account and release-directory ownership;
+- native PostgreSQL and optional Redis;
+- root-owned environment files and API-key handling;
+- Prisma client generation and migration preflight;
+- Apache modules, certificates, and vhosts;
+- approved inference endpoints and model IDs;
+- queue-disabled behavior;
+- backup and restore readiness.
 
-See [`PROVISIONING_CHECKLIST.md`](./PROVISIONING_CHECKLIST.md) for the database, Redis, permissions, environment, systemd, Apache, and final pre-release checks.
+The application must be able to generate its Prisma clients from the release
+before a service is enabled. A successful `npm ci` alone is not proof that every
+workspace client required by systemd exists.
 
-For privileged bootstrap operations, use the narrow helper and sudoers procedure in [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md).
+## Release procedure
 
-Run these commands interactively as an administrator after reviewing the host-specific paths and package names:
+Use a new release directory for every production change:
 
-```bash
-sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/releases
-sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/shared
-sudo install -d -o root -g eduai -m 0750 /etc/eduai
-sudo install -d -o ssaada08 -g eduai -m 0750 /var/log/eduai
-sudo install -d -o root -g root -m 0750 /etc/eduai/production-templates
-```
+1. Create or obtain the reviewed release checkout under
+   `/srv/www/eduai-production/releases/<release-id>`.
+2. Confirm the intended branch/commit and keep the release checkout clean.
+3. Install dependencies from the repository root with `npm ci`.
+4. Generate the Prisma clients using the package scripts used by the release.
+5. Run the Core migration preflight and deploy migrations; run the corresponding
+   AI Tutor and Question Maker migrations when their release requires them.
+6. Run only the approved reference/extension seed steps. Do not use fixture or
+   performance seeds as a normal production release step.
+7. Build the Core and extension browser assets.
+8. Install or update root-owned environment, unit, and Apache templates through the
+   restricted helper where applicable.
+9. Activate the reviewed release with the helper:
+   ```bash
+   sudo -n /usr/local/sbin/eduai-production-admin activate-release <release-id>
+   ```
+10. Reload systemd/Apache as needed, enable the intended units, and restart only
+    the components included in the release.
+11. Run the local and public health checks below and record the release ID,
+    commit, timestamp, and result.
 
-Privileged templates consumed by the passwordless helper must be installed by
-an administrator into `/etc/eduai/production-templates` and remain root-owned;
-do not place them under the deployment account's group-writable `shared/` tree.
+The exact package scripts can change with the code. Read the package manifests and
+the deployment helper in the release you are deploying instead of copying an old
+command sequence.
 
-Install the environment file from [`core.env.example`](./core.env.example) as `/etc/eduai/eduai-core.env`, replace every placeholder, then apply:
+## Health checks
 
-```bash
-sudo chown root:eduai /etc/eduai/eduai-core.env
-sudo chmod 0640 /etc/eduai/eduai-core.env
-```
-
-The production database must be provisioned and tested before migrations are applied. Take a backup before each schema-changing release.
-
-### AI Tutor production prerequisites
-
-Provision a dedicated PostgreSQL role and database before installing
-`ai-tutor.env.example`; do not reuse Core's `eduai_prod` database:
-
-```sql
-CREATE ROLE ai_tutor_prod LOGIN PASSWORD '<generated-password>';
-CREATE DATABASE ai_tutor_prod OWNER ai_tutor_prod;
-```
-
-Install the following reviewed templates as root-owned files:
-
-```text
-infra/production/ai-tutor.env.example                        -> /etc/eduai/eduai-aitutor.env
-infra/production/systemd/eduai-aitutor-server.service        -> /etc/systemd/system/
-infra/production/apache/aitutor.eduai.ok.ubc.ca.conf         -> /etc/apache2/sites-available/
-infra/production/question-maker.env.example                   -> /etc/eduai/eduai-qm.env
-infra/production/systemd/eduai-qm-backend.service             -> /etc/systemd/system/
-infra/production/apache/questionmaker.eduai.ok.ubc.ca.conf    -> /etc/apache2/sites-available/
-```
-
-The frontend uses the public-only values in
-`infra/production/ai-tutor-frontend.env` during the build. The API environment
-must contain the same `EDUAI_API_KEY` as Core, but that secret must never be
-committed or copied into the frontend bundle. This vhost does not set
-explicit `SSLCertificateFile`/`SSLCertificateKeyFile` paths — it relies on
-the certificate already configured for `*.eduai.ok.ubc.ca` names on this
-host; confirm that coverage before enabling a new vhost under this domain,
-rather than assuming a per-hostname certificate file exists.
-
-### Question Maker production prerequisites
-
-Provision a dedicated Question Maker database and role on the host PostgreSQL
-instance before installing `question-maker.env.example`; do not reuse Core's
-database:
-
-```sql
-CREATE ROLE qm_prod LOGIN PASSWORD '<generated-password>';
-CREATE DATABASE eduquery OWNER qm_prod;
-```
-
-Install `question-maker.env.example` as the reviewed, secret-bearing
-`/etc/eduai/eduai-qm.env`, and install
-`systemd/eduai-qm-backend.service` and
-`apache/questionmaker.eduai.ok.ubc.ca.conf` as root-owned templates. The
-Question Maker generated client and frontend entrypoint are mandatory release
-artifacts, just like AI Tutor's. If those templates are installed under
-`/etc/eduai/production-templates`, the helper can install and validate them:
+Use the service-specific paths:
 
 ```bash
-sudo -n /usr/local/sbin/eduai-production-admin install-qm-env
-sudo -n /usr/local/sbin/eduai-production-admin install-qm-unit
-sudo -n /usr/local/sbin/eduai-production-admin install-qm-apache
+curl -fsS http://127.0.0.1:3000/api/health
+curl -fsS http://127.0.0.1:4000/api/health
+curl -fsS http://127.0.0.1:8000/healthz
+curl -fsSI https://my.eduai.ok.ubc.ca/
+curl -fsSI https://aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://questionmaker.eduai.ok.ubc.ca/
 ```
 
-The release pointer is intentionally atomic for all three applications: an
-activation is allowed only when Core, AI Tutor, and Question Maker artifacts
-are present in the same release. This prevents an app-only build from moving
-`current` to a tree that would make an untouched service or Apache document
-root incomplete. An app-only build may be used for preparation, but the
-unchanged applications' artifacts must be copied into the candidate before
-the complete-release validation and activation steps.
+Core and AI Tutor expose `/api/health`. The Question Maker backend exposes
+`/healthz`; `/api/health` is not its health route. Treat a health response as
+reachability evidence only. Also verify the active unit journal, database
+connectivity, migrations, browser asset markers, and approved inference model IDs.
 
-## First release procedure
+## Inference configuration
 
-From a clean checkout of the approved `main` commit:
+Production should use only endpoints that pass the authenticated port-8001 edge
+check and have an operational owner. The standard Qwen tier IDs are:
 
-```bash
-git fetch origin main
-git worktree add --detach "/srv/www/eduai-production/releases/<commit>" "origin/main"
-cd "/srv/www/eduai-production/releases/<commit>"
-npm ci
-npm run db:generate -w edu-ai
-(cd apps/extensions/ai-tutor/server && npm run db:generate)
-(cd apps/extensions/question-maker/app/backend && npm run db:generate)
-cd apps/core
-npx prisma migrate deploy
-set -a; . /etc/eduai/eduai-core.env; set +a
-npm run build
-cd ../..
-set -a; . /etc/eduai/eduai-aitutor.env; set +a
-(cd apps/extensions/ai-tutor/server && npx prisma migrate deploy)
-set -a; . /etc/eduai/eduai-qm.env; set +a
-(cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy)
-cp infra/production/ai-tutor-frontend.env apps/extensions/ai-tutor/.env
-npm run build -w ai-tutor
-cp infra/production/question-maker-frontend.env apps/extensions/question-maker/.env
-npm run build -w question-maker-frontend
-```
+- small: `qwen3.5-2b-instruct`;
+- large: `qwen3.5-9b-instruct` where installed;
+- planned future capacity: `qwen3.8-27b`, not currently deployed.
 
-`/srv/www/eduai-production` is root-owned; a direct `ln -sfn` as the
-deployment account fails with `Permission denied`. Switch `current` through
-the helper instead:
-
-```bash
-sudo -n /usr/local/sbin/eduai-production-admin validate-release <commit>
-sudo -n /usr/local/sbin/eduai-production-admin activate-release <commit>
-```
-
-For an urgent app-only change, keep the existing `current` release serving
-traffic while preparing a complete candidate. Build the changed app and copy
-the currently active artifacts for each unchanged app into that candidate,
-then run `validate-release` before activation. Do not bypass the helper's
-validation or switch `current` to a partial release. If the candidate cannot
-be made complete, leave `current` unchanged and use the rollback procedure
-below rather than taking an unrelated app offline.
-
-Restart only after the build and migration succeed:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now eduai-aitutor-server
-sudo systemctl enable --now eduai-qm-backend
-sudo systemctl enable --now eduai-cron-worker
-sudo systemctl restart eduai-core
-sudo systemctl is-active eduai-core
-sudo systemctl is-active eduai-aitutor-server
-sudo systemctl is-active eduai-qm-backend
-curl -fsS http://127.0.0.1:3000/api/health >/dev/null
-curl -fsS http://127.0.0.1:4000/api/health >/dev/null
-curl -fsS http://127.0.0.1:8000/readyz >/dev/null
-sudo systemctl is-active eduai-cron-worker
-curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
-curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
-curl -fsS https://questionmaker.eduai.ok.ubc.ca/ >/dev/null
-```
-
-Do not run `prisma db push` or automatic production seeding in this procedure.
+CMPS02 may expose `qwen2.5-32b-instruct` for the Assist Auto capability; that is
+not the standard large tier. CMPS03 must remain out of an approved production
+fleet until its edge readiness is confirmed. See
+[`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
+dated inventory.
 
 ## Rollback
 
-Keep the previous release symlink target until public smoke tests pass. If the new release fails:
+The release symlink is the rollback boundary:
 
 ```bash
-sudo systemctl stop eduai-core
-sudo -n /usr/local/sbin/eduai-production-admin activate-release <previous-commit>
-sudo systemctl start eduai-core
+readlink -f /srv/www/eduai-production/current
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <previous-release-id>
+sudo -n /usr/local/sbin/eduai-production-admin restart-core
 ```
 
-Database rollback is separate from application rollback. A migration that changes the schema must have a reviewed restore or forward-fix procedure before deployment.
+Restart the other components only if they are part of the rolled-back release.
+Repeat all local/public checks and inspect the journals. Database migrations are
+not automatically reversible; consult the migration and backup owner before
+attempting a schema rollback.
 
-## Continuous deployment design
+## Operational notes
 
-The production server should pull approved `main` commits through a locked systemd timer. The deploy runner must:
-
-1. Refuse a dirty release checkout.
-2. Fetch `main` and record the target SHA.
-3. Back up the Core database.
-4. Build a new release directory with `npm ci`, generating each app's
-   extension-local Prisma client before migration.
-5. Run all three applications' migrations.
-6. Run all three production builds and verify their entrypoints.
-7. Validate the release, prepare only the two public static trees for Apache,
-   and switch `current` atomically.
-8. Restart Core, AI Tutor, and Question Maker and verify local/public health
-   endpoints.
-9. Repoint `current` to the previous release if health checks fail.
-
-The runner must never use `git reset --hard`, `git clean -fd`, `prisma db push`, or unconditional production seeding.
+- Back up the databases before migrations; a completed backup job is not a
+  restore test.
+- Keep API keys, database credentials, cookies, and model credentials out of Git,
+  shell history, logs, and browser bundles.
+- Preserve release directories until the rollback/retention policy allows removal.
+- Use [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md) for the exact privilege boundary.
+- Use [`infra/cron/README.md`](../cron/README.md) for backup scripts and the
+  s378 cron-worker installation; do not invent a production system crontab from
+  the standalone scripts.

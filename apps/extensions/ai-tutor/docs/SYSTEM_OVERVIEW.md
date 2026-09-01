@@ -1,11 +1,6 @@
-# AI Tutor — System Overview Document
+# AI Tutor — System Overview
 
-**Project:** AI Tutor
-**Author:** Stavan Shah
-**Institution:** University of British Columbia (UBC)
-**Project Type:** Honours Capstone Project
-**Deployment:** aitutor.ok.ubc.ca (accessible via UBC VPN)
-**Date:** April 2026
+**Project:** AI Tutor — a tutoring extension inside the EduAI platform.
 
 ---
 
@@ -16,8 +11,7 @@
 3. [Navigation & UI Breakdown](#3-navigation--ui-breakdown)
 4. [Main Features](#4-main-features)
 5. [System Workflows](#5-system-workflows)
-6. [Future Work & Next Integrations](#6-future-work--next-integrations)
-7. [Codebase Walkthrough](#7-codebase-walkthrough)
+6. [Codebase Walkthrough](#6-codebase-walkthrough)
 
 ---
 
@@ -25,834 +19,506 @@
 
 ### What Is AI Tutor?
 
-AI Tutor is a web-based tutoring platform that helps university students learn course material through interactive, AI-powered practice activities. Rather than passively reading notes or watching lectures, students work through questions designed by their instructors and receive real-time guidance from an AI tutor that adapts to their knowledge level — all without ever simply handing them the answer.
+AI Tutor is a web-based tutoring platform that helps students learn course material through
+interactive, AI-guided practice activities. Students work through questions their instructors have
+authored and get real-time help from an AI tutor calibrated to their self-reported knowledge level —
+without the AI simply handing over the answer, thanks to a supervisor model that reviews every reply
+before it reaches the student.
 
-The platform is built as an **Honours Capstone Project** at the University of British Columbia by Stavan Shah. It is currently deployed on UBC servers at `aitutor.ok.ubc.ca` and is accessible through the UBC VPN.
+### How It Fits Into EduAI
 
-### How Does It Fit Into the Bigger Picture?
+AI Tutor is one of several extensions inside **EduAI**, a shared platform (referred to elsewhere in
+this codebase as "Core") that owns identity, course/enrollment data, and the LLM proxy. AI Tutor holds
+almost no course metadata of its own: title, description, department, dates, publish state, term, and
+year are all read live from Core on every request (see [`ARCHITECTURE.md`](ARCHITECTURE.md#data-model-overview-prisma)).
+What AI Tutor *does* own locally is the tutoring-specific content built on top of a course —
+modules, lessons, activities, submissions, AI chat sessions, and interaction traces.
 
-AI Tutor is one of several **sister applications** within a larger ecosystem called **EDU AI**. EDU AI acts as a centralized parent platform — similar in concept to a Canvas or Blackboard system — that handles shared responsibilities like user authentication, course management, and AI model access. Sister applications such as AI Tutor, Question Maker, and Rubric Generator each serve a specialized purpose but share common infrastructure through EDU AI.
+A user who signs into EduAI can reach AI Tutor without a separate account or a second enrollment step
+— session validation and enrollment/instructor roster data are both resolved live against Core on
+every relevant request, not mirrored once and trusted forever.
 
-Think of it this way:
+### How the System Works, at a High Level
 
-- **EDU AI** is the central hub. It knows who the users are, what courses they are enrolled in, and which AI models are available.
-- **AI Tutor** is a specialized extension that pulls course and user information from EDU AI, then provides its own interactive tutoring experience on top of that shared foundation.
+Two halves that run as independent processes:
 
-This design means that a student who logs into EDU AI can seamlessly access AI Tutor (and eventually other tools) without creating separate accounts or re-enrolling in courses.
+1. **Frontend** — a React Router v7 single-page app (`ssr: false`; nothing is server-rendered). This
+   is where students answer questions and chat with the AI tutor, and where instructors build course
+   content.
+2. **Backend** — an Express 5 API backed by PostgreSQL via Prisma. It validates sessions against
+   Core, stores course content and student submissions, and orchestrates the AI tutoring calls.
 
-### How the System Works (At a High Level)
-
-AI Tutor is made up of two main parts that work together:
-
-1. **The Frontend (What Users See):** A modern, responsive web application built with React. This is the interface where students answer questions, chat with the AI tutor, and track their progress — and where instructors build courses and configure activities.
-
-2. **The Backend (What Runs Behind the Scenes):** A server application built with Express and backed by a PostgreSQL database. It handles user authentication, stores all course content and student submissions, manages AI tutoring sessions, and communicates with EDU AI for shared services like login and AI model access.
-
-When a student interacts with the AI tutor, the request travels from the frontend to the backend, which then communicates with EDU AI's AI services. A key safety mechanism called the **dual-loop supervisor** reviews every AI response before it reaches the student, ensuring the tutor never leaks answers or provides guidance that is too easy. The validated response is then streamed back to the student in real time.
+When a student sends a chat message, the request goes: browser → AI Tutor's API → Core's completion
+endpoint, once for the tutor model and again for a supervisor model that reviews the tutor's draft
+before it's allowed to reach the student. The exchange is **not streamed** — the browser shows a
+"Thinking…" indicator and receives the finished, approved reply once the whole tutor↔supervisor cycle
+settles.
 
 ### Technology Summary
 
-For readers with a technical background, the core technology stack includes:
-
-| Layer          | Technology                                                   |
-| -------------- | ------------------------------------------------------------ |
-| Frontend       | React 19, React Router v7, TypeScript, Tailwind CSS v4       |
-| Backend        | Express 5, Node.js                                           |
-| Database       | PostgreSQL with Prisma ORM                                   |
-| Authentication | Better Auth (session cookies), EDU AI OAuth                  |
-| AI Integration | EDU AI Chat API (supports Google Gemini, OpenAI, and others) |
-| UI Components  | Radix UI, Lucide Icons, driver.js (product tours)            |
-| Deployment     | UBC servers (Apache httpd + PM2 + Docker PostgreSQL)         |
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 19, React Router v7 (SPA), TypeScript, Tailwind CSS v4, `@eduai/ui` |
+| Backend | Express 5, Node.js |
+| Database | PostgreSQL with Prisma ORM |
+| Authentication | Delegated to EduAI Core (`POST /api/sessions/validate`, cookie-forwarded) — no local login, JWT, or OAuth client of its own |
+| AI Integration | EduAI Core's `/completion` endpoint (non-streaming), supporting Google Gemini, OpenAI, OpenCode, and UBC-hosted models |
+| UI Components | Radix UI primitives via `@eduai/ui`, Tabler icons, `driver.js` (product tours) |
+| Deployment | See [`DEPLOYMENT.md`](DEPLOYMENT.md) — the repo currently holds two production mechanisms: a newer systemd + Apache release-based flow (current), and an older PM2 + Apache single-host script (legacy) |
 
 ---
 
 ## 2. User Roles & Permissions
 
-AI Tutor supports three active user roles, each with distinct capabilities and access levels. A user's role is determined by their EDU AI account and is assigned when they first sign into AI Tutor.
+AI Tutor recognizes **five** roles: `STUDENT`, `TA`, `INSTRUCTOR`, `UNIT_ADMIN`, `ADMIN`
+(`app/lib/rbac/permissions.ts`, `server/src/middleware/auth.js`). A role is resolved from the caller's
+Core session on every request — there is no locally cached role that can drift out of date.
+
+`TA` is not something Core assigns to the account directly: `GET /api/me` promotes a base `STUDENT`
+account to the *global effective role* `TA` when the enrollment sync finds them teaching at least one
+course as a TA. Because of that, a global-effective `TA` can still be a plain `STUDENT` on a course
+they don't assist with — several sensitive actions (submitting an answer, using AI tutoring) check the
+caller's *live enrollment role on that specific course*, not the global effective role, precisely to
+handle that case correctly.
 
 ### Students
 
-Students are the primary users of AI Tutor. Their experience is focused entirely on learning.
+The primary learners.
 
-**What Students Can Do:**
+**Can:**
 
-- **Browse enrolled courses** — Students see only the courses they are enrolled in, displayed as a visual dashboard of course cards with progress indicators.
-- **Work through activities** — Navigate a course's modules and lessons, then complete interactive activities (multiple-choice or short-answer questions).
-- **Receive instant feedback** — After submitting an answer, students immediately see whether they were correct or incorrect.
-- **Use AI tutoring** — Access up to three AI-powered assistance modes (Teach, Guide, and Custom) to get help understanding concepts without having the answer given away.
-- **Select a knowledge level** — Choose between Beginner, Intermediate, or Advanced to receive AI guidance tailored to their current understanding.
-- **Track progress** — Visual progress bars show completion status at the course, module, and lesson levels.
-- **Provide activity feedback** — Rate activities on a 1-to-5 scale and leave optional written feedback for instructors.
-- **Submit bug reports** — Report issues with automatic capture of screenshots and technical context.
-- **Take guided tours** — Access interactive walkthroughs that explain the interface and features step by step.
+- Browse enrolled courses as a card grid with progress indicators.
+- Work through a course's modules → lessons → activities (multiple-choice or short-answer questions).
+- Get instant correct/incorrect feedback on submission.
+- Use up to three AI-tutoring modes per activity — Teach, Guide, and an optional instructor-authored
+  Custom mode — gated on the activity's own `enableTeachMode`/`enableGuideMode`/`enableCustomMode`
+  flags.
+- Pick a knowledge level (Beginner/Intermediate/Advanced) that shapes the tutor's calibration.
+- Rate a completed activity 1–5 and leave an optional note.
+- Bring their own AI provider key (Google, OpenAI, or OpenCode) for models that need one; UBC-hosted
+  models need no personal key.
+- Submit bug reports (auto-captures a screenshot, console/network logs, and page context).
+- Take a guided product tour of the dashboard and the lesson player.
 
-**What Students Cannot Do:**
+**Cannot:** create/edit/delete course content; see other students' submissions; change AI model
+policy; use a model the admin hasn't allow-listed.
 
-- Create, edit, or delete any course content.
-- Access other students' submissions or progress.
-- Change system settings or manage users.
-- Select AI models that the administrator has not approved.
+### Teaching Assistants (TA)
 
----
+TAs are fully supported. A TA sees the same content-authoring shell as an instructor (course/module/
+lesson list, activity editor) but read-only for writes — the write endpoints require `INSTRUCTOR`/
+`UNIT_ADMIN`/`ADMIN`, so a TA's UI hides create/edit/publish/delete controls the server would reject
+anyway. TAs *can* view submissions, feedback, and analytics for the courses they assist with, and can
+review the grading queue.
 
-### Instructors (Professors)
+Because a TA account is a `STUDENT`-platform account with a per-course TA enrollment, the *same* user
+can also be a real learner in a different course — the frontend labels this distinction and gates
+per-course capabilities (like a TA "previewing" the student experience of a course they teach) so a
+TA never gets a live composer for a course they're only assisting with.
 
-Instructors are the content creators. They build the course structures and configure how AI tutoring behaves for each activity.
+### Instructors
 
-**What Instructors Can Do:**
+The content authors.
 
-- **Create and manage courses** — Build courses from scratch or import them from EDU AI or from other existing courses within AI Tutor.
-- **Build content hierarchies** — Organize courses into Modules, then Lessons, then individual Activities. Each level can be independently created, edited, and ordered.
-- **Create activities** — Design multiple-choice or short-answer questions, write hints, and assign topics to each activity.
-- **Configure AI tutoring modes** — For every activity, choose which AI modes are available to students (Teach, Guide, Custom) and write custom AI prompts when desired.
-- **Manage topics** — Create course-level topics, sync topics from EDU AI, and assign main and secondary topics to activities for semantic organization.
-- **Control publishing** — Use a hierarchical publish/unpublish system. A lesson can only be published if its parent module is published, and a module can only be published if its parent course is published. Unpublishing a course cascades down to all its modules and lessons.
-- **Import content** — Pull in modules and lessons from other courses, or import entire course structures from EDU AI with a single action.
-- **Submit bug reports** — Report issues from anywhere in the platform.
+**Can:**
 
-**What Instructors Cannot Do:**
+- See the courses they instruct (course ownership/staffing comes from Core, mirrored locally).
+- Build the Module → Lesson → Activity hierarchy, with independent create/edit/reorder at each level.
+- Author MCQ or short-answer activities: question text, hints, topic tagging (one main topic +
+  optional secondary topics), and per-activity AI-mode toggles including a custom prompt.
+- Start an activity from a shared Question Bank item (Core/Question Maker content) instead of writing
+  one from scratch.
+- Control publishing with a strict cascade: a module can only publish while its course is published; a
+  lesson can only publish while its module *and* course are published. Unpublishing a course does
+  **not** cascade to modules/lessons — they keep whatever publish state they already had.
+- Import modules or lessons from another course they instruct, or import an entire course from Core.
+- Manage enrollments for their own course (add/remove students, promote a student to TA) — this is not
+  `ADMIN`-only.
+- Preview a course as a student would see it, without switching accounts.
+- Submit bug reports.
 
-- Manage user accounts or enrollments.
-- Change system-wide AI model policies.
-- Access the admin control panel.
+**Cannot:** access `/admin`; change the platform-wide AI model policy; manage enrollments outside the
+courses they instruct.
 
----
+### Unit Administrators
+
+A department-scoped variant of the instructor role. `UNIT_ADMIN` accounts carry an
+`authorizedUnits: string[]` list (Core departments); they see and can manage every course whose
+department is in that list, with the same authoring/publishing/enrollment capabilities as an
+instructor, plus the same "share the instructor shell" access `ADMIN` gets. They cannot touch
+`/admin/settings/*` or platform user management — those stay `ADMIN`-only.
 
 ### Administrators
 
-Administrators manage the operational side of AI Tutor. They do not interact with course content directly.
+Platform operators, deliberately kept out of course content itself.
 
-**What Administrators Can Do:**
+**Can:**
 
-- **Manage user enrollments** — View all courses, see which students are enrolled, and manually add or remove students from courses.
-- **Configure AI model policies** — Control which AI models students are allowed to use, set default tutor and supervisor models, enable or disable the dual-loop supervisor, and set iteration limits.
-- **Manage the EDU AI API key** — View, set, or clear the API key that connects AI Tutor to EDU AI services.
-- **Review bug reports** — Access a full dashboard of all submitted bug reports with technical details (console logs, network logs, screenshots, page URLs) and update their status.
-- **View all users** — See a list of every registered user and their role.
+- Triage bug reports across the platform.
+- Configure the AI model policy: which tutor models students may pick from, the default tutor and
+  supervisor models, the dual-loop supervisor toggle, and the iteration limit (1–5).
+- Manage the EduAI/Core service-key override (view status, set, or clear).
+- Review recent AI-tutoring interaction traces (the AI-oversight dashboard) across courses and units.
+- Share the same Courses dashboard instructors use — an `ADMIN` is not blocked from viewing/authoring
+  course content the way earlier iterations of this app were; the isolation gate exempts the shared
+  course/module/lesson/activity/topic tree.
+- View platform users and manage enrollments for any course (an admin capability, but also delegated
+  to instructors/unit admins for their own courses).
 
-**What Administrators Cannot Do:**
-
-- Create, edit, or access course content, modules, lessons, or activities.
-- Use the student or instructor interfaces.
-
----
-
-### Teaching Assistants (TAs)
-
-The TA role exists in the system's database schema but is **not currently supported** in the user interface. Users with a TA role who attempt to sign in are directed to an informational page explaining that TA support is not yet available. Supporting TAs with a tailored set of permissions is part of the future development roadmap.
-
----
+**Cannot:** submit bug reports (the admin console has no bug-report composer — an admin who hits an
+issue files it the way anyone else outside the platform would); use the student or dedicated
+instructor-only UI surfaces the way those roles do (an admin's course view is the shared authoring
+shell, not a learner view, unless they explicitly preview as a student).
 
 ### Role Summary Table
 
-| Capability                  | Student | Instructor        | Admin             |
-| --------------------------- | ------- | ----------------- | ----------------- |
-| View enrolled courses       | Yes     | Yes (own courses) | Yes (all courses) |
-| Complete activities         | Yes     | No                | No                |
-| Use AI tutoring chat        | Yes     | No                | No                |
-| Create/edit course content  | No      | Yes               | No                |
-| Publish/unpublish content   | No      | Yes               | No                |
-| Import courses from EDU AI  | No      | Yes               | No                |
-| Manage enrollments          | No      | No                | Yes               |
-| Configure AI model policies | No      | No                | Yes               |
-| Review bug reports          | No      | No                | Yes               |
-| Submit bug reports          | Yes     | Yes               | No                |
+| Capability | Student | TA | Instructor | Unit Admin | Admin |
+| --- | --- | --- | --- | --- | --- |
+| View enrolled/instructed courses | Enrolled only | Assisted + own enrollments | Own courses | Unit's courses | Every course |
+| Complete activities / use AI tutoring | Yes | Only where separately enrolled as a student | No | No | No |
+| Create/edit/publish course content | No | No | Yes | Yes | No |
+| View submissions/feedback/analytics | Own only | Assisted courses | Own courses | Unit's courses | Every course |
+| Manage enrollments | No | No | Own courses | Unit's courses | Every course |
+| Configure AI model policy | No | No | No | No | Yes |
+| Review bug reports | No | No | No | No | Yes |
+| Submit bug reports | Yes | Yes | Yes | Yes | No |
 
 ---
 
 ## 3. Navigation & UI Breakdown
 
-AI Tutor uses a clean, card-based design with a warm, earthy color palette. The interface is fully responsive, adapting from a single-column layout on mobile devices to a multi-column grid on larger screens. Navigation follows a consistent top-to-bottom hierarchy: a persistent top navigation bar anchors every page, and breadcrumb trails let users retrace their steps at any point.
+Built on the shared `@eduai/ui` design system, so AI Tutor's shell (sidebar, header, breadcrumbs,
+command palette) reads as one product with EduAI Core and Question Maker.
 
-### The Navigation Bar (Always Visible)
+### The App Shell
 
-A sticky navigation bar appears at the top of every page and contains:
+- **Sidebar** — role-aware nav items (`app/lib/rbac/nav.ts`): every role gets a shared "Dashboard"
+  entry, plus "Courses" (student label for `STUDENT`, "Courses" for the instructor shell roles), and
+  `ADMIN` additionally gets an "Admin" entry. A guide-tour control and an app-switcher launcher live
+  in the sidebar footer.
+- **Header** — breadcrumb trail for the current page, a ⌘K command-palette trigger, AI-service status
+  chips (cloud + UBC-hosted, proxied from Core), a theme toggle, and a "Report a bug" button.
+- **Command palette (⌘K)** — jump to any nav item or search courses server-side, without leaving the
+  keyboard.
 
-- **AI Tutor logo and wordmark** — Clicking it returns the user to their dashboard.
-- **Primary navigation link** — Changes based on role: "My Courses" for students, "Teaching" for instructors, or "Admin" for administrators.
-- **EDU AI connection status** — A small indicator showing whether AI Tutor is successfully connected to EDU AI services (green for connected, red for disconnected).
-- **Tour button** — Visible on student pages; starts an interactive guided tour of the current page.
-- **Bug report button** — Available to students and instructors; opens the bug reporting dialog.
-- **User profile badge** — Displays the user's name and role.
-- **Sign out button** — Ends the session and returns to the login page.
+### Sign-in
 
-### Page-by-Page Breakdown
+There is no local login form. Visiting `/` while unauthenticated redirects to Core's login page; on
+return, the shared role-aware **Dashboard** is where every role lands (`routeForRole()` sends every
+role to `/dashboard` — there is no separate per-role landing URL).
 
-#### Login Page (`/`)
+### Dashboard (`/dashboard` — shared across every role)
 
-The first page users see. It features a split-screen layout:
+One route, five role-specific views (`DashboardStudentView`, `DashboardTaView`,
+`DashboardInstructorView`, `DashboardUnitAdminView`, `DashboardAdminView`), sharing one presentational
+shell: a greeting hero, a real-data stat grid, an optional analytics row, and a two-column body —
+a course-list panel plus quick actions on the left, a role-specific "what needs your attention" panel
+on the right (continue-learning for learners, needs-attention/draft-publishing for staff, bug-report
+triage for admins). Every number shown is either server-computed (`GET /api/me/dashboard-stats`) or
+derived from real loaded data — nothing is a placeholder.
 
-- **Left side:** A decorative panel with animated floating nodes showing keywords like "Curriculum," "AI Insights," "Progress," and "Dashboard," conveying the platform's purpose at a glance.
-- **Right side:** A clean sign-in area with a hero heading ("Master any subject with AI guidance"), feature highlights, and a prominent **"Sign in with EduAI"** button.
+### Student surfaces
 
-After signing in, users are automatically redirected to the appropriate dashboard based on their role.
+- **Courses (`/student`)** — enrolled courses as a searchable, filterable, paginated card grid.
+- **Course (`/student/courses/:courseId`)** — the course's modules.
+- **Module (`/student/module/:moduleId`)** — the module's lessons.
+- **Lesson player (`/student/lesson/:lessonId`)** — the core learning surface. A resizable split on
+  desktop (collapsing to a stacked layout on mobile) gives the question/answer card and the AI study
+  buddy equal billing, not a sidebar afterthought:
+  - The question card (with topic tags), an answer input (MCQ radio group or short-text field), a
+    Submit button, a "Guide me" button, and Previous/Next navigation.
+  - After submission: an inline correct/incorrect result, followed by an optional 1–5 difficulty
+    feedback prompt.
+  - The AI panel: mode tabs (Teach/Guide/Custom, whichever the activity enables), a model picker, chat
+    history (saved sessions, restorable), and the composer.
 
----
+An `ADMIN`/`UNIT_ADMIN`/`INSTRUCTOR` can open the same `/student/*` routes to preview the learner
+experience without switching accounts — a banner marks this clearly, and the preview is read-only
+(submission and AI tutoring stay `STUDENT`-only server-side).
 
-#### Student Pages
+### Instructor / TA / Unit Admin surfaces
 
-**Student Dashboard (`/student`)**
+- **Courses (`/instructor`)** — the shared authoring/teaching dashboard (`ADMIN` reaches the same
+  route).
+- **Course (`/instructor/courses/:courseId`)** — module list, plus tabs for Submissions, Feedback, and
+  Analytics (gated on the caller's *per-course* role, not their global one — a TA who's global-
+  effective on another course but only a plain `STUDENT` here won't see staff tabs whose content the
+  server would 403).
+- **Module (`/instructor/module/:moduleId`)** — lesson list, with cross-course lesson import.
+- **Lesson (`/instructor/lesson/:lessonId`)** — the activity editor: per-activity question/answer/hint
+  editing, topic tagging, AI-mode toggles, and the custom-prompt editor.
 
-The student's home screen. Displays all enrolled courses as a grid of cards. Each card shows:
+### Admin console (`/admin` — ADMIN only)
 
-- Course title and description
-- A progress bar indicating how much of the course has been completed
-- Enrollment count
+Three tabs: **Bug reports** (triage), **AI settings** (model allow-list, defaults, dual-loop toggle,
+iteration limit, the EduAI service-key override), and **AI oversight** (a filterable table of recent
+`AiInteractionTrace` rows — mode, model, iteration count, outcome, per student/course). There is no
+separate Users or Enrollments tab in the admin console itself; user/enrollment management happens on
+the shared course pages (`/instructor/courses/:id`), available to any course-authorized staff role, not
+gated behind `/admin`.
 
-Clicking a course card navigates to that course's module listing.
+### Settings (`/settings` — any authenticated role)
 
-**Course View (`/student/courses/:courseId`)**
-
-Shows all modules within a selected course. Each module appears as a numbered card with its title, description, and a progress bar. A breadcrumb trail at the top reads: _My Courses > [Course Title]_.
-
-**Module View (`/student/module/:moduleId`)**
-
-Lists all lessons within a module as numbered cards, each with a progress indicator. Breadcrumb: _My Courses > [Course] > [Module]_.
-
-**Lesson Player (`/student/lesson/:lessonId`)**
-
-This is the core learning interface and the most feature-rich page in the application. It is split into two sections:
-
-- **Left panel (Main Content Area):**
-  - A **lesson progress card** showing "Question X of Y" with a visual progress bar.
-  - The **question card** displaying the current activity's question text, along with tags for its main topic and any secondary topics.
-  - The **answer card** — either a set of radio buttons for multiple-choice questions or a text input field for short-answer questions.
-  - A **Submit** button, a **Guide Me** button (to request AI help), and **Previous/Next** navigation arrows.
-  - After submission, a **feedback banner** appears showing "Correct!" or "Not quite. Keep going!" with a visual icon.
-  - An optional **activity feedback card** where students can rate the activity (1–5 stars) and leave a note.
-
-- **Right panel (AI Chat Sidebar):**
-  - A tabbed conversation interface with separate tabs for **Teach Mode**, **Guide Mode**, and **Custom Mode** (if enabled by the instructor).
-  - An **AI model selector** dropdown showing available models.
-  - A **message history** area displaying the ongoing conversation.
-  - A **text input area** with suggested prompts for quick access.
-  - A **knowledge level selector** (Beginner / Intermediate / Advanced).
-
-The breadcrumb trail provides full context: _My Courses > [Course] > [Module] > [Lesson]_.
-
----
-
-#### Instructor Pages
-
-**Instructor Dashboard (`/instructor`)**
-
-Displays all courses the instructor teaches as a grid of cards. Each card includes a **publish/unpublish toggle** button. An **"Import from EduAI"** panel can be expanded to browse available EDU AI courses and import them with one click.
-
-**Course Builder (`/instructor/courses/:courseId`)**
-
-Shows all modules within a course. Instructors can:
-
-- Create new modules using an inline text input.
-- Toggle each module's publish status.
-- Open an import panel to copy modules from other courses.
-- Click a module card to drill into its lessons.
-
-**Module Editor (`/instructor/module/:moduleId`)**
-
-Lists all lessons within a module. Instructors can create new lessons, toggle publish status, import lessons from other modules, and click through to the lesson builder.
-
-**Lesson Builder (`/instructor/lesson/:lessonId`)**
-
-The instructor's primary content creation tool. Displays all activities in the lesson as a vertical stack of detail cards. For each activity, the instructor can:
-
-- View and edit the question text, type, options, correct answer, and hints.
-- Assign a **main topic** and toggle **secondary topics** from a checkbox grid.
-- Toggle **AI mode availability** (Teach Mode on/off, Guide Mode on/off, Custom Mode on/off).
-- Write and save a **custom AI prompt** (with a title and prompt body) for the Custom Mode.
-- Delete activities with a confirmation step.
-
-A side panel shows the course's topic list with sync status indicators for EDU AI integration.
-
----
-
-#### Admin Page (`/admin`)
-
-A single-page control panel organized into four tabs:
-
-1. **Users Tab** — A table listing all registered users with their names, emails, and roles.
-2. **Enrollments Tab** — A dropdown to select a course, then a split view showing enrolled students and available students, with add/remove buttons.
-3. **Settings Tab** — Configuration for the EDU AI API key (status, set, clear) and the AI model policy (allowed models, default models, dual-loop supervisor toggle, iteration limits).
-4. **Bug Reports Tab** — A searchable, filterable list of all submitted bug reports with expandable technical details and status management.
-
----
-
-### Navigation Flow Summary
-
-```
-Login Page (/)
-    |
-    |-- [Sign in with EduAI]
-    |
-    |-- Student Role:
-    |       /student (Dashboard)
-    |           -> /student/courses/:id (Modules)
-    |               -> /student/module/:id (Lessons)
-    |                   -> /student/lesson/:id (Lesson Player + AI Chat)
-    |
-    |-- Instructor Role:
-    |       /instructor (Dashboard)
-    |           -> /instructor/courses/:id (Course Builder)
-    |               -> /instructor/module/:id (Module Editor)
-    |                   -> /instructor/lesson/:id (Lesson & Activity Builder)
-    |
-    |-- Admin Role:
-            /admin (Control Panel: Users | Enrollments | Settings | Bug Reports)
-```
+Three tabs: **Account** (read-only profile), **Accessibility** (theme, density, reduced motion,
+assistive/reading-mode toggle), and **Providers** (BYOK key management, shared with the chat
+composer's inline "connect a provider" flow).
 
 ---
 
 ## 4. Main Features
 
-### 4.1 AI-Powered Tutoring Chat (Flagship Feature)
+### 4.1 AI-Powered Tutoring Chat
 
-The AI tutoring chat is the centerpiece of AI Tutor. It provides students with real-time, conversational assistance while they work through activities — without ever giving away the answer.
+The flagship feature. Up to three modes per activity, each with its own independent conversation
+history (switching tabs doesn't lose context):
 
-**Three Tutoring Modes:**
+- **Teach** — open-ended explanation of the concept, scoped to a topic.
+- **Guide** — Socratic hints toward the specific question, informed by the student's current answer
+  attempt. Requires picking a knowledge level first.
+- **Custom** — an instructor-authored prompt, when the activity enables it.
 
-- **Teach Mode:** The AI acts as an explainer. Students can ask questions like "Explain this concept in simpler terms" or "Why is this important?" and receive clear, pedagogical explanations related to the activity's topic. The AI provides context and background knowledge to help the student build understanding.
-
-- **Guide Mode:** The AI acts as a Socratic guide. Rather than explaining outright, it provides hints, asks leading questions, and nudges the student toward the answer. Students can say things like "I'm stuck, give me a hint" or "What concept should I review?" This mode requires students to select their knowledge level (Beginner, Intermediate, or Advanced) so the AI can calibrate the difficulty of its hints.
-
-- **Custom Mode:** When enabled by the instructor, this mode uses a custom AI prompt that the instructor has written specifically for that activity. This allows instructors to create tailored AI interactions — for example, a debugging-focused prompt for a programming activity or a proof-strategy prompt for a mathematics activity.
-
-**Conversational Features:**
-
-- Full multi-turn conversation history — students can have extended back-and-forth exchanges with the AI.
-- Each mode maintains its own separate conversation, so switching between Teach and Guide does not lose context.
-- Responses are streamed in real time, so students see the AI's reply as it is being generated.
-- Suggested prompts provide quick-start options for students who are unsure what to ask.
-- Students can select from available AI models (as approved by the administrator).
-
----
+Every reply is reviewed by a **separate supervisor model** before the student sees it — see
+[4.2](#42-dual-loop-supervisor-system). The exchange is not streamed. Suggested prompts give students
+a quick-start option; BYOK keys let a student use a provider model the platform doesn't host itself.
 
 ### 4.2 Dual-Loop Supervisor System
 
-Behind every AI response is a safety mechanism called the **dual-loop supervisor**. This is the backend's most important quality control feature.
+Behind every AI reply is a review pass: a **tutor model** drafts a response, a **supervisor model**
+checks it against a fixed set of rules (never reveal the answer, never confirm correct/incorrect
+directly, guide rather than do the thinking), and either approves it or sends it back with feedback for
+the tutor to revise — up to an admin-configurable number of passes (1–5, default 3). If every pass
+still fails review, the student sees the supervisor's own safe fallback text instead of the tutor's
+last (unapproved) draft. See [`two-agent-supervisor-system.md`](two-agent-supervisor-system.md) for
+the exact mechanics, including how a malformed supervisor response is handled (it is folded into the
+same iterate-or-fallback loop, not a separate recovery path).
 
-**How It Works:**
-
-1. When a student sends a message, the **tutor model** generates an initial response.
-2. Before that response reaches the student, a separate **supervisor model** reviews it against a set of pedagogical rules.
-3. The supervisor checks for violations such as: directly revealing the answer, providing hints that are too obvious, or straying off-topic.
-4. If the supervisor detects a violation, it either requests a revised response from the tutor or generates a safe fallback response itself.
-5. This review cycle can repeat for a configurable number of iterations (default: up to 3) to refine the response.
-6. Only the final, approved response is sent to the student.
-
-**Why It Matters:**
-
-The dual-loop system addresses one of the core risks of using AI in education: **answer leakage**. Without it, a student could simply ask the AI "What is the answer?" and receive it. The supervisor ensures that every response upholds the pedagogical intent — the AI helps students _learn_, not just _pass_.
-
-Administrators can configure the supervisor settings, including which model acts as the supervisor, whether the dual-loop is enabled or disabled, and how many review iterations are allowed.
-
----
+Admins configure which model plays each role, whether the loop runs at all, and the iteration budget.
 
 ### 4.3 Course Content Management
 
-Instructors build course content through a four-level hierarchy:
+`Course → Module → Lesson → Activity`, each independently created/edited/reordered. Course metadata
+itself (title, description, dates) is not editable here — that's owned by Core. What instructors build
+inside a course is entirely local to AI Tutor: modules, lessons (Markdown content), and activities
+(MCQ or short-answer, with hints, topic tags, and AI-mode configuration).
 
-```
-Course
-  └── Module
-        └── Lesson
-              └── Activity
-```
-
-- **Courses** represent a full academic offering (e.g., "Intro to Algorithms").
-- **Modules** are thematic units within a course (e.g., "Sorting Algorithms").
-- **Lessons** are individual learning sessions within a module (e.g., "Bubble Sort").
-- **Activities** are the interactive questions within a lesson — either multiple-choice or short-answer.
-
-**Content Creation Tools:**
-
-- Inline creation forms for modules, lessons, and activities.
-- A rich activity editor for configuring questions, answer options, hints, topics, and AI modes.
-- Support for Markdown in lesson content and activity instructions.
-
-**Content Import System:**
-
-- **Import from EDU AI:** Instructors can browse courses available in the EDU AI platform and import entire course structures (with modules, lessons, and metadata) into AI Tutor with a single click.
-- **Import from other AI Tutor courses:** Instructors can copy modules or lessons from one course to another, enabling content reuse across offerings.
-
----
+**Content reuse:** import modules/lessons from another course the caller instructs; duplicate or
+import a single activity from anywhere in the caller's own content; start an activity from a shared
+Question Bank item.
 
 ### 4.4 Hierarchical Publish System
 
-AI Tutor uses a **cascading publish/unpublish model** to give instructors precise control over what students can see:
+A module can only publish while its course is published; a lesson can only publish while its module
+and course are both published. **Unpublishing does not cascade** at the course level — unpublishing a
+course does not touch its modules'/lessons' own publish flags, so re-publishing the course later
+restores exactly the state they were in. (Unpublishing a *module* does cascade to its lessons.)
+Students only ever see fully-published content.
 
-- A **module** can only be published if its parent **course** is published.
-- A **lesson** can only be published if its parent **module** _and_ grandparent **course** are both published.
-- **Unpublishing a course** automatically unpublishes all of its modules and lessons in a single cascade.
-- Students only see published content. Unpublished content is invisible to them.
+### 4.5 Topic Management & Core Sync
 
-This system allows instructors to prepare content in advance and release it on their own schedule, one module or lesson at a time.
-
----
-
-### 4.5 Topic Management & EDU AI Sync
-
-Every activity in AI Tutor is tagged with a **main topic** and optionally one or more **secondary topics**. Topics serve two purposes:
-
-1. **Semantic organization** — They help group activities by subject area, making it easier for instructors to manage content and for the AI to provide contextually relevant guidance.
-2. **EDU AI alignment** — Topics can be synced from EDU AI so that AI Tutor's content taxonomy matches the centralized platform.
-
-Instructors can:
-
-- Create topics manually for a course.
-- Sync topics from EDU AI (for imported courses).
-- Remap activities from one topic to another when topic structures change.
-
----
+Every activity carries one required main topic plus any number of secondary topics, scoped per course.
+For a course imported from Core, topics auto-sync from Core on every read; for a locally-authored
+course, instructors create topics manually.
 
 ### 4.6 Student Progress Tracking
 
-AI Tutor tracks student progress at every level of the content hierarchy:
+Real, derived progress at every level — course, module, lesson (a "Question N of M" counter) — computed
+from actual completion status, never fabricated placeholder numbers.
 
-- **Course-level progress** — What percentage of all activities across all modules and lessons have been completed.
-- **Module-level progress** — Completion across all lessons in the module.
-- **Lesson-level progress** — A "Question X of Y" indicator with a visual progress bar.
-- **Activity-level completion** — Whether the student has submitted a correct answer.
+### 4.7 Activity Feedback
 
-Progress is displayed through visual progress bars on course, module, and lesson cards, giving students a clear sense of how far they have come and what remains.
-
----
-
-### 4.7 Activity Feedback System
-
-After completing an activity, students are invited to provide feedback:
-
-- A **1-to-5 star rating** reflecting how useful or well-designed they found the activity.
-- An optional **written note** for more detailed comments.
-
-This feedback is stored per student per activity and contributes to aggregated analytics (such as average rating and difficulty scoring) that can inform future content improvements.
-
----
+A 1–5 difficulty rating plus an optional note, once per (student, activity). Feeds `ActivityAnalytics`
+(average rating, feedback count, a computed difficulty label) surfaced to staff on the course's
+Analytics tab.
 
 ### 4.8 Interactive Guided Tours
 
-AI Tutor includes a built-in **guided tour system** for student onboarding. When a student visits a page for the first time (or clicks the Tour button in the navigation bar), an interactive walkthrough highlights key interface elements one by one, with explanatory text at each step.
+Three `driver.js`-powered tours: a full student onboarding walk (`student-journey`), contextual
+in-lesson help (`student-lesson-help`), and a unit-admin orientation covering the dashboard and course
+list. Tour progress persists locally so a completed tour isn't repeated.
 
-Tours are available for:
+### 4.9 Bug Reporting
 
-- The student dashboard (understanding course cards and navigation).
-- The lesson player (understanding the question area, answer submission, AI chat, and progress tracking).
-
-The tour system uses visual element highlighting and step-by-step navigation (Previous / Next), with progress indicators showing how many steps remain. Tour completion is remembered locally, so students are not shown the same tour repeatedly.
-
----
-
-### 4.9 Bug Reporting System
-
-Students and instructors can report bugs from anywhere in the platform using a dedicated bug report dialog. The system automatically captures:
-
-- A **screenshot** of the current page (using HTML-to-canvas rendering).
-- **Console logs** (browser error messages).
-- **Network logs** (failed API requests).
-- The **page URL** and **browser information**.
-- The current **context** (which course, module, lesson, or activity the user was viewing).
-
-Users write a description of the issue and can choose to submit anonymously. Administrators review all reports in a dedicated dashboard tab, where they can view the full technical details and update the status of each report.
-
----
+Every authenticated role except `ADMIN` can file a bug report; the dialog auto-captures a screenshot,
+recent console/network logs, and the current course/module/lesson/activity context. Admins triage
+reports from the admin console's Bug Reports tab (respecting the reporter's anonymity choice).
 
 ### 4.10 AI Model Policy Administration
 
-Administrators control which AI models are available to students and how the AI tutoring system behaves:
-
-- **Allowed tutor models** — Select which models students can choose from (e.g., restrict to lower-cost models to manage expenses).
-- **Default tutor model** — Set the model that is pre-selected for students.
-- **Supervisor model** — Choose which model performs the dual-loop review.
-- **Dual-loop toggle** — Enable or disable the supervisor system entirely.
-- **Iteration limits** — Set the maximum number of supervisor review cycles (1–5).
-
-These controls allow administrators to balance cost, performance, and safety based on institutional needs.
+Admins choose which models students may select (an allow-list, not a deny-list — an unlisted or
+unrecognized configuration fails closed), the default tutor and supervisor models, whether the
+dual-loop runs at all, and the iteration budget.
 
 ---
 
 ## 5. System Workflows
 
-This section describes the primary user journeys through AI Tutor, step by step.
+### 5.1 Signing in
 
-### 5.1 Signing In
+1. The user reaches AI Tutor without a session and is redirected to Core's login.
+2. Core authenticates them and hands control back to AI Tutor with a session cookie.
+3. `GET /api/me` resolves the caller's role (with the `STUDENT`→`TA` promotion described in
+   [Section 2](#2-user-roles--permissions)) and the user lands on the shared `/dashboard`.
+4. The session persists via the cookie until sign-out; every `/api/*` call re-validates it against
+   Core, so a role change or revocation on Core's side takes effect on the next request, not on next
+   login.
 
-1. The user navigates to `aitutor.ok.ubc.ca` (via UBC VPN).
-2. The login page is displayed with the "Sign in with EduAI" button.
-3. The user clicks the button, which initiates an authentication flow with the EDU AI platform.
-4. EDU AI verifies the user's credentials and returns their identity and role to AI Tutor.
-5. AI Tutor creates a session cookie and redirects the user to the appropriate dashboard:
-   - Students are sent to `/student`.
-   - Instructors are sent to `/instructor`.
-   - Administrators are sent to `/admin`.
-   - TAs are sent to an informational page explaining that TA support is not yet available.
-6. The session persists across page refreshes until the user explicitly signs out.
+### 5.2 Student: completing an activity
 
----
+1. From the dashboard or `/student`, open a course → module → lesson.
+2. Read the question, answer (MCQ or short text), and Submit.
+3. See an immediate correct/incorrect result, then an optional feedback prompt.
+4. Move to the next activity, or step back with Previous.
 
-### 5.2 Student: Completing an Activity
+### 5.3 Student: using the AI tutor
 
-1. The student signs in and arrives at the **Student Dashboard**, which shows their enrolled courses.
-2. The student clicks on a course card (e.g., "Intro to Algorithms").
-3. The **Course View** displays the available modules (e.g., "Sorting," "Graph Basics"). The student clicks a module.
-4. The **Module View** lists the lessons in that module. The student clicks a lesson to begin.
-5. The **Lesson Player** loads, displaying the first activity:
-   - The student reads the question.
-   - For a multiple-choice question, the student selects an option. For a short-answer question, the student types their response.
-6. The student clicks **Submit**.
-7. The system evaluates the answer and immediately displays feedback:
-   - **"Correct!"** with a success icon, or
-   - **"Not quite. Keep going!"** with an encouragement icon.
-8. An optional **feedback card** appears, inviting the student to rate the activity (1–5 stars).
-9. The student clicks **Next** to move to the next activity, or uses **Previous** to revisit an earlier one.
-10. The progress bar at the top updates with each completed activity.
+1. Open the AI panel alongside the question (or click "Guide me" to jump straight to Guide mode).
+2. If this is the first turn on this activity, pick a knowledge level.
+3. Send a message or pick a suggested prompt.
+4. The message goes through the tutor→supervisor pipeline (non-streaming); the approved reply appears
+   once it settles.
+5. Continue the conversation, or switch modes — each keeps its own history.
 
----
+### 5.4 Instructor: building a course
 
-### 5.3 Student: Using the AI Tutor
+1. From `/instructor`, open a course (courses themselves come from Core — there is no "create course"
+   flow inside AI Tutor).
+2. Add modules, then lessons within them, then activities within those — question text, type, options
+   (MCQ) or expected answer (short text), hints, topic tags, and AI-mode toggles.
+3. Publish bottom-up: the course first (owned by Core's publish flag), then modules, then lessons —
+   each publish action is blocked until its parent is already published.
 
-1. While on the Lesson Player, the student clicks **"Guide Me"** or selects a tab in the AI Chat sidebar (Teach, Guide, or Custom).
-2. If entering **Guide Mode** for the first time on this activity, a dialog prompts the student to select their knowledge level (Beginner, Intermediate, or Advanced).
-3. The student types a message (e.g., "I'm stuck — can you give me a hint?") or clicks one of the **suggested prompts** (e.g., "What concept should I review?").
-4. The message is sent to the backend, which:
-   - Retrieves the activity context (question, topic, hints, instructor prompt).
-   - Sends the request to the AI tutor model via EDU AI.
-   - Passes the tutor's response through the **dual-loop supervisor** for pedagogical validation.
-   - Streams the approved response back to the student.
-5. The student sees the AI's response appear in real time in the chat panel.
-6. The student can continue the conversation with follow-up questions — the AI maintains full context from the ongoing exchange.
-7. The student can switch between modes (Teach / Guide / Custom) at any time; each mode has its own independent conversation history.
+### 5.5 Instructor: reusing content
 
----
+1. Import whole modules from another course via the course page's import panel, or individual lessons
+   via the module page's import panel.
+2. Duplicate or import a single activity from anywhere in the caller's own content, from the lesson
+   editor.
+3. Sync topics from Core (automatic on read for imported courses) if the taxonomy has drifted.
 
-### 5.4 Instructor: Building a Course
+### 5.6 Managing enrollments
 
-1. The instructor signs in and arrives at the **Instructor Dashboard**.
-2. To create a new course, the instructor can either:
-   - **Import from EDU AI:** Click "Import from EduAI," browse available courses, and click Import. The course structure (modules, lessons, metadata) is pulled in automatically.
-   - **Build from scratch:** Use the course creation form.
-3. The instructor clicks on the course card to enter the **Course Builder**.
-4. The instructor creates modules using the inline "Add Module" form.
-5. Within each module, the instructor creates lessons.
-6. Within each lesson, the instructor creates **activities** using the Add Activity form:
-   - Writes the question text.
-   - Selects the type (Multiple Choice or Short Answer).
-   - For multiple choice: enters at least four options and marks the correct one.
-   - Writes one or more hints (one per line).
-   - Assigns a main topic and optionally selects secondary topics.
-   - Configures AI modes: toggles Teach, Guide, and Custom on or off.
-   - For Custom Mode: writes a custom prompt title and prompt body.
-7. The instructor publishes the content from the bottom up:
-   - First publishes the **course**.
-   - Then publishes individual **modules**.
-   - Then publishes individual **lessons** within those modules.
-8. Published content becomes visible to enrolled students.
+Any course-authorized staff role (instructor, unit admin, or admin) can add/remove students and change
+a student's course-scoped role (e.g. promote to TA) from the course page — this is not gated behind
+the admin console. An explicit "sync enrollments" action re-pulls the roster from Core on demand;
+reads elsewhere auto-sync on a 30-second TTL so the mirror doesn't drift far even without it.
+
+### 5.7 Admin: configuring the AI model policy
+
+1. Open `/admin` → AI settings.
+2. Check/uncheck which models students may select; pick the default tutor and supervisor models;
+   toggle the dual-loop supervisor; set the iteration limit (1–5).
+3. Save. New AI-tutoring requests immediately validate against the updated allow-list.
+
+### 5.8 Submitting a bug report
+
+1. Click "Report a bug" in the header from anywhere in the app.
+2. A screenshot, recent console/network logs, and the current page context are captured automatically.
+3. Write a description (10–2000 characters), optionally mark it anonymous, and submit.
+4. It appears in the admin console's Bug Reports tab with the full captured context.
 
 ---
 
-### 5.5 Instructor: Importing and Reusing Content
-
-1. From the **Instructor Dashboard**, the instructor can import an entire course from EDU AI by clicking "Import from EduAI," selecting a course, and confirming.
-2. From the **Course Builder**, the instructor can import modules from other AI Tutor courses by opening the import panel, selecting a source course, and choosing which modules to copy.
-3. From the **Module Editor**, the instructor can similarly import lessons from other modules.
-4. After importing, the instructor can sync topics from EDU AI using the "Sync Now" button in the topic panel. If topic names have changed, the instructor uses the **topic remapping dialog** to reassign activities from old topics to new ones.
-
----
-
-### 5.6 Administrator: Managing Enrollments
-
-1. The administrator signs in and is directed to the **Admin Control Panel**.
-2. The administrator clicks the **Enrollments** tab.
-3. A dropdown lists all courses. The administrator selects a course.
-4. The panel displays two lists: **Enrolled Students** and **Available Students** (registered users not yet enrolled).
-5. To enroll a student, the administrator clicks the **Add** button next to their name.
-6. To remove a student, the administrator clicks the **Remove** button next to their name.
-7. Changes take effect immediately.
-
----
-
-### 5.7 Administrator: Configuring AI Model Policy
-
-1. From the Admin Control Panel, the administrator opens the **Settings** tab.
-2. The **AI Model Policy** section displays:
-   - A list of available AI models (fetched from EDU AI) with checkboxes to allow or disallow each one for student use.
-   - Dropdowns for selecting the default tutor model and the supervisor model.
-   - A toggle for enabling or disabling the dual-loop supervisor.
-   - A numeric input for the maximum number of supervisor iterations.
-3. The administrator adjusts the settings and saves.
-4. Changes apply to all future AI tutoring interactions across the platform.
-
----
-
-### 5.8 Submitting a Bug Report
-
-1. From any page, the student or instructor clicks the **Bug Report** button in the navigation bar.
-2. A dialog opens with a text area for describing the issue.
-3. The system automatically captures a screenshot, console logs, network logs, and the current page context in the background.
-4. The user writes a description (up to 2,000 characters) and optionally checks "Submit anonymously."
-5. The user clicks **Submit**.
-6. The report appears in the administrator's Bug Reports tab with all captured technical details.
-
----
-
-## 6. Future Work & Next Integrations
-
-AI Tutor is a functional, deployed platform, but it is still in its early stages. Several significant enhancements are planned to bring it closer to full integration with the EDU AI ecosystem and to expand its capabilities as a standalone tool.
-
-### 6.1 Centralizing Data Into EDU AI (High Priority)
-
-**Current State:** AI Tutor maintains its own local database of courses, modules, lessons, activities, topics, and question content. While courses and topics can be imported and synced from EDU AI, the activity content itself (questions, answers, hints, AI prompt configurations) lives entirely within AI Tutor's own PostgreSQL database.
-
-**The Problem:** This means that the knowledge created inside AI Tutor — the question banks, the activity configurations, the topic taxonomies — is siloed. Other sister applications in the EDU AI ecosystem (such as **Question Maker** and **Rubric Generator**) cannot access or reuse this content.
-
-**The Vision:** The future architecture would centralize shared data into a **common EDU AI database** that all sister applications can read from and write to. Specifically:
-
-- **Question banks** would be stored in EDU AI, not locally. AI Tutor would query EDU AI for available questions and contribute new questions back to the shared pool.
-- **Topic taxonomies** would be fully managed by EDU AI, with AI Tutor (and all other extensions) inheriting them rather than maintaining separate local copies.
-- **Activity configurations** (AI mode settings, custom prompts, hints) could be standardized so that the same activity could be used across multiple tools.
-
-This centralization would transform the ecosystem from a set of independent applications with import/export bridges into a truly integrated suite where content flows freely between tools.
-
----
-
-### 6.2 Automated Course Enrollment via EDU AI (High Priority)
-
-**Current State:** Student enrollment in AI Tutor courses is primarily a manual process. An administrator must go into the Admin Control Panel and individually add students to courses. While an enrollment sync mechanism from EDU AI exists, the flow is not yet fully automated or seamless.
-
-**The Vision:** When a student enrolls in a course on EDU AI, that enrollment should automatically propagate to AI Tutor (and any other relevant sister application). The student would sign into AI Tutor and immediately see the courses they are enrolled in — no manual intervention required. This would:
-
-- Eliminate the administrative burden of manually enrolling students in each sister application.
-- Ensure consistency between EDU AI and AI Tutor enrollment records.
-- Support large-scale deployments where manual enrollment is not feasible.
-
----
-
-### 6.3 Teaching Assistant (TA) Role Support
-
-**Current State:** The TA role exists in the database schema but is not supported in the user interface. Users with a TA role are shown an informational page and cannot access student or instructor features.
-
-**The Vision:** TAs would have a tailored permission set — potentially a subset of instructor capabilities — allowing them to assist with course management, review student progress, or moderate content without having full instructor privileges.
-
----
-
-### 6.4 Analytics Dashboard for Instructors
-
-**Current State:** AI Tutor already collects extensive analytics data behind the scenes. The database tracks:
-
-- Per-activity metrics: submission counts, correct/incorrect rates, help request counts, student engagement counts.
-- Per-student metrics: individual submission history, AI interaction frequency.
-- Aggregated analytics: average ratings, feedback counts, and computed difficulty scores (Low / Medium / High) for each activity.
-
-However, **there is no dedicated analytics interface** for instructors. This data is collected but not yet surfaced.
-
-**The Vision:** A future analytics dashboard would give instructors actionable insights, such as:
-
-- Which activities have the highest failure rates and may need clearer questions or better hints.
-- Which topics generate the most AI help requests, indicating areas where students are struggling.
-- How student engagement varies across modules and lessons.
-- Feedback trends over time.
-
----
-
-### 6.5 Expanded Activity Types
-
-**Current State:** AI Tutor supports two activity types: multiple-choice questions and short-answer (text) questions.
-
-**The Vision:** Future development could introduce additional activity types to support richer learning experiences, such as:
-
-- Code-writing exercises with automated evaluation.
-- Drag-and-drop ordering or matching activities.
-- Long-form essay responses with AI-assisted rubric evaluation.
-- Multi-part questions with sequential steps.
-
----
-
-### 6.6 Broader Accessibility and Deployment
-
-**Current State:** AI Tutor is deployed on UBC servers and is accessible only through the UBC VPN.
-
-**The Vision:** As the platform matures, it could be made accessible outside the VPN for broader use — potentially serving multiple institutions or being offered as a standalone service within the EDU AI ecosystem. The existing `deploy.sh` script and Docker-based database setup provide a foundation for reproducible deployments.
-
----
-
-### Summary of Future Priorities
-
-| Priority | Item                                             | Status                                 |
-| -------- | ------------------------------------------------ | -------------------------------------- |
-| High     | Centralize question banks and topics into EDU AI | Planned                                |
-| High     | Automate course enrollment through EDU AI        | Partially implemented (sync exists)    |
-| Medium   | TA role support                                  | Schema ready, UI not implemented       |
-| Medium   | Instructor analytics dashboard                   | Data collection in place, UI not built |
-| Lower    | Expanded activity types                          | Not started                            |
-| Lower    | Broader deployment beyond UBC VPN                | Infrastructure ready                   |
-
----
-
----
-
-## 7. Codebase Walkthrough
-
-This section is the technical companion to the product overview above. It is written for new
-developers who need to understand where the major pieces live and how a request moves through the
-system.
+## 6. Codebase Walkthrough
 
 ### Repository Map
 
 ```text
 app/                 React Router v7 SPA
-server/              Express 5 API, Prisma, Better Auth, EduAI integrations
+server/              Express 5 API, Prisma, Core session/course integration
 shared/schemas/      Zod schemas shared by frontend and backend
 docs/                Architecture, API, deployment, and system notes
 public/              Static assets
 scripts/             E2E and automation scripts
 ```
 
-The application has two independently running halves:
+The frontend and backend are two independently running processes; the frontend calls the backend with
+cookie credentials, and the backend is the only thing that talks to Core.
 
-- **Frontend:** `app/`, served by Vite in development and static assets in production.
-- **Backend:** `server/`, an Express API on port `4000` backed by PostgreSQL.
+### Frontend tour (`app/`)
 
-The frontend calls the backend with cookie credentials. The backend handles authentication,
-authorization, persistence, and EduAI API calls.
+| Path | Purpose |
+| --- | --- |
+| `app/root.tsx` | HTML shell and provider stack: auth, bug reports, guided tours, assistive mode, UI preferences |
+| `app/routes.ts` | Route map: a public `home`/`unsupported-role` pair plus a `_app` layout wrapping every authenticated route |
+| `app/routes/` | Page-level route modules — dashboard, admin, settings, help, and the student/instructor content trees |
+| `app/components/` | Chat UI, activity editors, dashboards, guided tours, bug reports, RBAC banners, layout chrome |
+| `app/hooks/useLocalUser.tsx` | Session state exposed through React context (calls `GET /api/me`) |
+| `app/lib/api.ts` | Central API client; every request uses `credentials: 'include'` |
+| `app/lib/api-schemas.ts` | Zod decode boundary for every server response |
+| `app/lib/client-auth.ts` | `requireClientUser(role)` route-loader guard |
+| `app/lib/rbac/` | Role predicates and role-aware nav — the frontend's single source of truth for "what can this role do" |
+| `app/lib/tours/` | Guided tour definitions, engine, and storage |
+| `app/app.css` | Tailwind v4 theme and custom utility classes |
 
-### Frontend Tour (`app/`)
+See [`app/README.md`](../app/README.md) for the full file inventory.
 
-Important files and directories:
+### Backend tour (`server/`)
 
-| Path                         | Purpose                                                                 |
-| ---------------------------- | ----------------------------------------------------------------------- |
-| `app/root.tsx`               | HTML shell and provider stack: auth, bug reports, guided tours          |
-| `app/routes.ts`              | Flat React Router route map                                             |
-| `app/routes/`                | Page-level route modules for home, student, instructor, and admin flows |
-| `app/components/`            | Shared UI, activity cards, AI chat, guided tours, bug reports           |
-| `app/hooks/useLocalUser.tsx` | Better Auth session state exposed through React context                 |
-| `app/lib/api.ts`             | Central API client; all requests use `credentials: 'include'`           |
-| `app/lib/client-auth.ts`     | `requireClientUser(role)` route guard helper                            |
-| `app/lib/tours/`             | Guided tour definitions, engine, storage, and tests                     |
-| `app/app.css`                | Tailwind v4 theme and custom utility classes                            |
+| Path | Purpose |
+| --- | --- |
+| `server/src/index.js` | Loads env, creates the app, listens on `PORT` |
+| `server/src/app.js` | Express app factory: middleware order, route mounting, admin-isolation gate |
+| `server/src/middleware/auth.js` | `requireAuth` (Core session validation), `requireRole`, live course-authorization helpers |
+| `server/src/routes/` | HTTP route handlers |
+| `server/src/services/` | Business logic — AI guidance, analytics, cloning, Core sync, model policy, settings |
+| `server/src/utils/mappers.js` | Response shape mappers mirrored by frontend types |
+| `server/prisma/schema.prisma` | Database schema — a content-tree anchor, not a course-metadata mirror |
+| `server/prisma/seed.ts` | Destructive demo-data seed script |
+| `server/tests/` | Vitest unit and integration tests |
 
-Routes are flat rather than nested. The main paths are:
+See [`server/README.md`](../server/README.md) for the full request-flow breakdown.
 
-| Path                            | Module                  | Role                 |
-| ------------------------------- | ----------------------- | -------------------- |
-| `/`                             | `home.tsx`              | Public login         |
-| `/student`                      | `student.tsx`           | Student dashboard    |
-| `/student/courses/:courseId`    | `student.course.tsx`    | Course view          |
-| `/student/module/:moduleId`     | `student.module.tsx`    | Module view          |
-| `/student/lesson/:lessonId`     | `student.lesson.tsx`    | Lesson player        |
-| `/instructor`                   | `instructor.tsx`        | Instructor dashboard |
-| `/instructor/courses/:courseId` | `instructor.course.tsx` | Course editor        |
-| `/instructor/module/:moduleId`  | `instructor.module.tsx` | Module editor        |
-| `/instructor/lesson/:lessonId`  | `instructor.lesson.tsx` | Lesson builder       |
-| `/admin`                        | `admin.tsx`             | Admin panel          |
+Request handling, in order (`app.js`): CORS → JSON parsing → health check (exempt) →
+`requireAuth` (cookie forwarded to Core) → admin-isolation gate → route modules → service handlers →
+`utils/mappers.js` shapes the response.
 
-Frontend state is intentionally simple: React context plus hooks. There is no Redux or Zustand.
-The most important contexts are auth/session, course topics, bug report capture, and guided tours.
-
-### Backend Tour (`server/`)
-
-Important files and directories:
-
-| Path                            | Purpose                                                         |
-| ------------------------------- | --------------------------------------------------------------- |
-| `server/src/index.js`           | Loads env, creates the app, and listens on `PORT`               |
-| `server/src/app.js`             | Express app factory, middleware order, route mounting           |
-| `server/src/auth.js`            | Better Auth configuration with EduAI OAuth                      |
-| `server/src/middleware/auth.js` | Session hydration and role guards                               |
-| `server/src/routes/`            | HTTP route handlers                                             |
-| `server/src/services/`          | Business logic for AI, analytics, cloning, sync, settings, bugs |
-| `server/src/utils/mappers.js`   | Response shape mappers mirrored by frontend types               |
-| `server/prisma/schema.prisma`   | Database schema                                                 |
-| `server/prisma/seed.ts`         | Destructive demo-data seed script                               |
-| `server/test/`                  | Vitest unit and integration tests                               |
-
-Backend request handling follows this shape:
-
-1. CORS allows the SPA to send cookies.
-2. Better Auth handles `/api/auth/*`.
-3. JSON parsing runs for application routes.
-4. `attachSession` resolves the Better Auth cookie and hydrates `req.user` from Prisma.
-5. API routes require `requireAuth`, `requireRole`, or `requireRoles`.
-6. Admin users are isolated to admin-safe endpoints.
-7. Route handlers orchestrate calls into services.
-8. Response mappers shape Prisma rows for the frontend.
-
-The route layer should stay thin. Business rules belong in `server/src/services/`, and request
-validation should use Zod schemas from `shared/schemas/` when a shared schema exists.
-
-### Database Model
-
-The core content hierarchy is:
+### Database model
 
 ```text
 CourseOffering -> Module -> Lesson -> Activity
 ```
 
+`CourseOffering` itself carries no course metadata — see
+[`ARCHITECTURE.md`](ARCHITECTURE.md#data-model-overview-prisma) for the full read-through model.
 Related records track enrollments, instructors, submissions, activity feedback, topics, AI chat
-sessions, AI interaction traces, analytics, system settings, and Better Auth sessions/accounts.
-
-When schema changes are made, create a migration and refresh generated Prisma artifacts:
+sessions, AI interaction traces, analytics, and system settings.
 
 ```bash
 cd server
 npx prisma migrate dev --name description_of_change
-npm run seed
+npm run seed   # destructive — clears existing rows before inserting demo data
 ```
 
-The seed is destructive and clears existing rows before inserting demo data.
+### Authentication path
 
-### Authentication Path
+There is no local login, JWT, or OAuth client in this app — see
+[`ARCHITECTURE.md`](ARCHITECTURE.md#authentication-flow) for the full mechanics. In short: sign-in
+happens at Core, the browser carries Core's session cookie, and every AI Tutor API request
+re-validates that cookie against Core on every call.
 
-Authentication is EduAI OAuth through Better Auth:
+### AI tutoring path
 
-1. The user clicks **Sign in with EduAI** on the home page.
-2. Better Auth redirects to EduAI using OIDC + PKCE.
-3. EduAI redirects back and Better Auth stores a session cookie.
-4. The SPA calls `GET /api/me` through `AuthProvider`.
-5. Route loaders use `requireClientUser(role)` for frontend gating.
-6. Backend routes use `requireAuth`, `requireRole`, or `requireRoles` for enforcement.
-
-There is no JWT bearer-token flow in the current app. Client API calls must preserve
-`credentials: 'include'`.
-
-### AI Tutoring Path
-
-The AI tutoring engine lives primarily in `server/src/services/aiGuidance.js`.
-
-Student chat requests go through activity endpoints such as:
+Lives primarily in `server/src/services/aiGuidance.js`. Student chat requests arrive at:
 
 - `POST /api/activities/:activityId/teach`
 - `POST /api/activities/:activityId/guide`
 - `POST /api/activities/:activityId/custom`
 
-Each mode builds context from the activity, topic, answer key, selected knowledge level, model
-policy, and optional user API key. The tutor response can then be reviewed by the dual-loop
-supervisor before it reaches the student. See
-[`two-agent-supervisor-system.md`](two-agent-supervisor-system.md) for the focused design notes.
+Each builds context from the activity, topic, knowledge level, and model policy, then runs the
+tutor→supervisor loop described in [`two-agent-supervisor-system.md`](two-agent-supervisor-system.md).
 
-### Local Development
-
-Install dependencies:
+### Local development
 
 ```bash
 npm install
 cd server && npm install
-```
 
-Start PostgreSQL:
-
-```bash
 docker compose up -d db
-```
 
-Apply migrations and seed demo data:
-
-```bash
 cd server
 npx prisma migrate deploy
 npm run seed
-```
 
-Run the app in two terminals:
-
-```bash
 # Terminal 1: backend API
 cd server && npm run dev
 
@@ -860,27 +526,27 @@ cd server && npm run dev
 npm run dev
 ```
 
-Useful verification commands:
+Verification commands:
 
 ```bash
 npm run typecheck
-npm run typecheck:fast
 npm run lint
 npm run format:check
 npm run test
 cd server && npm run test
 ```
 
-### Recommended Reading Order
+### Recommended reading order
 
 1. `README.md` for setup and the shortest project summary.
 2. This document for product context, roles, workflows, and the codebase map.
 3. `docs/ARCHITECTURE.md` for runtime architecture and core contracts.
 4. `app/README.md` for frontend details.
 5. `server/README.md` for backend details.
-6. `docs/api-reference.md` for endpoint shapes.
-7. `docs/DEPLOYMENT.md` for production layout.
+6. `docs/api-reference.md` and `docs/rbac-endpoints-ai-tutor.md` for endpoint shapes and auth gates.
+7. `docs/DEPLOYMENT.md` for the production layout.
 
 ---
 
-_This document describes the AI Tutor system as of April 2026. The platform is under active development, and features described in the Future Work section are subject to change as the EDU AI ecosystem evolves._
+_This document is generated from the code, not the other way around — if a claim here disagrees with
+`app/` or `server/`, the code is right and this file needs an update._

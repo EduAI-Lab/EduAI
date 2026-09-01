@@ -114,14 +114,14 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 
 **Where configured:** `app/lib/ai/embedding.ts` — provider resolution (logged as `[embedding]`).
 
-- If `EMBEDDING_PROVIDER=local` (dev server default), embeddings use **Ollama** (`OLLAMA_BASE_URL` + `mxbai-embed-large`); on failure, fall back to cloud.
-- Cloud path (`EMBEDDING_PROVIDER=cloud` or unset): **OpenRouter** `openai/text-embedding-3-small` @ 1024 dims → **OpenAI** direct with `dimensions: 1024`.
-- Legacy `EMBEDDING_DIMENSION=3072`: OpenRouter/Google Gemini path (pre–LOCAL-EMBEDDINGS).
-- If no provider is available, ingestion/search **throws an error**.
+- The current schema is `vector(1024)`. `EMBEDDING_PROVIDER=local` uses the configured OpenAI-compatible CMPS/vLLM embedding endpoint when present, otherwise native Ollama; local failures do not silently fall back to cloud.
+- Cloud 1024-dimensional embeddings use OpenRouter/OpenAI-compatible models and direct OpenAI according to the configured keys.
+- `EMBEDDING_DIMENSION=3072` selects a deliberate legacy Gemini-compatible path; it must not be mixed with the current column.
+- If no compatible provider is available, ingestion/search fails explicitly.
 
-**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`.
+**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read server environment and course-level embedding settings.
 
-**Decision record:** [docs/rag-ai/LOCAL-EMBEDDINGS.md](rag-ai/LOCAL-EMBEDDINGS.md). **Team guide:** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+**Current guide:** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
 ```mermaid
 flowchart TD
@@ -235,18 +235,19 @@ Extensions call Core via the shared session cookie (OAuth) or the `Authorization
 
 **Full flowchart, code map, and maintenance notes:** [docs/rag-ai/CHAT_RAG_PIPELINE.md](rag-ai/CHAT_RAG_PIPELINE.md)
 
-Related team docs (latency, routing, dev server): [docs/rag-ai/README.md](rag-ai/README.md).
+Related current RAG, routing, performance, and dev-server docs: [docs/rag-ai/README.md](rag-ai/README.md).
 
 Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. **POST /api/chat** actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
 
 
 | Path             | When                                                      | How course context is retrieved                                                                                                                                                                                                                                     |
 | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hybrid RAG**   | `supportsTools === false` (e.g. some local/Ollama models) | If a course is selected **and** the last user message matches keyword heuristics (`course`, `chapter`, `explain`, …), `findRelevantContent` runs **once before** `streamText` and excerpts are injected into the **system** prompt. No tool loop.                   |
-| **Tool calling** | `supportsTools === true` (typical cloud models)           | `streamText` registers `getInformation`, `webSearch`, and `fetchPage`. Course RAG runs **only when the model calls `getInformation`**, which executes `findRelevantContent` and returns chunks as **tool output** (up to `maxSteps` internal round-trips per turn). |
+| **Hybrid RAG**   | Learning chat with `supportsTools === false`              | A course query is prefetched before `streamText`; excerpts are injected into the system prompt when intent, similarity, or the always-with-course flag passes. No tool loop. |
+| **Tool calling** | Learning chat with `supportsTools === true`                | Course RAG is prefetched and may be injected; `getInformation` remains a supplemental retrieval tool alongside web tools. |
+| **Privileged tools** | `chatMode=admin` or `chatMode=instructor` | Mode-specific tool registry; both require a tool-capable model. Admin course search resolves an explicit course and uses the shared retrieval body. |
 
 
-Retrieval itself is always the same function: `**findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
+Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server/course embedding settings + pgvector over `material_embeddings`). That is independent of the chat provider selected in the UI.
 
 ### cmps01 GPU inference host
 
@@ -259,7 +260,7 @@ Local **chat** models run on **[cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca)** (sh
 | **vLLM**   | **8001**    | `vllm`               | **LiteLLM proxy** (`network_mode: host`) → backends `127.0.0.1:18001` (7B) / `:18002` (32B AWQ); OpenAI-compatible `/v1`; see `[infra/cmps01/README.md](../infra/cmps01/README.md)` |
 
 
-**Embeddings for RAG** are still **cloud** (OpenRouter / Google / OpenAI env keys) — not served from cmps01 today. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+**Embeddings for RAG** can use the configured local CMPS/Ollama path or cloud OpenRouter/OpenAI keys, depending on server/course settings. They are separate from chat provider keys. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
 ```mermaid
 flowchart LR
@@ -346,7 +347,7 @@ docs/
   rag-ai/
     CHAT_RAG_PIPELINE.md → POST /api/chat + hybrid vs tool RAG (detailed)
     EMBEDDINGS.md        → Vectors in Postgres vs cloud embed API, keys, debugging
-    README.md            → Index of RAG, latency, and routing team docs
+    README.md            → Index of RAG, embeddings, routing, testing, performance, and ops docs
   ...                    → Other documents
 ```
 
@@ -527,4 +528,4 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ## 11. One-page mental model
 
-**Core** (`apps/core`) is one app + one DB, and the schema/RBAC source of truth for the whole platform ([§7.1](#71-database-centralized-schema), [§7.2](#72-rbac-role-model--permissions)). **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings** (cloud + `ollama:` / `vllm:` on cmps01). **Extensions** (AI Tutor, Question Maker) live in this same monorepo under `apps/extensions/`* but deploy as separate apps with their own DBs; they call Core's APIs with the service key or a forwarded session cookie, and their course/topic/enrollment data now syncs **automatically** (on login and course-list fetches) — no manual "import" step. **cmps01** serves local chat over HTTP (**11434** Ollama, **8001** vLLM when deployed).
+**Core** (`apps/core`) is one app + one DB, and the schema/RBAC source of truth for the whole platform ([§7.1](#71-database-centralized-schema), [§7.2](#72-rbac-role-model--permissions)). **Configured providers** supply chat and embedding inference. **Embeddings for RAG** use server environment and optional course settings; the current schema is `vector(1024)` and local CMPS/Ollama or cloud OpenRouter/OpenAI paths are selected explicitly. **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings** for user-selected cloud providers and server-managed local `ollama:` / `vllm:` providers. **Extensions** (AI Tutor, Question Maker) live in this same monorepo under `apps/extensions/`* but deploy as separate apps with their own DBs; they call Core's APIs with the service key or a forwarded session cookie, and their course/topic/enrollment data now syncs **automatically** (on login and course-list fetches) — no manual "import" step. **cmps01** serves local chat over HTTP (**11434** Ollama, **8001** vLLM when deployed).

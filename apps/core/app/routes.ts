@@ -2,7 +2,6 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 
 export default [
   index("routes/home.tsx"),
-  route("/team", "routes/team.tsx"),
   route("/api/health", "routes/api/health.ts"),
   route("/api/ai-status", "routes/api/ai-status.ts"),
   route("/api/ai-jobs/:jobId", "routes/api.ai-jobs.$jobId.ts"),

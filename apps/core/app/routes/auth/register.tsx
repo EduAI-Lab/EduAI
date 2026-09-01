@@ -126,7 +126,7 @@ export default function RegisterPage() {
       {/* Logo */}
       <div className="flex items-center gap-2 mb-7">
         <div
-          className="w-9 h-9 rounded-[9px] flex items-center justify-center"
+          className="w-9 h-9 rounded-[9px] flex items-center justify-center dark:ring-1 dark:ring-white/40"
           style={{ background: "var(--primary)" }}
         >
           <svg
@@ -144,12 +144,7 @@ export default function RegisterPage() {
             <circle cx="21" cy="18" r="1" fill="var(--gold)" stroke="none" />
           </svg>
         </div>
-        <span
-          className="text-xl font-bold"
-          style={{ color: "var(--primary)", letterSpacing: "-0.01em" }}
-        >
-          EduAI
-        </span>
+        <span className="text-xl font-bold text-primary dark:text-foreground">EduAI</span>
       </div>
 
       {/* Card */}
