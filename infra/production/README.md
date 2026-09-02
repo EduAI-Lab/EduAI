@@ -183,15 +183,16 @@ connectivity, migrations, browser asset markers, and approved inference model ID
 ## Inference configuration
 
 Production should use only endpoints that pass the authenticated port-8001 edge
-check and have an operational owner. The standard Qwen tier IDs are:
+check and have an operational owner. The current fleet model IDs are:
 
 - small: `qwen3.5-2b-instruct`;
 - large: `qwen3.5-9b-instruct` where installed;
-- planned future capacity: `qwen3.8-27b`, not currently deployed.
+- Assist Auto: `qwen3.8-27b-instruct` on CMPS02.
 
-CMPS02 may expose `qwen2.5-32b-instruct` for the Assist Auto capability; that is
-not the standard large tier. CMPS03 must remain out of an approved production
-fleet until its edge readiness is confirmed. See
+CMPS02 intentionally does not expose the standard 9B model; its 27B model is a
+separate Assist Auto capability. CMPS03 has the standard small/large pair and
+may be used in production after the authenticated edge check succeeds on the
+production host. See
 [`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
 

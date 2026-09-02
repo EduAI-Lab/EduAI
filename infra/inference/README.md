@@ -1,6 +1,6 @@
 # EduAI inference fleet
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 This directory documents the CMPS fleet as a set of related hosts. The fleet is
 not homogeneous, so host-specific model inventory and readiness are kept separate
@@ -38,28 +38,28 @@ The standard application model IDs are:
 
 - small tier: `qwen3.5-2b-instruct`;
 - large tier: `qwen3.5-9b-instruct`, only where the host advertises it;
-- XL tier - : `qwen3.8-27b`, use for admin chat, instructors, 
+- Assist Auto: `qwen3.8-27b-instruct`, currently on CMPS02
 
-`qwen2.5-32b-instruct` on CMPS02 is a separate Assist Auto capability. It is not
-the standard large tier and must not be substituted for `qwen3.5-9b-instruct` in
-the general model catalog.
+The fleet is heterogeneous. CMPS02 intentionally does not serve the standard
+`qwen3.5-9b-instruct` large tier; its 27B model is reserved for Assist Auto and
+must not be substituted for the standard large tier in the general model catalog.
 
 ## Verified host snapshot
 
-The following results came from read-only SSH and authenticated port-8001 checks
-on 2026-08-31:
+The following results came from authenticated port-8001 checks on 2026-09-02:
 
-| Host | Direct models observed | Authenticated edge | Fleet disposition |
+| Host | Models observed | Authenticated edge | Fleet disposition |
 | --- | --- | --- | --- |
-| [CMPS01](./cmps01.md) | Qwen 3.5 2B, Qwen 3.5 9B, `mxbai-embed-large` | HTTP 200 | Approved candidate, subject to security checks |
-| [CMPS02](./cmps02.md) | Qwen 3.5 2B, Qwen 2.5 32B | HTTP 200 | Assist Auto capability; verify role before use |
-| [CMPS03](./cmps03.md) | Qwen 3.5 2B, Qwen 3.5 9B | HTTP 400 `no_db_connection` | Not approved until edge readiness is restored |
+| [CMPS01](./cmps01.md) | Qwen 3.5 2B, Qwen 3.5 9B, `mxbai-embed-large` | HTTP 200 | Healthy; small, large, and embedding capacity |
+| [CMPS02](./cmps02.md) | Qwen 3.5 2B, Qwen 3.8 27B | HTTP 200 | Healthy; small tier and Assist Auto |
+| [CMPS03](./cmps03.md) | Qwen 3.5 2B, Qwen 3.5 9B | HTTP 200 | Healthy; small and large tiers |
 
-A direct backend returning HTTP 200 does not clear an edge-proxy failure. The
-CMPS03 result remains the last recorded readiness issue reported to IT; no update
-was available during the audit. Do not add CMPS03 to an approved production fleet
-or assign it a special background/heavy role until the authenticated edge succeeds
-and its operational owner confirms the host.
+CMPS02's missing 9B model is intentional and should be represented in the
+host-scoped fleet configuration. A smoke-test warning about that missing global
+model is expected; the host is still healthy. CMPS03's former `no_db_connection`
+response was resolved by aligning the CMPS03 LiteLLM `master_key` with Core's
+`VLLM_API_KEY`. In this DB-less deployment, that message can indicate an
+authentication mismatch rather than a missing database.
 
 ## Fleet validation
 

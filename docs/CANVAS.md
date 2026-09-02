@@ -286,6 +286,16 @@ export CANVAS_ADMIN_TOKEN='1234~...'
 Needed for API testing, for connecting an instructor account in Core's
 **Settings → Canvas** tab, or for the seed script (admin token).
 
+### UBC Canvas development access
+
+For UBC-hosted Canvas development or sandbox testing, email the UBC LT Hub to
+request the appropriate developer access or token-creation instructions. Once
+access is granted, generate a personal token in Canvas, add it to your own
+EduAI account under **Settings → Canvas**, and test the connection before using
+Canvas course or question-bank features. This is a personal development
+credential; it is not a shared server secret and must not be committed or added
+to an environment file.
+
 1. Log in (admin or instructor).
 2. **Account** → **Settings**.
 3. **Approved Integrations** → **+ New Access Token**.
@@ -418,4 +428,3 @@ More detail: [canvas-lms/doc/docker](https://github.com/instructure/canvas-lms/t
 - [ ] `git clone` + `./script/docker_dev_setup.sh` completed
 - [ ] `docker-compose.override.yml` sets host port (e.g. `8080:80`)
 - [ ] Canvas loads in browser; admin login works
-
