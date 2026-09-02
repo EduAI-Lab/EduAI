@@ -1,7 +1,7 @@
 # EduAI deployment guide
 
 **Status:** Living document
-**Last updated:** 2026-08-31 (verified against `infra/`, `docker-compose.dev.yml`, and `apps/core/scripts/`)
+**Last updated:** 2026-09-02 (verified against `infra/`, `docker-compose.dev.yml`, and `apps/core/scripts/`)
 
 This page is the deployment index. It describes the supported deployment paths and
 links to the runbook that owns each detail. The repository scripts and the server
@@ -276,22 +276,26 @@ The current Qwen deployment contract uses these served model IDs:
 
 - small tier: `qwen3.5-2b-instruct`
 - large tier: `qwen3.5-9b-instruct` where that tier is installed
-- planned future capacity: `qwen3.8-27b` (not currently deployed)
+- Assist Auto: `qwen3.8-27b-instruct` on CMPS02
 
-The fleet is not homogeneous. As verified on 2026-08-31:
+The fleet is intentionally heterogeneous. As verified on 2026-09-02, all three
+authenticated port-8001 edges were healthy:
 
-| Host | Direct backends observed | Authenticated port-8001 result |
+| Host | Served models observed | Authenticated port-8001 result / role |
 | --- | --- | --- |
-| CMPS01 | Qwen 3.5 2B, Qwen 3.5 9B, `mxbai-embed-large` | HTTP 200 with model list |
-| CMPS02 | Qwen 3.5 2B, Qwen 2.5 32B | HTTP 200 with model list |
-| CMPS03 | Qwen 3.5 2B, Qwen 3.5 9B | HTTP 400 `no_db_connection` |
+| CMPS01 | Qwen 3.5 2B, Qwen 3.5 9B, `mxbai-embed-large` | HTTP 200; small, large, and embedding capacity |
+| CMPS02 | Qwen 3.5 2B, Qwen 3.8 27B | HTTP 200; small tier and Assist Auto |
+| CMPS03 | Qwen 3.5 2B, Qwen 3.5 9B | HTTP 200; small and large tiers |
 
-The CMPS03 result is the last verified readiness issue reported to IT; no IT
-resolution was available during this documentation pass. Its direct backends
-responded during the audit, but that does not clear the port-8001 edge failure.
-Keep CMPS03 out of an approved production fleet until the authenticated edge
-check succeeds and the operational owner confirms the host. CMPS02's 32B model
-is a separate capability and must not be documented as the standard 9B large tier.
+CMPS02 does not advertise `qwen3.5-9b-instruct` by design. A fleet smoke run may
+therefore print a warning when checking the global large-tier expectation; that
+warning is not a host-health failure. Host-scoped model declarations should match
+the models each server actually advertises.
+
+On this DB-less LiteLLM edge, `HTTP 400 no_db_connection` / `No connected db.`
+can be a misleading authentication-path error when the proxy's `master_key`
+does not match Core's `VLLM_API_KEY`. Check key alignment before provisioning or
+debugging a database. Never print the key while checking it.
 
 The port-8001 edge is authenticated. Never put the shared inference key in a
 document, command history, browser URL, or client-side bundle. See

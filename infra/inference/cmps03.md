@@ -1,15 +1,14 @@
 # CMPS03 host
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
-CMPS03 currently has the standard Qwen 3.5 small/large pair on its direct
-backends, but its authenticated port-8001 edge is not ready. This file records
-that readiness boundary so the host is not accidentally treated as an approved
-production or background inference server.
+CMPS03 has the standard Qwen 3.5 small/large pair and is healthy on its
+authenticated port-8001 edge. It is available for the same interactive fleet
+role as CMPS01.
 
 The shared implementation procedure is
-[`../cmps01/README.md`](../cmps01/README.md); adapt it only after the edge issue
-has an operational resolution.
+[`../cmps01/README.md`](../cmps01/README.md); adapt it to CMPS03's GPU, model,
+and port assignments before making host changes.
 
 ## Host-specific inventory
 
@@ -21,25 +20,21 @@ has an operational resolution.
 | nginx edge | host `:8001` | Authenticated public inference edge |
 | Ollama | no listener observed on `11434` | Not currently available on this host |
 
-The direct vLLM backends returned HTTP 200 during the 2026-08-31 audit. The
-authenticated port-8001 edge returned HTTP 400 with
-`no_db_connection` / `No connected db.`. The edge therefore does not currently
-provide a passing fleet readiness signal.
+The direct vLLM backends and authenticated port-8001 edge returned HTTP 200
+during the 2026-09-02 verification. The edge advertised both expected model IDs.
 
-## Readiness boundary
+## Readiness and key alignment
 
-- Do not add CMPS03 to the approved production fleet.
-- Do not assign CMPS03 a special background/heavy role.
-- Do not treat direct backend success as an edge recovery.
-- Keep the host's model IDs documented as observed, not as an approval to route
-  application traffic.
-- IT investigation remains the operational dependency; no resolution was
-  available during the 2026-08-31 audit.
+- Keep CMPS03's host-scoped declarations aligned with the two models it advertises.
+- The previous `HTTP 400 no_db_connection` / `No connected db.` response was
+  caused by the CMPS03 LiteLLM `master_key` not matching Core's `VLLM_API_KEY`.
+- This deployment is DB-less; the error did not mean that a new LiteLLM database
+  was required. If it returns again, verify the shared key and restart the edge
+  proxy after changing its secret.
 
 ## Recovery verification
 
-After the operational owner confirms a fix, run the authenticated check from an
-approved server without printing the key:
+Run the authenticated check from an approved server without printing the key:
 
 ```bash
 curl -fsS --max-time 10 \
@@ -47,7 +42,6 @@ curl -fsS --max-time 10 \
   http://cmps03.ok.ubc.ca:8001/v1/models
 ```
 
-Confirm that the response is HTTP 200 and includes the expected served model IDs.
-Then test the consuming application and record the timestamp, commit/image,
-model IDs, and approved role before changing fleet configuration.
-
+Confirm that the response is HTTP 200 and includes
+`qwen3.5-2b-instruct` and `qwen3.5-9b-instruct`. Then test the consuming
+application and record the timestamp, commit/image, model IDs, and role.
