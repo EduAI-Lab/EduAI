@@ -1,6 +1,6 @@
 # Production deployment
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 This directory describes the production release contract for `s348.ok.ubc.ca`.
 The production host is separate from shared development and uses a release
@@ -161,6 +161,54 @@ Use a new release directory for every production change:
 The exact package scripts can change with the code. Read the package manifests and
 the deployment helper in the release you are deploying instead of copying an old
 command sequence.
+
+### Frontend routing environment (important)
+
+AI Tutor and Question Maker are static browser frontends. Their public `VITE_*`
+URLs are compiled into the bundles at build time; they are not read from the
+server environment when Apache serves the files. If the production env files are
+not loaded before the build, the bundles can fall back to localhost URLs even
+though the backend services and Apache vhosts are configured correctly.
+
+For every production release that changes either frontend, load the reviewed
+public-only env file immediately before its build:
+
+```bash
+cd /srv/www/eduai-production/releases/<release-id>
+
+set -a
+. infra/production/ai-tutor-frontend.env
+set +a
+npm run build --workspace ai-tutor
+
+set -a
+. infra/production/question-maker-frontend.env
+set +a
+npm run build --workspace question-maker-frontend
+```
+
+Then activate the release and reload Apache:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <release-id>
+sudo systemctl reload apache2
+```
+
+Before declaring the release live, check the built assets for accidental local
+URLs and confirm the public hosts respond:
+
+```bash
+cd /srv/www/eduai-production/current
+rg -n 'localhost:(3000|3001|4000|5173)' \
+  apps/extensions/ai-tutor/build/client \
+  apps/extensions/question-maker/app/frontend/dist
+curl -fsSI https://aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://questionmaker.eduai.ok.ubc.ca/
+```
+
+The env files above contain routing values intended for the browser. Never place
+API keys, database credentials, or other secrets in a `VITE_*` variable or in a
+frontend bundle.
 
 ## Health checks
 
