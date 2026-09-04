@@ -1,6 +1,41 @@
 # Question Maker - Architecture Documentation
 
-This document describes the technical architecture of the Question Maker application deployment.
+This document describes the technical architecture of the Question Maker application: how it is
+deployed (Apache/Docker/Postgres — largely unchanged since this doc was first written) and how the
+application itself is put together (which has changed substantially — no local accounts, Prisma
+instead of Sequelize, and Canvas credentials now live in Core). Read `app/backend/src/app.js` and
+`app/backend/prisma/schema.prisma` as the actual source of truth; this is a map, not a spec.
+
+## Application architecture (current)
+
+- **No local accounts.** Question Maker never issues a JWT or stores a password. The browser holds
+  a Core session cookie; every request is authenticated by forwarding that cookie to Core's
+  `POST /api/sessions/validate` (`src/middleware/auth.js`, `requireAuth`/`authenticateToken`). QM
+  keeps only a thin local `User` row (id/email/name) for FK integrity — `services/authService.js`
+  upserts it on first sight of a Core user, memoized per-process for `USER_ROW_CACHE_TTL_MS`.
+- **Prisma, not Sequelize.** The data model lives in `app/backend/prisma/schema.prisma` (13 models:
+  `User`, `Course`, `CourseAccess`, `Topics`, `QuestionMetadata`, `Variants`, `Assessments`,
+  `AssessmentSections`, `SectionVariants`, `CanvasCourseMapping`, `VariantSelectionCursor`,
+  `CanvasBankMapping`, `CanvasBankQuestionMapping`). Migrations under `prisma/migrations/` are applied
+  with `prisma migrate deploy`; the old Sequelize `schema/` directory no longer exists.
+- **Course is a thin anchor, not a full record.** A `Course` row is just `{ userId, coreCourseId }` —
+  `name`/`code`/`department`/`term`/`year`/`description` are Core-owned and read through on every
+  response (`services/courseListService.js`). Access to a course is resolved from **Core enrollment
+  data**, not local ownership: `middleware/courseAccess.js` ranks callers `admin(4) > unit(3) >
+  instructor(2) > ta(1) > student(0)` and fails closed when Core is unreachable.
+- **Canvas credentials live in Core**, not in this database. QM proxies every Canvas call through
+  Core's `/api/canvas/*` routes (`services/canvasService.js` + `services/coreApiService.js`); there is
+  no `CanvasIntegration` table in `schema.prisma` and no encrypted-credential storage on this side.
+  `utils/encryption.js` (AES-256-GCM) still exists but is dead code in production (its only caller is
+  its own unit test) — the one-time migration script that copied any pre-existing QM-stored tokens
+  into Core uses its own separate implementation instead
+  (`scripts/lib/canvasCredentialReencrypt.js`); see [features/ENCRYPTION.md](features/ENCRYPTION.md).
+- **AI calls are admission-controlled.** Every route that reaches EduAI (`middleware/aiAdmission.js`)
+  reserves a caller-scoped provider-call budget and a shared operation deadline *before* touching the
+  database or making an upstream call, on top of a per-caller `express-rate-limit` window.
+- **A per-question advisory lock serializes mutations.** `services/questionMutationFence.js` wraps
+  every question/variant write in a Postgres `pg_advisory_xact_lock`, so approving a variant and
+  pushing it to Core (`services/variant-publish.js`) cannot race a concurrent edit.
 
 ## System Architecture Overview
 
@@ -135,24 +170,30 @@ User Browser
 - **Internal Communication**: Containers communicate via Docker network
 
 ### 2. Authentication Flow
+
+Question Maker has no login form and issues no token. The browser already holds a Core session
+cookie (set when the user signed into EduAI Core); every QM request forwards that cookie and Core
+is the sole authority on whether it's valid.
+
 ```
-User Login
-    ↓ Credentials
-Frontend
-    ↓ POST /api/auth/login
+Browser (has Core session cookie)
+    ↓ Any QM request, cookie attached
+Backend (middleware/auth.js: requireAuth)
+    ↓ POST {cookie} → Core: /api/sessions/validate
+Core
+    ↓ { user } or 401/403/429
 Backend
-    ↓ Validate Credentials
-Database
-    ↓ User Data
-Backend
-    ↓ JWT Token
-Frontend
-    ↓ Store Token
-Subsequent Requests
-    ↓ Bearer Token
-Backend
-    ↓ Validate Token
+    ↓ upsert local User FK row (services/authService.js), attach req.user
+Route handler
+    ↓ per-course access from Core enrollment (middleware/courseAccess.js)
+    ↓ JSON response
+Browser
 ```
+
+A 401 from an `/api/*` route redirects the browser to Core's login with a `redirect` back to this
+extension (`app/frontend/src/services/api.ts` axios interceptor); non-API routes never see this app
+without a valid cookie because `QmAppGate` (`src/components/auth/QmAppGate.tsx`) blocks rendering
+until `/auth/me` succeeds.
 
 ### 3. CORS Handling
 - **Problem**: Cross-origin requests blocked
@@ -290,18 +331,19 @@ sudo cp /etc/httpd/conf.d/question-maker.conf question-maker.conf.backup
 ## Technology Stack Summary
 
 ### Frontend
-- **Framework**: React 18
+- **Framework**: React 19
 - **Build Tool**: Vite
-- **Web Server**: Nginx
-- **Styling**: Tailwind CSS
-- **Routing**: React Router
+- **Web Server**: Nginx (production static build)
+- **Styling**: Tailwind CSS + `@eduai/ui` (the shared cross-app design system)
+- **Routing**: React Router 7, course-centric (`/courses/:courseId/...`)
 
 ### Backend
-- **Runtime**: Node.js 18
-- **Framework**: Express.js
-- **Database**: PostgreSQL 15
-- **Authentication**: JWT
-- **API**: RESTful
+- **Runtime**: Node.js 18+ (ESM)
+- **Framework**: Express
+- **ORM**: Prisma (`app/backend/prisma/schema.prisma`)
+- **Database**: PostgreSQL
+- **Authentication**: None issued locally — Core session cookie, validated per-request against Core
+- **API**: RESTful, JSON envelopes (`{ success, data, ... }` or the paginated `{ success, data, total, page, pageSize }` shape, #1044)
 
 ### Infrastructure
 - **Containerization**: Docker + Docker Compose
@@ -377,26 +419,20 @@ sequenceDiagram
     F->>A: HTML/JS Response
     A->>U: HTTPS Response
     
-    %% API Call (from browser JavaScript)
-    U->>A: HTTPS Request (POST /api/auth/login)
-    A->>B: HTTP Request (POST /api/auth/login)
-    B->>D: SQL Query (SELECT user)
-    D->>B: User Data
-    B->>A: JSON Response (JWT Token)
-    A->>U: HTTPS Response
-    
-    %% Subsequent API Requests
+    %% API Call (from browser JavaScript) — the browser already holds a
+    %% Core session cookie; there is no login POST to this application.
     U->>A: HTTPS Request (GET /api/questions)
-    Note over U: Includes Bearer token<br/>from localStorage
+    Note over U: Cookie: Core session<br/>(withCredentials, no bearer token)
     A->>B: HTTP Request (GET /api/questions)
-    B->>D: SQL Query (SELECT questions)
+    participant C as EduAI Core
+    B->>C: POST /api/sessions/validate (cookie forwarded)
+    C->>B: { user } or 401/403/429
+    B->>D: SQL Query (SELECT questions via Prisma)
     D->>B: Questions Data
-    B->>A: JSON Response
+    B->>A: JSON Response ({ success, data, ... })
     A->>U: HTTPS Response
 ```
 
 ---
 
-**Architecture Version**: 1.0  
-**Last Updated**: October 2024  
-**Deployment**: Production
+**Deployment**: Production (Apache reverse proxy + Docker Compose, per [docs/deployment/README.md](deployment/README.md))

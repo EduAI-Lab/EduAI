@@ -67,6 +67,9 @@ dotenv.config({ path: path.join(projectRoot, ".env") });
 export const config = {
   // Server
   port: process.env.PORT || 8000,
+  // Bind publicly by default for Docker/development; production systemd units
+  // set HOST=127.0.0.1 so Apache remains the only public entrypoint.
+  host: process.env.HOST || "0.0.0.0",
   nodeEnv: process.env.NODE_ENV || "development",
 
   // Database

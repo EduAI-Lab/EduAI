@@ -22,11 +22,6 @@ vi.mock("~/lib/auth/server", () => ({
 vi.mock("~/lib/policy.server", () => ({
   getPolicy: vi.fn().mockResolvedValue(true),
 }));
-vi.mock("~/lib/deployment-safety.server", () => ({
-  getLocalSeedPassword: vi.fn(),
-  isLocalDemoEnabled: vi.fn().mockReturnValue(false),
-}));
-
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn((p: Promise<unknown>) => p),
   logSecurityEvent: vi.fn().mockResolvedValue(undefined),
@@ -119,8 +114,6 @@ describe("auth/login loader", () => {
       redirectTo: "/dashboard",
       allowRegistration: false,
       forceReauth: false,
-      showDemoLogin: false,
-      demoPassword: null,
     });
   });
 });

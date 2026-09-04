@@ -73,6 +73,16 @@ describe("buildVllmModelCreatePayload", () => {
     });
     expect(payload.routerTier).toBeNull();
   });
+
+  it("marks the managed Qwen3.8 model as tool-capable and multimodal", () => {
+    const payload = buildVllmModelCreatePayload({ id: "qwen3.8-27b-instruct" });
+
+    expect(payload).toMatchObject({
+      modelId: "qwen3.8-27b-instruct",
+      supportsTools: true,
+      supportsImages: true,
+    });
+  });
 });
 
 describe("syncLocalModels", () => {

@@ -12,6 +12,12 @@ s378 installer places the scripts under `/opt/eduai/cron` and configures the
 dedicated `eduai-cron-worker` service. Do not separately create competing user
 units or a system crontab for the same jobs.
 
+On production, install the root-owned worker template from
+`infra/production/systemd/eduai-cron-worker.service`, create
+`/etc/eduai/cron.env`, and use the production helper's `install-cron-worker`,
+`enable-cron-worker`, and `restart-cron-worker` actions before relying on the
+worker.
+
 ## Script inventory
 
 | Script | Responsibility |

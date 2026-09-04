@@ -26,16 +26,16 @@ edge/base URL, not a backend port that is not reachable from the app host.
 
 ## Current server models
 
-The current server inventory is Qwen 3.5 2B in the Small tier and Qwen 3.5 9B
-in the Large tier. The routing semantics, Auto-selection rules, and
-repository/deployment model-name drift warning are documented in
+The current server inventory is Qwen 3.5 2B in the Small tier, Qwen 3.5 9B in
+the Large tier on CMPS01/CMPS03, and Qwen 3.8 27B for Assist Auto on CMPS02.
+The routing semantics, Auto-selection rules, and repository/deployment model-name
+drift warning are documented in
 [`MODEL_ROUTING.md`](./MODEL_ROUTING.md).
 
-Qwen 3.8 27B is intended as a future additional model. It is a planned
-capacity upgrade, not a currently available server model. Before using it,
-deploy it, verify that it appears in the host's `/v1/models` response, and
-register its exact served id in Core's active model catalog with the intended
-routing tier and capabilities.
+The exact served id for the Assist Auto model is `qwen3.8-27b-instruct`. Before
+using it in another deployment, verify that it appears in that host's
+`/v1/models` response and register the exact id in Core's active model catalog
+with the intended routing tier and capabilities.
 
 The exact API model ids are deployment values; use each host's `/v1/models`
 response rather than deriving an id from the display name. Core's Auto routing
@@ -85,15 +85,14 @@ If the structured file is absent, Core falls back to:
 
 ```dotenv
 VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001,http://cmps03.ok.ubc.ca:8001"
-# Leave VLLM_FLEET_HEAVY_URL unset; CMPS03 is not a background host.
+# Leave VLLM_FLEET_HEAVY_URL unset; background AI jobs are disabled pre-MVP.
 # Use the exact served ids returned by /v1/models for the current deployment.
-VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"
+VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b-instruct,qwen3.5-9b-instruct"
 ```
 
-The `VLLM_FLEET_DEFAULT_MODELS` values shown above are the repository's older
-fallback examples, not the current Qwen 3.5 server inventory. Update them when
-the legacy fallback path is used; live `/v1/models` discovery remains the
-authoritative source when available.
+Live `/v1/models` discovery remains authoritative. If the legacy fallback path
+is used, keep `VLLM_FLEET_DEFAULT_MODELS` aligned with the standard small/large
+model IDs above; CMPS02's Assist Auto model is selected separately.
 
 The interactive pool serves user-facing chat/tutor work. CMPS03 is classified
 as interactive-only and must not be assigned to the heavy/background pool. With
@@ -104,21 +103,15 @@ requests. Selection, affinity, health, and ejection details are in
 
 ## CMPS03 operational status
 
-CMPS03 is currently degraded and pending an IT investigation. The investigation
-in [PR #1675](https://github.com/EduAI-Lab/EduAI/pull/1675) did not reproduce the
-reported latency outlier in direct vLLM load tests, but the same investigation
-recorded a separate service-readiness failure through the port-8001 path used by
-the fleet: `/v1/models` returned HTTP 400 with
-`{"type":"no_db_connection","message":"No connected db."}`. This means
-direct vLLM load parity must not be interpreted as proof that CMPS03's proxy or
-service path is healthy.
+CMPS03 is healthy for interactive fleet traffic as verified on 2026-09-02. Its
+authenticated port-8001 `/v1/models` response advertises
+`qwen3.5-2b-instruct` and `qwen3.5-9b-instruct`.
 
-An IT investigation has been requested, and no follow-up resolution is recorded
-as of 2026-08-31. Do not assign CMPS03 to `background` or set
-`VLLM_FLEET_HEAVY_URL` to it. Keep it interactive-only in the fleet registry,
-and require a successful port-8001 `/v1/models` check before treating it as
-ready for traffic. If the health check fails, fleet health should exclude the
-host from model selection.
+The former `HTTP 400 no_db_connection` / `No connected db.` response was caused
+by the CMPS03 LiteLLM `master_key` not matching Core's `VLLM_API_KEY`. This
+deployment is DB-less, so that response can be a misleading authentication
+failure rather than evidence that a LiteLLM database is missing. Do not print
+the key while checking alignment.
 
 ## Host health and retry behavior
 

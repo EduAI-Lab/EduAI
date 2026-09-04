@@ -1,6 +1,6 @@
 # Agent readiness — endpoint & tool coverage
 
-**Date:** 2026-06-18 (updated 2026-08-31)  
+**Date:** 2026-06-18 (updated 2026-08-31)
 **Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (agent readiness), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot), [#672](https://github.com/EduAI-Lab/EduAI/issues/672) (automated checks), [#828](https://github.com/EduAI-Lab/EduAI/issues/828) (idempotency), [#1658](https://github.com/EduAI-Lab/EduAI/issues/1658) / #1665 (admin `searchCourseMaterials` RAG tool)  
 **Related:** [`docs/implementations/api-wiring.md`](./implementations/api-wiring.md) · [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](./rag-ai/CHAT_RAG_PIPELINE.md)
 

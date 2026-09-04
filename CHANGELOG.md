@@ -6,6 +6,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > **Week numbering is inconsistent and has not been corrected here.** `August 10–16, 2026` is claimed by both Week 15 and Week 16; `August 17–23, 2026` is claimed by both Week 16 and Week 17. This predates the 2026-08-31 de-duplication pass, which merged sections by the week number each heading stated and never moved an entry between weeks — an entry's date is its commit date, not its sprint, so re-bucketing by date would have rewritten history. Renumbering is a maintainer call.
 
+## 2026.09.01
+
+- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1720
+- Add `docs/INSTRUCTOR_ONBOARDING.md`, a pilot instructor walkthrough covering sign-in, Canvas connection, Core course setup, AI Tutor, and Question Maker; register it in the root `README.md` documentation index.
+- Correct the guide against the current UI: the AI Tutor and Question Maker hostnames (`aitutor.` / `questionmaker.`, not `ai-tutor.` / `qm.`), Canvas course fetching (dashboard **Fetch from Canvas**, not a Courses-page sync), course publishing (the course card's ⋮ menu), and the app switcher (**Switch app** in the sidebar footer, not the header).
+- Drop the manual "import course from Core" steps for both extensions — AI Tutor and Question Maker auto-import taught courses on login — and describe Question Maker's real flow as generating an AI variant of an existing question rather than bulk generation from a topic.
+- Remove the stale "course search only scans the current page" limitation, now that Core's course search and pagination are server-side, and replace the vague cross-app sync advice with the actual refresh windows.
+- Publish the guide as text only, with the Canvas token steps written out in place of the screenshots that previously carried them.
+- Cross-link the instructor walkthrough and `docs/USER_GUIDE.md` so the tutorial and the full role reference stay separate documents.
+- Stop tracking `docs/superpowers/` planning documents and restore the `.gitignore` entries that a superseded per-app Prisma client change had narrowed.
+
 ## 2026.08.31
 
 - PR Link: https://github.com/EduAI-Lab/EduAI/pull/1718

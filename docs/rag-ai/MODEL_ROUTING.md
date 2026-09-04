@@ -13,35 +13,32 @@ and the request integration in [`api/chat.ts`](../../apps/core/app/routes/api/ch
 ## Concrete models and Auto
 
 A concrete id such as `google:gemini-2.5-flash` or
-`vllm:qwen2.5-7b-instruct` bypasses Auto tier selection. `model=auto` uses
+`vllm:qwen3.5-2b-instruct` bypasses Auto tier selection. `model=auto` uses
 `ROUTER_MODE` (default `rules`); `model=auto-llm` explicitly uses the LLM
 classifier. Supported router modes are `rules`, `knn`, `hybrid`, and `llm`.
 
 ### Current server model inventory
 
-The current server inventory has two available Qwen models:
+The current server inventory is heterogeneous:
 
 | Routing tier | Current server model | Intended use |
 | --- | --- | --- |
 | Small | Qwen 3.5 2B | Default and lower-cost interactive work when the request does not need a larger model |
-| Large | Qwen 3.5 9B | Escalated or more capable interactive work, including requests that need stronger reasoning or tools |
+| Large | Qwen 3.5 9B (CMPS01/CMPS03) | Escalated or more capable interactive work, including requests that need stronger reasoning or tools |
+| Assist Auto | Qwen 3.8 27B (CMPS02) | The dedicated Assist Auto capability; not the standard large tier |
 
-Qwen 3.8 27B is intended as a future additional model. It is a planned
-capacity upgrade, not a currently available server model, and should not be
-documented or configured as an active route until it is deployed, exposed by
-the server's `/v1/models`, and registered in Core's active model catalog with
-the intended routing tier and capability flags.
+CMPS02 intentionally does not serve the standard 9B model. Its host-scoped
+configuration should list the 27B Assist Auto model instead of treating the
+missing 9B model as a server failure.
 
 For Auto to select either current server model, its exact served model id must
 be registered as an active `vllm` model row with a router tier. Fleet discovery
 of a model from `/v1/models` does not create or activate that database row.
 
-The repository's seed data and legacy smoke examples still contain the older
-`qwen2.5-7b-instruct` and `qwen2.5-32b-instruct` ids. Treat those values as
-repository defaults that require alignment before reproducing the deployment;
-they are not the current server inventory listed above. Verify the exact
-served ids from each host's `/v1/models` response before changing fallback
-configuration.
+The repository's historical seed data and benchmark reports may contain older
+Qwen IDs. Treat those values as historical unless the target host advertises
+them; verify exact served IDs from each host's `/v1/models` response before
+changing fallback configuration.
 
 Auto is available only when the corresponding mode is enabled in Admin → AI
 Models. If the client asks for a disabled mode, or sends no model while no Auto
@@ -127,9 +124,9 @@ The full fleet configuration and health timers are documented in
 
 ```dotenv
 FLEET_CONFIG_PATH="./fleet.config.json"
-VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
-VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
-VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"
+VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001,http://cmps03.ok.ubc.ca:8001"
+# Leave VLLM_FLEET_HEAVY_URL unset; background AI jobs are disabled pre-MVP.
+VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b-instruct,qwen3.5-9b-instruct"
 ```
 
 The structured file is host-specific and gitignored. Do not commit credentials

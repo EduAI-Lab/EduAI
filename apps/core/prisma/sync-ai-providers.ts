@@ -236,7 +236,7 @@ async function main() {
       update: {
         isActive: true,
         supportsTools: m.supportsTools,
-        supportsImages: false,
+        supportsImages: m.supportsImages,
       },
       create: {
         ...m,

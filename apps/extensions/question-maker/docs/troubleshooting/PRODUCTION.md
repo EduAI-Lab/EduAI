@@ -23,12 +23,18 @@ The application was experiencing intermittent failures after running for several
 - One slow dependency → container marked unhealthy → restart loop
 
 **Solution**:
-- Created dedicated `/healthz` endpoint that returns `200 OK` with zero dependencies
+- Created dedicated `/healthz` endpoint that returns `200 OK` with zero dependencies (pure liveness)
+- Added a separate `/readyz` endpoint that **does** check the database
+  (`checkDatabaseReadiness()` in `config/database.js`, bounded to a 2s probe) and answers `503` when
+  it's down — this is the one that should gate traffic, not `/healthz`
 - Updated `Dockerfile` and `docker-compose.yml` to use `/healthz`
-- Endpoint does NOT touch database, Redis, Judge0, or allocate memory
+- Both routes, plus every request, skip the pino request logger and the production rate limiter
+  (`app.js`'s `pinoHttp` `autoLogging.ignore` and the limiter's `skip`, which also exempts `/`) so
+  frequent probes don't spam logs or eat into the request quota
 
 **Files Changed**:
-- `app/backend/src/index.js` - Added `/healthz` endpoint
+- `app/backend/src/app.js` - `/healthz` and `/readyz` routes (registered before the API routers; not
+  `index.js`, which only starts the listener and connects the database)
 - `app/backend/Dockerfile` - Updated HEALTHCHECK
 - `docker-compose.yml` - Updated healthcheck test
 
@@ -125,9 +131,13 @@ The application was experiencing intermittent failures after running for several
 
 ### Healthcheck Verification
 ```bash
-# Backend healthcheck
+# Backend liveness (no DB dependency)
 curl -f http://localhost:8000/healthz
 # Should return: ok
+
+# Backend readiness (includes a bounded DB check; 503 when the DB is down)
+curl -f http://localhost:8000/readyz
+# Should return: {"status":"ready"}
 
 # Frontend healthcheck
 curl -f http://localhost:3005/healthz.html

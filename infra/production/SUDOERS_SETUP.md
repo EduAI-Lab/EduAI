@@ -14,7 +14,7 @@ An administrator must install the reviewed templates under:
 /etc/eduai/production-templates
 ```
 
-The current helper reads these seven fixed template files:
+The current helper reads these eleven fixed template files:
 
 | Template | Installed destination |
 | --- | --- |
@@ -25,6 +25,10 @@ The current helper reads these seven fixed template files:
 | `aitutor-db.env` | `/etc/eduai/aitutor-db.env` |
 | `eduai-aitutor-server.service` | `/etc/systemd/system/eduai-aitutor-server.service` |
 | `aitutor.eduai.ok.ubc.ca.conf` | `/etc/apache2/sites-available/aitutor.eduai.ok.ubc.ca.conf` |
+| `eduai-qm.env` | `/etc/eduai/eduai-qm.env` |
+| `eduai-qm-backend.service` | `/etc/systemd/system/eduai-qm-backend.service` |
+| `questionmaker.eduai.ok.ubc.ca.conf` | `/etc/apache2/sites-available/questionmaker.eduai.ok.ubc.ca.conf` |
+| `eduai-cron-worker.service` | `/etc/systemd/system/eduai-cron-worker.service` |
 
 Install them as root:
 
@@ -44,6 +48,14 @@ sudo install -o root -g root -m 0644 /path/to/eduai-aitutor-server.service \
   /etc/eduai/production-templates/eduai-aitutor-server.service
 sudo install -o root -g root -m 0644 /path/to/aitutor.eduai.ok.ubc.ca.conf \
   /etc/eduai/production-templates/aitutor.eduai.ok.ubc.ca.conf
+sudo install -o root -g root -m 0640 /path/to/eduai-qm.env \
+  /etc/eduai/production-templates/eduai-qm.env
+sudo install -o root -g root -m 0644 /path/to/eduai-qm-backend.service \
+  /etc/eduai/production-templates/eduai-qm-backend.service
+sudo install -o root -g root -m 0644 /path/to/questionmaker.eduai.ok.ubc.ca.conf \
+  /etc/eduai/production-templates/questionmaker.eduai.ok.ubc.ca.conf
+sudo install -o root -g root -m 0644 /path/to/eduai-cron-worker.service \
+  /etc/eduai/production-templates/eduai-cron-worker.service
 ```
 
 The deployment account must not be able to write the template directory. Keep
@@ -89,11 +101,19 @@ The current repository helper permits:
 | `install-aitutor-env` | Install the AI Tutor environment |
 | `install-aitutor-unit` | Install the AI Tutor systemd unit |
 | `install-aitutor-apache` | Install/enable the AI Tutor Apache vhost |
+| `install-qm-env` | Install the Question Maker environment |
+| `install-qm-unit` | Install the Question Maker systemd unit |
+| `install-qm-apache` | Install/enable the Question Maker Apache vhost |
 | `aitutor-db-install` | Create/start the AI Tutor database container |
 | `provision-aitutor` | Apply the supported AI Tutor provisioning sequence |
+| `install-cron-worker` | Install and synchronize the Core cron worker |
 | `activate-release <release-id>` | Move the production `current` symlink to an existing release |
 | `enable-aitutor` | Enable the AI Tutor unit |
 | `restart-aitutor` | Restart AI Tutor and show its status |
+| `enable-qm` | Enable the Question Maker unit |
+| `restart-qm` | Restart Question Maker and show its status |
+| `enable-cron-worker` | Enable the Core cron worker |
+| `restart-cron-worker` | Restart the Core cron worker and show its status |
 | `enable-core` | Enable the Core unit |
 | `restart-core` | Restart Core and show its status |
 | `reload-apache` | Run `apache2ctl configtest` and reload Apache |
@@ -102,11 +122,10 @@ The `activate-release` action accepts an existing hexadecimal release ID only. I
 does not build a release, run migrations, seed a database, or validate application
 health.
 
-Question Maker is not in this allow-list. Its Compose/deployment procedure is
-documented under
+Question Maker is intentionally limited to the three template-install actions
+and its enable/restart actions. Its database and build procedure remain in
 [`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md);
-do not add a `provision-qm` command to operational docs until the helper and its
-templates implement it.
+the helper does not expose a general shell or a `provision-qm` command.
 
 ## Review requirements
 

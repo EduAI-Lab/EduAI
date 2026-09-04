@@ -1,6 +1,6 @@
 # Production deployment
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 This directory describes the production release contract for `s348.ok.ubc.ca`.
 The production host is separate from shared development and uses a release
@@ -23,6 +23,7 @@ The supported application units are:
 | `eduai-core` | Core web application | `127.0.0.1:3000` |
 | `eduai-aitutor-server` | AI Tutor API | `127.0.0.1:4000` |
 | `eduai-qm-backend` | Question Maker backend | `0.0.0.0:8000` in the current deployment |
+| `eduai-cron-worker` | Core scheduled-maintenance worker | none |
 
 Apache terminates public HTTPS and proxies or serves the configured vhosts. The
 production database and Redis are normally host-managed on `127.0.0.1:5432` and
@@ -45,8 +46,8 @@ preflight and health checks before treating any later release as ready.
 
 ## What the repository currently manages
 
-The repository includes production templates and a restricted helper for Core and
-AI Tutor:
+The repository includes production templates and a restricted helper for Core,
+AI Tutor, Question Maker, and the Core cron worker:
 
 - `infra/production/core.env.example`
 - `infra/production/ai-tutor.env.example`
@@ -54,13 +55,15 @@ AI Tutor:
 - `infra/production/apache/`
 - `infra/production/admin-helper.sh`
 - `infra/production/preflight.sh`
+- `infra/cron/`
 
-The current `eduai-production-admin` allow-list manages Core, AI Tutor, Redis,
-release activation, and Apache reload operations. It does not include a Question
-Maker provisioning or restart action. Question Maker has its own application
-Compose/deployment documentation under
-[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md);
-do not document a `provision-qm` helper action until it exists in the repository.
+The current `eduai-production-admin` allow-list manages Core, AI Tutor, Question
+Maker's narrowly scoped install/enable/restart actions, Redis, release
+activation, Apache reload, and the cron worker. It does not provide a general
+Question Maker provisioning shell or a `provision-qm` action. Question Maker's
+application deployment documentation remains authoritative for its database and
+build procedure:
+[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
 
 The old PM2-oriented application scripts are not the production runbook. Do not
 use `apps/core/deploy.sh` or `apps/extensions/ai-tutor/deploy.sh` against the
@@ -89,6 +92,28 @@ ss -lntp
 Do not print environment files while inspecting them. Verify the presence,
 ownership, and permissions of `/etc/eduai/eduai-core.env` and the AI Tutor
 environment files without exposing their values.
+
+## Application cron worker
+
+The Admin → Cron Jobs page is backed by the dedicated
+`eduai-cron-worker.service`; it is not driven by the web process and does not
+use a user crontab. The worker reads Core's database environment, dispatches
+allow-listed jobs, and runs shell jobs as the unprivileged `eduai-cron` user.
+`Restart=always` keeps the worker itself running, while the application services
+retain their own systemd restart policies.
+
+Before enabling it on production, create `/etc/eduai/cron.env`, create the
+`eduai-cron` user and its backup/log directories, and install the root-owned
+worker template through [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md). Then run:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin install-cron-worker
+sudo -n /usr/local/sbin/eduai-production-admin enable-cron-worker
+sudo -n /usr/local/sbin/eduai-production-admin restart-cron-worker
+```
+
+Review stale `RUNNING` records in Admin → Cron Jobs before restarting the worker;
+it dispatches pending admin-triggered runs when it starts.
 
 ## Provisioning prerequisites
 
@@ -137,6 +162,54 @@ The exact package scripts can change with the code. Read the package manifests a
 the deployment helper in the release you are deploying instead of copying an old
 command sequence.
 
+### Frontend routing environment (important)
+
+AI Tutor and Question Maker are static browser frontends. Their public `VITE_*`
+URLs are compiled into the bundles at build time; they are not read from the
+server environment when Apache serves the files. If the production env files are
+not loaded before the build, the bundles can fall back to localhost URLs even
+though the backend services and Apache vhosts are configured correctly.
+
+For every production release that changes either frontend, load the reviewed
+public-only env file immediately before its build:
+
+```bash
+cd /srv/www/eduai-production/releases/<release-id>
+
+set -a
+. infra/production/ai-tutor-frontend.env
+set +a
+npm run build --workspace ai-tutor
+
+set -a
+. infra/production/question-maker-frontend.env
+set +a
+npm run build --workspace question-maker-frontend
+```
+
+Then activate the release and reload Apache:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <release-id>
+sudo systemctl reload apache2
+```
+
+Before declaring the release live, check the built assets for accidental local
+URLs and confirm the public hosts respond:
+
+```bash
+cd /srv/www/eduai-production/current
+rg -n 'localhost:(3000|3001|4000|5173)' \
+  apps/extensions/ai-tutor/build/client \
+  apps/extensions/question-maker/app/frontend/dist
+curl -fsSI https://aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://questionmaker.eduai.ok.ubc.ca/
+```
+
+The env files above contain routing values intended for the browser. Never place
+API keys, database credentials, or other secrets in a `VITE_*` variable or in a
+frontend bundle.
+
 ## Health checks
 
 Use the service-specific paths:
@@ -158,15 +231,16 @@ connectivity, migrations, browser asset markers, and approved inference model ID
 ## Inference configuration
 
 Production should use only endpoints that pass the authenticated port-8001 edge
-check and have an operational owner. The standard Qwen tier IDs are:
+check and have an operational owner. The current fleet model IDs are:
 
 - small: `qwen3.5-2b-instruct`;
 - large: `qwen3.5-9b-instruct` where installed;
-- planned future capacity: `qwen3.8-27b`, not currently deployed.
+- Assist Auto: `qwen3.8-27b-instruct` on CMPS02.
 
-CMPS02 may expose `qwen2.5-32b-instruct` for the Assist Auto capability; that is
-not the standard large tier. CMPS03 must remain out of an approved production
-fleet until its edge readiness is confirmed. See
+CMPS02 intentionally does not expose the standard 9B model; its 27B model is a
+separate Assist Auto capability. CMPS03 has the standard small/large pair and
+may be used in production after the authenticated edge check succeeds on the
+production host. See
 [`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
 

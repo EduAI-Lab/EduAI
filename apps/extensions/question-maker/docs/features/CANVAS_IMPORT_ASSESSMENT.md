@@ -1,308 +1,105 @@
-# Canvas Import Assessment - Feasibility Analysis
-
-## Executive Summary
-
-The existing export infrastructure provides a solid foundation for implementing the reverse operation. The Canvas API supports fetching assignments/quizzes and their questions, and the conversion logic can be reversed.
-
----
-
-## Current Export Logic Analysis
-
-### Export Flow
-
-1. **Data Source**: Assessment → Sections → SectionVariants → Variants → QuestionMetadata
-2. **Canvas Target**: Quiz (quiz_type: 'assignment') → Questions
-3. **API Endpoints Used**:
-   - `POST /api/v1/courses/{course_id}/quizzes` - Creates quiz
-   - `POST /api/v1/courses/{course_id}/quizzes/{quiz_id}/questions` - Creates questions
-
-### Export Conversion Logic
-
-The `convertVariantToCanvasQuestion` function maps:
-- **MCQ Questions** → `multiple_choice_question` with parsed options (A, B, C, D format)
-- **Short Answer Questions** → `short_answer_question` 
-- **Long Answer Questions** → `essay_question`
-
-Key details:
-- Question text includes options in format: `"Question text\nA) Option A\nB) Option B..."`
-- Answer field contains correct answer (e.g., "B" or "B) Option B")
-- Questions maintain position/order
-- Section names are included in question names
-
----
-
-## Import Feasibility Assessment
-
-### ✅ **Infrastructure Already Exists**
-
-1. **Canvas Integration**: 
-   - `makeCanvasRequest()` function handles API calls
-   - Supports both real API and test mode
-   - Authentication/authorization already configured
-
-2. **Data Models**:
-   - All required models exist: `Assessments`, `AssessmentSections`, `SectionVariants`, `Variants`, `Question_Metadata`
-   - Service functions exist for creating these entities
-
-3. **API Infrastructure**:
-   - Canvas routes already set up
-   - Error handling patterns established
-
-### ✅ **Canvas API Support**
-
-Canvas API provides the following endpoints for import:
-
-1. **Get Assignments/Quizzes**:
-   - `GET /api/v1/courses/{course_id}/assignments` - Lists all assignments
-   - `GET /api/v1/courses/{course_id}/quizzes` - Lists all quizzes
-   - Both support filtering by type
-
-2. **Get Quiz Questions**:
-   - `GET /api/v1/courses/{course_id}/quizzes/{quiz_id}/questions` - Gets all questions in a quiz
-
-3. **Get Assignment Details**:
-   - `GET /api/v1/courses/{course_id}/assignments/{id}` - Gets assignment details
-
-### ✅ **Reverse Conversion is Possible**
-
-The conversion logic can be reversed:
-
-| Canvas Question Type | → | Project Question Type |
-|---------------------|---|----------------------|
-| `multiple_choice_question` | → | `MCQ` |
-| `short_answer_question` | → | `SA` (Short Answer) |
-| `essay_question` | → | `LA` (Long Answer) |
-| `true_false_question` | → | `MCQ` (with 2 options) |
-| `fill_in_multiple_blanks_question` | → | `SA` (with parsing) |
-
----
-
-## Implementation Approach
-
-### Required Components
-
-#### 1. **Backend Service Functions** (`canvasService.js`)
-
-```javascript
-// New functions needed:
-- getCanvasQuizzes(userId, canvasCourseId) 
-  // GET /api/v1/courses/{course_id}/quizzes
-
-- getCanvasQuizQuestions(userId, canvasCourseId, quizId)
-  // GET /api/v1/courses/{course_id}/quizzes/{quiz_id}/questions
-
-- importQuizFromCanvas(userId, canvasCourseId, quizId, localCourseId, options)
-  // Main import function
-
-- convertCanvasQuestionToVariant(canvasQuestion, position)
-  // Reverse of convertVariantToCanvasQuestion
-```
-
-#### 2. **Data Structure Mapping**
-
-**Canvas Quiz → Local Assessment:**
-- `quiz.title` → `assessment.name`
-- `quiz.description` → `assessment.description`
-- `quiz.quiz_type` → Used to determine assessment type
-- Quiz questions → Assessment sections → Variants
-
-**Canvas Question → Local Variant:**
-- `question.question_text` → `variant.questionText`
-- `question.question_type` → `questionMetadata.type`
-- `question.answers` → Parsed for MCQ options or answer text
-- `question.position` → `sectionVariant.displayOrder`
-
-#### 3. **Conversion Logic**
-
-**For MCQ Questions:**
-```javascript
-// Canvas format:
-{
-  question_type: 'multiple_choice_question',
-  answers: [
-    { answer_text: 'Option A', answer_weight: 0 },
-    { answer_text: 'Option B', answer_weight: 100 }, // Correct
-    { answer_text: 'Option C', answer_weight: 0 },
-    { answer_text: 'Option D', answer_weight: 0 }
-  ]
-}
-
-// Convert to:
-questionText: "Question text\nA) Option A\nB) Option B\nC) Option C\nD) Option D"
-answer: "B) Option B" // or just "B"
-```
-
-**For Short/Essay Questions:**
-```javascript
-// Canvas format:
-{
-  question_type: 'short_answer_question',
-  answers: [{ answer_text: 'Correct answer', answer_weight: 100 }]
-}
-
-// Convert to:
-questionText: "Question text"
-answer: "Correct answer"
-```
-
-#### 4. **API Routes** (`routes/canvas.js`)
-
-```javascript
-// New routes needed:
-GET  /api/canvas/courses/:canvasCourseId/quizzes
-GET  /api/canvas/courses/:canvasCourseId/quizzes/:quizId/questions
-POST /api/canvas/import/:canvasCourseId/quizzes/:quizId
-```
-
-#### 5. **Frontend Components**
-
-- `CanvasImportDialog.tsx` - Similar to `CanvasExportDialog.tsx`
-  - Course selection
-  - Quiz/Assignment selection
-  - Import options (create new assessment vs. add to existing)
-  - Progress indicators
-
-- Update `canvasService.ts` with import functions
-
----
-
-## Challenges & Considerations
-
-### 1. **Data Loss During Round-Trip**
-
-Some information may be lost when exporting then importing:
-- **Section structure**: Canvas doesn't have sections, so all questions go into one section
-- **Question metadata**: Topics, difficulty settings, reasoning levels not preserved
-- **Variant relationships**: Reference links between variants lost
-- **Blueprint config**: Assessment blueprint configuration not in Canvas
-
-**Mitigation**: 
-- Store metadata in Canvas quiz description or question comments
-- Use Canvas custom fields if available
-- Accept that some data will need manual re-entry
-
-### 2. **Question Type Mapping**
-
-Not all Canvas question types map cleanly:
-- `true_false_question` → Can map to MCQ with 2 options
-- `fill_in_multiple_blanks_question` → Complex, may need special handling
-- `matching_question` → No direct equivalent
-- `numerical_question` → May map to SA
-
-**Solution**: Support most common types, warn about unsupported types
-
-### 3. **MCQ Option Format**
-
-Export embeds options in question text. Import needs to:
-- Extract options from Canvas `answers` array
-- Reconstruct question text with options
-- Determine correct answer from `answer_weight`
-
-**Solution**: Reverse the `parseMCQOptions` logic
-
-### 4. **Course Mapping**
-
-Need to map Canvas course to local course:
-- Use existing `CanvasCourseMapping` table
-- Allow user to select target local course during import
-- Handle case where mapping doesn't exist
-
-### 5. **Assessment Type Determination**
-
-Canvas quizzes don't have explicit "assessment type" field:
-- Could infer from quiz settings (timed, attempts, etc.)
-- Could use quiz description metadata
-- Default to a generic type or let user specify
-
-### 6. **Question Ordering**
-
-Canvas questions have `position` field, which can be used to maintain order.
-
-### 7. **Test Mode Support**
-
-Should support test mode with mock data for development.
-
----
-
-## Recommended Implementation Plan
-
-### Phase 1: Core Import Functionality
-1. Add `getCanvasQuizzes()` function
-2. Add `getCanvasQuizQuestions()` function  
-3. Add `convertCanvasQuestionToVariant()` function
-4. Add `importQuizFromCanvas()` main function
-5. Add API routes
-
-### Phase 2: Frontend Integration
-1. Create `CanvasImportDialog` component
-2. Add import button to assessments page
-3. Add import functions to `canvasService.ts`
-4. Handle import options (new assessment vs. existing)
-
-### Phase 3: Edge Cases & Polish
-1. Handle unsupported question types gracefully
-2. Add validation and error messages
-3. Support test mode
-4. Add import history/tracking
-5. Handle duplicate imports
-
-### Phase 4: Advanced Features (Optional)
-1. Import assignments (not just quizzes)
-2. Batch import multiple quizzes
-3. Preserve metadata in Canvas description/comments
-4. Two-way sync tracking
-
----
-
-## Data Flow Comparison
-
-### Export Flow (Current)
-```
-Local Assessment
-  ↓
-Sections → SectionVariants → Variants
-  ↓
-convertVariantToCanvasQuestion()
-  ↓
-Canvas Quiz → Canvas Questions
-```
-
-### Import Flow (Proposed)
-```
-Canvas Quiz → Canvas Questions
-  ↓
-getCanvasQuizQuestions()
-  ↓
-convertCanvasQuestionToVariant()
-  ↓
-Create: Assessment → Section → SectionVariants → Variants → QuestionMetadata
-```
-
----
-
-## Conclusion
-
-**Import functionality is highly feasible** because:
-
-1. ✅ Canvas API fully supports fetching quizzes and questions
-2. ✅ Existing infrastructure (API client, models, services) can be reused
-3. ✅ Conversion logic is reversible
-4. ✅ Data models support the required structure
-
-**Main challenges:**
-- Some data loss (sections, metadata) - acceptable trade-off
-- Question type mapping for edge cases
-- Need to handle course mapping
-
-**Recommendation**: Proceed with implementation. Start with Phase 1 to validate the approach, then iterate based on user feedback.
-
----
-
-## Next Steps
-
-1. Review this assessment with the team
-2. Prioritize which Canvas question types to support initially
-3. Decide on metadata preservation strategy
-4. Create detailed technical specification
-5. Begin Phase 1 implementation
-
+# Canvas LMS Import Guide
+
+> This document used to be a pre-implementation feasibility analysis ("Import functionality is highly
+> feasible..."). Canvas import is now fully implemented — two separate flows, both one-way
+> (Canvas → Question Maker) and both proxied through EduAI Core (#1084), same as export. This document
+> describes what's actually there.
+
+## Two import flows
+
+Question Maker has two distinct Canvas-import surfaces, each backed by its own dialog and route:
+
+| Flow | UI | Route | Backend service |
+|---|---|---|---|
+| Import a **quiz** as a new assessment | `components/canvas/CanvasImportDialog.tsx` | `POST /api/canvas/import/:canvasCourseId/quizzes/:quizId` | `importQuizFromCanvas` in `services/canvasService.js` |
+| Sync a Classic **question bank** | `components/canvas/CanvasBankSyncDialog.tsx` | `POST /api/canvas/import/:canvasCourseId/banks/:canvasBankId` | `importQuestionBankFromCanvas` in `services/canvasService.js` |
+
+Both require: the caller to be INSTRUCTOR/UNIT_ADMIN/ADMIN with instructor-level access to the local
+course (`middleware/courseAccess.js`), a working Canvas connection (proxied through Core), and the
+local course to already be linked to a specific Canvas course
+(`GET /api/canvas/mapping/:courseId` — there is no course picker in either dialog; both import *into*
+the course you opened them from, *from* whatever Canvas course that course is mapped to). If there's
+no mapping yet, both dialogs tell you to sync the course from Canvas first and stop.
+
+## Flow 1 — Import a quiz
+
+1. Open a course, go to its **Canvas** tab (only shown once the course is linked to Canvas), and
+   click **"Import from Canvas"** — or trigger it from the Assessments tab / the assessment-variant
+   workflow's "OCR upload / Import from Canvas" step.
+2. Pick a quiz from the list (`GET /api/canvas/courses/:canvasCourseId/quizzes`, filtered to
+   `quiz_type === "assignment"` or `"graded_survey"`).
+3. Pick a **primary topic** — required; every imported question gets this one topic (there's no
+   per-question topic mapping on import).
+4. Confirm/edit the assessment name (prefilled from the quiz title) and type.
+5. Click **"Import from Canvas"**.
+
+What happens on the backend (`importQuizFromCanvas`):
+
+- Verifies the local course's Canvas mapping matches the requested `canvasCourseId`.
+- Fetches the quiz and its question list, then re-fetches each question **individually by id** (the
+  list endpoint often returns `answers: null`) — a permission-denied response on that per-question
+  fetch falls back to the list item rather than aborting the whole import.
+- Creates one new `Assessments` row, one `AssessmentSections` row ("Imported Questions"), and one
+  `QuestionMetadata` + `Variants` row per convertible question, linked into that section.
+- Converts each Canvas question type: `multiple_choice_question`/`true_false_question` → MCQ (choices
+  + correct letter reconstructed from Canvas's `answers` array, or parsed from `question_text` as a
+  fallback when Canvas returns no structured answers), `essay_question` → LA, `short_answer_question`/
+  `fill_in_multiple_blanks_question` → SA. Any other Canvas question type is **skipped**, not
+  imported — the response reports `questionsSkipped` and a `skippedQuestions` array with each one's
+  position/name/type/reason.
+- **If any question fails to persist partway through**, the entire import (assessment, section,
+  every question/variant already created) is rolled back and deleted — you never end up with a
+  half-imported assessment.
+- Records/updates the course's `CanvasCourseMapping` (first import establishes it if the course
+  arrived unmapped through some other path).
+
+## Flow 2 — Sync a Classic Canvas question bank
+
+1. Open a course and choose **"Sync question bank"** (from the Banks tab, or the Course Detail
+   "Sync from Canvas" action).
+2. Pick a Canvas Assessment Question Bank (`GET /api/canvas/courses/:canvasCourseId/banks`).
+3. Pick a **primary topic** and either an existing local bank or "Create bank from Canvas name".
+4. Click **"Sync bank"**.
+
+What happens on the backend (`importQuestionBankFromCanvas`):
+
+- One Canvas bank maps to at most one local course per instructor
+  (`CanvasBankMapping @@unique([userId, canvasBankId])`) — re-syncing the same bank into a different
+  course is rejected.
+- Lists every question in the bank (paginated, capped at 50 pages — a bank larger than that is
+  reported as `truncated: true` rather than silently dropping the tail).
+- For each Canvas assessment question: if it was synced before
+  (`CanvasBankQuestionMapping`, keyed by `(userId, canvasAssessmentQuestionId, localCourseId)`),
+  **updates** the existing local question/variant in place; otherwise **creates** a new one and
+  records the mapping. This is what makes a re-sync idempotent instead of duplicating questions.
+- Adds every synced question to the target local bank (`questionBankService.addQuestionsToBank`).
+- A question whose type can't be converted, or that errors while persisting, is counted in `skipped`
+  and logged — it does not fail the whole sync.
+- Response: `{ bankId, created, updated, skipped, truncated, lastSyncedAt }`.
+
+## What does **not** round-trip
+
+- **Section structure** is not preserved on quiz import — every imported question lands in one
+  "Imported Questions" section.
+- **Topics beyond the one primary topic** you pick, difficulty, and reasoning level are not read from
+  Canvas — they default (`difficulty: "medium"`) or are left for you to set afterward.
+- **Reference/variant relationships** and **blueprint config** have no Canvas equivalent.
+- Editing a question in Canvas after import/sync does not flow back automatically — a bank sync is
+  the one path that *can* pick up Canvas-side edits, by re-syncing; quiz import is one-shot.
+
+## Troubleshooting
+
+- **"This course is not linked to a Canvas course"** — sync/link the course from Canvas first; neither
+  dialog lets you pick a Canvas course ad hoc.
+- **Questions skipped** — check `skippedQuestions` (quiz import) or the `skipped` count (bank sync);
+  the reason is almost always a genuinely unsupported Canvas question type (matching, numerical, and
+  others outside `multiple_choice_question`/`true_false_question`/`essay_question`/
+  `short_answer_question`/`fill_in_multiple_blanks_question`). Note that `fill_in_multiple_blanks_question`
+  itself is *not* skipped — it's imported as a Short Answer question, but only the first blank's answer
+  text is kept; the multi-blank structure isn't reconstructed.
+- **"This Canvas question bank is already synced to another local course"** — a bank→course mapping
+  is per-instructor and permanent; sync into the original course, or ask an instructor who owns that
+  mapping.
+- **Import failed partway through** — for a quiz import this is safe to retry: the partial rows are
+  cleaned up automatically. If cleanup itself failed, the error explicitly says so and names what was
+  left behind.

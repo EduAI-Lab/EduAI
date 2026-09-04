@@ -13,6 +13,9 @@ readonly AI_TUTOR_ENV="/etc/eduai/eduai-aitutor.env"
 readonly AI_TUTOR_DB_ENV="/etc/eduai/aitutor-db.env"
 readonly AI_TUTOR_UNIT="/etc/systemd/system/eduai-aitutor-server.service"
 readonly AI_TUTOR_VHOST="/etc/apache2/sites-available/aitutor.eduai.ok.ubc.ca.conf"
+readonly QM_UNIT="/etc/systemd/system/eduai-qm-backend.service"
+readonly QM_ENV="/etc/eduai/eduai-qm.env"
+readonly QM_VHOST="/etc/apache2/sites-available/questionmaker.eduai.ok.ubc.ca.conf"
 readonly AI_TUTOR_DB_NAME="eduai-aitutor-db"
 readonly AI_TUTOR_DB_VOLUME="eduai-aitutor-db-data"
 readonly TEMPLATE_DIR="/etc/eduai/production-templates"
@@ -23,14 +26,108 @@ readonly AI_TUTOR_ENV_SOURCE="$TEMPLATE_DIR/eduai-aitutor.env"
 readonly AI_TUTOR_DB_ENV_SOURCE="$TEMPLATE_DIR/aitutor-db.env"
 readonly AI_TUTOR_UNIT_SOURCE="$TEMPLATE_DIR/eduai-aitutor-server.service"
 readonly AI_TUTOR_VHOST_SOURCE="$TEMPLATE_DIR/aitutor.eduai.ok.ubc.ca.conf"
+readonly QM_UNIT_SOURCE="$TEMPLATE_DIR/eduai-qm-backend.service"
+readonly QM_ENV_SOURCE="$TEMPLATE_DIR/eduai-qm.env"
+readonly QM_VHOST_SOURCE="$TEMPLATE_DIR/questionmaker.eduai.ok.ubc.ca.conf"
+readonly CRON_ENV="/etc/eduai/cron.env"
+readonly CRON_UNIT="/etc/systemd/system/eduai-cron-worker.service"
+readonly CRON_UNIT_SOURCE="$TEMPLATE_DIR/eduai-cron-worker.service"
+readonly CRON_SCRIPT_DIR="/opt/eduai/cron"
+readonly TARGET_ROOT="/srv/www/eduai-production"
+readonly WEB_USER="www-data"
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
+assert_no_symlink_components() {
+  local path="$1" current="$1"
+  while :; do
+    [ ! -L "$current" ] || die "refusing symlinked release path component: $current"
+    [ "$current" = "/" ] && break
+    current=$(dirname "$current")
+  done
+}
+assert_safe_release() {
+  local release="$1" resolved
+  case "$release" in
+    "$TARGET_ROOT/releases"/*) ;;
+    *) die "release path is outside the managed release tree: $release" ;;
+  esac
+  assert_no_symlink_components "$release"
+  resolved=$(readlink -f -- "$release") || die "cannot resolve release path: $release"
+  case "$resolved" in
+    "$TARGET_ROOT/releases"/*) ;;
+    *) die "resolved release path is outside the managed release tree: $resolved" ;;
+  esac
+  [ "$resolved" = "$release" ] || die "release path resolves unexpectedly: $release -> $resolved"
+}
 release_arg() {
   [ "$#" -eq 2 ] || die "$1 requires a release id"
   [[ "$2" =~ ^[0-9a-f]{8,64}$ ]] || die "invalid release id: $2"
-  local release="/srv/www/eduai-production/releases/$2"
+  local release="$TARGET_ROOT/releases/$2"
   [ -d "$release" ] || die "release does not exist: $release"
+  assert_safe_release "$release"
   printf '%s' "$release"
+}
+validate_release() {
+  local release="$1"
+  local required relative
+  assert_safe_release "$release"
+  required=(
+    "apps/core/build/server/index.js"
+    "apps/core/node_modules/@prisma/client/index.js"
+    "apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client/index.js"
+    "apps/extensions/ai-tutor/build/client/index.html"
+    "apps/extensions/question-maker/app/backend/node_modules/@eduai/question-maker-prisma-client/index.js"
+    "apps/extensions/question-maker/app/frontend/dist/index.html"
+  )
+  for relative in "${required[@]}"; do
+    assert_no_symlink_components "$release/$relative"
+    [ -f "$release/$relative" ] || die "release is incomplete; missing $release/$relative"
+  done
+}
+prepare_static_assets() {
+  local release="$1" static_root parent
+  command -v setfacl >/dev/null 2>&1 || die "setfacl is required to grant Apache access to release assets"
+  # Apache needs traversal on the path and read access under these two
+  # explicitly public build roots. Use a user ACL rather than world access:
+  # env files and backend source remain protected from unrelated users.
+  setfacl -m "u:$WEB_USER:x" "$TARGET_ROOT" "$TARGET_ROOT/releases"
+  for static_root in \
+    "$release/apps/extensions/ai-tutor/build/client" \
+    "$release/apps/extensions/question-maker/app/frontend/dist"; do
+    [ -d "$static_root" ] || die "static asset directory does not exist: $static_root"
+    assert_no_symlink_components "$static_root"
+    if find "$static_root" -type l -print -quit | grep -q .; then
+      die "refusing symlink inside public static tree: $static_root"
+    fi
+    parent="$static_root"
+    while [ "$parent" != "/" ]; do
+      setfacl -m "u:$WEB_USER:x" "$parent"
+      [ "$parent" = "$release" ] && break
+      parent=$(dirname "$parent")
+    done
+    setfacl -R -m "u:$WEB_USER:rX" "$static_root"
+  done
+}
+sync_cron_scripts() {
+  local release source script script_name
+  release=$(readlink -f -- "$TARGET_ROOT/current") || die "cannot resolve the active production release"
+  assert_safe_release "$release"
+  source="$release/infra/cron"
+  assert_no_symlink_components "$source"
+  [ -d "$source" ] || die "cron script directory does not exist in the active release: $source"
+  install -d -o eduai-cron -g eduai-cron -m 0750 "$CRON_SCRIPT_DIR"
+  for script_name in \
+    lib.sh \
+    backup-nightly.sh \
+    backup-offsite.sh \
+    backup-rotate.sh \
+    cleanup-invitations.sh \
+    notify-api-key-expiry.sh; do
+    script="$source/$script_name"
+    [ -f "$script" ] || die "required cron script is missing: $script"
+    [ ! -L "$script" ] || die "refusing symlinked cron script: $script"
+    install -o eduai-cron -g eduai-cron -m 0750 "$script" "$CRON_SCRIPT_DIR/$script_name"
+  done
 }
 read_env_value() {
   local file="$1" key="$2" line value
@@ -125,6 +222,44 @@ case "${1:-}" in
     apache2ctl configtest
     echo "Installed and validated $AI_TUTOR_VHOST"
     ;;
+  install-qm-unit)
+    no_extra_args "$@"
+    [ -f "$QM_UNIT_SOURCE" ] || die "Question Maker unit source does not exist: $QM_UNIT_SOURCE"
+    install -o root -g root -m 0644 "$QM_UNIT_SOURCE" "$QM_UNIT"
+    systemctl daemon-reload
+    echo "Installed $QM_UNIT"
+    ;;
+  install-qm-env)
+    no_extra_args "$@"
+    [ -f "$QM_ENV_SOURCE" ] || die "Question Maker environment source does not exist: $QM_ENV_SOURCE"
+    grep -q '^NODE_ENV=production$' "$QM_ENV_SOURCE" || die "Question Maker environment must set NODE_ENV=production"
+    grep -Eq '^DATABASE_URL=.+$' "$QM_ENV_SOURCE" || die "Question Maker environment is missing DATABASE_URL"
+    grep -Eq '^EDUAI_API_KEY=.+$' "$QM_ENV_SOURCE" || die "Question Maker environment is missing EDUAI_API_KEY"
+    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$QM_ENV_SOURCE" && die "Question Maker environment still contains placeholders"
+    install -o root -g eduai -m 0640 "$QM_ENV_SOURCE" "$QM_ENV"
+    echo "Installed $QM_ENV"
+    ;;
+  install-qm-apache)
+    no_extra_args "$@"
+    [ -f "$QM_VHOST_SOURCE" ] || die "Question Maker Apache source does not exist: $QM_VHOST_SOURCE"
+    install -o root -g root -m 0644 "$QM_VHOST_SOURCE" "$QM_VHOST"
+    a2enmod headers proxy proxy_http ssl >/dev/null
+    a2ensite questionmaker.eduai.ok.ubc.ca.conf >/dev/null
+    apache2ctl configtest
+    echo "Installed and validated $QM_VHOST"
+    ;;
+  install-cron-worker)
+    no_extra_args "$@"
+    [ -f "$CRON_UNIT_SOURCE" ] || die "cron worker unit source does not exist: $CRON_UNIT_SOURCE"
+    getent passwd eduai-cron >/dev/null || die "user eduai-cron does not exist"
+    getent group eduai >/dev/null || die "group eduai does not exist"
+    [ -r "$CORE_ENV" ] || die "missing or unreadable $CORE_ENV"
+    [ -r "$CRON_ENV" ] || die "missing or unreadable $CRON_ENV"
+    sync_cron_scripts
+    install -o root -g root -m 0644 "$CRON_UNIT_SOURCE" "$CRON_UNIT"
+    systemctl daemon-reload
+    echo "Installed $CRON_UNIT and synchronized cron scripts"
+    ;;
   aitutor-db-install)
     no_extra_args "$@"
     [ -r "$AI_TUTOR_DB_ENV" ] || die "missing $AI_TUTOR_DB_ENV"
@@ -206,13 +341,24 @@ case "${1:-}" in
     ;;
   activate-release)
     release=$(release_arg "$@")
-    ln -sfn "$release" /srv/www/eduai-production/current
+    validate_release "$release"
+    prepare_static_assets "$release"
+    ln -sfn "$release" "$TARGET_ROOT/current"
     echo "Activated $release"
+    ;;
+  validate-release)
+    release=$(release_arg "$@")
+    validate_release "$release"
+    echo "Release is complete: $release"
     ;;
   enable-aitutor) no_extra_args "$@"; systemctl enable eduai-aitutor-server ;;
   restart-aitutor) no_extra_args "$@"; systemctl restart eduai-aitutor-server; systemctl --no-pager --full status eduai-aitutor-server ;;
+  enable-qm) no_extra_args "$@"; systemctl enable eduai-qm-backend ;;
+  restart-qm) no_extra_args "$@"; systemctl restart eduai-qm-backend; systemctl --no-pager --full status eduai-qm-backend ;;
+  enable-cron-worker) no_extra_args "$@"; systemctl enable eduai-cron-worker ;;
+  restart-cron-worker) no_extra_args "$@"; systemctl restart eduai-cron-worker; systemctl --no-pager --full status eduai-cron-worker ;;
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, aitutor-db-install, provision-aitutor, activate-release, enable-aitutor, restart-aitutor, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, install-cron-worker, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-cron-worker, restart-cron-worker, enable-core, restart-core, reload-apache" ;;
 esac

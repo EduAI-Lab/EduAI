@@ -106,6 +106,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`operations/PRODUCTION_DEPLOYMENT_PLAN.md`](docs/operations/PRODUCTION_DEPLOYMENT_PLAN.md) | Production scope, host inventory, phased rollout, and the running deployment change log |
 | [`operations/DISCORD_DEV_BOT.md`](docs/operations/DISCORD_DEV_BOT.md) | `/dev-status` and `/dev-branch` bot for the shared dev server — setup, allowlisting, safety behaviour |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |

@@ -24,10 +24,12 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 - **Auth**: session cookie validated against EduAI Core (no local passwords/JWTs issued by this service)
 - **AI**: EduAI's hosted chat/generation API, with direct Groq/OpenAI/DeepSeek as optional fallbacks
 - **File upload**: none — OCR runs client-side in the frontend; the backend receives the already-extracted text
-- **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys,
-  and SSRF-safe Canvas networking. Canvas bases are canonical HTTPS origins (explicit HTTPS ports are
-  supported); IP literals and every DNS answer must be globally routable, DNS is pinned per request,
-  redirects are revalidated, and bearer credentials are removed before any cross-origin redirect.
+- **Security**: Helmet, CORS, rate limiting, and SSRF-safe Canvas networking. Canvas bases are
+  canonical HTTPS origins (explicit HTTPS ports are supported); IP literals and every DNS answer must
+  be globally routable, DNS is pinned per request, redirects are revalidated, and bearer credentials
+  are removed before any cross-origin redirect. (Canvas credentials are stored and encrypted in Core,
+  not here, since #1084 — see "Database Schema" below; `utils/encryption.js`'s AES-256-GCM is dead
+  code in production, kept only for its own unit test.)
 
 ## Project Structure
 
@@ -42,17 +44,29 @@ src/
 │   ├── auth.js               # Core session validation (requireAuth/authenticateToken), role gates
 │   ├── courseAccess.js        # Per-course access from Core enrollment/unit-admin (fail closed; #1114)
 │   ├── resourceAccess.js       # Ownership guards for variant/question/assessment routes
+│   ├── aiAdmission.js          # Caller-keyed AI rate limit + provider-call/deadline budgets for every AI route
+│   ├── csrfOrigin.js            # Origin/Referer/Sec-Fetch-Site guard for cookie-authenticated unsafe methods
+│   ├── canvasRequestContext.js  # AsyncLocalStorage: cancels in-flight Canvas→Core calls on client disconnect
 │   ├── errorHandler.js        # Maps Prisma error codes + generic errors to HTTP responses
 │   ├── roles.js                # Role/level rank helpers
 │   └── serviceAuth.js           # Service-key auth for Core → QM internal routes
 ├── routes/                  # course, questions, variants, assessments, assessmentVariant,
 │                             # eduai, canvas, topics, auth, bug-reports, internal
-├── services/                 # Business logic — one service per domain (questionService,
-│                              # assessmentService, canvasService, coreWiringService,
-│                              # ensureCourseAnchor (locked create shared by POST/import/ADMIN list), etc.)
+├── services/                 # Business logic — one service per domain: questionService/questionMutationFence
+│                              # (advisory-lock fence around every question mutation), assessmentService,
+│                              # assessmentSectionService, assessmentVariantService (variant workflow assembly),
+│                              # canvasService (proxies Canvas LMS via Core), coreApiService (thin Core HTTP client),
+│                              # coreWiringService (pushes an approved variant to Core as a Question),
+│                              # variant-publish.js / variant-push-gate.js (publish-to-Core orchestration),
+│                              # courseListService (RBAC-scoped course listing + Core read-through),
+│                              # ensureCourseAnchor (locked create shared by POST/import/ADMIN list),
+│                              # questionBankService (Core-backed question banks), modelCatalog, eduaiService, etc.
 ├── jobs/
 │   └── reconcile.js          # Daily cron: cleans up stale Core references (course/topic/question)
-└── utils/                    # encryption, Canvas URL SSRF guard, logger, model-size ranks
+└── utils/                    # encryption, logger (Pino), safeLogging (allowlisted upstream-error fields),
+                               # pagination.js / listPagination.js (the two list-response contracts),
+                               # questionApproval, questionListQuery, questionOrder, assessmentType,
+                               # modelSizeRanks, truncateAllTables (test/seed reset)
 
 prisma/
 ├── schema.prisma            # Source of truth for the data model
@@ -172,11 +186,12 @@ Full reference with comments: `apps/extensions/question-maker/.env.example`. Key
 | Variable | Description | Required |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `HOST` | HTTP bind address; production host units set `127.0.0.1` so Apache is the public entrypoint | No (`0.0.0.0`) |
 | `CORE_URL` | Base URL of EduAI Core (session validation, course/enrollment reads) | Yes |
 | `CORE_AUTH_TIMEOUT_MS` | Deadline in milliseconds for Core session-validation and logout calls (default `5000`) | No |
 | `EXTENSION_URL` | This service's public URL (post-Core-login redirect target) | Yes |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins | Yes |
-| `ENCRYPTION_KEY` | 32-byte hex key for encrypting stored Canvas API keys | Yes in production |
+| `ENCRYPTION_KEY` | 32-byte hex key; QM stores no Canvas API keys anymore (Core does, #1084) — `config/settings.js` still throws at startup in production if it's unset, and it's read (via the `QM_ENCRYPTION_KEY` fallback) by the one-time `migrate-canvas-integrations-to-core.mjs` copier's own crypto helper, not by `utils/encryption.js` | Yes in production |
 | `EDUAI_API_URL` / `EDUAI_API_KEY` | Core/EduAI service integration; `EDUAI_API_KEY` must match Core for session validation | `EDUAI_API_KEY`: Yes; URL: Yes for AI features |
 | `GROQ_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | Direct provider fallbacks for question generation | No |
 | `TEST_DATABASE_URL` | Postgres URL for the integration test suite | Only for `npm run test:integration` |

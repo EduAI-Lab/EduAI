@@ -1,130 +1,117 @@
-# Test plan — Question Maker (EduQuery)
+# Test plan — Question Maker
 
-This document maps product features to automated tests, defines layers and priorities, and points maintainers to the right files. It pairs with [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md).
+This document maps the test suite's layers, tooling, and layout to the codebase. It pairs with
+[DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md). It intentionally does not enumerate every test file —
+that list is large (150+ files) and drifts fast; use the directory layout and naming conventions
+below plus `grep`/your editor to find the test for a given piece of code.
 
 ## 1. Goals
 
 | Goal | Success criteria |
 |------|------------------|
-| Regression safety | Changes to auth, questions, assessments, Canvas, EduAI, and the assessment variant workflow are covered by tests that run in CI. |
-| Handover | New owners can see *which* feature maps to *which* tests and where to add cases. |
-| Test pyramid | Prefer **unit** tests on pure logic, **integration** tests on HTTP + DB for critical paths; **E2E** only if Playwright/Cypress is added later. |
-| **Plan closure** | Every feature ID in §5 has a **Status** and at least one linked test file; optional DB integration is clearly labeled. |
+| Regression safety | Changes to RBAC, questions/variants, assessments, the variant workflow, Canvas, and EduAI are covered by tests that run in CI. |
+| Handover | New owners can tell which *kind* of test to write for a given change, and where it lives. |
+| Test pyramid | Prefer **unit** tests on pure logic, **integration** tests on HTTP + real Postgres for anything RBAC/DB-shaped; PICT tests for route/permission combinations too large to enumerate by hand. |
 
 ## 2. Tooling
 
 | Area | Command | Config |
 |------|---------|--------|
-| Backend | `cd app/backend && npm test` | Vitest — [vitest.config.js](../app/backend/vitest.config.js) |
-| Backend coverage | `npm run test:coverage` | Same |
-| Frontend | `cd app/frontend && npm test` | `npm run test:unit` runs [src/tests/unit](../app/frontend/src/tests/unit); `npm run test:integration` runs [src/tests/integration](../app/frontend/src/tests/integration); `npm test` runs both. [vite.config.ts](../app/frontend/vite.config.ts) uses `jsdom` + [vitest.setup.ts](../app/frontend/src/tests/vitest.setup.ts). |
-| Test env | `app/backend/tests/setup.js` | Loads root `.env` (optional); if `TEST_DATABASE_URL` is set, it becomes `DATABASE_URL`. If still unset (e.g. GitHub Actions with no file), a **local stub** `postgresql://vitest:vitest@127.0.0.1:5432/vitest_unit_stub` is set so imports succeed — unit tests do not need a real server. You can also set `DATABASE_URL` in the workflow env. `JWT_SECRET` / `ENCRYPTION_KEY` get defaults if missing. |
-| DB integration | `cd app/backend && npm run test:integration` | [vitest.integration.config.js](../app/backend/vitest.integration.config.js) — only `*.integration.test.js`, `singleFork: true` to avoid clobbering a shared test DB. |
-| Full backend | `npm run test:all` | Unit suite then integration suite. |
+| Backend unit | `cd app/backend && npm run test:unit` (or `npm test` for unit+integration) | Vitest — [vitest.config.js](../app/backend/vitest.config.js). `tests/**/*.test.js`, excluding `*.integration.test.js`. |
+| Backend integration | `cd app/backend && npm run test:integration` | [vitest.integration.config.js](../app/backend/vitest.integration.config.js) — only `*.integration.test.js`; `globalSetup` syncs the Prisma schema once up front so parallel files don't race table creation; needs `TEST_DATABASE_URL`. |
+| Backend coverage | `npm run test:coverage` | [vitest.coverage.config.js](../app/backend/vitest.coverage.config.js) |
+| Frontend unit | `cd app/frontend && npm run test:unit` | [vitest.unit.config.ts](../app/frontend/vitest.unit.config.ts) — `jsdom`; includes `src/tests/unit/**` **and** co-located `src/components/**/*.test.tsx` / `src/pages/**/*.test.tsx`. |
+| Frontend integration | `cd app/frontend && npm run test:integration` | [vitest.integration.config.ts](../app/frontend/vitest.integration.config.ts) — `node` environment, targets `src/tests/integration/**`; currently empty (`passWithNoTests: true`) — this suite is scaffolded but unused today. |
+| Frontend, both | `npm test` (runs unit then integration) | |
+| Test env (backend) | `app/backend/tests/setup.js` | Loads the root `.env` if present; `TEST_DATABASE_URL` (if set) becomes `DATABASE_URL` for the run. Pino is silenced (`LOG_LEVEL=silent`) unless overridden. |
 
-**PostgreSQL is required** for `test:integration`. In project root `.env` add, for example:
+**PostgreSQL is required** for backend `test:integration`. Set, e.g.:
 
-`TEST_DATABASE_URL=postgresql://USER:PASS@localhost:5432/eduquery_test`
+```
+TEST_DATABASE_URL=postgresql://USER:PASS@localhost:5432/eduquery_test
+```
 
-Create the empty database once (`CREATE DATABASE eduquery_test;`). The app will `sync` the schema on connect. **Never** point `TEST_DATABASE_URL` at production data — each run uses `TRUNCATE users ... CASCADE` between cases.
+Create the database once; Prisma applies the schema via the integration suite's `globalSetup`
+(`tests/globalSetup.js`) using the committed migrations, not `db push`. **Never** point
+`TEST_DATABASE_URL` at production data — [`tests/helpers/testDb.js`](../app/backend/tests/helpers/testDb.js)
+truncates every table between test files (`utils/truncateAllTables.js`, which spares
+`_prisma_migrations` so Prisma doesn't lose its migration history).
 
-## 3. Current baseline (inventory)
+## 3. Layout and conventions
 
-### Backend — unit (Vitest, no real DB)
+### Backend (`app/backend/tests/`)
 
-- [extraction.test.js](../app/backend/tests/extraction.test.js) — `extractionUtils` (question blocks, chunking, dedupe).
-- [health.test.js](../app/backend/tests/health.test.js) — public HTTP surface (`/`, `/healthz`, 404).
-- [encryption.test.js](../app/backend/tests/encryption.test.js) — Canvas API key encrypt/decrypt.
-- [authService.test.js](../app/backend/tests/authService.test.js) — JWT `verifyToken` (A1).
-- [assessmentVariantMetadataScoring.test.js](../app/backend/tests/assessmentVariantMetadataScoring.test.js) — `scoreMetadataMatch`.
-- [assessmentVariantAuth.test.js](../app/backend/tests/assessmentVariantAuth.test.js) — `401` on `/api/assessment-variant` without a token.
-- [eduaiAuth.test.js](../app/backend/tests/eduaiAuth.test.js) — EduAI routes `401` without a token.
-- [canvasExport.test.js](../app/backend/tests/canvasExport.test.js) — `convertVariantToCanvasQuestion` / `parseMCQOptions`.
-- [canvasExportMocked.test.js](../app/backend/tests/canvasExportMocked.test.js) — `exportAssessmentToCanvas` with mocked axios/DB.
-- [aiExtract.test.js](../app/backend/tests/aiExtract.test.js) — `extractQuestionsFromText` empty input.
-- [aiExtractEduaiMocked.test.js](../app/backend/tests/aiExtractEduaiMocked.test.js) — `extractQuestionsFromText` with mocked EduAI + `Course`/`Topics`.
-- [questionsAuth.test.js](../app/backend/tests/questionsAuth.test.js) — `401` on core `/api/questions` and extract routes.
-- [assessmentsAuth.test.js](../app/backend/tests/assessmentsAuth.test.js) — `401` on `/api/assessments`.
-- [courseAuth.test.js](../app/backend/tests/courseAuth.test.js) — `401` on `/api/course`.
-- [canvasAuth.test.js](../app/backend/tests/canvasAuth.test.js) — `401` on Canvas routes.
+- **`unit/`** — no real DB; pure functions and mocked-collaborator service/route tests (extraction
+  chunking/dedupe, MCQ correctness normalization, pagination parsing, RBAC rank helpers, Canvas
+  question conversion, `401`-without-a-session-cookie route smoke tests, etc.).
+- **`integration/`** — real Postgres via `TEST_DATABASE_URL`; route + service + Prisma round-trips
+  (course/topic CRUD, question/variant lifecycle including the §16/§19 draft-lock and TA-own-only
+  rules, assessment section/reorder, the assessment-variant assembly/readiness/AI-review endpoints,
+  Canvas mapping guards, the internal cascade-delete route, seed-migration/practice-exam-upgrade
+  behavior).
+- **`*.pict.test.js` / `*.pict.integration.test.js`** — combinatorial/pairwise coverage generated
+  from a small parameter model (`tests/helpers/pictModel.js`) rather than hand-enumerated cases, run
+  through shared route-mocking/execution helpers (`tests/helpers/pictRouteMocks.js`,
+  `tests/helpers/pictRouteRunner.js`). Used where the number of meaningful role × access-level ×
+  request-shape combinations is too large to write out by hand (RBAC gates, cross-extension push
+  gating).
+- **`tests/helpers/`** — `testDb.js` (connect + truncate), `testEnv.js`, `prismaCli.js` (drives
+  `prisma` CLI commands for the migration/baseline integration tests), `seedCoursesFixture.js`,
+  `teachingInstructorFetch.js` (a fetch double for Core enrollment lookups), the PICT helpers above.
+- **Express split**: `src/app.js` exports the Express app for `supertest` without binding a port;
+  `src/index.js` only starts listening and connects the database. Route tests import `app.js`.
 
-**Express split:** [app.js](../app/backend/src/app.js) exports the app for supertest; [index.js](../app/backend/src/index.js) only listens and connects the DB.
+### Frontend (`app/frontend/src/`)
 
-### Backend — integration (Vitest, `TEST_DATABASE_URL` required)
-
-Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js) — connect + `TRUNCATE`.
-
-- [auth.integration.test.js](../app/backend/tests/auth.integration.test.js) — register validation, register/login/GET /me, duplicate email, wrong password, **unknown user login** (A2–A4).
-- [questionAssessments.integration.test.js](../app/backend/tests/questionAssessments.integration.test.js) — create/list questions, create/fetch assessment, `POST /api/course`, validation errors, add/list variants, empty variant `400` (C1, C2, F2 in part).
-- [questionsExtractValidation.integration.test.js](../app/backend/tests/questionsExtractValidation.integration.test.js) — extract and extract/save `400` validation (D4).
-- [eduaiHttpValidation.integration.test.js](../app/backend/tests/eduaiHttpValidation.integration.test.js) — EduAI `400` for missing `messages` / `courseCode` / `prompt` (E1).
-- [assessmentVariantHttp.integration.test.js](../app/backend/tests/assessmentVariantHttp.integration.test.js) — assessment-variant `400` bodies (H2).
-- [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) — **cross-user** `GET /api/course/:id` → `404` (B1); **POST extract/save** success (D3); **POST assemble-variants** for Practice Exam with one label (H3).
-
-### Frontend — unit (Vitest + Testing Library)
-
-- [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx) — login/register, errors, loading, redirect (J2).
-
-### Frontend — integration (Vitest + local HTTP stub)
-
-- [api.test.ts](../app/frontend/src/tests/integration/api.test.ts) — axios `Authorization` + `401` handling (J1).
+- **`tests/unit/`** — the majority of component/hook/page tests.
+- **Co-located `*.test.tsx`** next to a handful of components/pages (both patterns are picked up by
+  the same `test:unit` run — see the config `include` list above).
+- **`tests/integration/`** — scaffolded (config + `passWithNoTests: true`) but currently empty.
+- **`tests/vitest.setup.ts`** — shared setup (Testing Library matchers, etc.) for both configs.
 
 ## 4. Test layers
 
-1. **Unit (no DB):** `extractionUtils`, `encryption`, `assessmentVariantMetadataScoring`, Canvas MCQ helpers, `extractQuestionsFromText` with mocks, `exportAssessmentToCanvas` with mocks.
-2. **Service + DB:** Exercised via integration tests (`saveExtractedQuestions`, `assembleEquivalentExamVariants` paths, seeded courses/assessments).
-3. **HTTP (supertest):** Authed and unauthed routes; no real EduAI/Canvas in CI (mocks for unit; validation routes hit code before upstream).
-4. **Frontend (Vitest + Testing Library):** unit suite [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx); integration suite [api.test.ts](../app/frontend/src/tests/integration/api.test.ts).
+1. **Unit (no DB):** pure helpers (`extractionUtils`, `mcqCorrectness`, pagination parsing,
+   `courseAccess` rank math, Canvas MCQ/answer conversion), and service/route logic exercised with
+   mocked Prisma/Core/EduAI collaborators.
+2. **Service + DB (integration):** real Prisma against `TEST_DATABASE_URL` — question/variant
+   mutation-fence behavior, assessment-variant assembly transactions, Canvas mapping guards, course
+   auto-import/anchor locking, reconciliation.
+3. **HTTP (supertest):** authenticated and unauthenticated routes, RBAC gates per rbac-matrix.md
+   section, validation `400`s, admission-control `429`/`504`s.
+4. **PICT (combinatorial):** role × course-access-level × request-shape matrices for the routes where
+   hand-written cases would either miss combinations or become unmaintainable.
+5. **Frontend (Vitest + Testing Library):** component/hook/page unit tests; no browser E2E suite yet
+   (Playwright/Cypress is tracked as future work, see [FUTURE_WORK.md](FUTURE_WORK.md)).
 
-**Do not** call real EduAI or Canvas in automated suites except local/manual runs; use fixtures and mocks for CI.
+**Do not** call real EduAI or Canvas in automated suites; fixtures/mocks stand in for both in CI. The
+one exception is the manual/local `npm run test:ocr` script
+(`app/backend/scripts/testOcrExtraction.js`), which reads local, untracked PDF/text fixtures from
+`app/backend/test/ocr_tests/` (or a path given as an argument) to sanity-check block detection on real
+assignment files — see [features/ocr/OCR_EXTRACTION_INVESTIGATION.md](features/ocr/OCR_EXTRACTION_INVESTIGATION.md).
 
-## 5. Feature coverage matrix (IDs → status)
+## 5. Where to add a test for a new route or service
 
-| ID | Area | Status | Where covered |
-|----|------|--------|---------------|
-| A1 | Auth unit (`verifyToken`) | Done | [authService.test.js](../app/backend/tests/authService.test.js) |
-| A2 | Register / validation / duplicate | Done | [auth.integration.test.js](../app/backend/tests/auth.integration.test.js) |
-| A3 | Login success / **wrong** password / **unknown** user | Done | [auth.integration.test.js](../app/backend/tests/auth.integration.test.js) |
-| A4 | GET /me 200 vs 401 | Done | [auth.integration.test.js](../app/backend/tests/auth.integration.test.js) |
-| B1 | Course scoped to `userId` (other user → not found) | Done | [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
-| B2 | Course `401` without token | Done | [courseAuth.test.js](../app/backend/tests/courseAuth.test.js) |
-| C1 | Question create + list | Done | [questionAssessments.integration.test.js](../app/backend/tests/questionAssessments.integration.test.js) |
-| C2 | Question `401`; variants + list | Done | [questionsAuth.test.js](../app/backend/tests/questionsAuth.test.js), [questionAssessments.integration.test.js](../app/backend/tests/questionAssessments.integration.test.js) |
-| D1 | Extraction utils | Done | [extraction.test.js](../app/backend/tests/extraction.test.js) |
-| D2 | `extractQuestionsFromText` | Done | [aiExtract.test.js](../app/backend/tests/aiExtract.test.js), [aiExtractEduaiMocked.test.js](../app/backend/tests/aiExtractEduaiMocked.test.js) |
-| D3 | `saveExtractedQuestions` via HTTP | Done | [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
-| D4 | Extract / extract/save `400` | Done | [questionsExtractValidation.integration.test.js](../app/backend/tests/questionsExtractValidation.integration.test.js) |
-| E1 | EduAI `401` + `400` validation | Done | [eduaiAuth.test.js](../app/backend/tests/eduaiAuth.test.js), [eduaiHttpValidation.integration.test.js](../app/backend/tests/eduaiHttpValidation.integration.test.js) |
-| F1 | Assessment DB shape (sections, links) | Partial | `assemble-variants` + [questionAssessments.integration.test.js](../app/backend/tests/questionAssessments.integration.test.js) (no dedicated **reorder** test) |
-| F2 | Create assessment, attach variant to seeded Practice Exam | Done | [questionAssessments.integration.test.js](../app/backend/tests/questionAssessments.integration.test.js), [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
-| F3 | Assessments `401` | Done | [assessmentsAuth.test.js](../app/backend/tests/assessmentsAuth.test.js) |
-| G1 | Encryption | Done | [encryption.test.js](../app/backend/tests/encryption.test.js) |
-| G2 | Canvas question payload helpers | Done | [canvasExport.test.js](../app/backend/tests/canvasExport.test.js) |
-| G3 | Export flow mocked | Done | [canvasExportMocked.test.js](../app/backend/tests/canvasExportMocked.test.js) |
-| G4 | Canvas `401` | Done | [canvasAuth.test.js](../app/backend/tests/canvasAuth.test.js) |
-| H1 | `scoreMetadataMatch` | Done | [assessmentVariantMetadataScoring.test.js](../app/backend/tests/assessmentVariantMetadataScoring.test.js) |
-| H2 | Assessment-variant `400` | Done | [assessmentVariantHttp.integration.test.js](../app/backend/tests/assessmentVariantHttp.integration.test.js) |
-| H3 | `assembleEquivalentExamVariants` (single exam label) | Done | [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
-| I1 | Health / root | Done | [health.test.js](../app/backend/tests/health.test.js) |
-| I2 | 404 JSON | Done | [health.test.js](../app/backend/tests/health.test.js) |
-| J1 | Frontend `api` client | Done | [api.test.ts](../app/frontend/src/tests/integration/api.test.ts) |
-| J2 | `LoginPage` | Done | [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx) |
+1. **Unit** — if the new logic is a pure function (validation, formatting, scoring), give it its own
+   unit test with mocked collaborators.
+2. **Integration** — every new mutating route should get: a `401` (no session cookie) case, the RBAC
+   boundary (`403` for a role/access-level that shouldn't reach it, success for one that should), a
+   validation `400` for a malformed body, and one real happy-path round-trip against Postgres.
+3. **PICT** — only reach for this when the route's authorization surface has more role × access
+   combinations than are practical to hand-write (see the existing `*.pict.*` files for the pattern);
+   don't default to it for a simple two-role gate.
+4. Record the new coverage in this file only if it changes the *shape* of the suite (a new layer, a
+   new fixture pattern) — day-to-day test additions don't need an entry here.
 
-**Intentional gaps (future work):** F1 “reorder” endpoints; E2E (Playwright/Cypress); full EduAI/Canvas E2E against sandboxes. Add new rows here when you add tests.
+## 6. Handover checklist
 
-## 6. Suggested order for *new* tests
-
-1. F1 — section reorder or blueprint edge cases (integration).  
-2. E2E — critical smoke on staging.  
-3. Any new route — mirror with `401` + validation `400` + one happy path.
-
-## 7. Handover checklist
-
-- [x] **CI** ([feature-ci.yml](../.github/workflows/feature-ci.yml)) runs `npm test` in `app/backend` and `app/frontend` on feature branches and PRs to `dev`.  
-- [ ] **Integration in CI** — set `TEST_DATABASE_URL` and run `cd app/backend && npm run test:integration` in a job with Postgres (e.g. `services: postgres`) when you want DB tests on every PR. Local: `TEST_DATABASE_URL=... npm run test:all`.  
-- [x] **No production secrets in repo** — use root `.env` (gitignored) or CI secrets; [test setup](../app/backend/tests/setup.js) uses stubs when env is missing.  
-- [x] **Frontend tests are non-interactive** — `npm test` runs the unit and integration Vitest suites; use `npm run test:watch` during development.  
-
----
-
-*Last updated: feature coverage matrix completed; [feature-ci.yml](../.github/workflows/feature-ci.yml) and Vitest `run` mode reflected.*
+- [x] **CI** runs the backend and frontend `npm test` on feature branches and PRs into `development`
+      (see the workflow files under the monorepo's `.github/workflows/`, and
+      [features/CI-CD.md](features/CI-CD.md) for this extension's pipeline notes).
+- [ ] **Integration in CI** — confirm `TEST_DATABASE_URL` is set with a live Postgres service in
+      whichever job is expected to run `cd app/backend && npm run test:integration`; without it the
+      integration suite is skipped locally (`globalSetup` no-ops).
+- [x] **No production secrets in the repo** — use the root `.env` (gitignored) or CI secrets;
+      `tests/setup.js` tolerates a missing `.env`.
+- [x] **Frontend tests are non-interactive** — `npm test` runs both Vitest suites in `run` mode; use
+      `npm run test:watch` during development.

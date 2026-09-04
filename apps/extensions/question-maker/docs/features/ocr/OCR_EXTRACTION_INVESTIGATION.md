@@ -1,5 +1,13 @@
 # OCR Extraction Investigation — Java PriorityQueue Assignment
 
+> **Status: implemented and verified against the current code.** The extraction-specific system
+> prompt override, broadened block detection (Part/Task/Exercise/Section), and the OCR-history
+> completion callback described below all exist in `app/backend/src/services/aiService.js`,
+> `app/backend/src/services/extractionUtils.js`, and `app/frontend/src/pages/CourseDetailPage.tsx`
+> today. The one path-name change since this was written: the extraction flow moved from the retired
+> `Homepage.tsx` to `CourseDetailPage.tsx` when the app became course-centric — the logic itself
+> (`handleExtractInBackground`, threading `jobId` + `onExtractionComplete`) is unchanged.
+
 **Context:** User ran OCR on `COSC 121 - Java_PriorityQueue_Bank_Client_Assignment.pdf` multiple times. Results: (1) sometimes extracted questions were not the actual assignment questions but AI-generated variants (e.g. MCQs about time complexity); (2) sometimes the AI returned “no explicit exam-style question blocks” and the toast showed the error, but the OCR history entry stayed “Processing” instead of “Failed”.
 
 **Scope:** Investigate before implementation. This doc summarizes root causes and recommended fixes.
@@ -71,7 +79,7 @@ The system prompt dominates the framing (“generate … based on course materia
 ### Where it’s implemented
 
 - **Dialog:** `app/frontend/src/components/question-bank/QuestionUploadDialog.tsx` — `processFile` creates the job, sets `processing`, calls `onExtractInBackground` **without jobId**.
-- **Homepage:** `app/frontend/src/pages/Homepage.tsx` — `handleExtractInBackground` has no `jobId` and does not use `useOCRHistory`, so it cannot update the job.
+- **Homepage:** `app/frontend/src/pages/CourseDetailPage.tsx (formerly Homepage.tsx)` — `handleExtractInBackground` has no `jobId` and does not use `useOCRHistory`, so it cannot update the job.
 
 ### Recommended fix
 
@@ -100,6 +108,7 @@ The system prompt dominates the framing (“generate … based on course materia
 
 - Extraction flow: `app/backend/src/services/aiService.js` → `extractQuestionsWithEduAI` (builds prompt, calls `eduaiService.generateQuestions`).
 - EduAI generator: `app/backend/src/services/eduaiService.js` → `generateQuestions` (fixed system prompt, error object handling at ~293–296).
-- Background extraction: `QuestionUploadDialog.tsx` → `processFile`, `onExtractInBackground`; `Homepage.tsx` → `handleExtractInBackground`.
+- Background extraction: `QuestionUploadDialog.tsx` → `processFile`, `onExtractInBackground`; `CourseDetailPage.tsx (formerly Homepage.tsx)` → `handleExtractInBackground`.
 - OCR history: `app/frontend/src/hooks/use-ocr-history.ts`, `app/frontend/src/types/ocr.ts` (status: `pending` | `processing` | `success` | `error` | `discarded`).
-- OCR improvement plan: `docs/troubleshooting/OCR_IMPROVEMENT_PLAN.md`.
+- OCR improvement plan: [`OCR_IMPROVEMENT_PLAN.md`](OCR_IMPROVEMENT_PLAN.md) (same directory —
+  `docs/features/ocr/OCR_IMPROVEMENT_PLAN.md`, not `docs/troubleshooting/`).

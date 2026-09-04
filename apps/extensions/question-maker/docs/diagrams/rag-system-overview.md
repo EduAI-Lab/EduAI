@@ -1,5 +1,13 @@
 # Retrieval-Augmented Generation (RAG) System: High-Level Overview
 
+> **Scope note:** RAG retrieval/embedding/vector-index code lives in EduAI Core, not in this
+> extension — nothing in `apps/extensions/question-maker/` implements retrieval. What is verified
+> from this codebase: Question Maker's backend (`app/backend/src/services/eduaiService.js`) sends
+> `courseId`/`courseCode` on every chat/generation call to Core's `POST /api/completion` and lets Core
+> decide what (if anything) to retrieve; QM never touches embeddings or a vector store itself. Treat
+> the rest of this document as background on how Core is understood to work, not as a description of
+> code in this repository.
+
 ## System Purpose
 
 This system implements Retrieval-Augmented Generation (RAG) to ground AI responses in course-specific materials. By retrieving relevant context from course documents stored in a vector database, the system minimizes hallucinations and ensures AI-generated content aligns with actual course materials.

@@ -71,20 +71,23 @@ endpoint serves it.
 - [ ] Confirm the standard small tier is `qwen3.5-2b-instruct`.
 - [ ] Confirm the standard large tier is `qwen3.5-9b-instruct` only on hosts that
       actually advertise it.
-- [ ] Treat `qwen2.5-32b-instruct` on CMPS02 as the separate Assist Auto model,
+- [ ] Treat `qwen3.8-27b-instruct` on CMPS02 as the separate Assist Auto model,
       not as the standard large tier.
-- [ ] Keep the planned `qwen3.8-27b` capability disabled until it is deployed,
-      advertised, load-tested, and assigned an owner.
-- [ ] Do not enable CMPS03 in an approved production fleet while its authenticated
-      edge returns `no_db_connection`; direct backend responses do not clear the
-      edge failure.
+- [ ] Confirm CMPS03 advertises `qwen3.5-2b-instruct` and
+      `qwen3.5-9b-instruct` through its authenticated edge before enabling it in
+      the production fleet.
+- [ ] If an edge returns `no_db_connection` / `No connected db.`, first verify
+      that the proxy's LiteLLM `master_key` matches Core's `VLLM_API_KEY`. This
+      DB-less deployment can report an authentication mismatch with that
+      misleading database error; direct backend responses do not clear an edge
+      failure.
 - [ ] Record the host, edge status, model IDs, timestamp, and owner in the release
       handoff.
 
-The repository's current production Core template targets CMPS01/CMPS02 for the
-fleet and retains the Assist Auto model ID separately. Reconcile that template
-with the actual endpoint model lists before changing the fleet; do not silently
-add CMPS03 or assume CMPS02 has the standard 9B model.
+The repository's production Core template should be reconciled with the actual
+endpoint model lists before changing the fleet. Keep CMPS02's 27B assignment
+separate from the standard 9B tier, and do not assume every host advertises every
+model.
 
 ## 5. Core application
 
@@ -116,20 +119,34 @@ add CMPS03 or assume CMPS02 has the standard 9B model.
 ## 7. Question Maker
 
 Question Maker is a separate extension with its own application deployment
-documentation and Compose file. The production admin helper in
-`infra/production/admin-helper.sh` currently has no Question Maker provisioning or
-restart action.
+documentation and Compose file. The production helper provides narrowly scoped
+install, enable, and restart actions for its environment, systemd unit, and
+Apache vhost; it does not provide a general Question Maker shell or a combined
+database-provisioning action.
 
 - [ ] Follow [`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
-- [ ] Confirm the backend database migration is complete.
+- [ ] Generate the Question Maker Prisma client and confirm the backend database
+      migration is complete.
 - [ ] Confirm the backend process and its database configuration.
 - [ ] Confirm the frontend build and Apache/static asset configuration.
+- [ ] Install the reviewed environment, systemd unit, and Apache vhost through
+      `install-qm-env`, `install-qm-unit`, and `install-qm-apache`.
 - [ ] Confirm the backend health route is
       `http://127.0.0.1:8000/healthz`; `/api/health` is not its health route.
-- [ ] Do not claim Question Maker is managed by `eduai-production-admin` until a
-      corresponding repository action and template are implemented.
+- [ ] Enable and restart the backend through `enable-qm` and `restart-qm` only
+      after the migration, build, and health checks are ready.
 
-## 8. Web server and systemd
+## 8. Cron worker
+
+- [ ] Create `/etc/eduai/cron.env` with production database, backup, and alert
+      values; keep it root-owned and mode `0640`.
+- [ ] Create the `eduai-cron` account and its intended backup/log directories.
+- [ ] Install the root-owned cron worker unit and synchronize the allow-listed
+      scripts with `install-cron-worker`.
+- [ ] Enable and restart `eduai-cron-worker` only after the Core environment and
+      cron configuration are readable.
+
+## 9. Web server and systemd
 
 - [ ] Confirm required Apache modules, certificates, proxy rules, and vhosts.
 - [ ] Run `apache2ctl configtest` before reloading Apache.
@@ -140,7 +157,7 @@ restart action.
 - [ ] Confirm the active release, unit status, recent journal output, and listeners.
 - [ ] Confirm no unsupported PM2/user-level process is serving the production apps.
 
-## 9. Release verification
+## 10. Release verification
 
 Run and record:
 
