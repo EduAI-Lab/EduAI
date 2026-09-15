@@ -4,11 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
-> **Week numbering is inconsistent and has not been corrected here.** `August 10–16, 2026` is claimed by both Week 15 and Week 16; `August 17–23, 2026` is claimed by both Week 16 and Week 17. This predates the 2026-08-31 de-duplication pass, which merged sections by the week number each heading stated and never moved an entry between weeks — an entry's date is its commit date, not its sprint, so re-bucketing by date would have rewritten history. Renumbering is a maintainer call.
+## 2026.09.15
+
+- Fix the student "Take a Tour" walkthrough stalling at step 2 of 10 for students enrolled in zero courses — tag the empty course-list state with the tour's `emptyTarget` anchor (`data-tour="student-courses-empty"`) so the student-journey tour's empty-state skip logic (built for #1572) detects and skips past it instead of timing out. Closes #1746.
 
 ## 2026.09.01
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1720
 - Add `docs/INSTRUCTOR_ONBOARDING.md`, a pilot instructor walkthrough covering sign-in, Canvas connection, Core course setup, AI Tutor, and Question Maker; register it in the root `README.md` documentation index.
 - Correct the guide against the current UI: the AI Tutor and Question Maker hostnames (`aitutor.` / `questionmaker.`, not `ai-tutor.` / `qm.`), Canvas course fetching (dashboard **Fetch from Canvas**, not a Courses-page sync), course publishing (the course card's ⋮ menu), and the app switcher (**Switch app** in the sidebar footer, not the header).
 - Drop the manual "import course from Core" steps for both extensions — AI Tutor and Question Maker auto-import taught courses on login — and describe Question Maker's real flow as generating an AI variant of an existing question rather than bulk generation from a topic.
@@ -19,7 +20,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.08.31
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1718
 - Refresh the root `README.md` against the current monorepo — corrected the `infra/` and `docs/` tree listings, the documentation index, and the fleet-testing and fleet-registry sections, using the code as the source of truth.
 - Refresh the platform guides in `docs/`: architecture, deployment, environment, logging, Canvas, cron jobs, developer guide, user guide, extension onboarding, agent readiness, and the PICT census.
 - Align `TESTS.md` with the tests that actually exist — remove 11 rows for deleted test files and document 10 suites that had no row in either this branch or `development`.
@@ -27,14 +27,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.08.31
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1707
 - Refresh deployment documentation from the repository implementation and read-only audits of eduai-dev, my-eduai, cmps01, cmps02, and cmps03.
 - Organize s378, production, provisioning, sudoers, cron/backups, inference-fleet, and AWS Bedrock guardrails runbooks around current service boundaries and operational procedures.
 - Record observed inference roles and model state, including CMPS03's unresolved readiness boundary, while separating deployed capacity from potential upgrades.
 - Restore the dated Fleet Router stress and data reports in `docs/rag-ai/latency/eduai-summer-2026/` as historical benchmark evidence; these numbers are not a current capacity guarantee.
 ## 2026.08.30
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1705
 - Consolidate RAG/AI documentation around current EduAI Core behavior, including chat/RAG flow, embeddings, model routing, vLLM fleet operations, testing, performance, and s378 development operations.
 - Remove dated latency, sprint, routing, team-guide, and ingestion-test material while retaining maintainable future-developer guidance and relevant fixtures.
 - Reframe HELPME references as potential upgrades and document Qwen 3.5 2B/9B current tiers with Qwen 3.8 27B planned capacity.
