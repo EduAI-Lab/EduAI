@@ -136,19 +136,9 @@ export const PROGRESS_FILTER: CourseFilterGroup<Course> = {
 };
 
 /** Shared centered empty/no-results card used by the course list. */
-function EmptyCourseCard({
-  icon,
-  title,
-  body,
-  dataTour,
-}: {
-  icon: ReactNode;
-  title: string;
-  body: string;
-  dataTour?: string;
-}) {
+function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
   return (
-    <Card className="mx-auto max-w-lg" data-tour={dataTour}>
+    <Card className="mx-auto max-w-lg">
       <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
           {icon}
@@ -217,7 +207,6 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
             icon={<IconBooks size={22} aria-hidden="true" />}
             title="No courses yet"
             body="You are not enrolled in any published courses yet. Enrollments sync automatically from Core when you sign in."
-            dataTour="student-courses-empty"
           />
         }
         noResultsState={
