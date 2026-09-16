@@ -6,7 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.16
 
-- Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, and the Enrollments-tab hint that pointed at it — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
+- Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
 
 ## 2026.09.15
 
