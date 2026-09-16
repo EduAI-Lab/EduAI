@@ -1,6 +1,8 @@
 import type { JsonObject } from "~/lib/json-value";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
+import { emailOTP } from "better-auth/plugins/email-otp";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { z } from "zod";
@@ -20,9 +22,12 @@ import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
-import { asText } from "~/lib/json-value";
+import { asJsonObject, asText } from "~/lib/json-value";
+import { fireAndForget } from "~/lib/logging.server";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
 import { buildEmailVerificationEmail } from "../email/templates/email-verification";
+import { buildPasswordResetOtpEmail } from "../email/templates/password-reset-otp";
+import { PASSWORD_RESET_OTP_LENGTH } from "./schemas";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -54,6 +59,104 @@ const returnedSessionSchema = z.object({
 // to skip the verification requirement and mint new users pre-verified.
 // Production must never set this.
 const EMAIL_VERIFICATION_DISABLED = process.env.BETTER_AUTH_DISABLE_EMAIL_VERIFICATION === "1";
+
+const PASSWORD_REUSE_MESSAGE =
+  "This password was used recently. Please choose a password you have not used before.";
+
+/** #1728: how long an emailed password-reset code stays usable. */
+export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10;
+
+/** The only two emailOTP endpoints this deployment exposes (#1728). */
+const PASSWORD_RESET_OTP_PATHS = new Set([
+  "/email-otp/request-password-reset",
+  "/email-otp/reset-password",
+]);
+
+/** emailOTP endpoints that live outside the `/email-otp/` prefix. */
+const OTHER_EMAIL_OTP_PATHS = new Set([
+  // Passwordless sign-in.
+  "/sign-in/email-otp",
+  // Deprecated alias of /email-otp/request-password-reset.
+  "/forget-password/email-otp",
+]);
+
+/**
+ * #1728: the emailOTP plugin is installed for one reason — password reset —
+ * but it ships a whole family of endpoints with it: passwordless sign-in,
+ * OTP email verification and OTP email change. Those would walk straight past
+ * the controls the email+password paths are held to (public-registration gate
+ * §6a, the UBC-email rule §567, the deactivated-user guard #971), and
+ * `/email-otp/check-verification-otp` is a code-guessing oracle that the reset
+ * flow itself does not need. Everything but the two reset endpoints is closed
+ * at the boundary instead.
+ */
+export function isDisabledEmailOtpPath(path: string | undefined): boolean {
+  if (!path) return false;
+  if (PASSWORD_RESET_OTP_PATHS.has(path)) return false;
+  return path.startsWith("/email-otp/") || OTHER_EMAIL_OTP_PATHS.has(path);
+}
+
+/** The `verification.identifier` the plugin files forget-password codes under. */
+export function passwordResetOtpIdentifier(email: string): string {
+  return `forget-password-otp-${email.trim().toLowerCase()}`;
+}
+
+/**
+ * Keyed digest of a reset code, used both as the plugin's `storeOTP.hash` (so
+ * a database leak does not hand out live codes — an unkeyed hash of six digits
+ * is a million-entry rainbow table) and by the policy gate below, which has to
+ * recognize the code it was given. One function, so the two can never drift.
+ */
+export function hashPasswordResetOtp(otp: string): string {
+  return createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "")
+    .update(otp)
+    .digest("hex");
+}
+
+function equalsStoredOtpHash(stored: string, candidate: string): boolean {
+  const storedBytes = Buffer.from(stored, "utf8");
+  const candidateBytes = Buffer.from(candidate, "utf8");
+  if (storedBytes.length !== candidateBytes.length) return false;
+  return timingSafeEqual(storedBytes, candidateBytes);
+}
+
+export type PasswordResetOtpRecord = { value: string; expiresAt: Date };
+
+/**
+ * Resolve who a `/email-otp/reset-password` request is for — but only for a
+ * caller that actually holds the emailed code (#1728).
+ *
+ * The reuse check below needs a userId. Resolving it from the submitted email
+ * alone would turn this unauthenticated endpoint into a password-history
+ * oracle ("was this password one of theirs?") for any address an attacker
+ * names. So this mirrors what the token-based `/reset-password` path gets for
+ * free from `resolvePasswordReuseUserId`: proof of possession first, identity
+ * second. A wrong or expired code resolves to nobody, and better-auth's own
+ * handler then rejects the request outright — the password is never set.
+ */
+export async function resolvePasswordResetOtpUserId(
+  input: { email: string; otp: string },
+  deps: {
+    findOtpRecord: (identifier: string) => Promise<PasswordResetOtpRecord | null>;
+    findUserIdByEmail: (email: string) => Promise<string | null>;
+    now?: Date;
+  },
+): Promise<string | null> {
+  if (!input.otp) return null;
+
+  const email = input.email.trim().toLowerCase();
+  const record = await deps.findOtpRecord(passwordResetOtpIdentifier(email));
+  if (!record) return null;
+  if (record.expiresAt.getTime() <= (deps.now ?? new Date()).getTime()) return null;
+
+  // The plugin stores `<stored-otp>:<failed attempts>`; the code is everything
+  // before the last colon.
+  const separator = record.value.lastIndexOf(":");
+  const storedOtp = separator === -1 ? record.value : record.value.slice(0, separator);
+  if (!equalsStoredOtpHash(storedOtp, hashPasswordResetOtp(input.otp))) return null;
+
+  return deps.findUserIdByEmail(email);
+}
 
 export const auth = betterAuth({
   baseURL: authBaseURL,
@@ -99,6 +202,38 @@ export const auth = betterAuth({
         maxExpiresIn: MAX_API_KEY_EXPIRATION_DAYS,
       },
     }),
+    // #1728: password reset by emailed one-time code. Only the two
+    // password-reset endpoints of this plugin are reachable — see
+    // `isDisabledEmailOtpPath`, enforced in the `before` hook.
+    emailOTP({
+      otpLength: PASSWORD_RESET_OTP_LENGTH,
+      expiresIn: PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
+      // Codes are short-lived but still credentials: keep a keyed digest, not
+      // the code itself, in the `verification` table.
+      storeOTP: { hash: async (otp) => hashPasswordResetOtp(otp) },
+      // Belt and braces with the path block: even if an OTP sign-in request
+      // somehow reached the plugin, it must never mint an account — that is
+      // what §6a and §567 guard on /sign-up/email.
+      disableSignUp: true,
+      sendVerificationOTP: async ({ email, otp, type }) => {
+        // Reset is the only flow this deployment enables.
+        if (type !== "forget-password") return;
+
+        // Deliberately not awaited. Better Auth answers a reset request
+        // identically whether or not the address has an account; awaiting an
+        // SMTP round trip only on the "account exists" branch would put that
+        // difference back into the response time.
+        fireAndForget(
+          sendEmail(
+            buildPasswordResetOtpEmail({
+              to: email,
+              otp,
+              expiresInMinutes: PASSWORD_RESET_OTP_EXPIRY_MINUTES,
+            }),
+          ),
+        );
+      },
+    }),
   ],
   hooks: {
     // §6a: single chokepoint for the public-registration toggle. Both public
@@ -112,6 +247,11 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
+      // #1728: shut the emailOTP endpoints this deployment does not use.
+      if (isDisabledEmailOtpPath(ctx.path)) {
+        throw new APIError("NOT_FOUND", { message: "Not found" });
+      }
+
       if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
         const session = await getSessionFromCtx(ctx);
         if (!(await isActiveAdminUser(session?.user?.id))) {
@@ -189,10 +329,53 @@ export const auth = betterAuth({
             verify: ctx.context.password.verify,
           });
           if (reused) {
-            throw new APIError("BAD_REQUEST", {
-              message:
-                "This password was used recently. Please choose a password you have not used before.",
-            });
+            throw new APIError("BAD_REQUEST", { message: PASSWORD_REUSE_MESSAGE });
+          }
+        }
+      }
+
+      // #1728: the OTP reset endpoint carries `{email, otp, password}` rather
+      // than a reset token, so it is not one of `PASSWORD_SETTING_PATHS` and
+      // the block above cannot see it. Hold it to the same #339 controls here
+      // rather than widening the shared table, which would hand
+      // `resolvePasswordReuseUserId` a path it has no token to work with.
+      if (ctx.path === "/email-otp/reset-password") {
+        // SAFETY: better-auth types `ctx.body` as `any`; `asJsonObject`
+        // re-validates that it is an object and each field below is read
+        // through a checked accessor.
+        const body = asJsonObject(ctx.body as JsonObject | undefined) ?? {};
+        const newPassword = asText(body.password) ?? "";
+        if (!isStrongPassword(newPassword)) {
+          throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
+        }
+
+        const otpUserId = await resolvePasswordResetOtpUserId(
+          { email: asText(body.email) ?? "", otp: asText(body.otp) ?? "" },
+          {
+            findOtpRecord: (identifier) =>
+              prisma.verification.findFirst({
+                where: { identifier },
+                orderBy: { createdAt: "desc" },
+                select: { value: true, expiresAt: true },
+              }),
+            findUserIdByEmail: async (email) =>
+              (await prisma.user.findUnique({ where: { email }, select: { id: true } }))?.id ??
+              null,
+          },
+        );
+
+        // No resolved user means the caller did not present a live code (or
+        // the address has no account). Fall through: better-auth's own handler
+        // rejects it, so nothing is set — and no answer about this account's
+        // password history leaks to someone who never had the code.
+        if (otpUserId) {
+          const reused = await isPasswordReused({
+            userId: otpUserId,
+            candidate: newPassword,
+            verify: ctx.context.password.verify,
+          });
+          if (reused) {
+            throw new APIError("BAD_REQUEST", { message: PASSWORD_REUSE_MESSAGE });
           }
         }
       }
