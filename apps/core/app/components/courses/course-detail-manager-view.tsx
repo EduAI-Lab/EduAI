@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { z } from "zod";
 import {
   IconTrash,
   IconPencil,
@@ -81,6 +82,43 @@ interface StaffUser {
   email: string;
 }
 
+/**
+ * #1756 — the response body of `POST /api/courses/:id/enrollments/csv`.
+ *
+ * Restated here rather than imported: the server module that owns these caps
+ * and shapes is `enrollments-csv.server.ts`, which must not reach the client
+ * bundle. Keep these in sync with that route's JSON response.
+ *
+ * Both bodies are parsed rather than asserted — the import result drives what
+ * the instructor is told about their roster file, so a response that does not
+ * match becomes a visible failure instead of an `undefined` in the summary.
+ */
+const enrollmentCsvImportSummarySchema = z.object({
+  totalRows: z.number(),
+  imported: z.number(),
+  alreadyEnrolled: z.number(),
+  failed: z.number(),
+  errors: z.array(
+    z.object({
+      line: z.number(),
+      email: z.string().nullable(),
+      code: z.string(),
+      message: z.string(),
+    }),
+  ),
+});
+
+export type EnrollmentCsvImportSummary = z.infer<typeof enrollmentCsvImportSummarySchema>;
+
+const enrollmentCsvErrorSchema = z.object({
+  error: z.string(),
+  message: z.string().optional(),
+});
+
+/** Mirrors MAX_CSV_ROWS / MAX_CSV_BYTES in `~/lib/courses/enrollments-csv.server`. */
+const CSV_MAX_ROWS = 500;
+const CSV_MAX_KB = 256;
+
 export type CourseDetailManagerCourse = CourseDetail & {
   /** Staff course loaders always include the persisted, non-null toggle. */
   courseScopeGuardrailEnabled: boolean;
@@ -122,6 +160,13 @@ interface Props {
   onRemoveTA: (userId: string) => Promise<void>;
   onEnrollStudent: (userId: string) => Promise<void>;
   onRemoveEnrollment: (enrollmentId: string) => Promise<void>;
+  /**
+   * #1756: re-read the roster after a CSV import, which enrolls users this
+   * component never learns about individually. Optional like `onRefreshTopics`
+   * — a caller that supplies none simply keeps the list it already rendered
+   * until the next navigation; the import itself still succeeds.
+   */
+  onRefreshEnrollments?: () => Promise<void> | void;
   onRefreshMaterials?: () => Promise<void>;
   /** Wired to `useCourseMaterials.deleteMaterial` — refetches the list itself. */
   onDeleteMaterial?: (materialId: string) => Promise<void>;
@@ -221,6 +266,7 @@ export function CourseDetailManagerView({
   onRemoveTA,
   onEnrollStudent,
   onRemoveEnrollment,
+  onRefreshEnrollments,
   onRefreshMaterials,
   onDeleteMaterial,
   courseId,
@@ -277,6 +323,11 @@ export function CourseDetailManagerView({
   const [enrollmentActionSuccess, setEnrollmentActionSuccess] = useState<string | null>(null);
   const [enrollmentToRemove, setEnrollmentToRemove] = useState<CourseEnrollment | null>(null);
   const [removingEnrollmentId, setRemovingEnrollmentId] = useState<string | null>(null);
+  // #1756 — CSV roster import.
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [csvSummary, setCsvSummary] = useState<EnrollmentCsvImportSummary | null>(null);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess);
@@ -394,6 +445,49 @@ export function CourseDetailManagerView({
       );
     } else {
       setEnrollmentActionError(`${failed.length} of ${ids.length} students failed to enroll`);
+    }
+  };
+
+  /**
+   * #1756 — POST the chosen file to the bulk-import endpoint and render the
+   * per-row summary it returns. A partial import is the normal outcome, not an
+   * error: the endpoint reports which lines failed and enrolls the rest.
+   */
+  const handleImportCsv = async () => {
+    if (!csvFile || !courseId) return;
+    setImportingCsv(true);
+    setCsvSummary(null);
+    setEnrollmentActionError(null);
+    setEnrollmentActionSuccess(null);
+    try {
+      const body = new FormData();
+      body.set("file", csvFile);
+      const res = await fetch(`/api/courses/${courseId}/enrollments/csv`, { method: "POST", body });
+      const payload: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const failure = enrollmentCsvErrorSchema.safeParse(payload);
+        setEnrollmentActionError(
+          failure.success
+            ? (failure.data.message ?? failure.data.error)
+            : "Could not import this CSV file.",
+        );
+        return;
+      }
+      const summary = enrollmentCsvImportSummarySchema.safeParse(payload);
+      if (!summary.success) {
+        setEnrollmentActionError("The import finished but returned an unexpected result.");
+        return;
+      }
+      setCsvSummary(summary.data);
+      if (summary.data.imported > 0) await onRefreshEnrollments?.();
+    } catch {
+      setEnrollmentActionError("Could not import this CSV file. Please try again.");
+    } finally {
+      setImportingCsv(false);
+      setCsvFile(null);
+      // Clear the native input too, so re-picking the same corrected file fires
+      // another change event.
+      if (csvInputRef.current) csvInputRef.current.value = "";
     }
   };
 
@@ -1329,6 +1423,62 @@ export function CourseDetailManagerView({
                               selectedStudentIds.length > 0 ? ` ${selectedStudentIds.length}` : ""
                             } student${selectedStudentIds.length !== 1 ? "s" : ""}`}
                       </Button>
+                    </div>
+                  )}
+
+                  {/* #1756 — bulk enrollment from a roster CSV. */}
+                  {canManageStudentEnrollments && courseId && (
+                    <div className="flex flex-col gap-2 border-t pt-4">
+                      <Label htmlFor="enrollment-csv">Import a roster CSV</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Needs a header row with an <code>email</code> column. An optional{" "}
+                        <code>role</code> column accepts STUDENT or TA. Up to {CSV_MAX_ROWS} rows
+                        and {CSV_MAX_KB} KB per upload. Rows that fail are reported by line number;
+                        the rest are still enrolled.
+                      </p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          ref={csvInputRef}
+                          id="enrollment-csv"
+                          type="file"
+                          accept=".csv,text/csv"
+                          disabled={importingCsv}
+                          onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)}
+                          className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleImportCsv()}
+                          disabled={!csvFile || importingCsv}
+                        >
+                          <IconUpload className="w-4 h-4 mr-1" />
+                          {importingCsv ? "Importing…" : "Import CSV"}
+                        </Button>
+                      </div>
+
+                      {csvSummary && (
+                        <Card>
+                          <CardContent className="py-3 text-sm space-y-2">
+                            <p>
+                              Imported {csvSummary.imported} of {csvSummary.totalRows} row
+                              {csvSummary.totalRows === 1 ? "" : "s"}
+                              {csvSummary.alreadyEnrolled > 0
+                                ? ` · ${csvSummary.alreadyEnrolled} already enrolled`
+                                : ""}
+                              {csvSummary.failed > 0 ? ` · ${csvSummary.failed} failed` : ""}.
+                            </p>
+                            {csvSummary.errors.length > 0 && (
+                              <ul className="space-y-1 text-xs text-destructive">
+                                {csvSummary.errors.map((rowError) => (
+                                  <li key={`${rowError.line}-${rowError.code}`}>
+                                    Line {rowError.line}: {rowError.message}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
                     </div>
                   )}
                 </div>

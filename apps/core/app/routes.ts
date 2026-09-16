@@ -63,6 +63,7 @@ export default [
   route("/api/courses/:id/unpublish", "routes/api/courses.id.unpublish.ts"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
   route("/api/courses/:id/enrollments", "routes/api/courses.enrollments.ts"),
+  route("/api/courses/:id/enrollments/csv", "routes/api/courses.enrollments.csv.ts"),
   route(
     "/api/courses/:id/enrollments/:enrollmentId",
     "routes/api/courses.enrollments.$enrollmentId.ts",
