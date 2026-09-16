@@ -96,6 +96,14 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
+    name: "notify-invitation-expiry",
+    description: "Email invitees whose pending invitation is close to expiring",
+    schedule: "30 4 * * *",
+    scheduleLabel: "Daily at 04:30 UTC",
+    script: "Core handler",
+    execution: "CORE",
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
@@ -425,6 +433,32 @@ function persistedCronMessage(
   );
 }
 
+/**
+ * Cron jobs with `execution: "CORE"` run in-process instead of spawning a
+ * script. Each entry imports its module lazily — an eager import would pull
+ * prisma, the mailer and auth into every consumer of this module — and returns
+ * the summary persisted on the run row.
+ */
+const CORE_CRON_HANDLERS = new Map<string, () => Promise<string>>([
+  [
+    "notify-api-key-expiry",
+    async () => {
+      const { notifyExpiringApiKeys } = await import("~/lib/cron-notify-api-key-expiry.server");
+      const { notified } = await notifyExpiringApiKeys();
+      return `Sent ${notified} API key expiry notification(s)`;
+    },
+  ],
+  [
+    "notify-invitation-expiry",
+    async () => {
+      const { notifyExpiringInvitations } =
+        await import("~/lib/cron-notify-invitation-expiry.server");
+      const { notified } = await notifyExpiringInvitations();
+      return `Sent ${notified} invitation expiry reminder(s)`;
+    },
+  ],
+]);
+
 export function triggerCronJobAsync(
   jobName: string,
   script: string,
@@ -433,17 +467,14 @@ export function triggerCronJobAsync(
   execution: CronJobExecution = "SCRIPT",
 ): void {
   if (execution === "CORE") {
-    void import("~/lib/cron-notify-api-key-expiry.server")
-      .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
-      .then(({ notified }) =>
-        finishCronRun(
-          runId,
-          leaseOwner,
-          "SUCCESS",
-          `Sent ${notified} API key expiry notification(s)`,
-          0,
-        ),
-      )
+    const handler = CORE_CRON_HANDLERS.get(jobName);
+    // A `Map` so an unregistered name cannot resolve to an inherited property.
+    const run = handler
+      ? handler()
+      : Promise.reject(new Error(`No Core handler registered for cron job "${jobName}"`));
+
+    void run
+      .then((summary) => finishCronRun(runId, leaseOwner, "SUCCESS", summary, 0))
       .catch((cause: unknown) =>
         finishCronRun(
           runId,
