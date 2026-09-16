@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.16
+
+- Add a self-serve password reset: `/auth/forgot-password` emails a 6-digit code and `/auth/reset-password` redeems it, via Better Auth's `emailOTP` plugin over the existing SMTP transport. Codes are stored as an HMAC-SHA256 digest keyed on `BETTER_AUTH_SECRET` rather than in plaintext, and the rest of the plugin's surface (passwordless sign-in, OTP email-verification, OTP email-change, `check-verification-otp`) is 404'd so it cannot bypass the §6a registration, §567 UBC-email or #971 deactivated-user gates. Unknown and known addresses get byte-identical responses, and the request endpoint is throttled per IP (10 / 15 min) and per email (3 / 15 min) before any account lookup. The #339 strength policy and the no-reuse check both still apply, the latter only once a live code proves the caller owns the mailbox. Closes #1728.
+
 ## 2026.09.15
 
 - Fix the student "Take a Tour" walkthrough stalling at step 2 of 10 for students enrolled in zero courses — tag the empty course-list state with the tour's `emptyTarget` anchor (`data-tour="student-courses-empty"`) so the student-journey tour's empty-state skip logic (built for #1572) detects and skips past it instead of timing out. Closes #1746.
