@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.16
+
+- Remind pending invitees before their invitation expires: a new `notify-invitation-expiry` Core cron job (04:30 UTC daily) emails anyone whose PENDING invitation is nearing its deadline. The reminder lead time is derived from the configured `INVITE_EXPIRY_HOURS` rather than hardcoded, so shortening the TTL cannot silently stop reminders going out. The email deliberately carries no accept link — `Invitation` persists only a sha256 `tokenHash`, so the raw token exists solely in the original invitation email; the reminder points recipients back at it and names the inviting administrator. Also replaces `triggerCronJobAsync`'s hardcoded API-key import with a `CORE_CRON_HANDLERS` lookup, so an unregistered `execution: "CORE"` job now fails as ERROR instead of silently running the API-key handler. Closes #724.
+
 ## 2026.09.15
 
 - Fix the student "Take a Tour" walkthrough stalling at step 2 of 10 for students enrolled in zero courses — tag the empty course-list state with the tour's `emptyTarget` anchor (`data-tour="student-courses-empty"`) so the student-journey tour's empty-state skip logic (built for #1572) detects and skips past it instead of timing out. Closes #1746.
