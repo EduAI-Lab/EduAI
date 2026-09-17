@@ -1037,7 +1037,7 @@ export function CourseDetailManagerView({
               policy is off; non-qualifying roles don't see it at all. */}
           {showStaffTab && (
             <DisabledTooltip disabled={!canManageStaff}>
-              <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
+              <PageTabsTrigger value="staff">TAs</PageTabsTrigger>
             </DisabledTooltip>
           )}
           {canManageRagSettings && <PageTabsTrigger value="settings">Settings</PageTabsTrigger>}
@@ -1440,7 +1440,7 @@ export function CourseDetailManagerView({
                 Enrolled users
               </CardTitle>
               <CardDescription>
-                Manage student enrollments here. Instructor and TA assignments are on the Staff tab.
+                Manage student enrollments here. Instructor and TA assignments are on the TAs tab.
               </CardDescription>
             </CardHeader>
 
@@ -1711,7 +1711,7 @@ export function CourseDetailManagerView({
               <CardHeader className="px-0 pt-0">
                 <CardTitle className="text-base flex items-center gap-2">
                   <IconUserCheck className="w-4 h-4" />
-                  Course staff
+                  Instructor & TAs
                 </CardTitle>
               </CardHeader>
 
