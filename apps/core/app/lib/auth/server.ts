@@ -66,6 +66,14 @@ const PASSWORD_REUSE_MESSAGE =
 /** #1728: how long an emailed password-reset code stays usable. */
 export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10;
 
+/**
+ * #1728: how many wrong guesses a single emailed code tolerates before the
+ * plugin locks the identifier out. Passed to `emailOTP` explicitly rather than
+ * left to its default, because `resolvePasswordResetOtpUserId` has to apply
+ * the same budget — the two reading one constant is what keeps them aligned.
+ */
+export const PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS = 3;
+
 /** The only two emailOTP endpoints this deployment exposes (#1728). */
 const PASSWORD_RESET_OTP_PATHS = new Set([
   "/email-otp/request-password-reset",
@@ -131,8 +139,9 @@ export type PasswordResetOtpRecord = { value: string; expiresAt: Date };
  * oracle ("was this password one of theirs?") for any address an attacker
  * names. So this mirrors what the token-based `/reset-password` path gets for
  * free from `resolvePasswordReuseUserId`: proof of possession first, identity
- * second. A wrong or expired code resolves to nobody, and better-auth's own
- * handler then rejects the request outright — the password is never set.
+ * second. A wrong, expired or guessed-out code resolves to nobody, and
+ * better-auth's own handler then rejects the request outright — the password is
+ * never set.
  */
 export async function resolvePasswordResetOtpUserId(
   input: { email: string; otp: string },
@@ -153,6 +162,16 @@ export async function resolvePasswordResetOtpUserId(
   // before the last colon.
   const separator = record.value.lastIndexOf(":");
   const storedOtp = separator === -1 ? record.value : record.value.slice(0, separator);
+  const attempts = separator === -1 ? 0 : Number.parseInt(record.value.slice(separator + 1), 10);
+
+  // A code whose guess budget is spent is no longer proof of anything: the
+  // plugin rejects it with TOO_MANY_ATTEMPTS without even comparing hashes.
+  // Resolving a user here anyway would let the reuse check answer first and
+  // report "password was used recently" for a request better-auth is about to
+  // refuse outright — a wrong answer, and one that talks about an account's
+  // password history on a request that is not allowed to proceed.
+  if (Number.isFinite(attempts) && attempts >= PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS) return null;
+
   if (!equalsStoredOtpHash(storedOtp, hashPasswordResetOtp(input.otp))) return null;
 
   return deps.findUserIdByEmail(email);
@@ -208,6 +227,7 @@ export const auth = betterAuth({
     emailOTP({
       otpLength: PASSWORD_RESET_OTP_LENGTH,
       expiresIn: PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
+      allowedAttempts: PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS,
       // Codes are short-lived but still credentials: keep a keyed digest, not
       // the code itself, in the `verification` table.
       storeOTP: { hash: async (otp) => hashPasswordResetOtp(otp) },
@@ -349,6 +369,14 @@ export const auth = betterAuth({
           throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
         }
 
+        // This repeats the lookup and hash comparison the plugin's own
+        // `atomicVerifyOTP` does moments later, and that duplication is not
+        // avoidable: `atomicVerifyOTP` *consumes* the verification row before
+        // it verifies, and the plugin's only post-verification hook
+        // (`onPasswordReset`) runs after the new password is already written.
+        // A reuse check has to answer before that, so it needs its own
+        // read-only pass. Costs one extra indexed `verification` read on an
+        // endpoint already capped at 3 requests / 15 min per address.
         const otpUserId = await resolvePasswordResetOtpUserId(
           { email: asText(body.email) ?? "", otp: asText(body.otp) ?? "" },
           {

@@ -10,6 +10,7 @@ import {
   hashPasswordResetOtp,
   isDisabledEmailOtpPath,
   passwordResetOtpIdentifier,
+  PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS,
   PASSWORD_RESET_OTP_EXPIRY_MINUTES,
   resolvePasswordResetOtpUserId,
 } from "~/lib/auth/server";
@@ -122,6 +123,32 @@ describe("resolvePasswordResetOtpUserId", () => {
 
   it("tolerates the plugin's attempt counter suffix", async () => {
     const d = deps({ value: `${hashPasswordResetOtp("123456")}:2`, expiresAt: future });
+
+    await expect(
+      resolvePasswordResetOtpUserId({ email: "student@ubc.ca", otp: "123456" }, d),
+    ).resolves.toBe("u1");
+  });
+
+  it("refuses a correct code whose guess budget is already spent", async () => {
+    // The plugin answers TOO_MANY_ATTEMPTS here without comparing hashes, so
+    // resolving a user would let the reuse check report "password was used
+    // recently" for a request that is about to be refused outright.
+    const d = deps({
+      value: `${hashPasswordResetOtp("123456")}:${PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS}`,
+      expiresAt: future,
+    });
+
+    await expect(
+      resolvePasswordResetOtpUserId({ email: "student@ubc.ca", otp: "123456" }, d),
+    ).resolves.toBeNull();
+    expect(d.findUserIdByEmail).not.toHaveBeenCalled();
+  });
+
+  it("still resolves on the last attempt the budget allows", async () => {
+    const d = deps({
+      value: `${hashPasswordResetOtp("123456")}:${PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS - 1}`,
+      expiresAt: future,
+    });
 
     await expect(
       resolvePasswordResetOtpUserId({ email: "student@ubc.ca", otp: "123456" }, d),
