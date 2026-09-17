@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.16
+
+- Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
+
 ## 2026.09.15
 
 - Fix the student "Take a Tour" walkthrough stalling at step 2 of 10 for students enrolled in zero courses — tag the empty course-list state with the tour's `emptyTarget` anchor (`data-tour="student-courses-empty"`) so the student-journey tour's empty-state skip logic (built for #1572) detects and skips past it instead of timing out. Closes #1746.
