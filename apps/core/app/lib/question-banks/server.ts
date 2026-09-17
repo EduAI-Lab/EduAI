@@ -6,11 +6,13 @@ import {
   AddBankMembershipsSchema,
   CreateQuestionBankSchema,
   DeleteQuestionBankSchema,
+  MoveBankMembershipSchema,
   UpdateQuestionBankSchema,
   type AddBankMembershipInput,
   type AddBankMembershipsInput,
   type CreateQuestionBankInput,
   type DeleteQuestionBankInput,
+  type MoveBankMembershipInput,
   type UpdateQuestionBankInput,
 } from "./schemas";
 
@@ -309,6 +311,65 @@ export async function removeQuestionFromBank(
   }
 
   return { removed: true, reassignedToDefault: false } as const;
+}
+
+/**
+ * Moves one question's membership from `fromBankId` to `targetBankId` atomically.
+ * The question always ends up in the target, so unlike `removeQuestionFromBank`
+ * there is no orphan → default-bank reassignment.
+ */
+export async function moveQuestionBetweenBanks(
+  courseId: string,
+  fromBankId: string,
+  externalQuestionId: string,
+  payload: MoveBankMembershipInput,
+) {
+  const parsed = MoveBankMembershipSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { error: "Invalid input", details: parsed.error.flatten() } as const;
+  }
+  const { targetBankId, source } = parsed.data;
+  if (targetBankId === fromBankId) {
+    return { error: "Source and target bank must differ" } as const;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const banks = await tx.questionBank.findMany({
+      where: { id: { in: [fromBankId, targetBankId] }, courseId },
+      select: { id: true },
+    });
+    if (banks.length !== 2) {
+      return { error: "Question bank not found" } as const;
+    }
+
+    const current = await tx.questionBankMembership.findUnique({
+      where: {
+        questionBankId_source_externalQuestionId: {
+          questionBankId: fromBankId,
+          source,
+          externalQuestionId,
+        },
+      },
+    });
+    if (!current) {
+      return { error: "Question is not a member of this bank" } as const;
+    }
+
+    const membership = await tx.questionBankMembership.upsert({
+      where: {
+        questionBankId_source_externalQuestionId: {
+          questionBankId: targetBankId,
+          source,
+          externalQuestionId,
+        },
+      },
+      create: { questionBankId: targetBankId, source, externalQuestionId },
+      update: {},
+    });
+    await tx.questionBankMembership.delete({ where: { id: current.id } });
+
+    return { membership } as const;
+  });
 }
 
 export async function listBankMemberships(courseId: string, bankId: string) {
