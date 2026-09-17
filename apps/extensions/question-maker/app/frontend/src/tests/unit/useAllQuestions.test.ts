@@ -124,4 +124,30 @@ describe("useAllQuestions", () => {
 
     expect(result.current.questions).toEqual([{ id: "second" }]);
   });
+
+  it("sends the bank filter with the course", async () => {
+    getQuestionsPage.mockResolvedValue({ items: [], total: 0 });
+
+    renderHook(() =>
+      useAllQuestions({
+        courseId: 3,
+        filters: {
+          questionTypes: [],
+          reasoningLevels: [],
+          difficulties: [],
+          aiGenerated: "all",
+          draftStatus: "all",
+          questionBankId: "bank-2",
+        },
+        limit: 10,
+        offset: 0,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(getQuestionsPage).toHaveBeenCalledWith(
+        expect.objectContaining({ courseId: 3, questionBankId: "bank-2" }),
+      ),
+    );
+  });
 });
