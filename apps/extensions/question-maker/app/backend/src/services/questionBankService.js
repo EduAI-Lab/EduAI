@@ -14,6 +14,7 @@ import {
   addQuestionBankMembershipsOnCore,
   removeQuestionBankMembershipOnCore,
   moveQuestionBankMembershipOnCore,
+  listQuestionBankIdsForQuestionOnCore,
 } from "./coreApiService.js";
 
 export const DEFAULT_BANK_NAME = "Course bank";
@@ -221,12 +222,25 @@ export async function moveQuestionToBank(
 }
 
 /**
+ * Core bank ids that already hold this question — lets the move/add picker rule out
+ * targets before the user commits to one Core would reject as a duplicate.
+ */
+export async function listBankIdsForQuestion(localCourseId, userId, questionMetadataId) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const payload = await callCore(() =>
+    listQuestionBankIdsForQuestionOnCore(coreCourseId, String(questionMetadataId)),
+  );
+  return Array.isArray(payload?.bankIds) ? payload.bankIds.map(String) : [];
+}
+
+/**
  * Attach a newly created local question to one or more Core banks.
  */
 export async function attachQuestionToBanks(localCourseId, userId, questionMetadataId, opts = {}) {
   let bankIds = [];
   if (Array.isArray(opts.questionBankIds) && opts.questionBankIds.length > 0) {
-    bankIds = opts.questionBankIds.map(String).filter(Boolean);
+    // Deduped: Core treats a second add to the same bank as a conflict, not a no-op.
+    bankIds = [...new Set(opts.questionBankIds.map(String).filter(Boolean))];
   } else if (opts.questionBankId != null && opts.questionBankId !== "") {
     bankIds = [String(opts.questionBankId)];
   }

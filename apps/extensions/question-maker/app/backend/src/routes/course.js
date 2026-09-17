@@ -28,6 +28,7 @@ import {
   addQuestionToBank,
   removeQuestionFromBank,
   moveQuestionToBank,
+  listBankIdsForQuestion,
   ensureDefaultBank,
 } from "../services/questionBankService.js";
 import {
@@ -637,6 +638,32 @@ router.get("/:id/banks", authenticateToken, bankReadAccess, async (req, res, nex
     next(error);
   }
 });
+
+/**
+ * GET /api/course/:id/banks/questions/:questionMetadataId
+ * The bank ids already holding one question, so the move/add picker can rule them out.
+ */
+router.get(
+  "/:id/banks/questions/:questionMetadataId",
+  authenticateToken,
+  bankReadAccess,
+  async (req, res, next) => {
+    try {
+      const questionMetadataId = Number(req.params.questionMetadataId);
+      if (!Number.isInteger(questionMetadataId)) {
+        return res.status(400).json({ success: false, error: "Invalid question id" });
+      }
+      const bankIds = await listBankIdsForQuestion(
+        req.qmCourse.id,
+        req.user.id,
+        questionMetadataId,
+      );
+      res.json({ success: true, data: { bankIds } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /** POST /api/course/:id/banks */
 router.post("/:id/banks", authenticateToken, bankWriteAccess, async (req, res, next) => {
