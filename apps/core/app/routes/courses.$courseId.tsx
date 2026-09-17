@@ -280,6 +280,7 @@ export default function CourseDetailPage() {
               instructors={instructors}
               onEnrollStudent={handleEnrollStudent}
               onRemoveEnrollment={handleRemoveEnrollment}
+              onRefreshEnrollments={refetchEnrollments}
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
