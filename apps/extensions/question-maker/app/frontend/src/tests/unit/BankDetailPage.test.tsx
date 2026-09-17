@@ -4,7 +4,7 @@
  * flows. Hooks, services, and heavy child components are mocked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const {
@@ -277,5 +277,26 @@ describe("BankDetailPage", () => {
     await waitFor(() => expect(lastGridProps).toBeTruthy());
     lastGridProps.onCreateVariant({ questionId: 7 });
     expect(navigateMock).toHaveBeenCalledWith("/courses/5/questions/new?variantOf=7");
+  });
+
+  it("sends browser filters to the server with the page's fixed bank", async () => {
+    renderPage();
+    await waitFor(() => expect(lastGridProps).toBeTruthy());
+    expect(lastGridProps.bankOptions).toBeUndefined();
+
+    act(() => {
+      lastGridProps.onFiltersChange({ ...lastGridProps.filters, questionTypes: ["SA"] });
+    });
+
+    await waitFor(() =>
+      expect(questionService.getQuestionsPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          courseId: 5,
+          questionBankId: "bank-1",
+          types: ["SA"],
+          offset: 0,
+        }),
+      ),
+    );
   });
 });
