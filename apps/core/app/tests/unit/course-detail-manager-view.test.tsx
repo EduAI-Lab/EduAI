@@ -3,7 +3,7 @@
  * gap). CourseDetail.test.tsx already covers the basic shape (tabs present,
  * simple prop rendering); this file drives the tabs/dialogs/forms that pull
  * the bulk of the component's statements: materials rename/delete/visibility,
- * staff instructor+TA management, student enrollment, and RAG settings save.
+ * TAs-tab instructor+TA management, student enrollment, and RAG settings save.
  *
  * Heavy nested feature components (embedding settings, response-style panel,
  * chat history, canvas sync) are stubbed so the assertions stay about this
@@ -189,13 +189,13 @@ function clickTab(name: RegExp) {
 }
 
 describe("CourseDetailManagerView — tabs and overview", () => {
-  it("shows all tabs for admin access including staff, settings, and chat history", () => {
+  it("shows all tabs for admin access including TAs, settings, and chat history", () => {
     renderView();
     expect(screen.getByRole("tab", { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /materials/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /topics/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /enrollments/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /staff/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^TAs$/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /settings/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /chat history/i })).toBeInTheDocument();
   });
@@ -533,11 +533,37 @@ describe("CourseDetailManagerView — enrollments tab", () => {
   });
 });
 
-describe("CourseDetailManagerView — staff tab", () => {
+describe("CourseDetailManagerView — TA tab wording (#1727)", () => {
+  it("labels the tab 'TAs' rather than the ambiguous 'Staff'", () => {
+    renderView();
+    expect(screen.getByRole("tab", { name: /^TAs$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /staff/i })).not.toBeInTheDocument();
+  });
+
+  it("titles the tab's section 'Instructor & TAs' rather than 'Course staff'", () => {
+    renderView();
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    expect(panel.getByText("Instructor & TAs")).toBeInTheDocument();
+    expect(screen.queryByText(/course staff/i)).not.toBeInTheDocument();
+  });
+
+  it("points the enrollments hint at the TAs tab rather than the Staff tab", () => {
+    renderView();
+    clickTab(/enrollments/i);
+    expect(
+      screen.getByText(
+        "Manage student enrollments here. Instructor and TA assignments are on the TAs tab.",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("CourseDetailManagerView — TAs tab", () => {
   it("replaces the current instructor via the combobox", async () => {
     const props = renderView();
-    clickTab(/staff/i);
-    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
     expect(panel.getByText("Current")).toBeInTheDocument();
 
     const combos = panel.getAllByRole("combobox");
@@ -553,8 +579,8 @@ describe("CourseDetailManagerView — staff tab", () => {
 
   it("assigns an instructor when none is currently assigned", async () => {
     const props = renderView({ course: { ...COURSE, instructor: null } });
-    clickTab(/staff/i);
-    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
     expect(panel.getByText(/no instructor assigned yet/i)).toBeInTheDocument();
 
     fireEvent.click(panel.getAllByRole("combobox")[0]);
@@ -570,8 +596,8 @@ describe("CourseDetailManagerView — staff tab", () => {
   it("shows an error message when assigning an instructor fails", async () => {
     const onAssignInstructor = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onAssignInstructor });
-    clickTab(/staff/i);
-    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
     const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[0]);
     fireEvent.mouseDown(panel.getByText("Other Prof"));
@@ -583,13 +609,13 @@ describe("CourseDetailManagerView — staff tab", () => {
 
   it("says no other instructors are available when none exist", () => {
     renderView({ instructors: [] });
-    clickTab(/staff/i);
+    clickTab(/^TAs$/);
     expect(screen.getByText(/no other instructors available/i)).toBeInTheDocument();
   });
 
   it("removes a TA", async () => {
     const props = renderView();
-    clickTab(/staff/i);
+    clickTab(/^TAs$/);
     fireEvent.click(screen.getByRole("button", { name: /remove ta/i }));
     await waitFor(() => expect(props.onRemoveTA).toHaveBeenCalledWith("user-ta"));
   });
@@ -597,14 +623,14 @@ describe("CourseDetailManagerView — staff tab", () => {
   it("shows an error message when removing a TA fails", async () => {
     const onRemoveTA = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onRemoveTA });
-    clickTab(/staff/i);
+    clickTab(/^TAs$/);
     fireEvent.click(screen.getByRole("button", { name: /remove ta/i }));
     await waitFor(() => expect(screen.getByText(/could not remove ta/i)).toBeInTheDocument());
   });
 
-  it("shows the no-TAs-assigned empty state on the staff tab", () => {
+  it("shows the no-TAs-assigned empty state on the TAs tab", () => {
     renderView({ tas: [] });
-    clickTab(/staff/i);
+    clickTab(/^TAs$/);
     expect(screen.getByText("No TAs assigned.")).toBeInTheDocument();
   });
 
@@ -615,9 +641,9 @@ describe("CourseDetailManagerView — staff tab", () => {
       search: searchCandidates,
     };
     const props = renderView();
-    clickTab(/staff/i);
+    clickTab(/^TAs$/);
 
-    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
     const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[combos.length - 1]);
     fireEvent.click(screen.getByText("New TA"));
@@ -635,8 +661,8 @@ describe("CourseDetailManagerView — staff tab", () => {
     };
     const onAddTA = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onAddTA });
-    clickTab(/staff/i);
-    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
     const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[combos.length - 1]);
     fireEvent.click(screen.getByText("New TA"));
@@ -759,19 +785,19 @@ describe("CourseDetailManagerView — access-gated visibility", () => {
     expect(screen.queryByText("Add students")).not.toBeInTheDocument();
   });
 
-  it("hides the staff and settings tabs for a plain TA access level", () => {
+  it("hides the TAs and settings tabs for a plain TA access level", () => {
     renderView({ access: "ta" });
     expect(screen.queryByRole("tab", { name: /^settings$/i })).not.toBeInTheDocument();
   });
 
-  it("keeps the staff tab visible but greyed-out for an instructor without the manage-enrollments grant", () => {
+  it("keeps the TAs tab visible but greyed-out for an instructor without the manage-enrollments grant", () => {
     // Default policy for instructors.canManageEnrollments is true, so use ta
     // access (showStaffTab true, canManageStaff false) to exercise the
     // disabled-tooltip branch (#807) instead of unmounting the tab.
     renderView({ access: "ta" });
-    const staffTab = screen.queryByRole("tab", { name: /staff/i });
-    // TA access never shows the staff tab at all — assert the alternate path:
+    const taTab = screen.queryByRole("tab", { name: /^TAs$/ });
+    // TA access never shows the TAs tab at all — assert the alternate path:
     // topics add form is disabled by default (tas.canManageTopics off).
-    expect(staffTab).not.toBeInTheDocument();
+    expect(taTab).not.toBeInTheDocument();
   });
 });
