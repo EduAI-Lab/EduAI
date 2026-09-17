@@ -11,14 +11,20 @@ vi.mock("../../src/middleware/auth.js", () => ({
 }));
 
 vi.mock("../../src/middleware/courseAccess.js", () => ({
-  requireCourseAccess: () => (req, _res, next) => {
-    req.qmCourse = { id: 9, userId: "owner_1", coreCourseId: "core_1" };
-    req.courseAccess = {
-      level: req.user.role === "STUDENT" ? "ta" : "instructor",
-      rank: req.user.role === "STUDENT" ? 1 : 2,
-    };
-    next();
-  },
+  requireCourseAccess:
+    ({ min } = {}) =>
+    (req, res, next) => {
+      const isTa = req.user.role === "STUDENT";
+      if (min === "instructor" && isTa) {
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
+      }
+      req.qmCourse = { id: 9, userId: "owner_1", coreCourseId: "core_1" };
+      req.courseAccess = {
+        level: isTa ? "ta" : "instructor",
+        rank: isTa ? 1 : 2,
+      };
+      next();
+    },
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
@@ -57,6 +63,7 @@ vi.mock("../../src/services/questionBankService.js", () => ({
   deleteBank: vi.fn(),
   addQuestionToBank: vi.fn(),
   removeQuestionFromBank: vi.fn(),
+  moveQuestionToBank: vi.fn(),
 }));
 
 vi.mock("../../src/utils/logger.js", () => ({
@@ -71,6 +78,7 @@ const {
   deleteBank,
   addQuestionToBank,
   removeQuestionFromBank,
+  moveQuestionToBank,
 } = await import("../../src/services/questionBankService.js");
 
 const courseModule = await import("../../src/routes/course.js");
@@ -159,5 +167,50 @@ describe("course bank routes", () => {
     const res = await request(appFor()).delete("/api/course/9/banks/bank_1/questions/42");
     expect(res.status).toBe(200);
     expect(removeQuestionFromBank).toHaveBeenCalledWith(9, "u-1", "bank_1", "42");
+  });
+
+  it("POST move requires a target bank", async () => {
+    const res = await request(appFor())
+      .post("/api/course/9/banks/bank_1/questions/42/move")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("targetBankId is required");
+    expect(moveQuestionToBank).not.toHaveBeenCalled();
+  });
+
+  it("POST move rejects a non-integer question id", async () => {
+    const res = await request(appFor())
+      .post("/api/course/9/banks/bank_1/questions/abc/move")
+      .send({ targetBankId: "bank_2" });
+    expect(res.status).toBe(400);
+    expect(moveQuestionToBank).not.toHaveBeenCalled();
+  });
+
+  it("POST move moves a question to the target bank", async () => {
+    moveQuestionToBank.mockResolvedValue({ id: "mem_2" });
+    const res = await request(appFor())
+      .post("/api/course/9/banks/bank_1/questions/42/move")
+      .send({ targetBankId: "bank_2" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, data: { id: "mem_2" }, message: "Question moved" });
+    expect(moveQuestionToBank).toHaveBeenCalledWith(9, "u-1", "bank_1", "bank_2", 42);
+  });
+
+  it("POST move is forbidden for a TA", async () => {
+    const res = await request(appFor({ id: "ta-1", role: "STUDENT" }))
+      .post("/api/course/9/banks/bank_1/questions/42/move")
+      .send({ targetBankId: "bank_2" });
+    expect(res.status).toBe(403);
+    expect(moveQuestionToBank).not.toHaveBeenCalled();
+  });
+
+  it("POST move forwards service errors with their status", async () => {
+    moveQuestionToBank.mockRejectedValue(
+      Object.assign(new Error("Question is not a member of this bank"), { status: 404 }),
+    );
+    const res = await request(appFor())
+      .post("/api/course/9/banks/bank_1/questions/42/move")
+      .send({ targetBankId: "bank_2" });
+    expect(res.status).toBe(404);
   });
 });

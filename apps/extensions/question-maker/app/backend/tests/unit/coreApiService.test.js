@@ -26,6 +26,7 @@ const {
   createQuestionBankOnCore,
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
+  moveQuestionBankMembershipOnCore,
   searchCoursesFromCore,
   proxyCoreCreateQuiz,
   proxyCoreListQuizzes,
@@ -563,6 +564,21 @@ describe("removeQuestionBankMembershipOnCore", () => {
       "http://core.test/api/courses/cuid-course-1/banks/bank_1/questions/42?source=question-maker",
     );
     expect(opts.method).toBe("DELETE");
+  });
+});
+
+describe("moveQuestionBankMembershipOnCore", () => {
+  it("POSTs the target bank to the move route", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ id: "mem_2" })));
+
+    await expect(
+      moveQuestionBankMembershipOnCore("cuid-course-1", "bank_1", "42", "bank_2"),
+    ).resolves.toEqual({ id: "mem_2" });
+
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe("http://core.test/api/courses/cuid-course-1/banks/bank_1/questions/42/move");
+    expect(opts.method).toBe("POST");
+    expect(JSON.parse(opts.body)).toEqual({ targetBankId: "bank_2", source: "question-maker" });
   });
 });
 

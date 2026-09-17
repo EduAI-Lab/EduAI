@@ -13,6 +13,7 @@ import {
   addQuestionBankMembershipOnCore,
   addQuestionBankMembershipsOnCore,
   removeQuestionBankMembershipOnCore,
+  moveQuestionBankMembershipOnCore,
 } from "./coreApiService.js";
 
 export const DEFAULT_BANK_NAME = "Course bank";
@@ -183,6 +184,39 @@ export async function removeQuestionFromBank(localCourseId, userId, bankId, ques
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   return callCore(() =>
     removeQuestionBankMembershipOnCore(coreCourseId, bankId, String(questionMetadataId), SOURCE),
+  );
+}
+
+/** Move one question from `fromBankId` to `targetBankId` on Core in a single call. */
+export async function moveQuestionToBank(
+  localCourseId,
+  userId,
+  fromBankId,
+  targetBankId,
+  questionMetadataId,
+) {
+  const target = typeof targetBankId === "string" ? targetBankId.trim() : "";
+  if (!target) {
+    throw coreError("targetBankId is required", 400);
+  }
+  const question = await prisma.questionMetadata.findUnique({
+    where: { id: Number(questionMetadataId) },
+  });
+  if (!question) {
+    throw coreError("Question not found", 404);
+  }
+  if (Number(question.courseId) !== Number(localCourseId)) {
+    throw coreError("Question and bank must belong to the same course", 400);
+  }
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  return callCore(() =>
+    moveQuestionBankMembershipOnCore(
+      coreCourseId,
+      String(fromBankId),
+      String(questionMetadataId),
+      target,
+      SOURCE,
+    ),
   );
 }
 
