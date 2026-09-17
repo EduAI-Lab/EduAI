@@ -171,6 +171,22 @@ vi.mock("@/components/question-bank/QuestionBank", () => ({
     <div data-testid="question-bank">
       <span data-testid="qb-loading">{String(props.isLoading)}</span>
       <span data-testid="qb-empty">{props.emptyMessage}</span>
+      <span data-testid="qb-total">{String(props.total)}</span>
+      <span data-testid="qb-bank-options">
+        {(props.bankOptions ?? []).map((b: any) => b.label).join(",")}
+      </span>
+      <input
+        aria-label="qb-search"
+        value={props.searchTerm}
+        onChange={(e) => props.onSearchChange(e.target.value)}
+      />
+      <button onClick={() => props.onFiltersChange({ ...props.filters, difficulties: ["hard"] })}>
+        filter-hard
+      </button>
+      <button onClick={() => props.onFiltersChange({ ...props.filters, questionBankId: "bank-2" })}>
+        filter-bank
+      </button>
+      <button onClick={() => props.onSortChange("oldest")}>sort-oldest</button>
       <button disabled={props.disableAdd} onClick={props.onAddQuestion}>
         add-question
       </button>
@@ -182,6 +198,12 @@ vi.mock("@/components/question-bank/QuestionBank", () => ({
         <>
           <button onClick={() => props.onViewVariant(props.variants[0])}>view-variant</button>
           <button onClick={() => props.onCreateVariant(props.variants[0])}>create-variant</button>
+          {props.onMoveToBank && (
+            <button onClick={() => props.onMoveToBank(props.variants[0])}>move-to-bank</button>
+          )}
+          {props.onAddToBank && (
+            <button onClick={() => props.onAddToBank(props.variants[0])}>add-to-bank</button>
+          )}
         </>
       )}
     </div>
@@ -324,6 +346,10 @@ vi.mock("@/utils/assessmentExport", () => ({
 }));
 
 import { CourseDetailPage } from "@/pages/CourseDetailPage";
+import { questionBankService } from "@/services/questionBankService";
+
+const lastPageCall = () => questionService.getQuestionsPage.mock.calls.at(-1)?.[0];
+const BANK_2 = { id: "bank-2", courseId: 5, name: "Midterm", isDefault: false };
 
 // ── test fixtures ────────────────────────────────────────────────────────────
 const course = {
@@ -398,6 +424,7 @@ function setDefaultMocks(overrides: Partial<{ tab: string }> = {}) {
   });
   courseService.getCourseTopics.mockResolvedValue([{ id: "t1", name: "Topic 1" }]);
   assessmentService.getAssessmentsPage.mockResolvedValue({ items: [assessment], total: 1 });
+  vi.mocked(questionBankService.listBanks).mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -588,6 +615,65 @@ describe("CourseDetailPage main content", () => {
     await screen.findByTestId("pager-questions");
     fireEvent.click(screen.getByText("next-questions"));
     await waitFor(() => expect(questionService.getQuestionsPage).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("CourseDetailPage question filters", () => {
+  it("sends filter, bank and sort changes to the server and resets paging", async () => {
+    setDefaultMocks({ tab: "questions" });
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await screen.findByTestId("pager-questions");
+    await waitFor(() => expect(screen.getByTestId("qb-bank-options")).toHaveTextContent("Midterm"));
+
+    fireEvent.click(screen.getByText("next-questions"));
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ offset: 25 }));
+
+    fireEvent.click(screen.getByText("filter-hard"));
+    await waitFor(() =>
+      expect(lastPageCall()).toMatchObject({ courseId: 5, difficulties: ["hard"], offset: 0 }),
+    );
+
+    fireEvent.click(screen.getByText("filter-bank"));
+    await waitFor(() =>
+      expect(lastPageCall()).toMatchObject({
+        questionBankId: "bank-2",
+        difficulties: ["hard"],
+        offset: 0,
+      }),
+    );
+
+    fireEvent.click(screen.getByText("sort-oldest"));
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ sortBy: "oldest" }));
+  });
+
+  it("debounces search before querying the server", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+
+    fireEvent.change(screen.getByLabelText("qb-search"), { target: { value: "gravity" } });
+    expect(lastPageCall()?.search).toBeUndefined();
+
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ search: "gravity", offset: 0 }));
+  });
+
+  it("passes the server total to the question browser", async () => {
+    setDefaultMocks({ tab: "questions" });
+    questionService.getQuestionsPage.mockResolvedValue({ items: [question], total: 40 });
+    render(<CourseDetailPage />);
+    await waitFor(() => expect(screen.getByTestId("qb-total")).toHaveTextContent("40"));
+  });
+
+  it("drops a bank filter whose bank no longer exists", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    await waitFor(() => expect(questionBankService.listBanks).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("filter-bank"));
+
+    await waitFor(() => expect(lastPageCall()?.questionBankId).toBeUndefined());
   });
 });
 

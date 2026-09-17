@@ -27,6 +27,10 @@ interface QuestionCardProps {
   onCreateVariant: (entry: QuestionVariantEntry) => void;
   /** Optional bank action — shown in the kebab when provided. */
   onRemoveFromBank?: (entry: QuestionVariantEntry) => void;
+  /** Move the whole question out of the bank in view — shown in the kebab when provided. */
+  onMoveToBank?: (entry: QuestionVariantEntry) => void;
+  /** Add the whole question to another bank — shown in the kebab when provided. */
+  onAddToBank?: (entry: QuestionVariantEntry) => void;
   /**
    * 1-based ordinal of this variant among its question's variants (the primary/base
    * variant is excluded). Resolved by the caller, which sees the full variant list.

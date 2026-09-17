@@ -30,6 +30,7 @@ import {
 } from "@eduai/ui";
 import { CourseDetailSkeleton } from "@/components/shared/Skeletons";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
+import { useQuestionListControls } from "../hooks/useQuestionListControls";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
 import { useGuidedTour } from "../contexts/GuidedTourContext";
 import { useQmLayout } from "../components/layout/QmLayoutContext";
@@ -42,6 +43,10 @@ import {
   QuestionBank as QuestionBankModel,
 } from "../services/questionBankService";
 import { QuestionBank } from "../components/question-bank/QuestionBank";
+import {
+  toBankOptions,
+  toQuestionListOptions,
+} from "../components/question-bank/questionListFilters";
 import { AssessmentSection } from "../components/assessments/AssessmentSection";
 import { DEFAULT_LIST_PAGE_SIZE, ListPaginationBar } from "../components/shared/ListPaginationBar";
 import { QuestionModal } from "../components/questions/QuestionModal";
@@ -184,6 +189,17 @@ export const CourseDetailPage = () => {
   const [questionsOffset, setQuestionsOffset] = useState(0);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const resetQuestionsOffset = useCallback(() => setQuestionsOffset(0), []);
+  const {
+    search: questionSearch,
+    setSearch: setQuestionSearch,
+    debouncedSearch: debouncedQuestionSearch,
+    filters: questionFilters,
+    updateFilters: updateQuestionFilters,
+    sortBy: questionSort,
+    updateSort: updateQuestionSort,
+    reset: resetQuestionListControls,
+  } = useQuestionListControls(resetQuestionsOffset);
   /** Course-scoped aggregates for Overview (not the current page slice — #1040). */
   const [courseQuestionStats, setCourseQuestionStats] = useState<{
     totalQuestions: number;
@@ -266,6 +282,7 @@ export const CourseDetailPage = () => {
       try {
         const page = await questionService.getQuestionsPage({
           courseId,
+          ...toQuestionListOptions(questionFilters, debouncedQuestionSearch, questionSort),
           limit: questionsPageSize,
           offset: questionsOffset,
         });
@@ -287,7 +304,14 @@ export const CourseDetailPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [courseId, questionsOffset, questionsPageSize]);
+  }, [
+    courseId,
+    questionsOffset,
+    questionsPageSize,
+    questionFilters,
+    debouncedQuestionSearch,
+    questionSort,
+  ]);
 
   // Load question banks when the route course changes.
   useEffect(() => {
@@ -322,6 +346,17 @@ export const CourseDetailPage = () => {
       cancelled = true;
     };
   }, [courseId]);
+
+  // A bank filter can outlive its bank (deleted on the Banks tab, or a course switch);
+  // drop it once banks have loaded so the list isn't stuck on an empty, invalid scope.
+  useEffect(() => {
+    if (isBanksLoading || !questionFilters.questionBankId) return;
+    if (!banks.some((bank) => bank.id === questionFilters.questionBankId)) {
+      updateQuestionFilters({ ...questionFilters, questionBankId: null });
+    }
+  }, [banks, isBanksLoading, questionFilters, updateQuestionFilters]);
+
+  const questionBankOptions = useMemo(() => toBankOptions(banks), [banks]);
 
   // Course-wide aggregates for Overview meters (independent of the questions page).
   useEffect(() => {
@@ -374,7 +409,8 @@ export const CourseDetailPage = () => {
     setAssessmentsOffset(0);
     setCourseQuestionStats(null);
     setCourseQuestionStatsUnavailable(false);
-  }, [courseId]);
+    resetQuestionListControls();
+  }, [courseId, resetQuestionListControls]);
 
   const handleCreateBank = useCallback(
     async (name: string) => {
@@ -1081,6 +1117,14 @@ export const CourseDetailPage = () => {
           )}
           <QuestionBank
             variants={variantEntries}
+            total={questionsTotal}
+            searchTerm={questionSearch}
+            onSearchChange={setQuestionSearch}
+            filters={questionFilters}
+            onFiltersChange={updateQuestionFilters}
+            sortBy={questionSort}
+            onSortChange={updateQuestionSort}
+            bankOptions={questionBankOptions}
             onViewVariant={handleViewVariant}
             onCreateVariant={handleCreateVariant}
             onAddQuestion={handleAddQuestion}

@@ -10,10 +10,12 @@ import { Button, Badge, Alert, AlertDescription } from "@eduai/ui";
 import { IconArrowLeft, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
+import { useQuestionListControls } from "../hooks/useQuestionListControls";
 import { toast } from "sonner";
 import { questionService } from "../services/questionService";
 import { questionBankService, type QuestionBank } from "../services/questionBankService";
 import { QuestionBank as QuestionBankGrid } from "../components/question-bank/QuestionBank";
+import { toQuestionListOptions } from "../components/question-bank/questionListFilters";
 import { AddQuestionsToBankDialog } from "../components/question-bank/AddQuestionsToBankDialog";
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
@@ -41,6 +43,17 @@ export function BankDetailPage() {
   const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const pageSize = DEFAULT_LIST_PAGE_SIZE;
+
+  const resetQuestionsOffset = useCallback(() => setQuestionsOffset(0), []);
+  const {
+    search: questionSearch,
+    setSearch: setQuestionSearch,
+    debouncedSearch: debouncedQuestionSearch,
+    filters: questionFilters,
+    updateFilters: updateQuestionFilters,
+    sortBy: questionSort,
+    updateSort: updateQuestionSort,
+  } = useQuestionListControls(resetQuestionsOffset);
 
   const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
@@ -111,6 +124,8 @@ export function BankDetailPage() {
       try {
         const page = await questionService.getQuestionsPage({
           courseId,
+          // The page is fixed to its route bank, so the toolbar's bank facet never applies.
+          ...toQuestionListOptions(questionFilters, debouncedQuestionSearch, questionSort),
           questionBankId: bankId,
           limit: pageSize,
           offset: questionsOffset,
@@ -133,7 +148,16 @@ export function BankDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, bankId, questionsOffset, pageSize, refreshKey]);
+  }, [
+    courseId,
+    bankId,
+    questionsOffset,
+    pageSize,
+    refreshKey,
+    questionFilters,
+    debouncedQuestionSearch,
+    questionSort,
+  ]);
 
   const topicNameMap = useMemo(() => new Map(topics.map((t) => [t.id, t.name])), [topics]);
 
@@ -240,6 +264,13 @@ export function BankDetailPage() {
 
       <QuestionBankGrid
         variants={variantEntries}
+        total={questionsTotal}
+        searchTerm={questionSearch}
+        onSearchChange={setQuestionSearch}
+        filters={questionFilters}
+        onFiltersChange={updateQuestionFilters}
+        sortBy={questionSort}
+        onSortChange={updateQuestionSort}
         onViewVariant={setSelectedVariant}
         onCreateVariant={(entry) =>
           navigate(`/courses/${courseId}/questions/new?variantOf=${entry.questionId}`)

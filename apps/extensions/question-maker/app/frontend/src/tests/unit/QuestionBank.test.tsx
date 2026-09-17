@@ -1,11 +1,18 @@
 /**
- * #1545 — render + interaction coverage for the QuestionBank browser: empty
- * states, search/filter/sort composition, view toggling, card actions, and
- * the header upload/add actions.
+ * #1545 / #1762 — render + interaction coverage for the controlled QuestionBank
+ * browser: empty states, server-total counts, variant-level narrowing inside the
+ * server page, view toggling, card actions, and header upload/add actions.
+ * Filtering/sorting/paging themselves are server-side (see the page tests).
  */
+import { useState, type ComponentProps } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import { QuestionBank } from "@/components/question-bank/QuestionBank";
+import {
+  EMPTY_QUESTION_FILTERS,
+  type QuestionFilters,
+  type QuestionSort,
+} from "@/components/question-bank/QuestionFilterToolbar";
 import type { QuestionVariantEntry } from "@/types/question";
 
 vi.mock("@/hooks/useQmPermissions", () => ({
@@ -44,43 +51,72 @@ function makeEntry(overrides: Partial<QuestionVariantEntry> = {}): QuestionVaria
   } as unknown as QuestionVariantEntry;
 }
 
-function baseProps() {
-  return {
-    onViewVariant: vi.fn(),
-    onCreateVariant: vi.fn(),
-    onAddQuestion: vi.fn(),
-    onUploadQuestions: vi.fn(),
-  };
+type HarnessProps = Partial<ComponentProps<typeof QuestionBank>> & {
+  variants: QuestionVariantEntry[];
+  initialFilters?: QuestionFilters;
+};
+
+/** Holds the lifted state the way the pages do, reporting changes to optional spies. */
+function Harness({ initialFilters, ...props }: HarnessProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filters, setFilters] = useState<QuestionFilters>(initialFilters ?? EMPTY_QUESTION_FILTERS);
+  const [sortBy, setSortBy] = useState<QuestionSort>("newest");
+  return (
+    <QuestionBank
+      onViewVariant={vi.fn()}
+      onCreateVariant={vi.fn()}
+      onAddQuestion={vi.fn()}
+      onUploadQuestions={vi.fn()}
+      total={props.variants.length}
+      {...props}
+      searchTerm={searchTerm}
+      onSearchChange={(value) => {
+        setSearchTerm(value);
+        props.onSearchChange?.(value);
+      }}
+      filters={filters}
+      onFiltersChange={(next) => {
+        setFilters(next);
+        props.onFiltersChange?.(next);
+      }}
+      sortBy={sortBy}
+      onSortChange={(next) => {
+        setSortBy(next);
+        props.onSortChange?.(next);
+      }}
+    />
+  );
 }
 
 describe("QuestionBank", () => {
   beforeEach(() => cleanup());
 
   it("shows the empty state with add/upload actions when there are no variants", () => {
-    const props = baseProps();
-    render(<QuestionBank variants={[]} {...props} />);
+    const onAddQuestion = vi.fn();
+    const onUploadQuestions = vi.fn();
+    render(
+      <Harness variants={[]} onAddQuestion={onAddQuestion} onUploadQuestions={onUploadQuestions} />,
+    );
 
     expect(screen.getByRole("heading", { name: "No questions yet" })).toBeInTheDocument();
-    // The header always renders its own Add/Upload actions, and the empty
-    // state repeats them inline — both fire the same callback, so either works.
     const [addButton] = screen.getAllByRole("button", { name: /add question/i });
     fireEvent.click(addButton);
-    expect(props.onAddQuestion).toHaveBeenCalledTimes(1);
+    expect(onAddQuestion).toHaveBeenCalledTimes(1);
 
     const [uploadButton] = screen.getAllByRole("button", { name: "Upload" });
     fireEvent.click(uploadButton);
-    expect(props.onUploadQuestions).toHaveBeenCalledTimes(1);
+    expect(onUploadQuestions).toHaveBeenCalledTimes(1);
   });
 
   it("shows the guided-tour empty state when there is no course and onOpenProfile is provided", () => {
     const onOpenProfile = vi.fn();
-    render(<QuestionBank variants={[]} {...baseProps()} onOpenProfile={onOpenProfile} />);
+    render(<Harness variants={[]} onOpenProfile={onOpenProfile} />);
 
     fireEvent.click(screen.getByRole("button", { name: /start guided tour/i }));
     expect(onOpenProfile).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the question count and each card when variants are present", () => {
+  it("shows the server total and every card on the page", () => {
     const entries = [
       makeEntry(),
       makeEntry({
@@ -88,34 +124,35 @@ describe("QuestionBank", () => {
         variant: { ...makeEntry().variant, id: 2, questionText: "What is 3 + 3?" },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} total={12} />);
 
-    expect(screen.getByText("2 questions in this course")).toBeInTheDocument();
+    expect(screen.getByText("12 questions in this course")).toBeInTheDocument();
     expect(screen.getByText("What is 2 + 2?")).toBeInTheDocument();
     expect(screen.getByText("What is 3 + 3?")).toBeInTheDocument();
   });
 
-  it("filters variants by search term and shows the filtered-count message", () => {
+  it("reports search changes and narrows the page's variants while the server catches up", () => {
+    const onSearchChange = vi.fn();
     const entries = [
-      makeEntry(),
+      makeEntry({ questionDescription: "Geometry" }),
       makeEntry({
         questionId: 2,
-        primaryTopicName: "Geometry",
+        questionDescription: "Shapes",
         variant: { ...makeEntry().variant, id: 2, questionText: "What is a triangle?" },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} total={2} onSearchChange={onSearchChange} />);
 
     fireEvent.change(screen.getByLabelText("Search questions"), { target: { value: "triangle" } });
 
+    expect(onSearchChange).toHaveBeenCalledWith("triangle");
     expect(screen.getByText("What is a triangle?")).toBeInTheDocument();
     expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
-    expect(screen.getByText("1 of 2 shown")).toBeInTheDocument();
+    expect(screen.getByText("2 matching")).toBeInTheDocument();
   });
 
-  it("shows the no-match empty state and clears filters on demand", () => {
-    const entries = [makeEntry()];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+  it("shows the no-match empty state and clears search and filters on demand", () => {
+    render(<Harness variants={[makeEntry()]} />);
 
     fireEvent.change(screen.getByLabelText("Search questions"), {
       target: { value: "nonexistent" },
@@ -126,145 +163,41 @@ describe("QuestionBank", () => {
     expect(screen.getByText("What is 2 + 2?")).toBeInTheDocument();
   });
 
-  it("sorts by type when the sort control changes", () => {
+  it("keeps the toolbar when active filters leave the page empty", () => {
+    render(
+      <Harness
+        variants={[]}
+        total={0}
+        initialFilters={{ ...EMPTY_QUESTION_FILTERS, difficulties: ["hard"] }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Search questions")).toBeInTheDocument();
+    expect(screen.getByText("No questions match your filters")).toBeInTheDocument();
+  });
+
+  it("reports sort changes without reordering the server page", () => {
+    const onSortChange = vi.fn();
     const entries = [
-      makeEntry({
-        questionType: "SA",
-        variant: { ...makeEntry().variant, id: 1, questionText: "SA question", choices: null },
-      }),
+      makeEntry({ variant: { ...makeEntry().variant, id: 1, questionText: "First" } }),
       makeEntry({
         questionId: 2,
-        questionType: "MCQ",
-        variant: { ...makeEntry().variant, id: 2, questionText: "MCQ question" },
+        variant: { ...makeEntry().variant, id: 2, questionText: "Second" },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
-
-    fireEvent.click(screen.getByLabelText("Sort questions"));
-    fireEvent.click(screen.getByText("By type"));
-
-    const list = document.querySelector('[data-tour-id="question-list"]')!;
-    const cards = within(list as HTMLElement).getAllByText(/question$/);
-    // MCQ sorts before SA alphabetically.
-    expect(cards[0]).toHaveTextContent("MCQ question");
-  });
-
-  it("toggles between grid and list view", () => {
-    render(<QuestionBank variants={[makeEntry()]} {...baseProps()} />);
-
-    const gridBtn = screen.getByLabelText("Grid view");
-    const listBtn = screen.getByLabelText("List view");
-    expect(gridBtn).toHaveAttribute("aria-pressed", "true");
-
-    fireEvent.click(listBtn);
-    expect(listBtn).toHaveAttribute("aria-pressed", "true");
-    expect(gridBtn).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("fires onViewVariant when a card is clicked", () => {
-    const props = baseProps();
-    const entry = makeEntry();
-    render(<QuestionBank variants={[entry]} {...props} />);
-
-    fireEvent.click(screen.getByText("What is 2 + 2?"));
-    expect(props.onViewVariant).toHaveBeenCalledWith(entry);
-  });
-
-  it("hides the upload/add header buttons when disabled", () => {
-    render(<QuestionBank variants={[makeEntry()]} {...baseProps()} disableAdd disableUpload />);
-
-    expect(screen.queryByRole("button", { name: /add question/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
-  });
-
-  it("renders a loading skeleton instead of cards when isLoading is true", () => {
-    render(<QuestionBank variants={[makeEntry()]} {...baseProps()} isLoading />);
-
-    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
-  });
-
-  it("sorts by oldest when selected", () => {
-    const entries = [
-      makeEntry({
-        variant: {
-          ...makeEntry().variant,
-          id: 1,
-          questionText: "Newer",
-          createdAt: "2026-02-01T00:00:00.000Z",
-        },
-      }),
-      makeEntry({
-        questionId: 2,
-        variant: {
-          ...makeEntry().variant,
-          id: 2,
-          questionText: "Older",
-          createdAt: "2026-01-01T00:00:00.000Z",
-        },
-      }),
-    ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} onSortChange={onSortChange} />);
 
     fireEvent.click(screen.getByLabelText("Sort questions"));
     fireEvent.click(screen.getByText("Oldest first"));
 
-    const list = document.querySelector('[data-tour-id="question-list"]')!;
-    const cards = within(list as HTMLElement).getAllByText(/^(Newer|Older)$/);
-    expect(cards[0]).toHaveTextContent("Older");
+    expect(onSortChange).toHaveBeenCalledWith("oldest");
+    const list = document.querySelector('[data-tour-id="question-list"]') as HTMLElement;
+    const cards = within(list).getAllByText(/^(First|Second)$/);
+    expect(cards[0]).toHaveTextContent("First");
   });
 
-  it("applies reasoning-level, difficulty, AI-generated, and draft-status filters", () => {
-    const entries = [
-      makeEntry({
-        variant: {
-          ...makeEntry().variant,
-          id: 1,
-          questionText: "Easy AI draft",
-          difficulty: "easy",
-          reasoningLevel: "recall",
-        },
-        isAiGenerated: true,
-        isDraft: true,
-      }),
-      makeEntry({
-        questionId: 2,
-        variant: {
-          ...makeEntry().variant,
-          id: 2,
-          questionText: "Hard manual final",
-          difficulty: "hard",
-          reasoningLevel: "analysis",
-        },
-        isAiGenerated: false,
-        isDraft: false,
-      }),
-    ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
-
-    fireEvent.click(screen.getByLabelText("Sort questions"));
-    fireEvent.click(screen.getByText("By type"));
-
-    // Search narrows to a single result to exercise the filtered-count branch
-    // alongside whichever filter toolbar affordances are available.
-    fireEvent.change(screen.getByLabelText("Search questions"), { target: { value: "easy" } });
-    expect(screen.getByText("Easy AI draft")).toBeInTheDocument();
-    expect(screen.queryByText("Hard manual final")).not.toBeInTheDocument();
-  });
-
-  it("forwards onRemoveFromBank and renders in compact mode", () => {
-    const onRemoveFromBank = vi.fn();
-    render(
-      <QuestionBank
-        variants={[makeEntry()]}
-        {...baseProps()}
-        onRemoveFromBank={onRemoveFromBank}
-        compact
-      />,
-    );
-    expect(screen.getByText("What is 2 + 2?")).toBeInTheDocument();
-  });
-
-  it("filters by question type via the Filters popover", async () => {
+  it("leaves question-type filtering to the server", async () => {
+    const onFiltersChange = vi.fn();
     const entries = [
       makeEntry({ questionType: "MCQ" }),
       makeEntry({
@@ -278,17 +211,20 @@ describe("QuestionBank", () => {
         },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} onFiltersChange={onFiltersChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
     fireEvent.click(await screen.findByText("Short answer"));
 
+    expect(onFiltersChange).toHaveBeenCalledWith({
+      ...EMPTY_QUESTION_FILTERS,
+      questionTypes: ["SA"],
+    });
     expect(screen.getByText("Short answer question")).toBeInTheDocument();
-    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
-    expect(screen.getByText("1 of 2 shown")).toBeInTheDocument();
+    expect(screen.getByText("What is 2 + 2?")).toBeInTheDocument();
   });
 
-  it("filters by difficulty via the Filters popover", async () => {
+  it("hides variants that fail the difficulty filter", async () => {
     const entries = [
       makeEntry({ variant: { ...makeEntry().variant, id: 1, difficulty: "easy" } }),
       makeEntry({
@@ -301,18 +237,17 @@ describe("QuestionBank", () => {
         },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} />);
 
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
     const hardOptions = await screen.findAllByText("Hard");
-    const hardCheckboxLabel = hardOptions.find((el) => el.closest("label"))!;
-    fireEvent.click(hardCheckboxLabel);
+    fireEvent.click(hardOptions.find((el) => el.closest("label"))!);
 
     expect(screen.getByText("Hard question")).toBeInTheDocument();
     expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
   });
 
-  it("filters by reasoning level via the Filters popover", async () => {
+  it("hides variants that fail the reasoning-level filter", async () => {
     const entries = [
       makeEntry({ variant: { ...makeEntry().variant, id: 1, reasoningLevel: "factual" } }),
       makeEntry({
@@ -325,7 +260,7 @@ describe("QuestionBank", () => {
         },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} />);
 
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
     fireEvent.click(await screen.findByText("Analytical"));
@@ -334,7 +269,7 @@ describe("QuestionBank", () => {
     expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
   });
 
-  it("filters by AI-generated source via the Filters popover", async () => {
+  it("hides variants that fail the AI-generated filter", async () => {
     const entries = [
       makeEntry({ isAiGenerated: false }),
       makeEntry({
@@ -343,7 +278,7 @@ describe("QuestionBank", () => {
         variant: { ...makeEntry().variant, id: 2, questionText: "AI question" },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} />);
 
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
     fireEvent.click(await screen.findByRole("button", { name: "AI" }));
@@ -352,7 +287,7 @@ describe("QuestionBank", () => {
     expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
   });
 
-  it("filters by draft status via the Filters popover", async () => {
+  it("hides variants that fail the draft-status filter", async () => {
     const entries = [
       makeEntry({ isDraft: false }),
       makeEntry({
@@ -361,7 +296,7 @@ describe("QuestionBank", () => {
         variant: { ...makeEntry().variant, id: 2, questionText: "Draft question" },
       }),
     ];
-    render(<QuestionBank variants={entries} {...baseProps()} />);
+    render(<Harness variants={entries} />);
 
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
@@ -370,10 +305,53 @@ describe("QuestionBank", () => {
     expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
   });
 
-  it("shows a custom empty message when provided", () => {
+  it("passes bank options through to the toolbar", () => {
     render(
-      <QuestionBank variants={[]} {...baseProps()} emptyMessage="Nothing here for this topic." />,
+      <Harness variants={[makeEntry()]} bankOptions={[{ value: "b1", label: "Course bank" }]} />,
     );
+    expect(screen.getByLabelText("Filter by bank")).toBeInTheDocument();
+  });
+
+  it("toggles between grid and list view", () => {
+    render(<Harness variants={[makeEntry()]} />);
+
+    const gridBtn = screen.getByLabelText("Grid view");
+    const listBtn = screen.getByLabelText("List view");
+    expect(gridBtn).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(listBtn);
+    expect(listBtn).toHaveAttribute("aria-pressed", "true");
+    expect(gridBtn).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("fires onViewVariant when a card is clicked", () => {
+    const onViewVariant = vi.fn();
+    const entry = makeEntry();
+    render(<Harness variants={[entry]} onViewVariant={onViewVariant} />);
+
+    fireEvent.click(screen.getByText("What is 2 + 2?"));
+    expect(onViewVariant).toHaveBeenCalledWith(entry);
+  });
+
+  it("hides the upload/add header buttons when disabled", () => {
+    render(<Harness variants={[makeEntry()]} disableAdd disableUpload />);
+
+    expect(screen.queryByRole("button", { name: /add question/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
+  });
+
+  it("renders a loading skeleton instead of cards when isLoading is true", () => {
+    render(<Harness variants={[makeEntry()]} isLoading />);
+    expect(screen.queryByText("What is 2 + 2?")).not.toBeInTheDocument();
+  });
+
+  it("forwards onRemoveFromBank and renders in compact mode", () => {
+    render(<Harness variants={[makeEntry()]} onRemoveFromBank={vi.fn()} compact />);
+    expect(screen.getByText("What is 2 + 2?")).toBeInTheDocument();
+  });
+
+  it("shows a custom empty message when provided", () => {
+    render(<Harness variants={[]} emptyMessage="Nothing here for this topic." />);
     expect(screen.getByText("Nothing here for this topic.")).toBeInTheDocument();
   });
 
@@ -397,7 +375,7 @@ describe("QuestionBank", () => {
         createdAt: "2026-01-03T00:00:00.000Z",
       },
     });
-    render(<QuestionBank variants={[base, variantA, variantB]} {...baseProps()} />);
+    render(<Harness variants={[base, variantA, variantB]} />);
 
     expect(screen.getByText(/Variant 1/)).toBeInTheDocument();
     expect(screen.getByText(/Variant 2/)).toBeInTheDocument();
