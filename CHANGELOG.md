@@ -10,6 +10,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - Filter Question Maker questions by bank: the course Questions tab and the Question Library get a "Bank" facet in the filter toolbar (the Library enables it once a course is picked), and the filter runs server-side alongside the existing filters.
 - Move the course Questions tab and bank detail page filters (search, type, difficulty, reasoning, AI, draft, sort) from the current page to the server, so filters see every question instead of only the loaded page.
 - Add "Move to bank…" (when a bank is in view) and "Add to bank…" (in All questions) to the question card's (···) menu for instructors, backed by a new atomic Core route `POST /api/courses/:courseId/banks/:bankId/questions/:externalQuestionId/move` and its QM proxy.
+- Refuse to add or move a Question Maker question into a bank that already holds it: Core answers the duplicate with `409` instead of silently reporting success (and a move no longer degrades into a removal from the source bank), and the move/add picker greys out the banks the question is already in, backed by a new `GET /api/courses/:courseId/banks/questions/:externalQuestionId` and its QM proxy.
 - Remove the unused `BankSelector` component and its tests. Closes #1762.
 
 ## 2026.09.15
