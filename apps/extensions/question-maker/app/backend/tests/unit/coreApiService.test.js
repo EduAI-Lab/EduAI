@@ -580,6 +580,22 @@ describe("moveQuestionBankMembershipOnCore", () => {
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body)).toEqual({ targetBankId: "bank_2", source: "question-maker" });
   });
+
+  it("URL-encodes a path-traversal bankId instead of letting it escape the route", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ id: "mem_3" })));
+
+    await moveQuestionBankMembershipOnCore(
+      "cuid-course-1",
+      "../../other/banks/b9/questions/99/move?",
+      "42",
+      "bank_2",
+    );
+
+    const [url] = fetch.mock.calls[0];
+    expect(url).toBe(
+      "http://core.test/api/courses/cuid-course-1/banks/..%2F..%2Fother%2Fbanks%2Fb9%2Fquestions%2F99%2Fmove%3F/questions/42/move",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

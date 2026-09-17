@@ -732,8 +732,11 @@ export async function moveQuestionBankMembershipOnCore(
   source = "question-maker",
   opts = {},
 ) {
+  const safeCourseId = encodeURIComponent(String(coreCourseId));
+  const safeFromBankId = encodeURIComponent(String(fromBankId));
+  const safeExternalQuestionId = encodeURIComponent(String(externalQuestionId));
   return fetchFromCore(
-    `/api/courses/${coreCourseId}/banks/${fromBankId}/questions/${externalQuestionId}/move`,
+    `/api/courses/${safeCourseId}/banks/${safeFromBankId}/questions/${safeExternalQuestionId}/move`,
     { method: "POST", body: { targetBankId, source }, ...opts },
   );
 }
