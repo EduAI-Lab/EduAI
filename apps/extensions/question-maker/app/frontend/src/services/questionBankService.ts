@@ -65,6 +65,12 @@ export const questionBankService = {
     await api.delete(`/api/course/${courseId}/banks/${bankId}/questions/${questionMetadataId}`);
   },
 
+  /** Bank ids that already hold this question — targets the picker must rule out. */
+  async listBankIdsForQuestion(courseId: number, questionMetadataId: number): Promise<string[]> {
+    const response = await api.get(`/api/course/${courseId}/banks/questions/${questionMetadataId}`);
+    return response.data.data?.bankIds || [];
+  },
+
   /** Moves one question out of `fromBankId` into `targetBankId` in a single call. */
   async moveQuestionToBank(
     courseId: number,
