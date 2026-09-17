@@ -26,6 +26,7 @@ vi.mock("~/lib/question-banks/server", () => ({
   listBankMemberships: vi.fn(),
   addQuestionToBank: vi.fn(),
   removeQuestionFromBank: vi.fn(),
+  moveQuestionBetweenBanks: vi.fn(),
 }));
 
 import { action, loader } from "~/routes/api/courses.banks.$";
@@ -38,6 +39,7 @@ import {
   deleteQuestionBank,
   listBankMemberships,
   listQuestionBanks,
+  moveQuestionBetweenBanks,
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
@@ -318,5 +320,67 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     const res = await action(args("POST", undefined, { body: { name: "Extra" }, bearer: true }));
     expect(requireServiceKey).toHaveBeenCalled();
     expect(res.status).toBe(201);
+  });
+
+  it("moves a membership to another bank (200)", async () => {
+    vi.mocked(moveQuestionBetweenBanks).mockResolvedValue({
+      membership: { id: "mem_2", questionBankId: "bank_2" },
+    } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", { body: { targetBankId: "bank_2" } }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: "mem_2", questionBankId: "bank_2" });
+    expect(moveQuestionBetweenBanks).toHaveBeenCalledWith(COURSE_ID, "bank_1", "42", {
+      targetBankId: "bank_2",
+    });
+  });
+
+  it.each([
+    ["Question bank not found", 404],
+    ["Question is not a member of this bank", 404],
+    ["Source and target bank must differ", 400],
+    ["Invalid input", 400],
+  ])("maps move error %s to %i", async (error, status) => {
+    vi.mocked(moveQuestionBetweenBanks).mockResolvedValue({ error } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", { body: { targetBankId: "bank_2" } }),
+    );
+
+    expect(res.status).toBe(status);
+    expect(await res.json()).toMatchObject({ error });
+  });
+
+  it("403 when a student tries to move a question", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: COURSE_ID, isPublished: true },
+      access: { level: "student" },
+    } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", { body: { targetBankId: "bank_2" } }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(moveQuestionBetweenBanks).not.toHaveBeenCalled();
+  });
+
+  it("moves with a valid service key", async () => {
+    vi.mocked(moveQuestionBetweenBanks).mockResolvedValue({
+      membership: { id: "mem_2" },
+    } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", {
+        body: { targetBankId: "bank_2", source: "question-maker" },
+        bearer: true,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
   });
 });
