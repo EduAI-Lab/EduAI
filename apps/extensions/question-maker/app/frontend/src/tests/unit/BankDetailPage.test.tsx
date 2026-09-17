@@ -79,6 +79,13 @@ vi.mock("@/components/ui/DeleteConfirmationModal", () => ({
     ) : null;
   },
 }));
+let lastMoveDialogProps: any;
+vi.mock("@/components/question-bank/MoveQuestionToBankDialog", () => ({
+  MoveQuestionToBankDialog: (props: any) => {
+    lastMoveDialogProps = props;
+    return props.open ? <div>move-dialog</div> : null;
+  },
+}));
 
 import { BankDetailPage } from "@/pages/BankDetailPage";
 
@@ -237,6 +244,7 @@ describe("BankDetailPage", () => {
     await waitFor(() => expect(lastGridProps).toBeTruthy());
     expect(lastGridProps.disableAdd).toBe(true);
     expect(lastGridProps.onRemoveFromBank).toBeUndefined();
+    expect(lastGridProps.onMoveToBank).toBeUndefined();
   });
 
   it("removes a question from the bank via the confirmation modal", async () => {
@@ -298,5 +306,47 @@ describe("BankDetailPage", () => {
         }),
       ),
     );
+  });
+
+  it("moves a question out of this bank and refreshes the list", async () => {
+    const question = {
+      id: 42,
+      description: "Q",
+      type: "MCQ",
+      courseId: 5,
+      primaryTopicId: "t1",
+      variants: [{ id: 7, questionText: "What?", difficulty: "easy", referenceId: null }],
+    };
+    questionService.getQuestionsPage.mockResolvedValue({ items: [question], total: 1 });
+    questionBankService.listBanks.mockResolvedValue([
+      bank,
+      { id: "bank-2", name: "Final", isDefault: false },
+    ]);
+    renderPage();
+    await waitFor(() => expect(lastGridProps?.variants?.length).toBe(1));
+
+    act(() => {
+      lastGridProps.onMoveToBank(lastGridProps.variants[0]);
+    });
+    expect(await screen.findByText("move-dialog")).toBeInTheDocument();
+    expect(lastMoveDialogProps).toMatchObject({
+      mode: "move",
+      courseId: 5,
+      questionId: 42,
+      currentBankId: "bank-1",
+    });
+    expect(lastMoveDialogProps.banks.map((b: any) => b.id)).toEqual(["bank-1", "bank-2"]);
+
+    const callsBefore = questionService.getQuestionsPage.mock.calls.length;
+    act(() => {
+      lastMoveDialogProps.onSuccess({ id: "bank-2", name: "Final", isDefault: false });
+      lastMoveDialogProps.onOpenChange(false);
+    });
+
+    expect(toastFn).toHaveBeenCalledWith("Moved to bank", expect.anything());
+    await waitFor(() =>
+      expect(questionService.getQuestionsPage.mock.calls.length).toBeGreaterThan(callsBefore),
+    );
+    expect(screen.queryByText("move-dialog")).not.toBeInTheDocument();
   });
 });

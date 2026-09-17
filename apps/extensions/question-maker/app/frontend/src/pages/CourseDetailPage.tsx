@@ -44,6 +44,10 @@ import {
 } from "../services/questionBankService";
 import { QuestionBank } from "../components/question-bank/QuestionBank";
 import {
+  MoveQuestionToBankDialog,
+  type BankMembershipAction,
+} from "../components/question-bank/MoveQuestionToBankDialog";
+import {
   toBankOptions,
   toQuestionListOptions,
 } from "../components/question-bank/questionListFilters";
@@ -200,6 +204,11 @@ export const CourseDetailPage = () => {
     updateSort: updateQuestionSort,
     reset: resetQuestionListControls,
   } = useQuestionListControls(resetQuestionsOffset);
+  const [questionsRefreshKey, setQuestionsRefreshKey] = useState(0);
+  const [bankAction, setBankAction] = useState<{
+    entry: QuestionVariantEntry;
+    mode: BankMembershipAction;
+  } | null>(null);
   /** Course-scoped aggregates for Overview (not the current page slice — #1040). */
   const [courseQuestionStats, setCourseQuestionStats] = useState<{
     totalQuestions: number;
@@ -311,6 +320,7 @@ export const CourseDetailPage = () => {
     questionFilters,
     debouncedQuestionSearch,
     questionSort,
+    questionsRefreshKey,
   ]);
 
   // Load question banks when the route course changes.
@@ -357,6 +367,30 @@ export const CourseDetailPage = () => {
   }, [banks, isBanksLoading, questionFilters, updateQuestionFilters]);
 
   const questionBankOptions = useMemo(() => toBankOptions(banks), [banks]);
+
+  const handleBankActionSuccess = useCallback(
+    (targetBank: QuestionBankModel) => {
+      if (!bankAction) return;
+      const { questionId } = bankAction.entry;
+      if (bankAction.mode === "add") {
+        toast("Added to bank", {
+          description: `Question #${questionId} was added to “${targetBank.name}”.`,
+        });
+        return;
+      }
+      toast("Moved to bank", {
+        description: `Question #${questionId} is now in “${targetBank.name}”.`,
+      });
+      // The question leaves the bank in view; step back if it was the last one on this page.
+      const leftOnPage = questions.filter((question) => question.id !== questionId).length;
+      if (leftOnPage === 0 && questionsOffset > 0) {
+        setQuestionsOffset(Math.max(0, questionsOffset - questionsPageSize));
+      } else {
+        setQuestionsRefreshKey((key) => key + 1);
+      }
+    },
+    [bankAction, questions, questionsOffset, questionsPageSize],
+  );
 
   // Course-wide aggregates for Overview meters (independent of the questions page).
   useEffect(() => {
@@ -1135,6 +1169,16 @@ export const CourseDetailPage = () => {
             disableAdd={writesDisabled}
             disableUpload={writesDisabled}
             onOpenProfile={() => startTour("main")}
+            onMoveToBank={
+              canManageAssessmentForCourse && questionFilters.questionBankId
+                ? (entry) => setBankAction({ entry, mode: "move" })
+                : undefined
+            }
+            onAddToBank={
+              canManageAssessmentForCourse && !questionFilters.questionBankId
+                ? (entry) => setBankAction({ entry, mode: "add" })
+                : undefined
+            }
           />
           <ListPaginationBar
             total={questionsTotal}
@@ -1143,6 +1187,20 @@ export const CourseDetailPage = () => {
             onPageChange={setQuestionsOffset}
             itemLabel="questions"
           />
+          {bankAction && (
+            <MoveQuestionToBankDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) setBankAction(null);
+              }}
+              mode={bankAction.mode}
+              courseId={course.id}
+              questionId={bankAction.entry.questionId}
+              banks={banks}
+              currentBankId={questionFilters.questionBankId}
+              onSuccess={handleBankActionSuccess}
+            />
+          )}
         </PageTabsContent>
 
         <PageTabsContent value="banks" className="space-y-6">
