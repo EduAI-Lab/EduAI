@@ -15,6 +15,8 @@ import {
   IconEyeOff,
   IconClock,
   IconDownload,
+  IconLink,
+  IconCopy,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
@@ -118,6 +120,37 @@ const enrollmentCsvErrorSchema = z.object({
 /** Mirrors MAX_CSV_ROWS / MAX_CSV_BYTES in `~/lib/courses/enrollments-csv.server`. */
 const CSV_MAX_ROWS = 500;
 const CSV_MAX_KB = 256;
+
+/**
+ * #1756 — self-enrollment link payloads from `/api/courses/:id/self-enroll`.
+ * Dates arrive as ISO strings because the route serialises them with
+ * `JSON.stringify`. The `url` on a freshly minted link is the ONLY time the raw
+ * token is ever available, so a response that fails to parse has to surface as
+ * an error rather than be silently dropped.
+ */
+const selfEnrollmentLinkSchema = z.object({
+  id: z.string(),
+  status: z.enum(["ACTIVE", "REVOKED", "EXPIRED", "EXHAUSTED"]),
+  expiresAt: z.string(),
+  revokedAt: z.string().nullable(),
+  maxRedemptions: z.number().nullable(),
+  redemptionCount: z.number(),
+  createdAt: z.string(),
+});
+const selfEnrollmentListSchema = z.object({ links: z.array(selfEnrollmentLinkSchema) });
+const selfEnrollmentCreatedSchema = z.object({
+  url: z.string(),
+  link: selfEnrollmentLinkSchema,
+});
+
+type SelfEnrollmentLinkSummary = z.infer<typeof selfEnrollmentLinkSchema>;
+
+const SELF_ENROLLMENT_STATUS_LABELS = {
+  ACTIVE: "Active",
+  REVOKED: "Turned off",
+  EXPIRED: "Expired",
+  EXHAUSTED: "Limit reached",
+} satisfies Record<SelfEnrollmentLinkSummary["status"], string>;
 
 export type CourseDetailManagerCourse = CourseDetail & {
   /** Staff course loaders always include the persisted, non-null toggle. */
@@ -328,6 +361,12 @@ export function CourseDetailManagerView({
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importingCsv, setImportingCsv] = useState(false);
   const [csvSummary, setCsvSummary] = useState<EnrollmentCsvImportSummary | null>(null);
+  // #1756 — self-enrollment links.
+  const [selfEnrollLinks, setSelfEnrollLinks] = useState<SelfEnrollmentLinkSummary[]>([]);
+  const [selfEnrollUrl, setSelfEnrollUrl] = useState<string | null>(null);
+  const [selfEnrollBusy, setSelfEnrollBusy] = useState(false);
+  const [selfEnrollError, setSelfEnrollError] = useState<string | null>(null);
+  const [selfEnrollCopied, setSelfEnrollCopied] = useState(false);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess);
@@ -490,6 +529,95 @@ export function CourseDetailManagerView({
       if (csvInputRef.current) csvInputRef.current.value = "";
     }
   };
+
+  /**
+   * #1756 — self-enrollment link management. All three calls share one error
+   * slot and one busy flag: the section only ever runs one of them at a time.
+   */
+  const refreshSelfEnrollLinks = async (signal?: AbortSignal) => {
+    if (!courseId) return;
+    try {
+      const res = await fetch(`/api/courses/${courseId}/self-enroll`, { signal });
+      if (!res.ok) return;
+      const parsed = selfEnrollmentListSchema.safeParse(await res.json());
+      if (parsed.success) setSelfEnrollLinks(parsed.data.links);
+    } catch {
+      // A failed list read is not worth an error banner — the create and revoke
+      // buttons still work, and the next refresh will pick the list up.
+    }
+  };
+
+  const handleCreateSelfEnrollLink = async () => {
+    if (!courseId) return;
+    setSelfEnrollBusy(true);
+    setSelfEnrollError(null);
+    setSelfEnrollCopied(false);
+    try {
+      const res = await fetch(`/api/courses/${courseId}/self-enroll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const parsed = selfEnrollmentCreatedSchema.safeParse(await res.json().catch(() => null));
+      if (!res.ok || !parsed.success) {
+        setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
+        return;
+      }
+      // Shown once and only once: the server cannot re-issue this URL.
+      setSelfEnrollUrl(parsed.data.url);
+      await refreshSelfEnrollLinks();
+    } catch {
+      setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
+    } finally {
+      setSelfEnrollBusy(false);
+    }
+  };
+
+  const handleRevokeSelfEnrollLink = async (linkId: string) => {
+    if (!courseId) return;
+    setSelfEnrollBusy(true);
+    setSelfEnrollError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/self-enroll?linkId=${encodeURIComponent(linkId)}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        setSelfEnrollError("Could not turn off that link. Please try again.");
+        return;
+      }
+      // The revoked link's URL must stop being offered for copying.
+      setSelfEnrollUrl(null);
+      await refreshSelfEnrollLinks();
+    } catch {
+      setSelfEnrollError("Could not turn off that link. Please try again.");
+    } finally {
+      setSelfEnrollBusy(false);
+    }
+  };
+
+  const handleCopySelfEnrollUrl = async () => {
+    if (!selfEnrollUrl) return;
+    try {
+      await navigator.clipboard.writeText(selfEnrollUrl);
+      setSelfEnrollCopied(true);
+    } catch {
+      // Clipboard access can be denied; the URL is selectable in the field.
+      setSelfEnrollError("Copying failed — select the link and copy it manually.");
+    }
+  };
+
+  // Staff-only, so it is fetched here rather than in the shared course loader —
+  // a student's course page must not issue this request at all.
+  useEffect(() => {
+    if (!courseId || !canManageStudentEnrollments) return;
+    const controller = new AbortController();
+    void refreshSelfEnrollLinks(controller.signal);
+    return () => controller.abort();
+    // Deliberately keyed on the course and the gate only. The refresher is
+    // redeclared every render and reads nothing else, so depending on its
+    // identity would refetch the list on every unrelated state change.
+  }, [courseId, canManageStudentEnrollments]);
 
   const handleRemoveEnrollment = async () => {
     if (!enrollmentToRemove) return;
@@ -1478,6 +1606,91 @@ export function CourseDetailManagerView({
                             )}
                           </CardContent>
                         </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {/* #1756 — revocable self-enrollment link. */}
+                  {canManageStudentEnrollments && courseId && (
+                    <div className="flex flex-col gap-2 border-t pt-4">
+                      <Label>Self-enrollment link</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Anyone with an EduAI account who opens this link joins as a student. Treat
+                        it like a password: turn it off if it ends up somewhere public. Links expire
+                        after 30 days.
+                      </p>
+
+                      {selfEnrollError && (
+                        <p className="text-sm text-destructive">{selfEnrollError}</p>
+                      )}
+
+                      <Button
+                        variant="outline"
+                        className="self-start"
+                        disabled={selfEnrollBusy}
+                        onClick={() => void handleCreateSelfEnrollLink()}
+                      >
+                        <IconLink className="w-4 h-4 mr-1" />
+                        {selfEnrollBusy ? "Working…" : "Create link"}
+                      </Button>
+
+                      {selfEnrollUrl && (
+                        <Card>
+                          <CardContent className="py-3 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              Copy this now — it is shown once and cannot be retrieved again.
+                            </p>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <Input
+                                readOnly
+                                value={selfEnrollUrl}
+                                aria-label="Self-enrollment link"
+                              />
+                              <Button
+                                variant="outline"
+                                onClick={() => void handleCopySelfEnrollUrl()}
+                              >
+                                <IconCopy className="w-4 h-4 mr-1" />
+                                {selfEnrollCopied ? "Copied" : "Copy"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {selfEnrollLinks.length > 0 && (
+                        <div className="grid gap-2">
+                          {selfEnrollLinks.map((link) => (
+                            <Card key={link.id}>
+                              <CardContent className="flex items-center justify-between py-3 text-sm">
+                                <div>
+                                  <span className="font-medium">
+                                    {SELF_ENROLLMENT_STATUS_LABELS[link.status]}
+                                  </span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    Expires {new Date(link.expiresAt).toLocaleDateString()} ·{" "}
+                                    {link.redemptionCount} use
+                                    {link.redemptionCount === 1 ? "" : "s"}
+                                    {link.maxRedemptions === null
+                                      ? ""
+                                      : ` of ${link.maxRedemptions}`}
+                                  </span>
+                                </div>
+                                {link.status === "ACTIVE" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    disabled={selfEnrollBusy}
+                                    onClick={() => void handleRevokeSelfEnrollLink(link.id)}
+                                  >
+                                    Turn off
+                                  </Button>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
