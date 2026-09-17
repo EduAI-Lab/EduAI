@@ -87,4 +87,15 @@ describe("questionBankService", () => {
       targetBankId: "b2",
     });
   });
+
+  it("listBankIdsForQuestion returns the bank ids holding a question", async () => {
+    get.mockResolvedValue({ data: { data: { bankIds: ["b1", "b2"] } } });
+    await expect(questionBankService.listBankIdsForQuestion(1, 42)).resolves.toEqual(["b1", "b2"]);
+    expect(get).toHaveBeenCalledWith("/api/course/1/banks/questions/42");
+  });
+
+  it("listBankIdsForQuestion falls back to an empty array", async () => {
+    get.mockResolvedValue({ data: {} });
+    await expect(questionBankService.listBankIdsForQuestion(1, 42)).resolves.toEqual([]);
+  });
 });
