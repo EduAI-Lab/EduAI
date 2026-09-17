@@ -64,6 +64,19 @@ export const questionBankService = {
   ): Promise<void> {
     await api.delete(`/api/course/${courseId}/banks/${bankId}/questions/${questionMetadataId}`);
   },
+
+  /** Moves one question out of `fromBankId` into `targetBankId` in a single call. */
+  async moveQuestionToBank(
+    courseId: number,
+    fromBankId: string,
+    questionMetadataId: number,
+    targetBankId: string,
+  ): Promise<void> {
+    await api.post(
+      `/api/course/${courseId}/banks/${fromBankId}/questions/${questionMetadataId}/move`,
+      { targetBankId },
+    );
+  },
 };
 
 export default questionBankService;

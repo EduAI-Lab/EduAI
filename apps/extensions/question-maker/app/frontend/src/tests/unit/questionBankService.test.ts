@@ -79,4 +79,12 @@ describe("questionBankService", () => {
     await questionBankService.removeQuestionFromBank(1, "b2", 99);
     expect(del).toHaveBeenCalledWith("/api/course/1/banks/b2/questions/99");
   });
+
+  it("moveQuestionToBank posts the target bank to the move route", async () => {
+    post.mockResolvedValue({ data: { data: { id: "mem_2" } } });
+    await questionBankService.moveQuestionToBank(1, "b1", 42, "b2");
+    expect(post).toHaveBeenCalledWith("/api/course/1/banks/b1/questions/42/move", {
+      targetBankId: "b2",
+    });
+  });
 });
