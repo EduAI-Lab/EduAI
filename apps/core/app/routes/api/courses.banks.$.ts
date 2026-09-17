@@ -13,7 +13,9 @@ import {
   createQuestionBank,
   deleteQuestionBank,
   listBankMemberships,
+  listMembershipsForQuestion,
   listQuestionBanks,
+  moveQuestionBetweenBanks,
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
@@ -25,6 +27,9 @@ import { withErrorResponse } from "~/lib/errors.server";
  * - ":bankId" → PUT update / DELETE
  * - ":bankId/questions" → GET memberships / POST add
  * - ":bankId/questions/:externalQuestionId" → DELETE remove
+ * - ":bankId/questions/:externalQuestionId/move" → POST move to `targetBankId`
+ * - "questions/:externalQuestionId" → GET the bank ids holding one question.
+ *   Bank ids are CUIDs, so the literal "questions" head can't collide with a ":bankId".
  */
 function parseBanksPath(splat: string | undefined) {
   const rest = (splat || "").replace(/^\/+/, "");
@@ -109,6 +114,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         return json(result);
       }
 
+      if (parts.length === 2 && parts[0] === "questions") {
+        const source = new URL(request.url).searchParams.get("source") || "question-maker";
+        const memberships = await listMembershipsForQuestion(courseId, parts[1], source);
+        return json({ bankIds: memberships.map((membership) => membership.questionBankId) });
+      }
+
       return json({ error: "Not found" }, 404);
     },
     { request },
@@ -188,7 +199,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
         const result = await addQuestionToBank(courseId, parts[0], body);
         if ("error" in result) {
-          const status = result.error === "Question bank not found" ? 404 : 400;
+          const status =
+            result.error === "Question bank not found"
+              ? 404
+              : result.error === "Question is already in this bank"
+                ? 409
+                : 400;
           return json(result, status);
         }
         return json(result.membership, 201);
@@ -206,6 +222,27 @@ export async function action({ request, params }: ActionFunctionArgs) {
           return json(result, status);
         }
         return json(result);
+      }
+
+      if (
+        parts.length === 4 &&
+        parts[1] === "questions" &&
+        parts[3] === "move" &&
+        method === "POST"
+      ) {
+        const body = await request.json();
+        const result = await moveQuestionBetweenBanks(courseId, parts[0], parts[2], body);
+        if ("error" in result) {
+          const status =
+            result.error === "Question bank not found" ||
+            result.error === "Question is not a member of this bank"
+              ? 404
+              : result.error === "Question is already in the target bank"
+                ? 409
+                : 400;
+          return json(result, status);
+        }
+        return json(result.membership);
       }
 
       return json({ error: "Method not allowed" }, 405);

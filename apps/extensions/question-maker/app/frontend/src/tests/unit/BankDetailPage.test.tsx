@@ -4,7 +4,7 @@
  * flows. Hooks, services, and heavy child components are mocked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const {
@@ -77,6 +77,13 @@ vi.mock("@/components/ui/DeleteConfirmationModal", () => ({
         <button onClick={() => void props.onConfirm().catch(() => {})}>confirm-remove</button>
       </div>
     ) : null;
+  },
+}));
+let lastMoveDialogProps: any;
+vi.mock("@/components/question-bank/MoveQuestionToBankDialog", () => ({
+  MoveQuestionToBankDialog: (props: any) => {
+    lastMoveDialogProps = props;
+    return props.open ? <div>move-dialog</div> : null;
   },
 }));
 
@@ -237,6 +244,7 @@ describe("BankDetailPage", () => {
     await waitFor(() => expect(lastGridProps).toBeTruthy());
     expect(lastGridProps.disableAdd).toBe(true);
     expect(lastGridProps.onRemoveFromBank).toBeUndefined();
+    expect(lastGridProps.onMoveToBank).toBeUndefined();
   });
 
   it("removes a question from the bank via the confirmation modal", async () => {
@@ -277,5 +285,68 @@ describe("BankDetailPage", () => {
     await waitFor(() => expect(lastGridProps).toBeTruthy());
     lastGridProps.onCreateVariant({ questionId: 7 });
     expect(navigateMock).toHaveBeenCalledWith("/courses/5/questions/new?variantOf=7");
+  });
+
+  it("sends browser filters to the server with the page's fixed bank", async () => {
+    renderPage();
+    await waitFor(() => expect(lastGridProps).toBeTruthy());
+    expect(lastGridProps.bankOptions).toBeUndefined();
+
+    act(() => {
+      lastGridProps.onFiltersChange({ ...lastGridProps.filters, questionTypes: ["SA"] });
+    });
+
+    await waitFor(() =>
+      expect(questionService.getQuestionsPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          courseId: 5,
+          questionBankId: "bank-1",
+          types: ["SA"],
+          offset: 0,
+        }),
+      ),
+    );
+  });
+
+  it("moves a question out of this bank and refreshes the list", async () => {
+    const question = {
+      id: 42,
+      description: "Q",
+      type: "MCQ",
+      courseId: 5,
+      primaryTopicId: "t1",
+      variants: [{ id: 7, questionText: "What?", difficulty: "easy", referenceId: null }],
+    };
+    questionService.getQuestionsPage.mockResolvedValue({ items: [question], total: 1 });
+    questionBankService.listBanks.mockResolvedValue([
+      bank,
+      { id: "bank-2", name: "Final", isDefault: false },
+    ]);
+    renderPage();
+    await waitFor(() => expect(lastGridProps?.variants?.length).toBe(1));
+
+    act(() => {
+      lastGridProps.onMoveToBank(lastGridProps.variants[0]);
+    });
+    expect(await screen.findByText("move-dialog")).toBeInTheDocument();
+    expect(lastMoveDialogProps).toMatchObject({
+      mode: "move",
+      courseId: 5,
+      questionId: 42,
+      currentBankId: "bank-1",
+    });
+    expect(lastMoveDialogProps.banks.map((b: any) => b.id)).toEqual(["bank-1", "bank-2"]);
+
+    const callsBefore = questionService.getQuestionsPage.mock.calls.length;
+    act(() => {
+      lastMoveDialogProps.onSuccess({ id: "bank-2", name: "Final", isDefault: false });
+      lastMoveDialogProps.onOpenChange(false);
+    });
+
+    expect(toastFn).toHaveBeenCalledWith("Moved to bank", expect.anything());
+    await waitFor(() =>
+      expect(questionService.getQuestionsPage.mock.calls.length).toBeGreaterThan(callsBefore),
+    );
+    expect(screen.queryByText("move-dialog")).not.toBeInTheDocument();
   });
 });

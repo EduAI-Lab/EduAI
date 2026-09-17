@@ -10,10 +10,13 @@ import { Button, Badge, Alert, AlertDescription } from "@eduai/ui";
 import { IconArrowLeft, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
+import { useQuestionListControls } from "../hooks/useQuestionListControls";
 import { toast } from "sonner";
 import { questionService } from "../services/questionService";
 import { questionBankService, type QuestionBank } from "../services/questionBankService";
 import { QuestionBank as QuestionBankGrid } from "../components/question-bank/QuestionBank";
+import { MoveQuestionToBankDialog } from "../components/question-bank/MoveQuestionToBankDialog";
+import { toQuestionListOptions } from "../components/question-bank/questionListFilters";
 import { AddQuestionsToBankDialog } from "../components/question-bank/AddQuestionsToBankDialog";
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
@@ -31,6 +34,7 @@ export function BankDetailPage() {
     useQmPermissionsForCourse(courseId);
 
   const [bank, setBank] = useState<QuestionBank | null>(null);
+  const [courseBanks, setCourseBanks] = useState<QuestionBank[]>([]);
   const [banksError, setBanksError] = useState<string | null>(null);
   const [isBanksLoading, setIsBanksLoading] = useState(true);
 
@@ -42,11 +46,23 @@ export function BankDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const pageSize = DEFAULT_LIST_PAGE_SIZE;
 
+  const resetQuestionsOffset = useCallback(() => setQuestionsOffset(0), []);
+  const {
+    search: questionSearch,
+    setSearch: setQuestionSearch,
+    debouncedSearch: debouncedQuestionSearch,
+    filters: questionFilters,
+    updateFilters: updateQuestionFilters,
+    sortBy: questionSort,
+    updateSort: updateQuestionSort,
+  } = useQuestionListControls(resetQuestionsOffset);
+
   const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<QuestionVariantEntry | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<QuestionVariantEntry | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -68,14 +84,16 @@ export function BankDetailPage() {
       setIsBanksLoading(true);
       setBanksError(null);
       try {
-        const banks = await questionBankService.listBanks(courseId);
+        const bankList = await questionBankService.listBanks(courseId);
         if (cancelled) return;
-        const match = banks.find((b) => b.id === bankId) ?? null;
+        setCourseBanks(bankList);
+        const match = bankList.find((b) => b.id === bankId) ?? null;
         setBank(match);
         if (!match) setBanksError("Question bank not found for this course");
       } catch (error: any) {
         if (!cancelled) {
           setBank(null);
+          setCourseBanks([]);
           setBanksError(
             error?.response?.data?.error || error?.message || "Failed to load question bank",
           );
@@ -111,6 +129,8 @@ export function BankDetailPage() {
       try {
         const page = await questionService.getQuestionsPage({
           courseId,
+          // The page is fixed to its route bank, so the toolbar's bank facet never applies.
+          ...toQuestionListOptions(questionFilters, debouncedQuestionSearch, questionSort),
           questionBankId: bankId,
           limit: pageSize,
           offset: questionsOffset,
@@ -133,7 +153,16 @@ export function BankDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, bankId, questionsOffset, pageSize, refreshKey]);
+  }, [
+    courseId,
+    bankId,
+    questionsOffset,
+    pageSize,
+    refreshKey,
+    questionFilters,
+    debouncedQuestionSearch,
+    questionSort,
+  ]);
 
   const topicNameMap = useMemo(() => new Map(topics.map((t) => [t.id, t.name])), [topics]);
 
@@ -240,6 +269,13 @@ export function BankDetailPage() {
 
       <QuestionBankGrid
         variants={variantEntries}
+        total={questionsTotal}
+        searchTerm={questionSearch}
+        onSearchChange={setQuestionSearch}
+        filters={questionFilters}
+        onFiltersChange={updateQuestionFilters}
+        sortBy={questionSort}
+        onSortChange={updateQuestionSort}
         onViewVariant={setSelectedVariant}
         onCreateVariant={(entry) =>
           navigate(`/courses/${courseId}/questions/new?variantOf=${entry.questionId}`)
@@ -247,6 +283,7 @@ export function BankDetailPage() {
         onAddQuestion={() => setIsAddOpen(true)}
         onUploadQuestions={() => undefined}
         onRemoveFromBank={writesDisabled ? undefined : (entry) => setRemoveTarget(entry)}
+        onMoveToBank={writesDisabled ? undefined : (entry) => setMoveTarget(entry)}
         isLoading={isQuestionsLoading}
         courseName={course.name}
         emptyMessage="No questions in this bank yet. Add existing course questions to get started."
@@ -273,6 +310,32 @@ export function BankDetailPage() {
           setRefreshKey((k) => k + 1);
         }}
       />
+
+      {moveTarget && (
+        <MoveQuestionToBankDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setMoveTarget(null);
+          }}
+          mode="move"
+          courseId={courseId}
+          questionId={moveTarget.questionId}
+          banks={courseBanks}
+          currentBankId={bank.id}
+          onSuccess={(targetBank) => {
+            toast("Moved to bank", {
+              description: `Question #${moveTarget.questionId} is now in “${targetBank.name}”.`,
+            });
+            // The question leaves this bank; step back if it was the last one on this page.
+            const leftOnPage = questions.filter((q) => q.id !== moveTarget.questionId).length;
+            if (leftOnPage === 0 && questionsOffset > 0) {
+              setQuestionsOffset(Math.max(0, questionsOffset - pageSize));
+            } else {
+              setRefreshKey((k) => k + 1);
+            }
+          }}
+        />
+      )}
 
       <DeleteConfirmationModal
         open={isDeleteOpen}

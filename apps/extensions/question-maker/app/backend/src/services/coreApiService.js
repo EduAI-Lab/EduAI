@@ -722,3 +722,37 @@ export async function removeQuestionBankMembershipOnCore(
     { method: "DELETE", ...opts },
   );
 }
+
+/** GET the bank ids in this course that already hold one question — `{ bankIds }` */
+export async function listQuestionBankIdsForQuestionOnCore(
+  coreCourseId,
+  externalQuestionId,
+  source = "question-maker",
+  opts = {},
+) {
+  const safeCourseId = encodeURIComponent(String(coreCourseId));
+  const safeExternalQuestionId = encodeURIComponent(String(externalQuestionId));
+  const query = new URLSearchParams({ source }).toString();
+  return fetchFromCore(
+    `/api/courses/${safeCourseId}/banks/questions/${safeExternalQuestionId}?${query}`,
+    opts,
+  );
+}
+
+/** POST move membership to another bank — body `{ targetBankId, source }` */
+export async function moveQuestionBankMembershipOnCore(
+  coreCourseId,
+  fromBankId,
+  externalQuestionId,
+  targetBankId,
+  source = "question-maker",
+  opts = {},
+) {
+  const safeCourseId = encodeURIComponent(String(coreCourseId));
+  const safeFromBankId = encodeURIComponent(String(fromBankId));
+  const safeExternalQuestionId = encodeURIComponent(String(externalQuestionId));
+  return fetchFromCore(
+    `/api/courses/${safeCourseId}/banks/${safeFromBankId}/questions/${safeExternalQuestionId}/move`,
+    { method: "POST", body: { targetBankId, source }, ...opts },
+  );
+}

@@ -171,6 +171,22 @@ vi.mock("@/components/question-bank/QuestionBank", () => ({
     <div data-testid="question-bank">
       <span data-testid="qb-loading">{String(props.isLoading)}</span>
       <span data-testid="qb-empty">{props.emptyMessage}</span>
+      <span data-testid="qb-total">{String(props.total)}</span>
+      <span data-testid="qb-bank-options">
+        {(props.bankOptions ?? []).map((b: any) => b.label).join(",")}
+      </span>
+      <input
+        aria-label="qb-search"
+        value={props.searchTerm}
+        onChange={(e) => props.onSearchChange(e.target.value)}
+      />
+      <button onClick={() => props.onFiltersChange({ ...props.filters, difficulties: ["hard"] })}>
+        filter-hard
+      </button>
+      <button onClick={() => props.onFiltersChange({ ...props.filters, questionBankId: "bank-2" })}>
+        filter-bank
+      </button>
+      <button onClick={() => props.onSortChange("oldest")}>sort-oldest</button>
       <button disabled={props.disableAdd} onClick={props.onAddQuestion}>
         add-question
       </button>
@@ -182,6 +198,12 @@ vi.mock("@/components/question-bank/QuestionBank", () => ({
         <>
           <button onClick={() => props.onViewVariant(props.variants[0])}>view-variant</button>
           <button onClick={() => props.onCreateVariant(props.variants[0])}>create-variant</button>
+          {props.onMoveToBank && (
+            <button onClick={() => props.onMoveToBank(props.variants[0])}>move-to-bank</button>
+          )}
+          {props.onAddToBank && (
+            <button onClick={() => props.onAddToBank(props.variants[0])}>add-to-bank</button>
+          )}
         </>
       )}
     </div>
@@ -314,6 +336,25 @@ vi.mock("@/components/rbac/CourseNoAccessAlert", () => ({
   CourseNoAccessAlert: (props: any) => <button onClick={props.onGoToCourses}>no-access</button>,
 }));
 
+vi.mock("@/components/question-bank/MoveQuestionToBankDialog", () => ({
+  MoveQuestionToBankDialog: (props: any) =>
+    props.open ? (
+      <div data-testid="bank-action-dialog">
+        <span>
+          {props.mode}:{props.currentBankId ?? "none"}:{props.questionId}
+        </span>
+        <button
+          onClick={() => {
+            props.onSuccess({ id: "bank-3", courseId: 5, name: "Final", isDefault: false });
+            props.onOpenChange(false);
+          }}
+        >
+          confirm-bank-action
+        </button>
+      </div>
+    ) : null,
+}));
+
 vi.mock("@/utils/assessmentExport", () => ({
   assessmentBlocksToDocxBlob: vi.fn(async () => new Blob(["x"])),
   assessmentBlocksToPlainText: vi.fn(() => "plain text"),
@@ -324,6 +365,10 @@ vi.mock("@/utils/assessmentExport", () => ({
 }));
 
 import { CourseDetailPage } from "@/pages/CourseDetailPage";
+import { questionBankService } from "@/services/questionBankService";
+
+const lastPageCall = () => questionService.getQuestionsPage.mock.calls.at(-1)?.[0];
+const BANK_2 = { id: "bank-2", courseId: 5, name: "Midterm", isDefault: false };
 
 // ── test fixtures ────────────────────────────────────────────────────────────
 const course = {
@@ -398,6 +443,7 @@ function setDefaultMocks(overrides: Partial<{ tab: string }> = {}) {
   });
   courseService.getCourseTopics.mockResolvedValue([{ id: "t1", name: "Topic 1" }]);
   assessmentService.getAssessmentsPage.mockResolvedValue({ items: [assessment], total: 1 });
+  vi.mocked(questionBankService.listBanks).mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -588,6 +634,152 @@ describe("CourseDetailPage main content", () => {
     await screen.findByTestId("pager-questions");
     fireEvent.click(screen.getByText("next-questions"));
     await waitFor(() => expect(questionService.getQuestionsPage).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("CourseDetailPage question filters", () => {
+  it("sends filter, bank and sort changes to the server and resets paging", async () => {
+    setDefaultMocks({ tab: "questions" });
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await screen.findByTestId("pager-questions");
+    await waitFor(() => expect(screen.getByTestId("qb-bank-options")).toHaveTextContent("Midterm"));
+
+    fireEvent.click(screen.getByText("next-questions"));
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ offset: 25 }));
+
+    fireEvent.click(screen.getByText("filter-hard"));
+    await waitFor(() =>
+      expect(lastPageCall()).toMatchObject({ courseId: 5, difficulties: ["hard"], offset: 0 }),
+    );
+
+    fireEvent.click(screen.getByText("filter-bank"));
+    await waitFor(() =>
+      expect(lastPageCall()).toMatchObject({
+        questionBankId: "bank-2",
+        difficulties: ["hard"],
+        offset: 0,
+      }),
+    );
+
+    fireEvent.click(screen.getByText("sort-oldest"));
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ sortBy: "oldest" }));
+  });
+
+  it("debounces search before querying the server", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+
+    fireEvent.change(screen.getByLabelText("qb-search"), { target: { value: "gravity" } });
+    expect(lastPageCall()?.search).toBeUndefined();
+
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ search: "gravity", offset: 0 }));
+  });
+
+  it("passes the server total to the question browser", async () => {
+    setDefaultMocks({ tab: "questions" });
+    questionService.getQuestionsPage.mockResolvedValue({ items: [question], total: 40 });
+    render(<CourseDetailPage />);
+    await waitFor(() => expect(screen.getByTestId("qb-total")).toHaveTextContent("40"));
+  });
+
+  it("drops a bank filter whose bank no longer exists", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    await waitFor(() => expect(questionBankService.listBanks).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("filter-bank"));
+
+    await waitFor(() => expect(lastPageCall()?.questionBankId).toBeUndefined());
+  });
+
+  function withBankWrites() {
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: true,
+      canManageCanvas: true,
+      canManageAssessment: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+  }
+
+  it("offers Add to bank for all questions and Move to bank once a bank is selected", async () => {
+    setDefaultMocks({ tab: "questions" });
+    withBankWrites();
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await screen.findByText("add-to-bank");
+    expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("add-to-bank"));
+    expect(await screen.findByText("add:none:1")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("confirm-bank-action"));
+    expect(toastFn).toHaveBeenCalledWith("Added to bank", expect.anything());
+
+    fireEvent.click(screen.getByText("filter-bank"));
+    await screen.findByText("move-to-bank");
+    expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
+  });
+
+  it("refetches the page after a move", async () => {
+    setDefaultMocks({ tab: "questions" });
+    withBankWrites();
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await waitFor(() => expect(screen.getByTestId("qb-bank-options")).toHaveTextContent("Midterm"));
+    fireEvent.click(screen.getByText("filter-bank"));
+    fireEvent.click(await screen.findByText("move-to-bank"));
+    expect(await screen.findByText("move:bank-2:1")).toBeInTheDocument();
+
+    const callsBefore = questionService.getQuestionsPage.mock.calls.length;
+    fireEvent.click(screen.getByText("confirm-bank-action"));
+
+    expect(toastFn).toHaveBeenCalledWith("Moved to bank", expect.anything());
+    await waitFor(() =>
+      expect(questionService.getQuestionsPage.mock.calls.length).toBeGreaterThan(callsBefore),
+    );
+    expect(screen.queryByTestId("bank-action-dialog")).not.toBeInTheDocument();
+  });
+
+  it("steps back a page when a move empties the current page", async () => {
+    setDefaultMocks({ tab: "questions" });
+    withBankWrites();
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await waitFor(() => expect(screen.getByTestId("qb-bank-options")).toHaveTextContent("Midterm"));
+    fireEvent.click(screen.getByText("filter-bank"));
+    fireEvent.click(screen.getByText("next-questions"));
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ offset: 25 }));
+
+    fireEvent.click(await screen.findByText("move-to-bank"));
+    fireEvent.click(await screen.findByText("confirm-bank-action"));
+
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ offset: 0 }));
+  });
+
+  it("hides bank actions without bank write access", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByText("view-variant");
+    expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
+    expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
+  });
+
+  it("hides bank actions when assessment management is allowed but writes are read-only", async () => {
+    setDefaultMocks({ tab: "questions" });
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: false,
+      canManageCanvas: true,
+      canManageAssessment: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    render(<CourseDetailPage />);
+    await screen.findByText("view-variant");
+    expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
+    expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
   });
 });
 

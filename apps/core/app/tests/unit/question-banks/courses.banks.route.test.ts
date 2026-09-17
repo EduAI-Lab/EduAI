@@ -24,8 +24,10 @@ vi.mock("~/lib/question-banks/server", () => ({
   updateQuestionBank: vi.fn(),
   deleteQuestionBank: vi.fn(),
   listBankMemberships: vi.fn(),
+  listMembershipsForQuestion: vi.fn(),
   addQuestionToBank: vi.fn(),
   removeQuestionFromBank: vi.fn(),
+  moveQuestionBetweenBanks: vi.fn(),
 }));
 
 import { action, loader } from "~/routes/api/courses.banks.$";
@@ -37,7 +39,9 @@ import {
   createQuestionBank,
   deleteQuestionBank,
   listBankMemberships,
+  listMembershipsForQuestion,
   listQuestionBanks,
+  moveQuestionBetweenBanks,
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
@@ -177,6 +181,33 @@ describe("GET /api/courses/:courseId/banks", () => {
     expect(res.status).toBe(404);
   });
 
+  it("lists the bank ids that hold one question", async () => {
+    vi.mocked(listMembershipsForQuestion).mockResolvedValue([
+      { id: "m1", questionBankId: "bank_1" },
+      { id: "m2", questionBankId: "bank_2" },
+    ] as never);
+
+    const res = await loader(args("GET", "questions/42"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ bankIds: ["bank_1", "bank_2"] });
+    expect(listMembershipsForQuestion).toHaveBeenCalledWith(COURSE_ID, "42", "question-maker");
+  });
+
+  it("honours an explicit source when listing a question's banks", async () => {
+    vi.mocked(listMembershipsForQuestion).mockResolvedValue([] as never);
+
+    const res = await loader(
+      args("GET", "questions/42", {
+        url: `http://localhost/api/courses/${COURSE_ID}/banks/questions/42?source=canvas`,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ bankIds: [] });
+    expect(listMembershipsForQuestion).toHaveBeenCalledWith(COURSE_ID, "42", "canvas");
+  });
+
   it("404 for an unknown GET path", async () => {
     const res = await loader(args("GET", "bank_1/nope"));
     expect(res.status).toBe(404);
@@ -280,6 +311,19 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     expect(res.status).toBe(404);
   });
 
+  it("409 when adding a question the bank already holds", async () => {
+    vi.mocked(addQuestionToBank).mockResolvedValue({
+      error: "Question is already in this bank",
+    } as never);
+    const res = await action(
+      args("POST", "bank_1/questions", {
+        body: { externalQuestionId: "42", source: "question-maker" },
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "Question is already in this bank" });
+  });
+
   it("removes a membership", async () => {
     vi.mocked(removeQuestionFromBank).mockResolvedValue({
       removed: true,
@@ -318,5 +362,68 @@ describe("POST/PUT/DELETE /api/courses/:courseId/banks*", () => {
     const res = await action(args("POST", undefined, { body: { name: "Extra" }, bearer: true }));
     expect(requireServiceKey).toHaveBeenCalled();
     expect(res.status).toBe(201);
+  });
+
+  it("moves a membership to another bank (200)", async () => {
+    vi.mocked(moveQuestionBetweenBanks).mockResolvedValue({
+      membership: { id: "mem_2", questionBankId: "bank_2" },
+    } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", { body: { targetBankId: "bank_2" } }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: "mem_2", questionBankId: "bank_2" });
+    expect(moveQuestionBetweenBanks).toHaveBeenCalledWith(COURSE_ID, "bank_1", "42", {
+      targetBankId: "bank_2",
+    });
+  });
+
+  it.each([
+    ["Question bank not found", 404],
+    ["Question is not a member of this bank", 404],
+    ["Question is already in the target bank", 409],
+    ["Source and target bank must differ", 400],
+    ["Invalid input", 400],
+  ])("maps move error %s to %i", async (error, status) => {
+    vi.mocked(moveQuestionBetweenBanks).mockResolvedValue({ error } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", { body: { targetBankId: "bank_2" } }),
+    );
+
+    expect(res.status).toBe(status);
+    expect(await res.json()).toMatchObject({ error });
+  });
+
+  it("403 when a student tries to move a question", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: COURSE_ID, isPublished: true },
+      access: { level: "student" },
+    } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", { body: { targetBankId: "bank_2" } }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(moveQuestionBetweenBanks).not.toHaveBeenCalled();
+  });
+
+  it("moves with a valid service key", async () => {
+    vi.mocked(moveQuestionBetweenBanks).mockResolvedValue({
+      membership: { id: "mem_2" },
+    } as never);
+
+    const res = await action(
+      args("POST", "bank_1/questions/42/move", {
+        body: { targetBankId: "bank_2", source: "question-maker" },
+        bearer: true,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
   });
 });

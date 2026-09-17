@@ -49,6 +49,7 @@ import {
   listBankMemberships,
   listMembershipsForQuestion,
   listQuestionBanks,
+  moveQuestionBetweenBanks,
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
@@ -207,7 +208,7 @@ describe("addQuestionToBank", () => {
     expect(result).toMatchObject({ error: "Invalid input" });
   });
 
-  it("upserts membership for a valid bank", async () => {
+  it("creates membership for a valid bank", async () => {
     prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
     const membership = {
       id: "mem_1",
@@ -215,7 +216,8 @@ describe("addQuestionToBank", () => {
       source: "question-maker",
       externalQuestionId: "42",
     };
-    prismaMock.questionBankMembership.upsert.mockResolvedValue(membership);
+    prismaMock.questionBankMembership.findUnique.mockResolvedValue(null);
+    prismaMock.questionBankMembership.create.mockResolvedValue(membership);
 
     const result = await addQuestionToBank(COURSE_ID, EXTRA_BANK.id, {
       externalQuestionId: "42",
@@ -223,6 +225,49 @@ describe("addQuestionToBank", () => {
     });
 
     expect(result).toEqual({ membership });
+    expect(prismaMock.questionBankMembership.create).toHaveBeenCalledWith({
+      data: {
+        questionBankId: EXTRA_BANK.id,
+        source: "question-maker",
+        externalQuestionId: "42",
+      },
+    });
+  });
+
+  it("refuses a question the bank already holds", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
+    prismaMock.questionBankMembership.findUnique.mockResolvedValue({
+      id: "mem_1",
+      questionBankId: EXTRA_BANK.id,
+      source: "question-maker",
+      externalQuestionId: "42",
+    });
+
+    const result = await addQuestionToBank(COURSE_ID, EXTRA_BANK.id, {
+      externalQuestionId: "42",
+      source: "question-maker",
+    });
+
+    expect(result).toEqual({ error: "Question is already in this bank" });
+    expect(prismaMock.questionBankMembership.create).not.toHaveBeenCalled();
+  });
+
+  it("reports the same conflict when a concurrent add wins the race", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
+    prismaMock.questionBankMembership.findUnique.mockResolvedValue(null);
+    prismaMock.questionBankMembership.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+
+    const result = await addQuestionToBank(COURSE_ID, EXTRA_BANK.id, {
+      externalQuestionId: "42",
+      source: "question-maker",
+    });
+
+    expect(result).toEqual({ error: "Question is already in this bank" });
   });
 
   it("returns not found when the bank is missing", async () => {
@@ -459,5 +504,137 @@ describe("removeQuestionFromBank", () => {
 
     expect(result).toEqual({ removed: true, reassignedToDefault: false });
     expect(prismaMock.questionBankMembership.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("moveQuestionBetweenBanks", () => {
+  const SOURCE_MEMBERSHIP = {
+    id: "mem_src",
+    questionBankId: DEFAULT_BANK.id,
+    source: "question-maker",
+    externalQuestionId: "42",
+  };
+  const TARGET_MEMBERSHIP = {
+    id: "mem_tgt",
+    questionBankId: EXTRA_BANK.id,
+    source: "question-maker",
+    externalQuestionId: "42",
+  };
+
+  it("rejects invalid input without opening a transaction", async () => {
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: "",
+    });
+    expect(result).toMatchObject({ error: "Invalid input" });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects moving a question into the bank it is leaving", async () => {
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: DEFAULT_BANK.id,
+    });
+    expect(result).toEqual({ error: "Source and target bank must differ" });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when either bank is outside the course", async () => {
+    prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK]);
+
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: "bank_other_course",
+    });
+
+    expect(result).toEqual({ error: "Question bank not found" });
+    expect(prismaMock.questionBank.findMany).toHaveBeenCalledWith({
+      where: { id: { in: [DEFAULT_BANK.id, "bank_other_course"] }, courseId: COURSE_ID },
+      select: { id: true },
+    });
+    expect(prismaMock.questionBankMembership.create).not.toHaveBeenCalled();
+  });
+
+  it("returns not a member when the question is not in the source bank", async () => {
+    prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK, EXTRA_BANK]);
+    prismaMock.questionBankMembership.findUnique.mockResolvedValue(null);
+
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: EXTRA_BANK.id,
+    });
+
+    expect(result).toEqual({ error: "Question is not a member of this bank" });
+    expect(prismaMock.questionBankMembership.create).not.toHaveBeenCalled();
+    expect(prismaMock.questionBankMembership.delete).not.toHaveBeenCalled();
+  });
+
+  it("adds the target membership and deletes the source in one transaction", async () => {
+    prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK, EXTRA_BANK]);
+    prismaMock.questionBankMembership.findUnique
+      .mockResolvedValueOnce(SOURCE_MEMBERSHIP)
+      .mockResolvedValueOnce(null);
+    prismaMock.questionBankMembership.create.mockResolvedValue(TARGET_MEMBERSHIP);
+    prismaMock.questionBankMembership.delete.mockResolvedValue(SOURCE_MEMBERSHIP);
+
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: EXTRA_BANK.id,
+    });
+
+    expect(result).toEqual({ membership: TARGET_MEMBERSHIP });
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(prismaMock.questionBankMembership.findUnique).toHaveBeenCalledWith({
+      where: {
+        questionBankId_source_externalQuestionId: {
+          questionBankId: DEFAULT_BANK.id,
+          source: "question-maker",
+          externalQuestionId: "42",
+        },
+      },
+    });
+    // The target row is inserted outright — a pre-existing one is a conflict, not an upsert.
+    expect(prismaMock.questionBankMembership.create).toHaveBeenCalledWith({
+      data: {
+        questionBankId: EXTRA_BANK.id,
+        source: "question-maker",
+        externalQuestionId: "42",
+      },
+    });
+    expect(prismaMock.questionBankMembership.delete).toHaveBeenCalledWith({
+      where: { id: "mem_src" },
+    });
+  });
+
+  it("refuses a move into a bank that already holds the question, keeping the source", async () => {
+    prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK, EXTRA_BANK]);
+    prismaMock.questionBankMembership.findUnique
+      .mockResolvedValueOnce(SOURCE_MEMBERSHIP)
+      .mockResolvedValueOnce(TARGET_MEMBERSHIP);
+
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: EXTRA_BANK.id,
+      source: "question-maker",
+    });
+
+    expect(result).toEqual({ error: "Question is already in the target bank" });
+    // Without this guard the move silently degraded into a removal from the source bank.
+    expect(prismaMock.questionBankMembership.create).not.toHaveBeenCalled();
+    expect(prismaMock.questionBankMembership.delete).not.toHaveBeenCalled();
+  });
+
+  it("reports the same conflict when a concurrent add wins the race", async () => {
+    prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK, EXTRA_BANK]);
+    prismaMock.questionBankMembership.findUnique
+      .mockResolvedValueOnce(SOURCE_MEMBERSHIP)
+      .mockResolvedValueOnce(null);
+    prismaMock.questionBankMembership.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: EXTRA_BANK.id,
+    });
+
+    expect(result).toEqual({ error: "Question is already in the target bank" });
+    expect(prismaMock.questionBankMembership.delete).not.toHaveBeenCalled();
   });
 });

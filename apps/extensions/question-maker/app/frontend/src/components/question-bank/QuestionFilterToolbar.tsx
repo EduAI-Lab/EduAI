@@ -1,7 +1,7 @@
 /**
  * Shared filter toolbar for every question-browsing surface (course Questions tab
  * and the cross-course Question Library). One compact row: search · optional course ·
- * sort · a Filters popover. Active filters surface as removable chips below so the
+ * optional bank · sort · a Filters popover. Active filters surface as removable chips below so the
  * applied state is always visible. Replaces the old heavy "Search & Filters" card and
  * its fixed-position dropdown hack (which detached on scroll).
  */
@@ -31,6 +31,8 @@ export interface QuestionFilters {
   difficulties: QuestionDifficulty[];
   aiGenerated: "all" | "ai" | "not-ai";
   draftStatus: "all" | "draft" | "reviewed";
+  /** Core bank id; `null` = all questions. Only valid alongside a course scope. */
+  questionBankId: string | null;
 }
 
 /** Server-backed sorts only — difficulty lives on variants and isn't orderable in SQL yet. */
@@ -42,6 +44,7 @@ export const EMPTY_QUESTION_FILTERS: QuestionFilters = {
   difficulties: [],
   aiGenerated: "all",
   draftStatus: "all",
+  questionBankId: null,
 };
 
 const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
@@ -66,7 +69,8 @@ export function countActiveFilters(filters: QuestionFilters): number {
     filters.reasoningLevels.length +
     filters.difficulties.length +
     (filters.aiGenerated !== "all" ? 1 : 0) +
-    (filters.draftStatus !== "all" ? 1 : 0)
+    (filters.draftStatus !== "all" ? 1 : 0) +
+    (filters.questionBankId ? 1 : 0)
   );
 }
 
@@ -130,6 +134,12 @@ interface CourseOption {
   label: string;
 }
 
+export interface BankOption {
+  value: string;
+  label: string;
+  isDefault?: boolean;
+}
+
 interface QuestionFilterToolbarProps {
   searchTerm: string;
   onSearchChange: (value: string) => void;
@@ -143,11 +153,16 @@ interface QuestionFilterToolbarProps {
   courseOptions?: CourseOption[];
   courseValue?: string;
   onCourseChange?: (value: string) => void;
+  /** Bank facet — omit to hide (e.g. a page already fixed to one bank). */
+  bankOptions?: BankOption[];
+  /** When set, the bank select is disabled and shows this hint instead. */
+  bankDisabledHint?: string;
   /** Extra controls rendered at the end of the row (e.g. a view toggle). */
   trailing?: ReactNode;
 }
 
 const COURSE_ALL = "__all__";
+const BANK_ALL = "__all_banks__";
 
 export function QuestionFilterToolbar({
   searchTerm,
@@ -160,10 +175,13 @@ export function QuestionFilterToolbar({
   courseOptions,
   courseValue = COURSE_ALL,
   onCourseChange,
+  bankOptions,
+  bankDisabledHint,
   trailing,
 }: QuestionFilterToolbarProps) {
   const activeCount = countActiveFilters(filters);
   const selectedCourse = courseOptions?.find((c) => c.value === courseValue);
+  const selectedBank = bankOptions?.find((b) => b.value === filters.questionBankId);
 
   const toggle = <K extends "questionTypes" | "reasoningLevels" | "difficulties">(
     key: K,
@@ -211,6 +229,15 @@ export function QuestionFilterToolbar({
           },
         ]
       : []),
+    ...(filters.questionBankId
+      ? [
+          {
+            key: "bank",
+            label: `Bank: ${selectedBank?.label ?? "Selected bank"}`,
+            onRemove: () => onFiltersChange({ ...filters, questionBankId: null }),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -237,6 +264,30 @@ export function QuestionFilterToolbar({
               {courseOptions.map((c) => (
                 <SelectItem key={c.value} value={c.value}>
                   {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {bankOptions && (
+          <Select
+            value={filters.questionBankId ?? BANK_ALL}
+            onValueChange={(value) =>
+              onFiltersChange({ ...filters, questionBankId: value === BANK_ALL ? null : value })
+            }
+            disabled={Boolean(bankDisabledHint)}
+          >
+            <SelectTrigger className="sm:w-48" aria-label="Filter by bank" title={bankDisabledHint}>
+              <SelectValue>
+                {bankDisabledHint ?? selectedBank?.label ?? "All questions"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={BANK_ALL}>All questions</SelectItem>
+              {bankOptions.map((bank) => (
+                <SelectItem key={bank.value} value={bank.value}>
+                  {bank.isDefault ? `${bank.label} (default)` : bank.label}
                 </SelectItem>
               ))}
             </SelectContent>
