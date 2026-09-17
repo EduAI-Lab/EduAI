@@ -336,6 +336,25 @@ vi.mock("@/components/rbac/CourseNoAccessAlert", () => ({
   CourseNoAccessAlert: (props: any) => <button onClick={props.onGoToCourses}>no-access</button>,
 }));
 
+vi.mock("@/components/question-bank/MoveQuestionToBankDialog", () => ({
+  MoveQuestionToBankDialog: (props: any) =>
+    props.open ? (
+      <div data-testid="bank-action-dialog">
+        <span>
+          {props.mode}:{props.currentBankId ?? "none"}:{props.questionId}
+        </span>
+        <button
+          onClick={() => {
+            props.onSuccess({ id: "bank-3", courseId: 5, name: "Final", isDefault: false });
+            props.onOpenChange(false);
+          }}
+        >
+          confirm-bank-action
+        </button>
+      </div>
+    ) : null,
+}));
+
 vi.mock("@/utils/assessmentExport", () => ({
   assessmentBlocksToDocxBlob: vi.fn(async () => new Blob(["x"])),
   assessmentBlocksToPlainText: vi.fn(() => "plain text"),
@@ -674,6 +693,78 @@ describe("CourseDetailPage question filters", () => {
     fireEvent.click(screen.getByText("filter-bank"));
 
     await waitFor(() => expect(lastPageCall()?.questionBankId).toBeUndefined());
+  });
+
+  function withBankWrites() {
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: true,
+      canManageCanvas: true,
+      canManageAssessment: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+  }
+
+  it("offers Add to bank for all questions and Move to bank once a bank is selected", async () => {
+    setDefaultMocks({ tab: "questions" });
+    withBankWrites();
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await screen.findByText("add-to-bank");
+    expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("add-to-bank"));
+    expect(await screen.findByText("add:none:1")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("confirm-bank-action"));
+    expect(toastFn).toHaveBeenCalledWith("Added to bank", expect.anything());
+
+    fireEvent.click(screen.getByText("filter-bank"));
+    await screen.findByText("move-to-bank");
+    expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
+  });
+
+  it("refetches the page after a move", async () => {
+    setDefaultMocks({ tab: "questions" });
+    withBankWrites();
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await waitFor(() => expect(screen.getByTestId("qb-bank-options")).toHaveTextContent("Midterm"));
+    fireEvent.click(screen.getByText("filter-bank"));
+    fireEvent.click(await screen.findByText("move-to-bank"));
+    expect(await screen.findByText("move:bank-2:1")).toBeInTheDocument();
+
+    const callsBefore = questionService.getQuestionsPage.mock.calls.length;
+    fireEvent.click(screen.getByText("confirm-bank-action"));
+
+    expect(toastFn).toHaveBeenCalledWith("Moved to bank", expect.anything());
+    await waitFor(() =>
+      expect(questionService.getQuestionsPage.mock.calls.length).toBeGreaterThan(callsBefore),
+    );
+    expect(screen.queryByTestId("bank-action-dialog")).not.toBeInTheDocument();
+  });
+
+  it("steps back a page when a move empties the current page", async () => {
+    setDefaultMocks({ tab: "questions" });
+    withBankWrites();
+    vi.mocked(questionBankService.listBanks).mockResolvedValue([BANK_2]);
+    render(<CourseDetailPage />);
+    await waitFor(() => expect(screen.getByTestId("qb-bank-options")).toHaveTextContent("Midterm"));
+    fireEvent.click(screen.getByText("filter-bank"));
+    fireEvent.click(screen.getByText("next-questions"));
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ offset: 25 }));
+
+    fireEvent.click(await screen.findByText("move-to-bank"));
+    fireEvent.click(await screen.findByText("confirm-bank-action"));
+
+    await waitFor(() => expect(lastPageCall()).toMatchObject({ offset: 0 }));
+  });
+
+  it("hides bank actions without bank write access", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByText("view-variant");
+    expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
+    expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
   });
 });
 
