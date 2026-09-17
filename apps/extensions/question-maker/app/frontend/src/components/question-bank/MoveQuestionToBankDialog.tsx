@@ -50,16 +50,32 @@ export function MoveQuestionToBankDialog({
   const [targetBankId, setTargetBankId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [memberBankIds, setMemberBankIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setTargetBankId("");
     setError(null);
-  }, [open, questionId, mode]);
+    setMemberBankIds([]);
+
+    let cancelled = false;
+    questionBankService
+      .listBankIdsForQuestion(courseId, questionId)
+      // A failed lookup only costs the pre-filter: the server rejects a duplicate anyway.
+      .catch(() => [] as string[])
+      .then((bankIds) => {
+        if (!cancelled) setMemberBankIds(bankIds);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, questionId, mode, courseId]);
 
   const isMove = mode === "move";
   const targets = isMove ? banks.filter((bank) => bank.id !== currentBankId) : banks;
-  const target = targets.find((bank) => bank.id === targetBankId) ?? null;
+  const holdsQuestion = (bankId: string) => memberBankIds.includes(bankId);
+  const selectable = targets.filter((bank) => !holdsQuestion(bank.id));
+  const target = selectable.find((bank) => bank.id === targetBankId) ?? null;
 
   const handleConfirm = async () => {
     if (!target || isSaving) return;
@@ -105,18 +121,29 @@ export function MoveQuestionToBankDialog({
         {targets.length === 0 ? (
           <p className="text-sm text-muted-foreground">Create a bank on the Banks tab first.</p>
         ) : (
-          <Select value={targetBankId} onValueChange={setTargetBankId} disabled={isSaving}>
-            <SelectTrigger aria-label="Target bank">
-              <SelectValue placeholder="Choose a bank" />
-            </SelectTrigger>
-            <SelectContent>
-              {targets.map((bank) => (
-                <SelectItem key={bank.id} value={bank.id}>
-                  {bank.isDefault ? `${bank.name} (default)` : bank.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <>
+            <Select value={targetBankId} onValueChange={setTargetBankId} disabled={isSaving}>
+              <SelectTrigger aria-label="Target bank">
+                <SelectValue placeholder="Choose a bank" />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((bank) => {
+                  const label = bank.isDefault ? `${bank.name} (default)` : bank.name;
+                  const taken = holdsQuestion(bank.id);
+                  return (
+                    <SelectItem key={bank.id} value={bank.id} disabled={taken}>
+                      {taken ? `${label} — already in this bank` : label}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            {selectable.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                This question is already in every other bank.
+              </p>
+            )}
+          </>
         )}
 
         {error && (
