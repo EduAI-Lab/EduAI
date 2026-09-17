@@ -184,4 +184,81 @@ describe("QuestionCard", () => {
     expect(screen.getByText("Explain gravity.")).toBeInTheDocument();
     expect(screen.getByText("Objects with mass attract each other.")).toBeInTheDocument();
   });
+
+  async function openMenu() {
+    const trigger = screen.getByLabelText("Question actions");
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    fireEvent.click(trigger);
+  }
+
+  it("fires onMoveToBank from the kebab menu", async () => {
+    const onMoveToBank = vi.fn();
+    const entry = baseEntry();
+    render(
+      <QuestionCard
+        entry={entry}
+        questionNumber={1}
+        onView={vi.fn()}
+        onCreateVariant={vi.fn()}
+        onMoveToBank={onMoveToBank}
+      />,
+    );
+
+    await openMenu();
+    fireEvent.click(await screen.findByText("Move to bank…", {}, { timeout: 10000 }));
+
+    expect(onMoveToBank).toHaveBeenCalledWith(entry);
+  }, 15000);
+
+  it("fires onAddToBank from the kebab menu", async () => {
+    const onAddToBank = vi.fn();
+    const entry = baseEntry();
+    render(
+      <QuestionCard
+        entry={entry}
+        questionNumber={1}
+        onView={vi.fn()}
+        onCreateVariant={vi.fn()}
+        onAddToBank={onAddToBank}
+      />,
+    );
+
+    await openMenu();
+    fireEvent.click(await screen.findByText("Add to bank…", {}, { timeout: 10000 }));
+
+    expect(onAddToBank).toHaveBeenCalledWith(entry);
+  }, 15000);
+
+  it("shows the menu for a bank action even without create permission", async () => {
+    permissionsState.canCreateQuestion = false;
+    render(
+      <QuestionCard
+        entry={baseEntry()}
+        questionNumber={1}
+        onView={vi.fn()}
+        onCreateVariant={vi.fn()}
+        onMoveToBank={vi.fn()}
+      />,
+    );
+
+    await openMenu();
+    expect(await screen.findByText("Move to bank…", {}, { timeout: 10000 })).toBeInTheDocument();
+    expect(screen.queryByText("Create variant")).not.toBeInTheDocument();
+  }, 15000);
+
+  it("omits bank items when no bank handlers are passed", async () => {
+    render(
+      <QuestionCard
+        entry={baseEntry()}
+        questionNumber={1}
+        onView={vi.fn()}
+        onCreateVariant={vi.fn()}
+      />,
+    );
+
+    await openMenu();
+    await screen.findByText("Create variant", {}, { timeout: 10000 });
+    expect(screen.queryByText("Move to bank…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add to bank…")).not.toBeInTheDocument();
+  }, 15000);
 });

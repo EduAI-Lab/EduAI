@@ -1,7 +1,6 @@
 /**
  * Renders a single question/variant on the course Questions tab using the shared
- * @eduai/ui QuestionCard (the canonical question display). Actions (view / create
- * variant) live in the kebab menu; permissions gate the variant action.
+ * @eduai/ui QuestionCard (the canonical question display). Actions (create variant, bank membership) live in the kebab menu; permissions gate the variant action and pages decide which bank actions to pass.
  */
 import {
   QuestionCard as QuestionPreviewCard,
@@ -14,7 +13,13 @@ import {
 } from "@eduai/ui";
 import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from "@eduai/ui";
 
-import { IconCopy, IconDots, IconTrash } from "@tabler/icons-react";
+import {
+  IconCopy,
+  IconDots,
+  IconFolderPlus,
+  IconFolderShare,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
 import { formatCourseAccessLevel } from "@/lib/rbac/course-labels";
 import { markCorrectChoices } from "@/lib/mcq";
@@ -62,6 +67,8 @@ export const QuestionCard = ({
   onView,
   onCreateVariant,
   onRemoveFromBank,
+  onMoveToBank,
+  onAddToBank,
   variantNumber,
   compact = false,
 }: QuestionCardProps) => {
@@ -101,7 +108,7 @@ export const QuestionCard = ({
       : undefined;
 
   const canCreateVariant = canCreateQuestion && canWriteInCourse;
-  const showMenu = canCreateVariant || Boolean(onRemoveFromBank);
+  const showMenu = canCreateVariant || Boolean(onRemoveFromBank || onMoveToBank || onAddToBank);
   const menu = showMenu ? (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -115,6 +122,16 @@ export const QuestionCard = ({
         {canCreateVariant && (
           <DropdownMenuItem onSelect={() => onCreateVariant(entry)}>
             <IconCopy className="size-4" /> Create variant
+          </DropdownMenuItem>
+        )}
+        {onMoveToBank && (
+          <DropdownMenuItem onSelect={() => onMoveToBank(entry)}>
+            <IconFolderShare className="size-4" /> Move to bank…
+          </DropdownMenuItem>
+        )}
+        {onAddToBank && (
+          <DropdownMenuItem onSelect={() => onAddToBank(entry)}>
+            <IconFolderPlus className="size-4" /> Add to bank…
           </DropdownMenuItem>
         )}
         {onRemoveFromBank && (
