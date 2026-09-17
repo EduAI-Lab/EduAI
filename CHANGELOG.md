@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
+- Filter Question Maker questions by bank: the course Questions tab and the Question Library get a "Bank" facet in the filter toolbar (the Library enables it once a course is picked), and the filter runs server-side alongside the existing filters.
+- Move the course Questions tab and bank detail page filters (search, type, difficulty, reasoning, AI, draft, sort) from the current page to the server, so filters see every question instead of only the loaded page.
+- Add "Move to bank…" (when a bank is in view) and "Add to bank…" (in All questions) to the question card's (···) menu for instructors, backed by a new atomic Core route `POST /api/courses/:courseId/banks/:bankId/questions/:externalQuestionId/move` and its QM proxy.
+- Remove the unused `BankSelector` component and its tests. Closes #1762.
 
 ## 2026.09.15
 
