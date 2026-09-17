@@ -64,6 +64,7 @@ vi.mock("../../src/services/questionBankService.js", () => ({
   addQuestionToBank: vi.fn(),
   removeQuestionFromBank: vi.fn(),
   moveQuestionToBank: vi.fn(),
+  listBankIdsForQuestion: vi.fn(),
 }));
 
 vi.mock("../../src/utils/logger.js", () => ({
@@ -79,6 +80,7 @@ const {
   addQuestionToBank,
   removeQuestionFromBank,
   moveQuestionToBank,
+  listBankIdsForQuestion,
 } = await import("../../src/services/questionBankService.js");
 
 const courseModule = await import("../../src/routes/course.js");
@@ -167,6 +169,39 @@ describe("course bank routes", () => {
     const res = await request(appFor()).delete("/api/course/9/banks/bank_1/questions/42");
     expect(res.status).toBe(200);
     expect(removeQuestionFromBank).toHaveBeenCalledWith(9, "u-1", "bank_1", "42");
+  });
+
+  it("POST membership forwards a duplicate conflict with its status", async () => {
+    addQuestionToBank.mockRejectedValue(
+      Object.assign(new Error("Question is already in this bank"), { status: 409 }),
+    );
+    const res = await request(appFor())
+      .post("/api/course/9/banks/bank_1/questions")
+      .send({ questionMetadataId: 42 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("Question is already in this bank");
+  });
+
+  it("GET /:id/banks/questions/:questionMetadataId lists the banks holding a question", async () => {
+    listBankIdsForQuestion.mockResolvedValue(["bank_1", "bank_2"]);
+    const res = await request(appFor()).get("/api/course/9/banks/questions/42");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ bankIds: ["bank_1", "bank_2"] });
+    expect(listBankIdsForQuestion).toHaveBeenCalledWith(9, "u-1", 42);
+  });
+
+  it("GET /:id/banks/questions/:questionMetadataId rejects a non-integer question id", async () => {
+    const res = await request(appFor()).get("/api/course/9/banks/questions/abc");
+    expect(res.status).toBe(400);
+    expect(listBankIdsForQuestion).not.toHaveBeenCalled();
+  });
+
+  it("lets a TA read which banks hold a question", async () => {
+    listBankIdsForQuestion.mockResolvedValue([]);
+    const res = await request(appFor({ id: "ta-1", role: "STUDENT" })).get(
+      "/api/course/9/banks/questions/42",
+    );
+    expect(res.status).toBe(200);
   });
 
   it("POST move requires a target bank", async () => {
