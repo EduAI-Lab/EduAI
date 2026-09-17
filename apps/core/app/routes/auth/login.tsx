@@ -317,6 +317,12 @@ export default function LoginPage() {
             allowRegistration={allowRegistration}
           />
         </form>
+        {/* #1728: outside the form — a GET link must not submit the credentials. */}
+        <p className="mt-4 text-center text-sm">
+          <a href="/auth/forgot-password" className="underline underline-offset-4">
+            Forgot your password?
+          </a>
+        </p>
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">
