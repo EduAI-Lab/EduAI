@@ -7,6 +7,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## 2026.09.16
 
 - Add a self-serve password reset: `/auth/forgot-password` emails a 6-digit code and `/auth/reset-password` redeems it, via Better Auth's `emailOTP` plugin over the existing SMTP transport. Codes are stored as an HMAC-SHA256 digest keyed on `BETTER_AUTH_SECRET` rather than in plaintext, and the rest of the plugin's surface (passwordless sign-in, OTP email-verification, OTP email-change, `check-verification-otp`) is 404'd so it cannot bypass the §6a registration, §567 UBC-email or #971 deactivated-user gates. Unknown and known addresses get byte-identical responses, and the request endpoint is throttled per IP (10 / 15 min) and per email (3 / 15 min) before any account lookup. The #339 strength policy and the no-reuse check both still apply, the latter only once a live code proves the caller owns the mailbox and still has guesses left on it. Closes #1728.
+- Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
 
 ## 2026.09.15
 
