@@ -182,6 +182,15 @@ export async function deleteQuestionBank(
   return { success: true } as const;
 }
 
+/**
+ * Membership is a set, not a list: a bank holds a question once or not at all.
+ * Adding or moving into a bank that already holds it is a conflict rather than a
+ * silent no-op, so the caller can say so instead of reporting a successful add
+ * (and, for a move, instead of quietly degrading into a removal from the source).
+ */
+const DUPLICATE_MEMBERSHIP_ERROR = "Question is already in this bank";
+const DUPLICATE_TARGET_MEMBERSHIP_ERROR = "Question is already in the target bank";
+
 export async function addQuestionToBank(
   courseId: string,
   bankId: string,
@@ -199,7 +208,7 @@ export async function addQuestionToBank(
     return { error: "Question bank not found" } as const;
   }
 
-  const membership = await prisma.questionBankMembership.upsert({
+  const existing = await prisma.questionBankMembership.findUnique({
     where: {
       questionBankId_source_externalQuestionId: {
         questionBankId: bankId,
@@ -207,15 +216,26 @@ export async function addQuestionToBank(
         externalQuestionId: parsed.data.externalQuestionId,
       },
     },
-    create: {
-      questionBankId: bankId,
-      source: parsed.data.source,
-      externalQuestionId: parsed.data.externalQuestionId,
-    },
-    update: {},
   });
+  if (existing) {
+    return { error: DUPLICATE_MEMBERSHIP_ERROR } as const;
+  }
 
-  return { membership } as const;
+  try {
+    const membership = await prisma.questionBankMembership.create({
+      data: {
+        questionBankId: bankId,
+        source: parsed.data.source,
+        externalQuestionId: parsed.data.externalQuestionId,
+      },
+    });
+    return { membership } as const;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { error: DUPLICATE_MEMBERSHIP_ERROR } as const;
+    }
+    throw error;
+  }
 }
 
 /** Bulk membership upsert — collapses N Core round-trips for Canvas bank import. */
@@ -333,43 +353,58 @@ export async function moveQuestionBetweenBanks(
     return { error: "Source and target bank must differ" } as const;
   }
 
-  return prisma.$transaction(async (tx) => {
-    const banks = await tx.questionBank.findMany({
-      where: { id: { in: [fromBankId, targetBankId] }, courseId },
-      select: { id: true },
-    });
-    if (banks.length !== 2) {
-      return { error: "Question bank not found" } as const;
-    }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const banks = await tx.questionBank.findMany({
+        where: { id: { in: [fromBankId, targetBankId] }, courseId },
+        select: { id: true },
+      });
+      if (banks.length !== 2) {
+        return { error: "Question bank not found" } as const;
+      }
 
-    const current = await tx.questionBankMembership.findUnique({
-      where: {
-        questionBankId_source_externalQuestionId: {
-          questionBankId: fromBankId,
-          source,
-          externalQuestionId,
+      const current = await tx.questionBankMembership.findUnique({
+        where: {
+          questionBankId_source_externalQuestionId: {
+            questionBankId: fromBankId,
+            source,
+            externalQuestionId,
+          },
         },
-      },
-    });
-    if (!current) {
-      return { error: "Question is not a member of this bank" } as const;
-    }
+      });
+      if (!current) {
+        return { error: "Question is not a member of this bank" } as const;
+      }
 
-    const membership = await tx.questionBankMembership.upsert({
-      where: {
-        questionBankId_source_externalQuestionId: {
-          questionBankId: targetBankId,
-          source,
-          externalQuestionId,
+      const alreadyInTarget = await tx.questionBankMembership.findUnique({
+        where: {
+          questionBankId_source_externalQuestionId: {
+            questionBankId: targetBankId,
+            source,
+            externalQuestionId,
+          },
         },
-      },
-      create: { questionBankId: targetBankId, source, externalQuestionId },
-      update: {},
-    });
-    await tx.questionBankMembership.delete({ where: { id: current.id } });
+      });
+      if (alreadyInTarget) {
+        return { error: DUPLICATE_TARGET_MEMBERSHIP_ERROR } as const;
+      }
 
-    return { membership } as const;
-  });
+      const membership = await tx.questionBankMembership.create({
+        data: { questionBankId: targetBankId, source, externalQuestionId },
+      });
+      await tx.questionBankMembership.delete({ where: { id: current.id } });
+
+      return { membership } as const;
+    });
+  } catch (error) {
+    // A concurrent add can win between the pre-check and the insert. Catching P2002
+    // outside the transaction keeps the rollback intact, so the question stays in the
+    // source bank instead of being dropped on the way to a target that already has it.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { error: DUPLICATE_TARGET_MEMBERSHIP_ERROR } as const;
+    }
+    throw error;
+  }
 }
 
 export async function listBankMemberships(courseId: string, bankId: string) {
