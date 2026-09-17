@@ -766,6 +766,21 @@ describe("CourseDetailPage question filters", () => {
     expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
     expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
   });
+
+  it("hides bank actions when assessment management is allowed but writes are read-only", async () => {
+    setDefaultMocks({ tab: "questions" });
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: false,
+      canManageCanvas: true,
+      canManageAssessment: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    render(<CourseDetailPage />);
+    await screen.findByText("view-variant");
+    expect(screen.queryByText("add-to-bank")).not.toBeInTheDocument();
+    expect(screen.queryByText("move-to-bank")).not.toBeInTheDocument();
+  });
 });
 
 describe("CourseDetailPage assessments tab", () => {
