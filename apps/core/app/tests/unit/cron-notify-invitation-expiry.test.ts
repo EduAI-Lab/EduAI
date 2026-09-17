@@ -17,6 +17,7 @@ vi.mock("~/lib/logging.server", () => ({
 
 import { notifyExpiringInvitations } from "~/lib/cron-notify-invitation-expiry.server";
 import { buildInvitationReminderEmail } from "~/lib/email/templates/invitation-reminder";
+import { buildInvitationEmail, ROLE_LABELS } from "~/lib/email/templates/invitation";
 
 /** A fixed "now" so the computed reminder window is deterministic. */
 const NOW = new Date("2026-06-20T04:30:00Z");
@@ -385,5 +386,38 @@ describe("buildInvitationReminderEmail", () => {
     expect(message.html).not.toContain("<script>");
     expect(message.html).not.toContain("<b>Ada</b>");
     expect(message.html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("invitation role labels are shared, not copied", () => {
+  // The reminder used to keep its own copy of the label map. A copy drifts
+  // silently: change a label (or add a role) in one file and the same invitee
+  // sees one role in the invite and another in the reminder. Comparing the two
+  // rendered emails is what actually pins that down — importing the map into
+  // this test alone would still pass if the reminder went back to a local copy.
+  it.each([...ROLE_LABELS.keys()])("renders %s identically in both emails", (role) => {
+    const expiresAt = new Date("2026-06-21T10:00:00Z");
+    const label = ROLE_LABELS.get(role)!;
+
+    const invite = buildInvitationEmail({
+      to: "alice@test.local",
+      acceptUrl: "https://eduai.test/auth/accept-invitation?token=raw",
+      role,
+      inviterName: "Admin Ada",
+      expiresAt,
+    });
+    const reminder = buildInvitationReminderEmail({
+      to: "alice@test.local",
+      inviteeName: "Alice",
+      role,
+      inviterName: "Admin Ada",
+      inviterEmail: "ada@test.local",
+      expiresAt,
+      platformUrl: "https://eduai.test",
+    });
+
+    expect(invite.text).toContain(label);
+    expect(reminder.text).toContain(label);
+    expect(reminder.html).toContain(label);
   });
 });

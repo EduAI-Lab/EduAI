@@ -1,15 +1,6 @@
 import type { EmailMessage } from "~/lib/email/mailer.server";
 import { escapeHtml } from "~/lib/email/templates/escape-html";
-
-// Mirrors the labels in `invitation.ts`. Duplicated rather than shared because
-// that module keeps its map private; a `Map` because the key is a
-// caller-supplied string, not a union this file owns, so a stray one must miss.
-const ROLE_LABELS = new Map<string, string>([
-  ["ADMIN", "Administrator"],
-  ["UNIT_ADMIN", "Unit Administrator"],
-  ["INSTRUCTOR", "Instructor"],
-  ["STUDENT", "Student"],
-]);
+import { ROLE_LABELS } from "~/lib/email/templates/invitation";
 
 export type InvitationReminderEmailInput = {
   to: string;
