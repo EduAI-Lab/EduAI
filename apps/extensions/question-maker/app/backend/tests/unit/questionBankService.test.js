@@ -22,6 +22,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   listQuestionBankMembershipsFromCore: vi.fn(),
   addQuestionBankMembershipOnCore: vi.fn(),
   removeQuestionBankMembershipOnCore: vi.fn(),
+  moveQuestionBankMembershipOnCore: vi.fn(),
 }));
 
 const {
@@ -31,6 +32,7 @@ const {
   deleteQuestionBankOnCore,
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
+  moveQuestionBankMembershipOnCore,
   listQuestionBankMembershipsFromCore,
 } = await import("../../src/services/coreApiService.js");
 
@@ -45,6 +47,7 @@ const {
   resolveCoreCourse,
   addQuestionToBank,
   removeQuestionFromBank,
+  moveQuestionToBank,
   listExternalQuestionIdsForBank,
 } = await import("../../src/services/questionBankService.js");
 
@@ -197,6 +200,62 @@ describe("removeQuestionFromBank", () => {
       "42",
       "question-maker",
     );
+  });
+});
+
+describe("moveQuestionToBank", () => {
+  it("requires a target bank id", async () => {
+    await expect(moveQuestionToBank(9, USER_ID, "bank_1", "  ", 42)).rejects.toMatchObject({
+      status: 400,
+      message: "targetBankId is required",
+    });
+    expect(moveQuestionBankMembershipOnCore).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing question", async () => {
+    questionFindUnique.mockResolvedValue(null);
+    await expect(moveQuestionToBank(9, USER_ID, "bank_1", "bank_2", 42)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it("rejects a question from another course", async () => {
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 99 });
+    await expect(moveQuestionToBank(9, USER_ID, "bank_1", "bank_2", 42)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining("same course"),
+    });
+    expect(moveQuestionBankMembershipOnCore).not.toHaveBeenCalled();
+  });
+
+  it("moves the membership on Core using the QM question id", async () => {
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
+    moveQuestionBankMembershipOnCore.mockResolvedValue({ id: "mem_2" });
+
+    await expect(moveQuestionToBank(9, USER_ID, "bank_1", "bank_2", 42)).resolves.toEqual({
+      id: "mem_2",
+    });
+    expect(moveQuestionBankMembershipOnCore).toHaveBeenCalledWith(
+      "core_course_1",
+      "bank_1",
+      "42",
+      "bank_2",
+      "question-maker",
+    );
+  });
+
+  it("surfaces Core's status and message", async () => {
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
+    moveQuestionBankMembershipOnCore.mockRejectedValue(
+      Object.assign(new Error("Core error"), {
+        status: 404,
+        body: { error: "Question is not a member of this bank" },
+      }),
+    );
+
+    await expect(moveQuestionToBank(9, USER_ID, "bank_1", "bank_2", 42)).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });
 

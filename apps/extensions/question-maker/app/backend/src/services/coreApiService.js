@@ -722,3 +722,18 @@ export async function removeQuestionBankMembershipOnCore(
     { method: "DELETE", ...opts },
   );
 }
+
+/** POST move membership to another bank — body `{ targetBankId, source }` */
+export async function moveQuestionBankMembershipOnCore(
+  coreCourseId,
+  fromBankId,
+  externalQuestionId,
+  targetBankId,
+  source = "question-maker",
+  opts = {},
+) {
+  return fetchFromCore(
+    `/api/courses/${coreCourseId}/banks/${fromBankId}/questions/${externalQuestionId}/move`,
+    { method: "POST", body: { targetBankId, source }, ...opts },
+  );
+}
