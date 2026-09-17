@@ -166,7 +166,57 @@ describe("QuestionFilterToolbar", () => {
         difficulties: [],
         aiGenerated: "ai",
         draftStatus: "draft",
+        questionBankId: "bank-2",
       }),
-    ).toBe(5);
+    ).toBe(6);
+  });
+
+  const BANK_OPTIONS = [
+    { value: "bank-1", label: "Course bank", isDefault: true },
+    { value: "bank-2", label: "Midterm" },
+  ];
+
+  it("hides the bank select when no bank options are passed", () => {
+    renderToolbar();
+    expect(screen.queryByLabelText("Filter by bank")).not.toBeInTheDocument();
+  });
+
+  it("picks a bank, marking the default bank", () => {
+    const { onFiltersChange } = renderToolbar({ bankOptions: BANK_OPTIONS });
+
+    fireEvent.click(screen.getByLabelText("Filter by bank"));
+    expect(screen.getByText("Course bank (default)")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Midterm"));
+
+    expect(onFiltersChange).toHaveBeenCalledWith({
+      ...EMPTY_QUESTION_FILTERS,
+      questionBankId: "bank-2",
+    });
+  });
+
+  it('maps "All questions" back to a null bank', () => {
+    const filters: QuestionFilters = { ...EMPTY_QUESTION_FILTERS, questionBankId: "bank-2" };
+    const { onFiltersChange } = renderToolbar({ bankOptions: BANK_OPTIONS, filters });
+
+    fireEvent.click(screen.getByLabelText("Filter by bank"));
+    fireEvent.click(screen.getByText("All questions"));
+
+    expect(onFiltersChange).toHaveBeenCalledWith(EMPTY_QUESTION_FILTERS);
+  });
+
+  it("shows a removable bank chip", () => {
+    const filters: QuestionFilters = { ...EMPTY_QUESTION_FILTERS, questionBankId: "bank-2" };
+    const { onFiltersChange } = renderToolbar({ bankOptions: BANK_OPTIONS, filters });
+
+    fireEvent.click(screen.getByRole("button", { name: /Bank: Midterm/ }));
+
+    expect(onFiltersChange).toHaveBeenCalledWith(EMPTY_QUESTION_FILTERS);
+  });
+
+  it("disables the bank select with a hint", () => {
+    renderToolbar({ bankOptions: [], bankDisabledHint: "Pick a course to filter by bank" });
+
+    expect(screen.getByLabelText("Filter by bank")).toBeDisabled();
+    expect(screen.getByText("Pick a course to filter by bank")).toBeInTheDocument();
   });
 });
