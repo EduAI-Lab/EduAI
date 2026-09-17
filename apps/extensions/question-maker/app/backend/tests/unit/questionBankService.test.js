@@ -23,6 +23,7 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   addQuestionBankMembershipOnCore: vi.fn(),
   removeQuestionBankMembershipOnCore: vi.fn(),
   moveQuestionBankMembershipOnCore: vi.fn(),
+  listQuestionBankIdsForQuestionOnCore: vi.fn(),
 }));
 
 const {
@@ -33,6 +34,7 @@ const {
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
   moveQuestionBankMembershipOnCore,
+  listQuestionBankIdsForQuestionOnCore,
   listQuestionBankMembershipsFromCore,
 } = await import("../../src/services/coreApiService.js");
 
@@ -49,6 +51,7 @@ const {
   removeQuestionFromBank,
   moveQuestionToBank,
   listExternalQuestionIdsForBank,
+  listBankIdsForQuestion,
 } = await import("../../src/services/questionBankService.js");
 
 const USER_ID = "user_cuid";
@@ -274,6 +277,21 @@ describe("listExternalQuestionIdsForBank", () => {
   });
 });
 
+describe("listBankIdsForQuestion", () => {
+  it("returns the Core bank ids that already hold the question", async () => {
+    listQuestionBankIdsForQuestionOnCore.mockResolvedValue({ bankIds: ["bank_1", "bank_2"] });
+
+    await expect(listBankIdsForQuestion(9, USER_ID, 42)).resolves.toEqual(["bank_1", "bank_2"]);
+    expect(listQuestionBankIdsForQuestionOnCore).toHaveBeenCalledWith("core_course_1", "42");
+  });
+
+  it("tolerates a Core payload without bankIds", async () => {
+    listQuestionBankIdsForQuestionOnCore.mockResolvedValue({});
+
+    await expect(listBankIdsForQuestion(9, USER_ID, 42)).resolves.toEqual([]);
+  });
+});
+
 describe("updateBank / deleteBank / ensureDefaultBank / attachQuestionToBanks", () => {
   it("updateBank remaps Core response", async () => {
     updateQuestionBankOnCore.mockResolvedValue({
@@ -346,6 +364,16 @@ describe("updateBank / deleteBank / ensureDefaultBank / attachQuestionToBanks", 
     addQuestionBankMembershipOnCore.mockResolvedValue({ id: "m1" });
     await expect(
       attachQuestionToBanks(9, USER_ID, 42, { questionBankIds: ["bank_a", "bank_b"] }),
+    ).resolves.toEqual(["bank_a", "bank_b"]);
+    expect(addQuestionBankMembershipOnCore).toHaveBeenCalledTimes(2);
+  });
+
+  it("attachQuestionToBanks adds a repeated bank id once", async () => {
+    // Core now rejects a duplicate membership, so a repeated id would 409 the create.
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
+    addQuestionBankMembershipOnCore.mockResolvedValue({ id: "m1" });
+    await expect(
+      attachQuestionToBanks(9, USER_ID, 42, { questionBankIds: ["bank_a", "bank_a", "bank_b"] }),
     ).resolves.toEqual(["bank_a", "bank_b"]);
     expect(addQuestionBankMembershipOnCore).toHaveBeenCalledTimes(2);
   });
