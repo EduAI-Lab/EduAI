@@ -14,6 +14,7 @@ import {
   deleteQuestionBank,
   listBankMemberships,
   listQuestionBanks,
+  moveQuestionBetweenBanks,
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
@@ -25,6 +26,7 @@ import { withErrorResponse } from "~/lib/errors.server";
  * - ":bankId" → PUT update / DELETE
  * - ":bankId/questions" → GET memberships / POST add
  * - ":bankId/questions/:externalQuestionId" → DELETE remove
+ * - ":bankId/questions/:externalQuestionId/move" → POST move to `targetBankId`
  */
 function parseBanksPath(splat: string | undefined) {
   const rest = (splat || "").replace(/^\/+/, "");
@@ -206,6 +208,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
           return json(result, status);
         }
         return json(result);
+      }
+
+      if (
+        parts.length === 4 &&
+        parts[1] === "questions" &&
+        parts[3] === "move" &&
+        method === "POST"
+      ) {
+        const body = await request.json();
+        const result = await moveQuestionBetweenBanks(courseId, parts[0], parts[2], body);
+        if ("error" in result) {
+          const status =
+            result.error === "Question bank not found" ||
+            result.error === "Question is not a member of this bank"
+              ? 404
+              : 400;
+          return json(result, status);
+        }
+        return json(result.membership);
       }
 
       return json({ error: "Method not allowed" }, 405);
