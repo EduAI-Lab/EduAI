@@ -187,4 +187,26 @@ describe("GeneratedVariantsReviewDialog", () => {
     fireEvent.click(screen.getByText("Done"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+  it("lists the questions that could not be varied, with the cause (#1763)", async () => {
+    const withFailures = {
+      ...result,
+      errors: [
+        {
+          questionId: 7,
+          code: "PROVIDER_AUTH",
+          error: "The AI provider rejected the request's credentials. Check the API key.",
+        },
+      ],
+    } as any;
+    render(<GeneratedVariantsReviewDialog open onOpenChange={vi.fn()} result={withFailures} />);
+    await waitFor(() => expect(screen.getByText("Not generated (1)")).toBeInTheDocument());
+    expect(screen.getByText(/Question 7/)).toBeInTheDocument();
+    expect(screen.getByText(/rejected the request's credentials/)).toBeInTheDocument();
+  });
+
+  it("does not show a failure section when nothing failed (#1763)", async () => {
+    render(<GeneratedVariantsReviewDialog open onOpenChange={vi.fn()} result={result} />);
+    await waitFor(() => expect(screen.getByText("Done")).toBeInTheDocument());
+    expect(screen.queryByText(/Not generated/)).not.toBeInTheDocument();
+  });
 });

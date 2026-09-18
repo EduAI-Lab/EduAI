@@ -6,6 +6,7 @@ import {
   splitIntoQuestionBlocks,
   chunkByQuestionBlocks,
   extractedQuestionDedupeKey,
+  questionTextDedupeKey,
   deduplicateExtractedQuestions,
 } from "../../src/services/extractionUtils.js";
 
@@ -132,6 +133,27 @@ describe("extractedQuestionDedupeKey", () => {
     const k1 = extractedQuestionDedupeKey({ question: "Same question." });
     const k2 = extractedQuestionDedupeKey({ question: "Same question." });
     expect(k1).toBe(k2);
+  });
+});
+
+describe("questionTextDedupeKey", () => {
+  it("collapses whitespace and lowercases the text", () => {
+    expect(questionTextDedupeKey("  What   is\n2+2?  ")).toBe("what is 2+2?");
+  });
+
+  it("caps the key at the first 150 characters", () => {
+    const key = questionTextDedupeKey("a".repeat(200));
+    expect(key).toBe("a".repeat(150));
+  });
+
+  it("returns an empty key for a missing or non-string text", () => {
+    expect(questionTextDedupeKey(null)).toBe("");
+    expect(questionTextDedupeKey(42)).toBe("");
+  });
+
+  it("gives the same key as extractedQuestionDedupeKey for the same text", () => {
+    const text = "  Compute the eigenvalues of A.  ";
+    expect(questionTextDedupeKey(text)).toBe(extractedQuestionDedupeKey({ question: text }));
   });
 });
 

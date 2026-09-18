@@ -406,6 +406,61 @@ describe("AssessmentVariantPage — generate step", () => {
     );
   });
 
+  it("names the cause when every generation attempt failed (#1763)", async () => {
+    assessmentVariantService.generateBankVariants.mockResolvedValue({
+      results: [],
+      errors: [
+        { questionId: 1, code: "PROVIDER_UNREACHABLE", error: "Could not reach the AI provider." },
+      ],
+    });
+    await goToGenerateStep();
+    fireEvent.click(screen.getByRole("button", { name: /generate for all questions/i }));
+    await waitFor(() =>
+      expect(toastFn.error).toHaveBeenCalledWith(
+        "No variants were generated",
+        expect.objectContaining({
+          description: expect.stringContaining("Could not reach the AI provider."),
+        }),
+      ),
+    );
+    const description = toastFn.error.mock.calls.at(-1)[1].description as string;
+    expect(description).not.toMatch(/console/i);
+  });
+
+  it("lists each distinct cause only once (#1763)", async () => {
+    assessmentVariantService.generateBankVariants.mockResolvedValue({
+      results: [],
+      errors: [
+        { questionId: 1, code: "PROVIDER_AUTH", error: "Check the API key." },
+        { questionId: 2, code: "PROVIDER_AUTH", error: "Check the API key." },
+      ],
+    });
+    await goToGenerateStep();
+    fireEvent.click(screen.getByRole("button", { name: /generate for all questions/i }));
+    await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
+    const description = toastFn.error.mock.calls.at(-1)[1].description as string;
+    expect(description.match(/Check the API key\./g)).toHaveLength(1);
+  });
+
+  it("names the cause when only some attempts failed (#1763)", async () => {
+    assessmentVariantService.generateBankVariants.mockResolvedValue({
+      results: [{ createdVariantIds: [1], createdVariants: [{}] }],
+      errors: [
+        { questionId: 2, code: "VARIANT_DUPLICATE", error: "The model returned a duplicate." },
+      ],
+    });
+    await goToGenerateStep();
+    fireEvent.click(screen.getByRole("button", { name: /generate for all questions/i }));
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith(
+        "1 draft variant(s) generated",
+        expect.objectContaining({
+          description: expect.stringContaining("The model returned a duplicate."),
+        }),
+      ),
+    );
+  });
+
   it("reports a generation service failure", async () => {
     assessmentVariantService.generateBankVariants.mockRejectedValue({
       response: { data: { error: "boom" } },

@@ -541,8 +541,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed after retry`, {
               attemptCount: 2,
             });
-            throw new Error(
-              "Could not parse response from EduAI (expected a JSON array of questions)",
+            // Tagged so the caller can tell "the model replied with junk" apart from a
+            // transport failure; the re-wrap below carries `reasonCode` through (#1763).
+            throw Object.assign(
+              new Error("Could not parse response from EduAI (expected a JSON array of questions)"),
+              { reasonCode: "PROVIDER_MALFORMED_JSON" },
             );
           }
         }
@@ -781,6 +784,13 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       stableError.name = "EduAIQuestionGenerationError";
       const statusCode = error?.statusCode;
       if (Number.isInteger(statusCode)) stableError.statusCode = statusCode;
+      // The message stays deliberately generic (it can quote a provider body), but the
+      // classification `toStableUpstreamError` already computed must survive: without it
+      // every caller sees one opaque failure and cannot tell auth from a timeout (#1763).
+      // These fields are allowlisted values, never response bodies.
+      if (typeof error?.transportCode === "string") stableError.transportCode = error.transportCode;
+      if (typeof error?.reasonCode === "string") stableError.reasonCode = error.reasonCode;
+      if (typeof error?.correlationId === "string") stableError.correlationId = error.correlationId;
       throw stableError;
     }
   }
