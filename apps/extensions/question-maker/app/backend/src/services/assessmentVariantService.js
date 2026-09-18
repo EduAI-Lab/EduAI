@@ -14,6 +14,11 @@ import {
 } from "./courseListService.js";
 import { safeRequestLogFields } from "../utils/safeLogging.js";
 import {
+  describeVariantFailure,
+  VARIANT_DUPLICATE_FAILURE,
+} from "../utils/variantFailureReason.js";
+import { questionTextDedupeKey } from "./extractionUtils.js";
+import {
   assertQmAiDeadline,
   isQmAiDeadlineError,
   validateBankVariantAdmission,
@@ -912,6 +917,25 @@ export async function generateBankVariantsForQuestions(userId, params) {
   });
   const metaById = new Map(metas.map((m) => [m.id, m]));
 
+  // Every variant text each question already has, so a generated variant that merely
+  // repeats one can be rejected before the insert (#1763). The prompt asks the model to
+  // change surface details but nothing enforced it, so generating twice quietly filled
+  // the bank with near-identical items. Scoped to the ids that survived the authorized
+  // metadata read above, and selects text only — the metadata prefetch deliberately
+  // materializes just the primary variant, and this must not undo that.
+  const variantKeysByQuestion = new Map();
+  if (metas.length > 0) {
+    const existingVariants = await prisma.variants.findMany({
+      where: { questionMetadataId: { in: metas.map((m) => m.id) } },
+      select: { questionMetadataId: true, questionText: true },
+    });
+    for (const row of existingVariants) {
+      const keys = variantKeysByQuestion.get(row.questionMetadataId) ?? new Set();
+      keys.add(questionTextDedupeKey(row.questionText));
+      variantKeysByQuestion.set(row.questionMetadataId, keys);
+    }
+  }
+
   for (const qid of normalizedQuestionIds) {
     assertQmAiDeadline({ deadlineAt, signal });
     const meta = metaById.get(qid);
@@ -942,6 +966,10 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
     const createdVariantIds = [];
     const createdVariants = [];
+    // Grows as this run inserts variants, so a later iteration cannot repeat one the
+    // earlier iterations just created.
+    const existingKeys = variantKeysByQuestion.get(qid) ?? new Set();
+    variantKeysByQuestion.set(qid, existingKeys);
 
     for (let n = 0; n < normalizedVariantsToAdd; n++) {
       assertQmAiDeadline({ deadlineAt, signal });
@@ -1011,50 +1039,79 @@ Return exactly one question in the required JSON format.`;
           return eduaiService.generateQuestions(generateParams);
         };
 
-        let generated = await callGenerate(baseVariantPrompt);
+        // One generation attempt: call the provider, repair an MCQ choice-count miss, and
+        // validate the shape. Shared so the duplicate retry below re-validates its reply
+        // exactly as the first attempt did.
+        const generateOneVariant = async (promptText) => {
+          let generated = await callGenerate(promptText);
 
-        let q = Array.isArray(generated) ? generated[0] : null;
-        if (!q || !q.content) {
-          throw publicVariantGenerationError("EduAI returned no question content");
-        }
+          let q = Array.isArray(generated) ? generated[0] : null;
+          if (!q || !q.content) {
+            throw publicVariantGenerationError("EduAI returned no question content");
+          }
 
-        let answer = q.answer ?? null;
-        let choices = q.choices ?? null;
+          let answer = q.answer ?? null;
+          let choices = q.choices ?? null;
 
-        if (meta.type === "MCQ" && expectedMcqChoiceCount != null) {
-          const got = Array.isArray(choices) ? choices.length : 0;
-          if (got !== expectedMcqChoiceCount) {
-            const repair = `\n\nCRITICAL FIX: Your last output had ${got} MCQ choice(s). Regenerate with exactly ${expectedMcqChoiceCount} choices labeled ${mcqLetterSequence(expectedMcqChoiceCount)}. The original has ${expectedMcqChoiceCount} options; the variant must match that count.`;
-            generated = await callGenerate(baseVariantPrompt + repair);
-            q = Array.isArray(generated) ? generated[0] : null;
-            if (!q || !q.content) {
-              throw publicVariantGenerationError(
-                "EduAI returned no question content on MCQ count retry",
-              );
+          if (meta.type === "MCQ" && expectedMcqChoiceCount != null) {
+            const got = Array.isArray(choices) ? choices.length : 0;
+            if (got !== expectedMcqChoiceCount) {
+              const repair = `\n\nCRITICAL FIX: Your last output had ${got} MCQ choice(s). Regenerate with exactly ${expectedMcqChoiceCount} choices labeled ${mcqLetterSequence(expectedMcqChoiceCount)}. The original has ${expectedMcqChoiceCount} options; the variant must match that count.`;
+              generated = await callGenerate(promptText + repair);
+              q = Array.isArray(generated) ? generated[0] : null;
+              if (!q || !q.content) {
+                throw publicVariantGenerationError(
+                  "EduAI returned no question content on MCQ count retry",
+                );
+              }
+              answer = q.answer ?? null;
+              choices = q.choices ?? null;
             }
-            answer = q.answer ?? null;
-            choices = q.choices ?? null;
+          }
+
+          if (meta.type === "MCQ" && (!choices || choices.length < 2)) {
+            throw publicVariantGenerationError("MCQ variant missing choices");
+          }
+          if (
+            meta.type === "MCQ" &&
+            expectedMcqChoiceCount != null &&
+            choices.length !== expectedMcqChoiceCount
+          ) {
+            throw publicVariantGenerationError(
+              `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`,
+            );
+          }
+
+          return { questionText: q.content.trim(), q, answer, choices };
+        };
+
+        let attempt = await generateOneVariant(baseVariantPrompt);
+
+        // A duplicate costs one more provider call, then gives up: the admission budget
+        // reserves four calls per variant and an attempt uses at most two, so the retry
+        // always fits. Reported rather than inserted, so the bank never gains a copy.
+        if (existingKeys.has(questionTextDedupeKey(attempt.questionText))) {
+          const dedupeRepair = `\n\nCRITICAL FIX: Your last reply duplicated a variant this question already has. Write a genuinely different item — change the scenario, the values and the wording — while keeping the same learning objective and approximate difficulty.`;
+          attempt = await generateOneVariant(baseVariantPrompt + dedupeRepair);
+
+          if (existingKeys.has(questionTextDedupeKey(attempt.questionText))) {
+            errors.push({
+              questionId: qid,
+              iteration: n + 1,
+              code: VARIANT_DUPLICATE_FAILURE.code,
+              error: VARIANT_DUPLICATE_FAILURE.message,
+            });
+            break;
           }
         }
 
-        if (meta.type === "MCQ" && (!choices || choices.length < 2)) {
-          throw publicVariantGenerationError("MCQ variant missing choices");
-        }
-        if (
-          meta.type === "MCQ" &&
-          expectedMcqChoiceCount != null &&
-          choices.length !== expectedMcqChoiceCount
-        ) {
-          throw publicVariantGenerationError(
-            `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`,
-          );
-        }
+        const { questionText: variantText, q, answer, choices } = attempt;
 
         assertQmAiDeadline({ deadlineAt, signal });
         const v = await prisma.variants.create({
           data: {
             questionMetadataId: meta.id,
-            questionText: q.content.trim(),
+            questionText: variantText,
             difficulty: ["easy", "medium", "hard"].includes(q.difficulty)
               ? q.difficulty
               : primaryVariant.difficulty,
@@ -1074,6 +1131,7 @@ Return exactly one question in the required JSON format.`;
           },
         });
 
+        existingKeys.add(questionTextDedupeKey(variantText));
         createdVariantIds.push(v.id);
         // Return the full variant payload so the UI can show generated questions
         // for review without a round-trip to the question bank.
@@ -1091,11 +1149,11 @@ Return exactly one question in the required JSON format.`;
       } catch (err) {
         console.error("Variant generation failed", safeRequestLogFields(err));
         if (shouldStopAiFanout(err)) throw err;
-        errors.push({
-          questionId: qid,
-          iteration: n + 1,
-          error: err?.isPublic === true ? err.message : "Variant generation failed",
-        });
+        // Classify rather than collapsing every non-public failure to one string: an
+        // instructor seeing "Variant generation failed" cannot tell a missing API key
+        // from a timeout or an unparseable reply (#1763).
+        const { code, message } = describeVariantFailure(err);
+        errors.push({ questionId: qid, iteration: n + 1, code, error: message });
         break;
       }
     }
