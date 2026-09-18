@@ -468,10 +468,17 @@ export function AssessmentVariantPage() {
         console.warn("Assessment variant workflow: generateBankVariants errors", result.errors);
       }
 
+      // The backend classifies each failure now (#1763), so name the distinct causes
+      // instead of sending the instructor to the browser console — which was never
+      // something they would open, and said nothing useful when they did.
+      const causes = [...new Set((result.errors ?? []).map((e) => e.error).filter(Boolean))];
+      const causeText =
+        causes.slice(0, 3).join(" ") + (causes.length > 3 ? ` +${causes.length - 3} more.` : "");
+
       if (createdCount === 0) {
         toast.error("No variants were generated", {
           description: failed
-            ? `All ${failed} generation attempt(s) failed (details in console). Check the selected AI model / EduAI configuration and try again.`
+            ? `All ${failed} generation attempt(s) failed. ${causeText || "Check the selected AI model / EduAI configuration and try again."}`
             : "The AI returned no new variants. Try again or choose another model.",
           duration: Infinity,
         });
@@ -481,7 +488,7 @@ export function AssessmentVariantPage() {
         setVariantReviewResult(result);
         setVariantReviewOpen(true);
         toast(`${createdCount} draft variant(s) generated`, {
-          description: `Review and approve them below.${failed ? ` ${failed} step(s) failed (see console).` : ""}`,
+          description: `Review and approve them below.${failed ? ` ${failed} step(s) failed: ${causeText}` : ""}`,
         });
       }
     } catch (e: unknown) {

@@ -83,6 +83,7 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onReviewed }: Props) {
   const [statuses, setStatuses] = useState<Record<number, VariantStatus>>({});
   const [hydrating, setHydrating] = useState(false);
+  const failures = result?.errors ?? [];
 
   const groups = useMemo<ReviewGroup[]>(() => {
     if (!result) return [];
@@ -287,6 +288,25 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
 
         {/* ── Body: one section per source question, card per variant ── */}
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Questions the run could not produce a variant for. The backend classifies each
+              failure (#1763); before that it reported one generic string and this surface
+              showed nothing at all, so a partial run looked like a complete one. */}
+          {failures.length > 0 && (
+            <section className="border-b border-border bg-muted/30 px-6 py-4">
+              <SectionLabel>Not generated ({failures.length})</SectionLabel>
+              <ul className="space-y-1.5">
+                {failures.map((f, i) => (
+                  <li
+                    key={`${f.questionId}-${f.iteration ?? i}`}
+                    className="flex flex-wrap gap-x-2 text-sm"
+                  >
+                    <span className="font-medium text-foreground">Question {f.questionId}</span>
+                    <span className="text-muted-foreground">{f.error}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {groups.length === 0 ? (
             <p className="py-16 text-center text-sm text-muted-foreground">
               No variants were generated.
