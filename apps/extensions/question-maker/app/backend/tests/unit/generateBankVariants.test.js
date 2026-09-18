@@ -20,6 +20,7 @@ const {
   mockMetaFindMany,
   mockVariantCreate,
   mockVariantUpdateMany,
+  mockVariantFindMany,
 } = vi.hoisted(() => ({
   mockIsConfigured: vi.fn().mockReturnValue(true),
   mockGenerateQuestions: vi.fn(),
@@ -31,6 +32,9 @@ const {
   mockMetaFindMany: vi.fn().mockResolvedValue([]),
   mockVariantCreate: vi.fn(),
   mockVariantUpdateMany: vi.fn().mockResolvedValue({ count: 1 }),
+  // Existing variant texts per question, read once for the batch so generation can
+  // reject a model reply that repeats one (#1763). Defaults to an empty bank.
+  mockVariantFindMany: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../src/services/eduaiService.js", () => ({
@@ -69,7 +73,11 @@ vi.mock("../../src/config/database.js", () => ({
     course: { findFirst: mockCourseFindOne },
     topics: { findMany: mockTopicsFindAll },
     questionMetadata: { findMany: mockMetaFindMany },
-    variants: { create: mockVariantCreate, updateMany: mockVariantUpdateMany },
+    variants: {
+      create: mockVariantCreate,
+      updateMany: mockVariantUpdateMany,
+      findMany: mockVariantFindMany,
+    },
   },
 }));
 
@@ -119,6 +127,7 @@ beforeEach(() => {
   mockMetaFindMany.mockResolvedValue([]);
   mockVariantCreate.mockResolvedValue({ id: 200 });
   mockVariantUpdateMany.mockResolvedValue({ count: 1 });
+  mockVariantFindMany.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------
@@ -230,9 +239,10 @@ describe("generateBankVariantsForQuestions — per-question orchestration", () =
   it("calls generateQuestions once per variantsToAdd iteration", async () => {
     const primary = makePrimaryVariant();
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
+    // Distinct texts: identical replies are a duplicate now and cost a retry call (#1763).
     mockGenerateQuestions
-      .mockResolvedValueOnce(makeGeneratedQuestion())
-      .mockResolvedValueOnce(makeGeneratedQuestion());
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "First variant" }))
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "Second variant" }));
 
     await generateBankVariantsForQuestions(USER_ID, {
       courseId: 1,
@@ -418,5 +428,171 @@ describe("generateBankVariantsForQuestions — MCQ choice-count retry", () => {
 
     expect(errors).toHaveLength(1);
     expect(errors[0].error).toMatch(/no question content/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("generateBankVariantsForQuestions — duplicate blocking (#1763)", () => {
+  /** A bank row as the existing-variant prefetch returns it. */
+  const existing = (questionMetadataId, questionText) => ({ questionMetadataId, questionText });
+
+  it("retries once when the model repeats a variant the question already has", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockVariantFindMany.mockResolvedValueOnce([existing(10, "New variant text")]);
+    mockGenerateQuestions
+      .mockResolvedValueOnce(makeGeneratedQuestion())
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "A genuinely different variant" }));
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(2);
+    expect(mockVariantCreate).toHaveBeenCalledTimes(1);
+    expect(mockVariantCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ questionText: "A genuinely different variant" }),
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it("tells the retry that its last reply duplicated an existing variant", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockVariantFindMany.mockResolvedValueOnce([existing(10, "New variant text")]);
+    mockGenerateQuestions
+      .mockResolvedValueOnce(makeGeneratedQuestion())
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "Different enough" }));
+
+    await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    const retryPrompt = mockGenerateQuestions.mock.calls[1][0].prompt;
+    expect(retryPrompt).toMatch(/duplicate|already has/i);
+  });
+
+  it("ignores whitespace and case when deciding a reply is a duplicate", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockVariantFindMany.mockResolvedValueOnce([existing(10, "New   VARIANT\ntext")]);
+    mockGenerateQuestions
+      .mockResolvedValueOnce(makeGeneratedQuestion())
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "Different enough" }));
+
+    await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a duplicate without inserting when the retry duplicates as well", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockVariantFindMany.mockResolvedValueOnce([existing(10, "New variant text")]);
+    mockGenerateQuestions.mockResolvedValue(makeGeneratedQuestion());
+
+    const { results, errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(2);
+    expect(mockVariantCreate).not.toHaveBeenCalled();
+    expect(results[0].createdVariantIds).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ questionId: 10, code: "VARIANT_DUPLICATE" });
+    expect(errors[0].error).toMatch(/duplicate/i);
+  });
+
+  it("blocks a later iteration that repeats the variant just created in this run", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockVariantFindMany.mockResolvedValueOnce([]);
+    mockGenerateQuestions
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "First new variant" }))
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "First new variant" }))
+      .mockResolvedValueOnce(makeGeneratedQuestion({ content: "Second new variant" }));
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, {
+      courseId: 1,
+      questionIds: [10],
+      variantsToAdd: 2,
+    });
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(3);
+    expect(mockVariantCreate).toHaveBeenCalledTimes(2);
+    expect(mockVariantCreate).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({ questionText: "Second new variant" }),
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it("only compares against variants of the same question", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    // Another question in the batch owns this text; it must not block question 10.
+    mockVariantFindMany.mockResolvedValueOnce([existing(20, "New variant text")]);
+    mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(1);
+    expect(mockVariantCreate).toHaveBeenCalledTimes(1);
+    expect(errors).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("generateBankVariantsForQuestions — failure causes (#1763)", () => {
+  /** A failure shaped like the one eduaiService re-wraps after classifying it. */
+  const generationError = (fields) =>
+    Object.assign(new Error("EduAI question generation failed"), {
+      name: "EduAIQuestionGenerationError",
+      ...fields,
+    });
+
+  it("names an unreachable provider instead of reporting a generic failure", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockGenerateQuestions.mockRejectedValueOnce(generationError({ transportCode: "ECONNREFUSED" }));
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ questionId: 10, code: "PROVIDER_UNREACHABLE" });
+    expect(errors[0].error).toMatch(/reach/i);
+  });
+
+  it("names a rejected API key", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockGenerateQuestions.mockRejectedValueOnce(
+      generationError({ reasonCode: "PROVIDER_API_KEY_REQUIRED", statusCode: 401 }),
+    );
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors[0]).toMatchObject({ code: "PROVIDER_AUTH" });
+    expect(errors[0].error).toMatch(/API key/i);
+  });
+
+  it("names an unparseable model reply", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockGenerateQuestions.mockRejectedValueOnce(
+      generationError({ reasonCode: "PROVIDER_MALFORMED_JSON" }),
+    );
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors[0]).toMatchObject({ code: "PROVIDER_MALFORMED_JSON" });
+  });
+
+  it("keeps the existing wording for a missing-content failure", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockGenerateQuestions.mockResolvedValueOnce([{ content: null }]);
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors[0]).toMatchObject({
+      code: "VARIANT_GENERATION_FAILED",
+      error: "EduAI returned no question content",
+    });
+  });
+
+  it("never leaks an unclassifiable provider message", async () => {
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockGenerateQuestions.mockRejectedValueOnce(new Error("key sk-live-SECRET123 was rejected"));
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors[0].error).toBe("Variant generation failed");
+    expect(errors[0].code).toBe("VARIANT_GENERATION_FAILED");
   });
 });
