@@ -82,12 +82,19 @@ export const chunkByQuestionBlocks = (text, maxChunkSize = 5000) => {
   return { chunks, blockCountsPerChunk };
 };
 
-/** Builds a stable dedupe key from question text (normalized prefix, first 150 chars). */
-export const extractedQuestionDedupeKey = (question) => {
-  const q = typeof question?.question === "string" ? question.question : "";
+/**
+ * Builds a stable dedupe key from raw question text (normalized prefix, first 150 chars).
+ * Shared by OCR extraction and bank variant generation (#1763) so both surfaces decide
+ * "is this the same question?" the same way.
+ */
+export const questionTextDedupeKey = (text) => {
+  const q = typeof text === "string" ? text : "";
   const normalized = q.replace(/\s+/g, " ").trim().toLowerCase();
   return normalized.slice(0, 150);
 };
+
+/** Builds a stable dedupe key from an extracted question object. */
+export const extractedQuestionDedupeKey = (question) => questionTextDedupeKey(question?.question);
 
 /** Deduplicates extracted questions by key, preserves order, keeps longer version when same key. */
 export const deduplicateExtractedQuestions = (questions) => {
