@@ -79,9 +79,23 @@ function parseRequestBody(data: any): ProviderAuthRequestBody | null {
  * here instead means any current or future POST that carries that shape is
  * covered without its call site having to remember to invalidate anything.
  */
-function invalidateProviderKeyOnAuthFailure(error: AxiosError): void {
+function invalidateProviderKeyOnAuthFailure(error: AxiosError, sessionExpired: boolean): void {
+  // A dead session is not a dead key. The login redirect below clears nothing,
+  // so a verdict written here would survive re-login and keep the cloud chip
+  // red until the user re-saved a perfectly good key.
+  if (sessionExpired) return;
+
   const status = error.response?.status;
-  if (status !== 401 && status !== 403) return;
+  const code = (error.response?.data as { code?: string } | undefined)?.code;
+  // Two shapes reach here. `/api/questions/extract` surfaces the upstream
+  // provider status verbatim through the global error handler, so 401/403 is
+  // the signal there. `/api/eduai/generate-questions` and `/chat` route every
+  // failure through `sendStableAiFailure`, which answers 400 +
+  // PROVIDER_API_KEY_REQUIRED for a refused key and 500 for everything else —
+  // so on those endpoints the code is the signal and the status is not.
+  const isProviderRejection =
+    code === "PROVIDER_API_KEY_REQUIRED" || status === 401 || status === 403;
+  if (!isProviderRejection) return;
 
   const body = parseRequestBody(error.config?.data);
   const model = body?.model;
@@ -101,20 +115,21 @@ function invalidateProviderKeyOnAuthFailure(error: AxiosError): void {
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
+    let sessionExpired = false;
     if (error.response?.status === 401) {
       const apiError = (error.response.data as { error?: string; success?: boolean })?.error;
-      const isSessionExpired =
+      sessionExpired =
         apiError === "Authentication required" ||
         (apiError === "Unauthorized" &&
           isString(error.config?.url) &&
           error.config.url.includes("/api/auth/me"));
 
-      if (isSessionExpired) {
+      if (sessionExpired) {
         window.location.href = getCoreLoginUrl();
       }
     }
 
-    invalidateProviderKeyOnAuthFailure(error);
+    invalidateProviderKeyOnAuthFailure(error, sessionExpired);
 
     return Promise.reject(error);
   },

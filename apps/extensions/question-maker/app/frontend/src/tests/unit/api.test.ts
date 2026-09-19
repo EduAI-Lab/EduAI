@@ -172,10 +172,46 @@ describe("api response interceptor — provider-key invalidation (task 15 fix ro
     expect(setValidation).toHaveBeenCalledWith("google", expect.objectContaining({ valid: false }));
   });
 
-  it("invalidates on a 403 too (generate-questions body shape)", async () => {
+  it("invalidates on a 403 too (an endpoint that surfaces the upstream status)", async () => {
     getProviderFromModel.mockReturnValue("openai");
     const error = {
       response: { status: 403, data: {} },
+      config: {
+        url: "/api/questions/extract",
+        data: JSON.stringify({
+          text: "t",
+          model: "openai:gpt-4o",
+          apiKeys: { openai: { apiKey: "sk-x", isEnabled: true } },
+        }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+
+    expect(setValidation).toHaveBeenCalledWith(
+      "openai",
+      expect.objectContaining({ valid: false, error: "Key was rejected during generation." }),
+    );
+  });
+
+  // CORRECTED (review round 2): this case previously asserted a 401/403 from
+  // `/api/eduai/generate-questions`, a response that route cannot produce —
+  // every failure there goes through `sendStableAiFailure`, which answers 429,
+  // 504, or 500. So the spec requirement "a provider 401 during generation
+  // invalidates the cached verdict" was passing against code that never ran.
+  // The backend now answers 400 + PROVIDER_API_KEY_REQUIRED for a refused key,
+  // and this exercises that real response.
+  it("invalidates on the 400 + PROVIDER_API_KEY_REQUIRED that generate-questions actually returns", async () => {
+    getProviderFromModel.mockReturnValue("openai");
+    const error = {
+      response: {
+        status: 400,
+        data: {
+          success: false,
+          error: "The AI provider rejected your API key",
+          code: "PROVIDER_API_KEY_REQUIRED",
+        },
+      },
       config: {
         url: "/api/eduai/generate-questions",
         data: JSON.stringify({
@@ -192,6 +228,51 @@ describe("api response interceptor — provider-key invalidation (task 15 fix ro
       "openai",
       expect.objectContaining({ valid: false, error: "Key was rejected during generation." }),
     );
+  });
+
+  it("leaves the verdict alone on the generic 500 that a non-key generation fault returns", async () => {
+    getProviderFromModel.mockReturnValue("openai");
+    const error = {
+      response: {
+        status: 500,
+        data: {
+          success: false,
+          error: "Failed to generate questions",
+          code: "EDUAI_GENERATION_FAILED",
+        },
+      },
+      config: {
+        url: "/api/eduai/generate-questions",
+        data: JSON.stringify({
+          prompt: "p",
+          model: "openai:gpt-4o",
+          apiKeys: { openai: { apiKey: "sk-x", isEnabled: true } },
+        }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate a good key when the SESSION expired (the verdict would survive re-login)", async () => {
+    getProviderFromModel.mockReturnValue("google");
+    const error = {
+      response: { status: 401, data: { error: "Authentication required" } },
+      config: {
+        url: "/api/questions/extract",
+        data: JSON.stringify({
+          text: "t",
+          model: "google:gemini-2.5-flash",
+          apiKeys: { google: { apiKey: "AIza-x", isEnabled: true } },
+        }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+
+    expect(window.location.href).toBe("https://core.example.com/login?force=1&redirect=x");
+    expect(setValidation).not.toHaveBeenCalled();
   });
 
   it("does nothing on a non-auth failure", async () => {

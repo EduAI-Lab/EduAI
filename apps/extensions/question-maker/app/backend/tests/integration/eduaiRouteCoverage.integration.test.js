@@ -409,6 +409,43 @@ describe("POST /api/eduai/generate-questions", () => {
     expect(JSON.stringify(res.body)).not.toContain("unsafe content");
   });
 
+  // The browser caches a save-time verdict per provider and can only correct it
+  // when a live rejection reaches it. Every generation failure used to collapse
+  // to 500, so a revoked key stayed green in the cloud chip forever.
+  it("surfaces a rejected provider key as 400 + PROVIDER_API_KEY_REQUIRED, not 500", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    const rejected = new Error("EduAI question generation failed");
+    rejected.statusCode = 401;
+    rejected.reasonCode = "PROVIDER_API_KEY_REQUIRED";
+    eduaiService.generateQuestions.mockRejectedValue(rejected);
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseCode: "COSC 101" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("PROVIDER_API_KEY_REQUIRED");
+    expect(res.body.error).toBe("The AI provider rejected your API key");
+  });
+
+  it("still degrades a bare upstream 401 (the QM→Core session leg) to 500", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    const rejected = new Error("EduAI question generation failed");
+    rejected.statusCode = 401;
+    eduaiService.generateQuestions.mockRejectedValue(rejected);
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseCode: "COSC 101" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("EDUAI_GENERATION_FAILED");
+  });
+
   it("returns the same stable error for internal wrapper failures", async () => {
     authAs(INSTRUCTOR);
     accessibleCourse();

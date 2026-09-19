@@ -781,6 +781,14 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       stableError.name = "EduAIQuestionGenerationError";
       const statusCode = error?.statusCode;
       if (Number.isInteger(statusCode)) stableError.statusCode = statusCode;
+      // Carry the "the caller's own provider key was refused" marker across the
+      // re-wrap. Dropping it is what made a live key rejection indistinguishable
+      // from a generic fault at the route, so the route answered 500 and the
+      // browser never invalidated its cached verdict. It is a fixed enum value,
+      // never upstream text, so nothing leaks with it.
+      if (error?.reasonCode === "PROVIDER_API_KEY_REQUIRED") {
+        stableError.reasonCode = error.reasonCode;
+      }
       throw stableError;
     }
   }
