@@ -512,7 +512,7 @@ describe("triggerAdminCronJob", () => {
     vi.mocked(startCronRun).mockResolvedValue({ runId: "run1", created: false });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run1", jobName: "backup-nightly", reused: true });
-    expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
+    expect(startCronRun).toHaveBeenCalledWith("backup-nightly", "ADMIN_CHAT");
     expect(triggerCronJobAsync).not.toHaveBeenCalled();
   });
 
@@ -525,6 +525,8 @@ describe("triggerAdminCronJob", () => {
     });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run2", jobName: "backup-nightly", reused: false });
+    // Provenance is what makes the worker's dispatchManualCronRuns claim the row.
+    expect(startCronRun).toHaveBeenCalledWith("backup-nightly", "ADMIN_CHAT");
     expect(triggerCronJobAsync).not.toHaveBeenCalled();
   });
 

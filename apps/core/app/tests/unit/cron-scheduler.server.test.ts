@@ -95,7 +95,7 @@ describe("cron scheduler initialization", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(startCronRunMock).toHaveBeenCalledWith("backup-nightly");
+    expect(startCronRunMock).toHaveBeenCalledWith("backup-nightly", "SCHEDULE");
     expect(triggerCronJobAsyncMock).toHaveBeenCalledWith(
       "backup-nightly",
       "backup-nightly.sh",

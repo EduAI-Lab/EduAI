@@ -45,6 +45,83 @@ const {
   KNOWN_CRON_JOBS,
 } = await import("~/lib/db.cron-jobs.server");
 
+/** Reassemble the SQL text of a `$queryRaw` tagged-template call. */
+function sqlTextOf(callArgs: unknown[]): string {
+  // SAFETY: Prisma's $queryRaw is a tagged template, so its first argument is
+  // always the TemplateStringsArray holding the literal SQL chunks.
+  const template = callArgs[0] as TemplateStringsArray | undefined;
+  return Array.from(template?.raw ?? [])
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function makeStubChild() {
+  const child = new EventEmitter() as any;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = vi.fn().mockReturnValue(true);
+  return child;
+}
+
+interface PendingRunRow {
+  id: string;
+  jobName: string;
+  leaseOwner: string;
+  status: "RUNNING" | "SUCCESS" | "ERROR";
+  triggerSource: "SCHEDULE" | "ADMIN_UI" | "ADMIN_CHAT" | "UNKNOWN";
+}
+
+/**
+ * Evaluate the manual-dispatch claim query's WHERE clause against in-memory
+ * rows instead of replacing its result wholesale. Seeding the result directly
+ * would pass even if the predicate were `WHERE false`, which is exactly how a
+ * filter that matched zero rows in production survived review.
+ */
+function applyClaimFilter(sql: string, rows: PendingRunRow[]): PendingRunRow[] {
+  const where = /WHERE (.+?) ORDER BY/.exec(sql)?.[1];
+  if (!where) throw new Error(`manual-dispatch query has no WHERE clause: ${sql}`);
+
+  let matched = rows;
+  for (const condition of where.split(/\s+AND\s+/)) {
+    const status = /^status = '(\w+)'::"CronJobStatus"$/.exec(condition);
+    if (status) {
+      matched = matched.filter((row) => row.status === status[1]);
+      continue;
+    }
+    const inList = /^"triggerSource" IN \((.+)\)$/.exec(condition);
+    if (inList) {
+      const allowed = new Set(
+        [...inList[1].matchAll(/'(\w+)'::"CronJobTriggerSource"/g)].map((match) => match[1]),
+      );
+      matched = matched.filter((row) => allowed.has(row.triggerSource));
+      continue;
+    }
+    // Unmodelled predicates are a test failure, not a silent pass: any change to
+    // the claim filter has to be reflected here deliberately.
+    throw new Error(`unsupported predicate in manual-dispatch query: ${condition}`);
+  }
+  return matched;
+}
+
+function seedPendingRuns(rows: PendingRunRow[]): void {
+  mockQueryRaw.mockImplementation((...args: unknown[]) => {
+    const sql = sqlTextOf(args);
+    const isClaimQuery = sql.includes("FROM cron_job_runs") && sql.includes('"triggerSource" IN (');
+    return Promise.resolve(isClaimQuery ? applyClaimFilter(sql, rows) : []);
+  });
+}
+
+/** Let the CORE path's dynamic import and its promise chain settle. */
+function flushDispatch(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** triggerCronJobAsync is reached only for a claimed row, and claiming is synchronous. */
+function wasClaimed(runId: string): boolean {
+  return globalThis.__manualCronRunIds?.has(runId) ?? false;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockQueryRaw.mockReset();
@@ -160,7 +237,7 @@ describe("startCronRun", () => {
       .mockResolvedValueOnce([]) // advisory lock
       .mockResolvedValueOnce([]) // no active lease
       .mockResolvedValueOnce([{ id: "run-abc" }]);
-    const result = await startCronRun("backup-nightly");
+    const result = await startCronRun("backup-nightly", "SCHEDULE");
     expect(result).toEqual({
       runId: "run-abc",
       created: true,
@@ -173,10 +250,35 @@ describe("startCronRun", () => {
     mockQueryRaw
       .mockResolvedValueOnce([]) // advisory lock
       .mockResolvedValueOnce([{ id: "run-existing" }]);
-    const result = await startCronRun("backup-nightly");
+    const result = await startCronRun("backup-nightly", "ADMIN_UI");
     expect(result).toEqual({ runId: "run-existing", created: false });
     expect(mockQueryRaw).toHaveBeenCalledTimes(2);
   });
+
+  // The worker's dispatchManualCronRuns only claims ADMIN_UI/ADMIN_CHAT rows. If
+  // the INSERT omits the column the row defaults to UNKNOWN, so every manual
+  // trigger records a RUNNING row nobody dispatches — while still holding the
+  // job's lease against the real scheduled run.
+  it.each(["ADMIN_UI", "ADMIN_CHAT", "SCHEDULE"] as const)(
+    "persists %s as the inserted run's triggerSource",
+    async (triggerSource) => {
+      mockQueryRaw
+        .mockResolvedValueOnce([]) // advisory lock
+        .mockResolvedValueOnce([]) // no active lease
+        .mockResolvedValueOnce([{ id: "run-abc" }]);
+
+      await startCronRun("backup-nightly", triggerSource);
+
+      const insertCall = mockQueryRaw.mock.calls[2] as unknown[];
+      const sql = sqlTextOf(insertCall);
+      expect(sql).toContain("INSERT INTO cron_job_runs");
+      expect(sql).toContain('"triggerSource"');
+      expect(sql).toContain('::"CronJobTriggerSource"');
+      // Bind order: jobName, triggerSource, leaseOwner, leaseMs.
+      expect(insertCall[1]).toBe("backup-nightly");
+      expect(insertCall[2]).toBe(triggerSource);
+    },
+  );
 });
 
 describe("cron run leases", () => {
@@ -322,14 +424,6 @@ describe("resetCronSchedule", () => {
 });
 
 describe("triggerCronJobAsync", () => {
-  function makeChild() {
-    const child = new EventEmitter() as any;
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.kill = vi.fn().mockReturnValue(true);
-    return child;
-  }
-
   it("runs a Core handler without spawning a shell process", async () => {
     mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
     triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "owner-1", "CORE");
@@ -346,7 +440,7 @@ describe("triggerCronJobAsync", () => {
   });
 
   it("spawns bash with the resolved script path", () => {
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     expect(mockSpawn).toHaveBeenCalledWith(
@@ -357,7 +451,7 @@ describe("triggerCronJobAsync", () => {
   });
 
   it("calls finishCronRun with SUCCESS when the script exits 0", async () => {
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.emit("close", 0);
@@ -367,7 +461,7 @@ describe("triggerCronJobAsync", () => {
   });
 
   it("calls finishCronRun with ERROR when the script exits non-zero", async () => {
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.emit("close", 1);
@@ -377,7 +471,7 @@ describe("triggerCronJobAsync", () => {
   });
 
   it("calls finishCronRun with ERROR when spawn emits an error", async () => {
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.emit("error", new Error("ENOENT: no such file"));
@@ -387,7 +481,7 @@ describe("triggerCronJobAsync", () => {
   });
 
   it("includes stdout output in the finish message", async () => {
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.stdout.emit("data", Buffer.from("Backup complete"));
@@ -401,7 +495,7 @@ describe("triggerCronJobAsync", () => {
   // redactor recognises a secret only by the credential-named key in front of it, so a long
   // value whose key fell outside the window arrived as an unattributed tail and survived.
   it("redacts before truncating so a long secret cannot outlive its key", async () => {
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     // The `API_KEY=` prefix sits well outside the trailing 1000-char window.
@@ -419,7 +513,7 @@ describe("triggerCronJobAsync", () => {
   it("caps captured bytes and terminates a child that exceeds the output budget", async () => {
     const originalMax = process.env.CRON_OUTPUT_MAX_BYTES;
     process.env.CRON_OUTPUT_MAX_BYTES = "1024";
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
 
     try {
@@ -450,7 +544,7 @@ describe("triggerCronJobAsync", () => {
     const originalLeaseMs = process.env.CRON_RUN_LEASE_MS;
     process.env.CRON_RUN_LEASE_MS = "15000";
     vi.useFakeTimers();
-    const child = makeChild();
+    const child = makeStubChild();
     mockSpawn.mockReturnValue(child);
     // The heartbeat UPDATE matched no row: another owner/reaper has fenced us.
     mockExecuteRaw.mockResolvedValueOnce(0);
@@ -474,20 +568,68 @@ describe("triggerCronJobAsync", () => {
 });
 
 describe("dispatchManualCronRuns", () => {
+  const coreRun: PendingRunRow = {
+    id: "run-9",
+    jobName: "notify-api-key-expiry",
+    leaseOwner: "owner-9",
+    status: "RUNNING",
+    triggerSource: "ADMIN_UI",
+  };
+
   // dispatchManualCronRuns calls triggerCronJobAsync as a same-module call,
   // which cannot be spied on cleanly. Assert the observable behaviour
   // instead: a recorded CORE run reaches its Core handler and never spawns
   // a shell script, proving the worker forwards the job's execution mode.
   it("dispatches a recorded CORE run through its Core handler, not spawn", async () => {
-    mockQueryRaw.mockResolvedValueOnce([
-      { id: "run-9", jobName: "notify-api-key-expiry", leaseOwner: "owner-9" },
-    ]);
+    seedPendingRuns([coreRun]);
 
     await dispatchManualCronRuns();
 
     await vi.waitFor(() => {
       expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
     });
+    expect(wasClaimed("run-9")).toBe(true);
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it("dispatches an ADMIN_CHAT run the same way", async () => {
+    seedPendingRuns([{ ...coreRun, triggerSource: "ADMIN_CHAT" }]);
+
+    await dispatchManualCronRuns();
+
+    await vi.waitFor(() => {
+      expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
+    });
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  // scheduleOne dispatches its own run inline without registering it in
+  // __manualCronRunIds, so a SCHEDULE row the worker also claimed would run the
+  // job twice. A SCRIPT job makes that observable synchronously: spawn is called
+  // inside triggerCronJobAsync, before any await.
+  it("leaves a SCHEDULE run for the in-process scheduler that owns it", async () => {
+    mockSpawn.mockReturnValue(makeStubChild());
+    seedPendingRuns([
+      { ...coreRun, id: "run-sched", jobName: "backup-nightly", triggerSource: "SCHEDULE" },
+    ]);
+
+    await dispatchManualCronRuns();
+    await flushDispatch();
+
+    expect(wasClaimed("run-sched")).toBe(false);
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(mockNotifyExpiringApiKeys).not.toHaveBeenCalled();
+  });
+
+  // Rows written before the provenance column was populated default to UNKNOWN.
+  it("leaves an UNKNOWN-provenance run undispatched", async () => {
+    seedPendingRuns([{ ...coreRun, id: "run-unknown", triggerSource: "UNKNOWN" }]);
+
+    await dispatchManualCronRuns();
+    await flushDispatch();
+
+    expect(wasClaimed("run-unknown")).toBe(false);
+    expect(mockNotifyExpiringApiKeys).not.toHaveBeenCalled();
     expect(mockSpawn).not.toHaveBeenCalled();
   });
 });
