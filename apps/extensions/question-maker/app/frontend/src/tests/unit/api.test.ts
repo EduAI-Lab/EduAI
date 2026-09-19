@@ -1,7 +1,12 @@
 /**
- * Unit tests for the shared `api` axios instance (#1546): the 401 response
- * interceptor that redirects to Core login only on a genuine session-expiry,
- * never on every 401 (e.g. a plain permissions failure elsewhere).
+ * Unit tests for the shared `api` axios instance (#1546, task 15 fix round 1):
+ * the 401 response interceptor that redirects to Core login only on a genuine
+ * session-expiry, never on every 401 (e.g. a plain permissions failure
+ * elsewhere) — plus the provider-key-invalidation interceptor added in fix
+ * round 1, which centralizes save-time-verdict invalidation so every POST
+ * that carries a `model` + `apiKeys` body self-corrects on a live 401/403,
+ * instead of every AI call site (generate-questions, extract, chat, ...)
+ * having to remember to call `apiKeyStorage.setValidation` itself.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +24,9 @@ const create = vi.fn(() => ({
   },
 }));
 
+const getProviderFromModel = vi.fn();
+const setValidation = vi.fn();
+
 vi.mock("axios", () => ({
   default: { create: (...args: unknown[]) => create(...args) },
 }));
@@ -27,11 +35,20 @@ vi.mock("../../lib/coreUrl", () => ({
   getCoreLoginUrl: () => "https://core.example.com/login?force=1&redirect=x",
 }));
 
+vi.mock("../../services/apiKeyStorage", () => ({
+  apiKeyStorage: {
+    getProviderFromModel: (...args: unknown[]) => getProviderFromModel(...args),
+    setValidation: (...args: unknown[]) => setValidation(...args),
+  },
+}));
+
 describe("api response interceptor", () => {
   const originalLocation = window.location;
 
   beforeEach(async () => {
     vi.resetModules();
+    getProviderFromModel.mockReset().mockReturnValue(null);
+    setValidation.mockReset();
     // @ts-expect-error -- overriding for assertion on redirect
     delete window.location;
     // @ts-expect-error -- minimal stub
@@ -102,5 +119,149 @@ describe("api response interceptor", () => {
 
     await expect(capturedRejected?.(error)).rejects.toBe(error);
     expect(window.location.href).toBe("https://qm.example.com/");
+  });
+});
+
+describe("api response interceptor — provider-key invalidation (task 15 fix round 1)", () => {
+  const originalLocation = window.location;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    getProviderFromModel.mockReset().mockReturnValue(null);
+    setValidation.mockReset();
+    // @ts-expect-error -- overriding for assertion on redirect
+    delete window.location;
+    // @ts-expect-error -- minimal stub
+    window.location = { href: "https://qm.example.com/" };
+    await import("../../services/api");
+  });
+
+  afterEach(() => {
+    window.location = originalLocation;
+    vi.clearAllMocks();
+    capturedRejected = undefined;
+    capturedFulfilled = undefined;
+  });
+
+  // This is the case fix round 1 exists for: OCR extraction
+  // (`QuestionUploadDialog.tsx` / `CourseDetailPage.tsx`, via
+  // `questionService.extractQuestionsFromText` → `POST /api/questions/extract`)
+  // was never wired to `setValidation`, so a key revoked upstream stayed
+  // green in the cloud chip forever after an extraction 401. Centralizing the
+  // check here means this endpoint (and any future one that posts a
+  // `model` + `apiKeys` body) is covered without its own call site
+  // remembering to do it.
+  it("invalidates the cached verdict on a 401 from the OCR extraction endpoint", async () => {
+    getProviderFromModel.mockReturnValue("google");
+    const error = {
+      response: { status: 401, data: { error: "Invalid API key" } },
+      config: {
+        url: "/api/questions/extract",
+        data: JSON.stringify({
+          text: "some ocr text",
+          courseId: 5,
+          model: "google:gemini-2.5-flash",
+          apiKeys: { google: { apiKey: "AIza-x", isEnabled: true } },
+        }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+
+    expect(getProviderFromModel).toHaveBeenCalledWith("google:gemini-2.5-flash");
+    expect(setValidation).toHaveBeenCalledWith("google", expect.objectContaining({ valid: false }));
+  });
+
+  it("invalidates on a 403 too (generate-questions body shape)", async () => {
+    getProviderFromModel.mockReturnValue("openai");
+    const error = {
+      response: { status: 403, data: {} },
+      config: {
+        url: "/api/eduai/generate-questions",
+        data: JSON.stringify({
+          prompt: "p",
+          model: "openai:gpt-4o",
+          apiKeys: { openai: { apiKey: "sk-x", isEnabled: true } },
+        }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+
+    expect(setValidation).toHaveBeenCalledWith(
+      "openai",
+      expect.objectContaining({ valid: false, error: "Key was rejected during generation." }),
+    );
+  });
+
+  it("does nothing on a non-auth failure", async () => {
+    const error = {
+      response: { status: 500, data: {} },
+      config: {
+        url: "/api/questions/extract",
+        data: JSON.stringify({ model: "google:gemini-2.5-flash", apiKeys: {} }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the request body has no model (e.g. test-api-key)", async () => {
+    const error = {
+      response: { status: 401, data: {} },
+      config: {
+        url: "/api/eduai/test-api-key",
+        data: JSON.stringify({ apiKeys: { google: { apiKey: "x", isEnabled: true } } }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the model has no recognizable provider", async () => {
+    getProviderFromModel.mockReturnValue(null);
+    const error = {
+      response: { status: 401, data: {} },
+      config: {
+        url: "/api/eduai/generate-questions",
+        data: JSON.stringify({ model: "vllm:qwen", apiKeys: { vllm: { isEnabled: true } } }),
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).not.toHaveBeenCalled();
+  });
+
+  it("tolerates a request body that is already a parsed object (not a JSON string)", async () => {
+    getProviderFromModel.mockReturnValue("google");
+    const error = {
+      response: { status: 401, data: {} },
+      config: {
+        url: "/api/eduai/generate-questions",
+        data: { model: "google:gemini-2.5-flash", apiKeys: { google: { isEnabled: true } } },
+      },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).toHaveBeenCalledWith("google", expect.objectContaining({ valid: false }));
+  });
+
+  it("tolerates a malformed (non-JSON) request body without throwing", async () => {
+    const error = {
+      response: { status: 401, data: {} },
+      config: { url: "/api/questions/extract", data: "not json" },
+    };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).not.toHaveBeenCalled();
+  });
+
+  it("tolerates a missing config on the error without throwing", async () => {
+    const error = { response: { status: 401, data: {} } };
+
+    await expect(capturedRejected?.(error)).rejects.toBe(error);
+    expect(setValidation).not.toHaveBeenCalled();
   });
 });

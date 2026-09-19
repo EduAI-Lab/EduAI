@@ -11,9 +11,10 @@
  *     per-provider (`apiKeyStorage.setValidation` / `getValidation`). The
  *     cache is refreshed only on a deliberate user action — clicking the
  *     cloud chip (`revalidateCloud`, wired to `AIServiceIndicators`'
- *     `onRefresh` in `QmAppLayout`) — or self-corrected when a live
- *     generation call hits a provider 401/403
- *     (`eduaiService.generateQuestions`).
+ *     `onRefresh` in `QmAppLayout`) — or self-corrected when any AI call
+ *     (generation, OCR extraction, chat) hits a provider 401/403, via the
+ *     shared `api` client's response interceptor
+ *     (`services/api.ts`, `invalidateProviderKeyOnAuthFailure`).
  *   - ubc:   read from Core's shared fleet-status snapshot via QM's own
  *     `GET /api/eduai/ai-status` backend proxy, the same DB-backed source
  *     Core's and AI Tutor's header chips already read (#764 task 14). QM no
@@ -45,16 +46,7 @@ import {
   type AIProvider,
 } from "../services/apiKeyStorage";
 import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
-
-/** Renders an ISO timestamp as "today" / "1 day ago" / "N days ago" for the chip detail. */
-function daysAgoLabel(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const days = Math.floor((Date.now() - then) / (24 * 60 * 60 * 1000));
-  if (days <= 0) return "today";
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
-}
+import { daysAgoLabel } from "../utils/relativeTime";
 
 /** Picks which saved cloud provider the chip should reflect — same rule the old live probe used. */
 function resolveConfiguredCloudProvider(

@@ -170,34 +170,17 @@ class EduAIService {
    *
    * A provider-auth failure (401/403) here means the cached save-time verdict
    * lied — the key looked valid when saved but has since been revoked or
-   * expired upstream. Without this, a key that goes bad after being saved
-   * would stay green in the cloud chip forever, since nothing else re-checks
-   * it. Invalidating the cache here is what makes the verdict self-correcting.
+   * expired upstream. That invalidation is handled centrally by the shared
+   * `api` client's response interceptor (`services/api.ts`,
+   * `invalidateProviderKeyOnAuthFailure`) rather than here, so OCR extraction
+   * (`questionService.extractQuestionsFromText`) and any future AI call get
+   * the same self-correcting behaviour without duplicating this catch block.
    */
   async generateQuestions(
     request: EduAIQuestionGenerationRequest,
   ): Promise<EduAIQuestionGenerationResponse> {
-    try {
-      const response = await api.post("/api/eduai/generate-questions", request);
-      return response.data;
-    } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 401 || status === 403) {
-        const provider = apiKeyStorage.getProviderFromModel(request.model ?? "");
-        if (provider) {
-          try {
-            await apiKeyStorage.setValidation(provider, {
-              valid: false,
-              validatedAt: new Date().toISOString(),
-              error: "Key was rejected during generation.",
-            });
-          } catch {
-            // Best-effort cache write; the generation error itself still propagates.
-          }
-        }
-      }
-      throw err;
-    }
+    const response = await api.post("/api/eduai/generate-questions", request);
+    return response.data;
   }
 
   /**

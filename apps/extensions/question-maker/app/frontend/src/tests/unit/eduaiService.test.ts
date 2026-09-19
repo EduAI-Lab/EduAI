@@ -10,8 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const get = vi.fn();
 const post = vi.fn();
 const getAllApiKeys = vi.fn();
-const getProviderFromModel = vi.fn();
-const setValidation = vi.fn();
 
 vi.mock("../../services/api", () => ({
   default: {
@@ -21,11 +19,7 @@ vi.mock("../../services/api", () => ({
 }));
 
 vi.mock("../../services/apiKeyStorage", () => ({
-  apiKeyStorage: {
-    getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args),
-    getProviderFromModel: (...args: unknown[]) => getProviderFromModel(...args),
-    setValidation: (...args: unknown[]) => setValidation(...args),
-  },
+  apiKeyStorage: { getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args) },
 }));
 
 vi.mock("@eduai/ui", () => ({
@@ -37,8 +31,6 @@ import { eduaiService } from "../../services/eduaiService";
 beforeEach(() => {
   vi.clearAllMocks();
   getAllApiKeys.mockResolvedValue({});
-  getProviderFromModel.mockReturnValue(null);
-  setValidation.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -69,48 +61,21 @@ describe("eduaiService.generateQuestions", () => {
     expect(result.success).toBe(true);
   });
 
-  it("invalidates the cached verdict for the request's provider on a 401", async () => {
-    post.mockRejectedValue({ response: { status: 401, data: { error: "revoked" } } });
-    getProviderFromModel.mockReturnValue("google");
+  // A prior version of this task-15 work invalidated the cached save-time
+  // verdict here, directly in generateQuestions's own catch block. Fix round
+  // 1 centralized that into the shared `api` client's response interceptor
+  // (services/api.ts, `invalidateProviderKeyOnAuthFailure`) instead, because
+  // the original per-call-site approach missed OCR extraction
+  // (`questionService.extractQuestionsFromText`), which never routed through
+  // `eduaiService` at all. That behaviour — and its tests — now lives in
+  // `api.test.ts`'s "provider-key invalidation" describe block, which covers
+  // this endpoint's request shape alongside extraction's.
+  it("re-throws a provider-auth failure without special-casing it here", async () => {
+    const authError = { response: { status: 401, data: { error: "revoked" } } };
+    post.mockRejectedValue(authError);
     const request = { prompt: "p", courseCode: "C1", model: "google:gemini-2.5-flash" };
 
-    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
-
-    expect(getProviderFromModel).toHaveBeenCalledWith("google:gemini-2.5-flash");
-    expect(setValidation).toHaveBeenCalledWith("google", {
-      valid: false,
-      validatedAt: expect.any(String),
-      error: "Key was rejected during generation.",
-    });
-  });
-
-  it("invalidates on a 403 too", async () => {
-    post.mockRejectedValue({ response: { status: 403, data: {} } });
-    getProviderFromModel.mockReturnValue("openai");
-    const request = { prompt: "p", courseCode: "C1", model: "openai:gpt-4o" };
-
-    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
-
-    expect(setValidation).toHaveBeenCalledWith("openai", expect.objectContaining({ valid: false }));
-  });
-
-  it("does not touch the cache on a non-auth failure", async () => {
-    post.mockRejectedValue({ response: { status: 500, data: {} } });
-    const request = { prompt: "p", courseCode: "C1", model: "google:gemini-2.5-flash" };
-
-    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
-
-    expect(setValidation).not.toHaveBeenCalled();
-  });
-
-  it("skips the cache write when the model has no recognizable provider", async () => {
-    post.mockRejectedValue({ response: { status: 401, data: {} } });
-    getProviderFromModel.mockReturnValue(null);
-    const request = { prompt: "p", courseCode: "C1", model: "ollama:llama3" };
-
-    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
-
-    expect(setValidation).not.toHaveBeenCalled();
+    await expect(eduaiService.generateQuestions(request as any)).rejects.toBe(authError);
   });
 });
 

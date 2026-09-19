@@ -45,6 +45,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useQmPermissions } from "../hooks/useQmPermissions";
 import { toast } from "sonner";
 import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
+import { daysAgoLabel } from "../utils/relativeTime";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -86,16 +87,6 @@ const DEFAULT_EXPORT_PREFS: ExportPrefs = {
 function maskKey(value: string): string {
   if (value === CORE_STORED_KEY) return "••••••••";
   return `${value.substring(0, 8)}${"•".repeat(Math.max(0, value.length - 8))}`;
-}
-
-/** Renders an ISO timestamp as "today" / "1 day ago" / "N days ago". */
-function daysAgoLabel(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const days = Math.floor((Date.now() - then) / (24 * 60 * 60 * 1000));
-  if (days <= 0) return "today";
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
 }
 
 /**
