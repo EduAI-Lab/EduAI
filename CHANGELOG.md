@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.19
+
+- Add `GET /api/models`, returning the active chat models as `provider:modelId` strings — exactly what `POST /api/chat` and `POST /api/completion` will accept. There was previously no way to ask which models are live without an admin browser session: `/api/vllm-models` and `/api/ollama-models` are ADMIN cookie-session only, and `/api/ai-models` requires `page` and `pageSize` and answers `400 PAGINATION_REQUIRED` without them. An instructor writing a grading script had to guess a model id and read a `422` to find out it was wrong. PR: #PR. Closes #1805.
+- Share the activeness predicate with `resolveActiveChatModel` via a new `listActiveChatModels()` so the endpoint cannot advertise a model the completion endpoint then rejects — the exact confusion it exists to remove.
+- Mirror `/api/completion`'s auth ladder exactly (admin `x-api-key`, an ordinary session, or the `Bearer` service key): anyone who can call completion can discover what to pass it, and nobody else gains a view of the catalog. The response is `no-store` and carries ids, names and capability flags only — not the provider rows the admin list returns.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
