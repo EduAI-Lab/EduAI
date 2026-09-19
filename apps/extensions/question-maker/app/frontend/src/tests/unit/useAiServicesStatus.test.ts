@@ -270,6 +270,30 @@ describe("useAiServicesStatus", () => {
       expect(result.stale).toBe(false);
     });
 
+    it("passes through Core's own non-operational verdict verbatim (not just the operational case)", async () => {
+      // Distinct from the 401/unreachable cases below: this is Core successfully
+      // answering with a real down/unknown verdict, not a failure of the QM→Core
+      // leg itself. The hook's whole job here is "pass through whatever Core
+      // says" — proving that for only `operational` would leave a special-cased
+      // passthrough (e.g. one that silently mangled every other state) undetected.
+      getAiStatus.mockResolvedValue({
+        cloud: { state: "operational" },
+        ubc: { state: "outage", detail: "UBC-hosted AI · Fleet degraded." },
+        checkedAt: "2026-09-19T02:00:00.000Z",
+        stale: true,
+      });
+      const fetcher = mountAndGetFetcher();
+
+      const result = await fetcher(new AbortController().signal);
+
+      expect(result.ubc).toEqual({
+        state: "outage",
+        detail: "UBC-hosted AI · Fleet degraded.",
+      });
+      expect(result.checkedAt).toBe("2026-09-19T02:00:00.000Z");
+      expect(result.stale).toBe(true);
+    });
+
     it("renders 'unknown' with a sign-in prompt on a 401 from the proxy, not 'outage'", async () => {
       const err: any = new Error("Unauthorized");
       err.response = { status: 401 };
