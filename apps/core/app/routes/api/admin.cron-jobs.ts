@@ -89,7 +89,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // dispatchManualCronRuns picks the row up on its next 30s reconcile and
         // dispatches it with the job's real `execution` mode — which a web
         // process cannot do correctly for CORE jobs, and must not do at all.
-        const result = await startCronRun(jobName);
+        const result = await startCronRun(jobName, "ADMIN_UI");
 
         return data({ runId: result.runId, reused: !result.created });
       }

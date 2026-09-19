@@ -1152,17 +1152,24 @@ enum CronJobTriggerSource {
 }
 
 model CronJobRun {
-  id               String        @id @default(cuid())
-  jobName          String
-  status           CronJobStatus
-  startedAt        DateTime
-  finishedAt       DateTime?
-  message          String?
-  exitCode         Int?
-  leaseOwner       String?
-  leaseHeartbeatAt DateTime?
-  leaseExpiresAt   DateTime?
-  createdAt        DateTime      @default(now())
+  id                String               @id @default(cuid())
+  jobName           String
+  status            CronJobStatus
+  /// Provenance of the run (added by 20260807000000_add_cron_run_trigger_provenance).
+  /// The dedicated cron worker dispatches only the administrator-triggered
+  /// values; SCHEDULE runs are dispatched in-process by whichever scheduler won
+  /// the lease. Declared here so `prisma db push` (integration databases)
+  /// provisions the same columns `migrate deploy` gives deployed databases.
+  triggerSource     CronJobTriggerSource @default(UNKNOWN)
+  triggeredByUserId String?
+  startedAt         DateTime
+  finishedAt        DateTime?
+  message           String?
+  exitCode          Int?
+  leaseOwner        String?
+  leaseHeartbeatAt  DateTime?
+  leaseExpiresAt    DateTime?
+  createdAt         DateTime             @default(now())
 
   @@index([jobName, startedAt])
   @@index([status, leaseExpiresAt])

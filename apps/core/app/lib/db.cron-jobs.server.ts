@@ -279,7 +279,19 @@ export async function reapExpiredCronRuns(): Promise<number> {
   return reapExpiredCronRunsWithDb(prisma);
 }
 
-export async function startCronRun(jobName: string): Promise<StartCronRunResult> {
+/**
+ * Acquire the lease for one logical cron run and record who asked for it.
+ *
+ * `triggerSource` is required rather than defaulted: `dispatchManualCronRuns`
+ * only claims rows stamped ADMIN_UI/ADMIN_CHAT, so a call site that forgets to
+ * declare its provenance would record a RUNNING row nobody ever dispatches —
+ * and that row would hold the job's lease until the reaper terminalized it.
+ * Making the compiler demand the value keeps that failure impossible.
+ */
+export async function startCronRun(
+  jobName: string,
+  triggerSource: CronJobTriggerSource,
+): Promise<StartCronRunResult> {
   const leaseOwner = randomUUID();
   const leaseMs = resolveCronRunLeaseMs();
 
@@ -301,13 +313,14 @@ export async function startCronRun(jobName: string): Promise<StartCronRunResult>
     // the database clock, so host clock skew cannot shorten or extend a lease.
     const inserted = await tx.$queryRaw<Array<{ id: string }>>`
       INSERT INTO cron_job_runs (
-        id, "jobName", status, "startedAt", "createdAt",
+        id, "jobName", status, "triggerSource", "startedAt", "createdAt",
         "leaseOwner", "leaseHeartbeatAt", "leaseExpiresAt"
       )
       VALUES (
         gen_random_uuid()::text,
         ${jobName},
         'RUNNING'::"CronJobStatus",
+        ${triggerSource}::"CronJobTriggerSource",
         statement_timestamp(),
         statement_timestamp(),
         ${leaseOwner},

@@ -764,7 +764,7 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
   // Recording is all this does. The cron worker's dispatchManualCronRuns picks
   // the row up on its next reconcile and dispatches it with the job's real
   // `execution` mode. See docs/CRON_JOBS.md.
-  const result = await startCronRun(jobName);
+  const result = await startCronRun(jobName, "ADMIN_CHAT");
   return { ok: true, runId: result.runId, jobName, reused: !result.created };
 }
 
