@@ -215,10 +215,14 @@ describe("useAiServicesStatus", () => {
       );
     });
 
-    it("caches a failing verdict with the server's reason", async () => {
+    // CORRECTED (review round 2): this used to omit `statusCode`, so it passed
+    // while the code cached `valid: false` from ANY `success: false`. The route
+    // answers 400 for a genuine key rejection, and only that status is evidence
+    // about the key — so the real rejection shape is asserted here instead.
+    it("caches a failing verdict from the 400 that a real key rejection returns", async () => {
       getAllApiKeys.mockResolvedValue({ openai: "sk-bad" });
       isCloudProvider.mockReturnValue(true);
-      testApiKey.mockResolvedValue({ success: false, error: "Invalid API key" });
+      testApiKey.mockResolvedValue({ success: false, error: "Invalid API key", statusCode: 400 });
 
       await revalidateCloud();
 
@@ -228,17 +232,45 @@ describe("useAiServicesStatus", () => {
       );
     });
 
-    it("caches a failing verdict when the round-trip itself throws (network down)", async () => {
+    // CORRECTED (review round 2): the previous version asserted `valid: false`
+    // here. That was the bug — a dead session is not a dead key, and unlike the
+    // api-client interceptor's case the login redirect clears nothing, so the
+    // cloud chip stayed red with "Authentication required" after re-login until
+    // the key was saved again.
+    it("leaves the verdict untouched on a 401 — a dead session is not a dead key", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-good" });
+      isCloudProvider.mockReturnValue(true);
+      testApiKey.mockResolvedValue({
+        success: false,
+        error: "Authentication required",
+        statusCode: 401,
+      });
+
+      await revalidateCloud();
+
+      expect(setValidation).not.toHaveBeenCalled();
+    });
+
+    it("leaves the verdict untouched on a 429 rate limit", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-good" });
+      isCloudProvider.mockReturnValue(true);
+      testApiKey.mockResolvedValue({ success: false, error: "rate limited", statusCode: 429 });
+
+      await revalidateCloud();
+
+      expect(setValidation).not.toHaveBeenCalled();
+    });
+
+    // CORRECTED (review round 2): previously asserted `valid: false`. An
+    // unreachable validation service says nothing about the key either.
+    it("leaves the verdict untouched when the round-trip itself throws (network down)", async () => {
       getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
       isCloudProvider.mockReturnValue(true);
       testApiKey.mockRejectedValue(new Error("ECONNREFUSED"));
 
       await revalidateCloud();
 
-      expect(setValidation).toHaveBeenCalledWith(
-        "openai",
-        expect.objectContaining({ valid: false }),
-      );
+      expect(setValidation).not.toHaveBeenCalled();
     });
 
     it("forwards the caller's AbortSignal to the live check", async () => {

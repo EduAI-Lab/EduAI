@@ -43,6 +43,7 @@ import { canvasService, type CanvasIntegration } from "../services/canvasService
 import { getCanvasDefaultUrl } from "../services/canvasDefaults";
 import { useAuth } from "../contexts/AuthContext";
 import { useQmPermissions } from "../hooks/useQmPermissions";
+import { recordKeyVerdict } from "../hooks/useAiServicesStatus";
 import { toast } from "sonner";
 import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
 import { daysAgoLabel } from "../utils/relativeTime";
@@ -236,17 +237,15 @@ export default function SettingsPage() {
   const validateSavedKey = async (provider: AIProvider, apiKey: string): Promise<void> => {
     try {
       const result = await eduaiService.testApiKey({ [provider]: { apiKey, isEnabled: true } });
-      apiKeyStorage.setValidation(provider, {
-        valid: result.success,
-        validatedAt: new Date().toISOString(),
-        error: result.success ? null : (result.error ?? "Key could not be validated."),
-      });
+      // Only a 400 from `test-api-key` is the provider refusing the key; a 401
+      // is a dead session and a 403 a role failure. `recordKeyVerdict` writes
+      // nothing for those, so the user is told the check was inconclusive
+      // instead of a good key being marked bad — see its doc comment.
+      if (!recordKeyVerdict(provider, result)) {
+        toast(`Could not verify the ${PROVIDER_LABELS[provider]} key — try again from Settings.`);
+      }
     } catch {
-      apiKeyStorage.setValidation(provider, {
-        valid: false,
-        validatedAt: new Date().toISOString(),
-        error: "Could not reach the validation service. Try saving again.",
-      });
+      toast(`Could not verify the ${PROVIDER_LABELS[provider]} key — try again from Settings.`);
     } finally {
       setValidations((prev) => ({ ...prev, [provider]: apiKeyStorage.getValidation(provider) }));
     }

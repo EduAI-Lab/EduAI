@@ -38,7 +38,7 @@
  */
 import { useCallback } from "react";
 import { useAiServiceStatus, type AiServiceStatusPair, type ServiceStatus } from "@eduai/ui";
-import eduaiService from "../services/eduaiService";
+import eduaiService, { type EduAITestResponse } from "../services/eduaiService";
 import {
   apiKeyStorage,
   CLOUD_PROVIDERS,
@@ -112,6 +112,42 @@ async function readCachedCloudStatus(): Promise<ServiceStatus> {
 }
 
 /**
+ * Writes the verdict a `test-api-key` answer actually justifies — and nothing
+ * more (issue #764 review round 2).
+ *
+ * The route answers 400 for a genuine provider rejection
+ * (`Number(result.statusCode) === 429 ? 429 : 400`), so 400 is the ONLY status
+ * that means "this key is bad". A 401 there is a dead Core session, a 403 is a
+ * role failure, a 429 is a rate limit and a 500 is a service fault — none of
+ * them is evidence about the key. Caching `valid: false` from those marked a
+ * perfectly good key invalid, and unlike the api-client interceptor's case the
+ * login redirect clears nothing: after re-login the cloud chip stayed red with
+ * "Authentication required" until the key was saved again.
+ *
+ * An inconclusive answer therefore writes NOTHING, leaving whatever was already
+ * known in place (or `unknown`, if nothing was). Returns true when a verdict
+ * was written, so a caller can tell the user the check was inconclusive.
+ */
+export function recordKeyVerdict(provider: AIProvider, result: EduAITestResponse): boolean {
+  if (result.success) {
+    apiKeyStorage.setValidation(provider, {
+      valid: true,
+      validatedAt: new Date().toISOString(),
+      error: null,
+    });
+    return true;
+  }
+  if (Number(result.statusCode) !== 400) return false;
+
+  apiKeyStorage.setValidation(provider, {
+    valid: false,
+    validatedAt: new Date().toISOString(),
+    error: result.error ?? "Key could not be validated.",
+  });
+  return true;
+}
+
+/**
  * Re-validates the configured cloud key on demand — a deliberate user action
  * (clicking the cloud chip), never a timer. This is the one live round-trip
  * this hook otherwise avoids; it caches the result the same way
@@ -133,17 +169,10 @@ export async function revalidateCloud(signal?: AbortSignal): Promise<void> {
       { [provider]: { apiKey: storedKeys[provider], isEnabled: true } },
       { signal },
     );
-    apiKeyStorage.setValidation(provider, {
-      valid: !!res?.success,
-      validatedAt: new Date().toISOString(),
-      error: res?.success ? null : (res?.error ?? "Key could not be validated."),
-    });
+    recordKeyVerdict(provider, res);
   } catch {
-    apiKeyStorage.setValidation(provider, {
-      valid: false,
-      validatedAt: new Date().toISOString(),
-      error: "Could not reach the validation service. Check your network.",
-    });
+    // An unreachable validation service says nothing about the key, so the
+    // last real verdict stands rather than being overwritten with a red one.
   }
 }
 
