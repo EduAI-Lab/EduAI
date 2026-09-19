@@ -116,6 +116,46 @@ describe("runAiStatusProbe", () => {
     expect(createManyMock.mock.calls[0][0].data[0]).toMatchObject({ state: "UNKNOWN" });
   });
 
+  it("records a malformed /v1/models response as OUTAGE, not UNKNOWN", async () => {
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: ["m"] },
+    ]);
+    getServerHealthMock.mockResolvedValue({
+      ok: false,
+      modelIds: null,
+      checkedAt: 0,
+      error: "invalid /v1/models response",
+    });
+    findManyMock.mockResolvedValue([]);
+
+    await runAiStatusProbe();
+
+    expect(createManyMock.mock.calls[0][0].data[0]).toMatchObject({ state: "OUTAGE" });
+  });
+
+  it("does not mix the unknown-model sentinel with real model ids on a later outage", async () => {
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },
+    ]);
+    getServerHealthMock.mockResolvedValue({
+      ok: false,
+      modelIds: null,
+      checkedAt: 0,
+      error: "connect ETIMEDOUT",
+    });
+    findManyMock.mockResolvedValue([
+      { serverId: "cmps01", modelId: "__unknown__" },
+      { serverId: "cmps01", modelId: "qwen3.5-9b-instruct" },
+    ]);
+
+    await runAiStatusProbe();
+
+    const rows = createManyMock.mock.calls[0][0].data;
+    expect(rows).toEqual([
+      expect.objectContaining({ modelId: "qwen3.5-9b-instruct", state: "OUTAGE" }),
+    ]);
+  });
+
   it("writes waiting and cacheUsage as a pair, both null when load is unknown", async () => {
     resolveStatusHostsMock.mockReturnValue([
       { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },

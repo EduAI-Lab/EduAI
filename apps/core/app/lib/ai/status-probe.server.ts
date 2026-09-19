@@ -16,6 +16,13 @@ import prisma from "~/lib/prisma.server";
 
 type SampleState = "OPERATIONAL" | "OUTAGE" | "UNKNOWN";
 
+/**
+ * Namespaced sentinel model id used only when a host is unreachable and we
+ * have neither observation history nor configured models for it. Kept
+ * distinct from real vendor model ids so it can never collide with one.
+ */
+export const UNKNOWN_MODEL_SENTINEL = "__unknown__";
+
 interface SampleRow {
   serverId: string;
   modelId: string;
@@ -34,7 +41,7 @@ interface SampleRow {
  */
 export function isConfigurationFault(error: string | undefined): boolean {
   if (!error) return false;
-  return /not configured|invalid|missing/i.test(error);
+  return /not configured|missing.*key/i.test(error);
 }
 
 /** Models to record for a host we could not reach: last observed, else configured. */
@@ -46,11 +53,15 @@ async function modelsForUnreachableHost(host: StatusHost): Promise<string[]> {
     select: { serverId: true, modelId: true },
     take: 50,
   });
-  if (previous.length > 0) return previous.map((row) => row.modelId);
+  const realModelIds = previous
+    .map((row) => row.modelId)
+    .filter((modelId) => modelId !== UNKNOWN_MODEL_SENTINEL);
+  if (realModelIds.length > 0) return realModelIds;
   if (host.configuredModels.length > 0) return host.configuredModels;
-  // No history and nothing configured: still record the host as down rather
-  // than letting it vanish from the chart with zero rows.
-  return ["unknown"];
+  // Nothing real is known for this host — neither history nor config — so
+  // record the host as down rather than letting it vanish from the chart
+  // with zero rows. The sentinel is never mixed with real model ids.
+  return [UNKNOWN_MODEL_SENTINEL];
 }
 
 async function sampleHost(host: StatusHost, intervalMinutes: number): Promise<SampleRow[]> {
