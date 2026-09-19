@@ -61,4 +61,15 @@ describe("Core AIServiceIndicators", () => {
     expect(await screen.findByText("Server 01")).toBeInTheDocument();
     expect(screen.getByText("Qwen:9b-01")).toBeInTheDocument();
   });
+
+  it("does not fetch history when the cloud chip is clicked", async () => {
+    render(<AIServiceIndicators />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Managed cloud AI/i }));
+
+    // Give any (incorrect) fetch a tick to fire before asserting its absence.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const calls = (fetch as unknown as { mock: { calls: string[][] } }).mock.calls;
+    expect(calls.some(([url]) => String(url).includes("/history"))).toBe(false);
+  });
 });

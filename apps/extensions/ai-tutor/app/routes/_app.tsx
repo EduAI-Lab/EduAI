@@ -110,10 +110,9 @@ function AppLayoutInner() {
     }
   }, []);
 
-  // Fetch once on first open, then only on explicit refresh. The chip pair has
-  // no open-state prop to key off (a shared-component gap, tracked centrally),
-  // so — same as Core's `ai-service-indicators.tsx` — we track "opened" via an
-  // onClick on the chip-pair wrapper below.
+  // Fetch once on first open, then only on explicit refresh — reported via the
+  // shared component's `onUbcOpenChange` (see Core's `ai-service-indicators.tsx`
+  // for the same pattern).
   useEffect(() => {
     if (aiHistoryOpened && aiHistory === null && !aiHistoryLoading) void loadAiHistory();
   }, [aiHistoryOpened, aiHistory, aiHistoryLoading, loadAiHistory]);
@@ -193,27 +192,26 @@ function AppLayoutInner() {
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
-          <span onClick={() => setAiHistoryOpened(true)}>
-            <AIServiceIndicators
-              cloud={aiStatus.cloud}
-              cloudLabel="Managed cloud AI"
-              ubc={aiStatus.ubc}
-              ubcHistory={
-                <AIServiceHistoryPanel
-                  data={aiHistory}
-                  loading={aiHistoryLoading}
-                  error={aiHistoryError}
-                  stale={aiStatus.stale}
-                  checkedAt={aiStatus.checkedAt}
-                  onRefresh={() => {
-                    aiStatus.refresh();
-                    void loadAiHistory();
-                  }}
-                />
-              }
-              onRefresh={aiStatus.refresh}
-            />
-          </span>
+          <AIServiceIndicators
+            cloud={aiStatus.cloud}
+            cloudLabel="Managed cloud AI"
+            ubc={aiStatus.ubc}
+            ubcHistory={
+              <AIServiceHistoryPanel
+                data={aiHistory}
+                loading={aiHistoryLoading}
+                error={aiHistoryError}
+                stale={aiStatus.stale}
+                checkedAt={aiStatus.checkedAt}
+                onRefresh={() => {
+                  aiStatus.refresh();
+                  void loadAiHistory();
+                }}
+              />
+            }
+            onRefresh={aiStatus.refresh}
+            onUbcOpenChange={setAiHistoryOpened}
+          />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>
             <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />

@@ -74,6 +74,26 @@ describe("AIServiceIndicators", () => {
     expect(onRefresh).not.toHaveBeenCalled();
   });
 
+  it("reports the UBC popover open state via onUbcOpenChange", () => {
+    const onUbcOpenChange = vi.fn();
+    render(
+      <AIServiceIndicators
+        cloud={{ state: "operational" }}
+        ubc={{ state: "operational" }}
+        ubcHistory={<div>UBC history panel content</div>}
+        onUbcOpenChange={onUbcOpenChange}
+      />,
+    );
+
+    const chip = screen.getByLabelText("UBC-hosted AI: Operational");
+
+    fireEvent.click(chip);
+    expect(onUbcOpenChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(chip);
+    expect(onUbcOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("still shows the UBC tooltip while the history popover is wired up", () => {
     render(
       <AIServiceIndicators

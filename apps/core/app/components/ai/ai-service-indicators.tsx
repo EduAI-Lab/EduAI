@@ -66,13 +66,14 @@ export function AIServiceIndicators() {
   );
 
   return (
-    <span data-tour="ai-status" className="hidden sm:inline-flex" onClick={() => setOpened(true)}>
+    <span data-tour="ai-status" className="hidden sm:inline-flex">
       <SharedAIServiceIndicators
         cloud={cloud}
         cloudLabel="Managed cloud AI"
         ubc={ubc}
         ubcHistory={panel}
         onRefresh={refresh}
+        onUbcOpenChange={setOpened}
       />
     </span>
   );

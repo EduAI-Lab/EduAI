@@ -50,6 +50,13 @@ export interface AIServiceIndicatorsProps {
   ubcHistory?: React.ReactNode;
   /** Called when a chip is clicked — wire to a re-check. Omit for static display. */
   onRefresh?: () => void;
+  /**
+   * Called when the UBC history popover opens or closes. Only meaningful when
+   * `ubcHistory` is supplied — the component stays uncontrolled (no `open`
+   * prop); this is a notification of the Radix popover's own state change, not
+   * a way to drive it.
+   */
+  onUbcOpenChange?: (open: boolean) => void;
   className?: string;
 }
 
@@ -123,6 +130,7 @@ export function AIServiceIndicators({
   cloudLabel = "Cloud AI",
   ubcHistory,
   onRefresh,
+  onUbcOpenChange,
   className,
 }: AIServiceIndicatorsProps) {
   const ubcChip = (
@@ -139,7 +147,7 @@ export function AIServiceIndicators({
   return (
     <div className={cn("inline-flex items-center gap-1", className)}>
       {ubcHistory ? (
-        <Popover>
+        <Popover onOpenChange={onUbcOpenChange}>
           <PopoverTrigger asChild>{ubcChip}</PopoverTrigger>
           <PopoverContent align="end" className="w-auto p-3">
             {ubcHistory}
