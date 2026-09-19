@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.18
+
+- Give a failed course-material upload a reason and a way out. The badge said only **Failed**, so an instructor's only move was to re-upload the file and hope — even when the file was fine and the upload had simply landed while the embedding provider was down. A `(?)` beside the badge now explains which stage failed: the content is already on the course, the file could not be read, or the text was read but indexing it failed. Where the extracted text survived server-side, **Try again** re-runs indexing straight from the database, with no re-upload — `POST /api/courses/:courseId/materials/:materialId/reprocess`, which answers 202 and returns the row to PROCESSING so the list's existing poll reports the outcome. Retry is deliberately *not* offered for an extraction failure or a duplicate receipt, where it could not succeed. The exact server-side message is still not shown, because the background job never persists it; that needs a schema change and is tracked as #1794. Closes #1749. (@Ayyhab, 2026-09-18) — [#1795](https://github.com/EduAI-Lab/EduAI/pull/1795)
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.

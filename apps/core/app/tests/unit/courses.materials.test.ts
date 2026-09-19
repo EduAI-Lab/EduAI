@@ -1815,3 +1815,220 @@ describe("PATCH materials — visibility scheduling (#839)", () => {
     );
   });
 });
+
+// #1749: a FAILED material offered no way forward but re-uploading the file.
+// When extraction succeeded and only indexing failed, `rawText` is still on the
+// row (runMaterialExtraction writes it before embedding) and
+// processMaterialEmbeddings is idempotent under `replace: true` — so the retry
+// can run straight from the database. These pin that the endpoint only accepts
+// the cases where that is actually true, rather than accepting everything and
+// failing later.
+describe("POST /api/courses/:courseId/materials/:materialId/reprocess (#1749)", () => {
+  function makeReprocessArgs(materialId: string) {
+    return {
+      request: new Request(
+        `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}/reprocess`,
+        { method: "POST" },
+      ),
+      params: { courseId: COURSE_ID, materialId },
+      context: {} as never,
+    } as any;
+  }
+
+  /** The columns reprocessMaterial selects off the row it is asked to retry. */
+  type RetryCandidateRow = {
+    id: string;
+    courseId: string;
+    status: string;
+    duplicateOfId: string | null;
+    rawText: string | null;
+  };
+
+  /** A FAILED row whose text survived — the only retryable shape. */
+  function mockRetryableMaterial(overrides: Partial<RetryCandidateRow> = {}) {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      courseId: COURSE_ID,
+      status: "FAILED",
+      duplicateOfId: null,
+      rawText: "extracted lecture text",
+      ...overrides,
+    } as never);
+  }
+
+  beforeEach(() => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "user-1", role: "INSTRUCTOR" },
+    } as never);
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({} as never);
+  });
+
+  it("accepts a failed material whose extracted text survived", async () => {
+    mockRetryableMaterial();
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(202);
+  });
+
+  it("returns the row to PROCESSING so the list's existing poll picks up the outcome", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-1" },
+        data: expect.objectContaining({ status: "PROCESSING" }),
+      }),
+    );
+  });
+
+  it("re-embeds from the stored text, so the instructor never re-uploads the file", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+    // The worker is fire-and-forget, so let its first await settle.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "extracted lecture text", {
+      replace: true,
+    });
+  });
+
+  it("marks the material READY again once the retried embedding succeeds", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-1" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+  });
+
+  it("refuses a material that is not in a failed state", async () => {
+    mockRetryableMaterial({ status: "READY" });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_NOT_FAILED" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("refuses a duplicate receipt, where retrying would only duplicate again", async () => {
+    mockRetryableMaterial({ duplicateOfId: "mat-winner" });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_DUPLICATE" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("refuses a material with no extracted text, whose upload bytes were discarded", async () => {
+    // failMaterial calls discardUploadBlob, so an extraction failure has
+    // nothing left to re-run against — the honest answer is re-upload.
+    mockRetryableMaterial({ rawText: null });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_TEXT_UNAVAILABLE" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("404s a material that is not on this course", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+
+    const res = await action(makeReprocessArgs("mat-elsewhere"));
+
+    expect(res.status).toBe(404);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("denies a student, who cannot manage materials even in a published course", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    mockRetryableMaterial();
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(403);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+});
+
+// #1749: the failed badge needs to know whether a retry is even possible, and
+// that turns on whether `rawText` survived. The text itself must never reach
+// the list payload (#948), so the flag is resolved by a separate id-only query
+// over just the failed rows on the page.
+describe("GET materials — hasExtractedText on failed rows (#1749)", () => {
+  /** The fields the list loader reads off each page row before responding. */
+  type ListPageRow = { id: string; status: string; _count: { chunks: number } };
+
+  function mockListPage(rows: ListPageRow[]) {
+    vi.mocked(prisma.courseMaterial.findMany).mockReset();
+    // First call: the page itself. Second: the id-only retryability probe.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValueOnce(rows as never);
+  }
+
+  beforeEach(() => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+  });
+
+  it("marks a failed material whose extracted text survived as retryable", async () => {
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValueOnce([
+      { id: "mat-failed" },
+    ] as never);
+
+    const body = await (await loader(makeArgs("GET"))).json();
+
+    expect(body.materials[0].hasExtractedText).toBe(true);
+  });
+
+  it("marks a failed material whose extraction never produced text as not retryable", async () => {
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValueOnce([] as never);
+
+    const body = await (await loader(makeArgs("GET"))).json();
+
+    expect(body.materials[0].hasExtractedText).toBe(false);
+  });
+
+  it("omits the flag for materials that have not failed, where it means nothing", async () => {
+    mockListPage([{ id: "mat-ready", status: "READY", _count: { chunks: 3 } }]);
+
+    const body = await (await loader(makeArgs("GET"))).json();
+
+    expect(body.materials[0]).not.toHaveProperty("hasExtractedText");
+  });
+
+  it("skips the extra query entirely when no row on the page has failed", async () => {
+    mockListPage([{ id: "mat-ready", status: "READY", _count: { chunks: 3 } }]);
+
+    await loader(makeArgs("GET"));
+
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("probes retryability without ever selecting the document text", async () => {
+    // #948's contract: rawText must not enter the list payload. The probe asks
+    // the database the yes/no question instead of fetching the text to answer
+    // it here.
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValueOnce([] as never);
+
+    await loader(makeArgs("GET"));
+
+    const probeArgs = vi.mocked(prisma.courseMaterial.findMany).mock.calls[1][0] as any;
+    expect(probeArgs.select).toEqual({ id: true });
+    expect(probeArgs.where.rawText).toEqual({ not: null });
+  });
+});

@@ -15,6 +15,7 @@ import {
   isChecksumConflict,
   persistUploadBlob,
   startMaterialExtraction,
+  startMaterialReembed,
   toBytesColumn,
 } from "~/lib/materials/extraction-job.server";
 import {
@@ -26,6 +27,7 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import type { Session } from "~/lib/auth/server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import type { RequestContext } from "~/lib/request-context.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import {
   MultipartBodyInvalidError,
@@ -140,6 +142,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       switch (request.method) {
         case "POST": {
+          // #1749: `.../:materialId/reprocess` retries a failed material from
+          // the text already on the row. Only that route gives a POST a
+          // `materialId` — the collection POST is the upload — so the param is
+          // the discriminator, rather than parsing `request.url`, which is not
+          // guaranteed to be present on every caller's request object. Same
+          // staff gate as upload below (it writes course RAG content), so it
+          // is dispatched after that gate rather than before it.
+          const reprocessMaterialId = params.materialId;
+
           // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
           // Students cannot upload materials UNLESS the students.canUploadMaterials
           // grant is explicitly enabled (off by default).
@@ -172,6 +183,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
               action: "material.upload",
               courseId,
             });
+          }
+          if (reprocessMaterialId) {
+            return reprocessMaterial(courseId, reprocessMaterialId, requestContext);
           }
           return uploadMaterial(request, courseId, user, requestContext);
         }
@@ -502,6 +516,56 @@ async function reclaimProvisionalRow(
   return { outcome: "reclaimed", materialId: existing.id };
 }
 
+/**
+ * Retry a failed material's indexing from the text already stored on the row
+ * (#1749).
+ *
+ * Only the embedding step is repeated, and only when repeating it can actually
+ * work. `runMaterialExtraction` writes `rawText` before embedding, so a row
+ * that failed at the embedding step is complete enough to re-run from the
+ * database — but one that failed at extraction is not, and `failMaterial` has
+ * already discarded its upload blob, so there are no bytes left either. Each
+ * unusable shape is refused with its own code rather than accepted and failed
+ * later, so the UI can decide up front whether to offer a retry at all.
+ *
+ * Answers 202, not 200: the re-embed runs in the background exactly as the
+ * upload path does (#949), and the row returns to PROCESSING, which the
+ * materials list already polls on.
+ */
+async function reprocessMaterial(
+  courseId: string,
+  materialId: string,
+  requestContext: RequestContext,
+) {
+  const material = await prisma.courseMaterial.findFirst({
+    where: { id: materialId, courseId, deletedAt: null },
+    select: { id: true, status: true, duplicateOfId: true, rawText: true },
+  });
+
+  if (!material) {
+    return json(404, { error: "MATERIAL_NOT_FOUND" });
+  }
+  if (material.status !== "FAILED") {
+    return json(409, { error: "MATERIAL_NOT_FAILED" });
+  }
+  // A duplicate receipt is not a failure to retry — the content is already on
+  // the course, and re-running would only reach the same conclusion.
+  if (material.duplicateOfId !== null) {
+    return json(409, { error: "MATERIAL_DUPLICATE" });
+  }
+  if (!material.rawText) {
+    return json(409, { error: "MATERIAL_TEXT_UNAVAILABLE" });
+  }
+
+  await prisma.courseMaterial.update({
+    where: { id: materialId },
+    data: { status: "PROCESSING", processedAt: null },
+  });
+  startMaterialReembed(materialId, material.rawText, requestContext);
+
+  return json(202, { materialId, status: "PROCESSING" });
+}
+
 async function uploadMaterial(
   request: Request,
   courseId: string,
@@ -664,6 +728,27 @@ const PREVIEW_EXCERPT_MAX = 4000;
  * that `visibleToStudents`/`availableAt` MUST stay selected — the staff branch
  * destructures them off the row and would emit `undefined` without them.
  */
+/**
+ * Which of these materials could still be retried without a re-upload (#1749).
+ *
+ * `rawText` is deliberately absent from `MATERIAL_LIST_SELECT` (#948) — it is
+ * the whole document, and the list must not carry it. So the yes/no question
+ * is asked of the database directly, ids only, and only about the rows that
+ * actually failed: a page with nothing failed costs no extra query at all.
+ */
+async function resolveRetryableMaterialIds(
+  rows: Array<{ id: string; status: string }>,
+): Promise<Set<string>> {
+  const failedIds = rows.filter((row) => row.status === "FAILED").map((row) => row.id);
+  if (failedIds.length === 0) return new Set<string>();
+
+  const withText = await prisma.courseMaterial.findMany({
+    where: { id: { in: failedIds }, rawText: { not: null } },
+    select: { id: true },
+  });
+  return new Set(withText.map((row) => row.id));
+}
+
 const MATERIAL_LIST_SELECT = {
   id: true,
   courseId: true,
@@ -708,12 +793,21 @@ async function materialsListResponse(
     ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
     : await prisma.courseMaterial.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
+  const retryableIds = await resolveRetryableMaterialIds(page);
 
   return json(200, {
-    materials: page.map(({ _count, ...material }) => ({
-      ...material,
-      chunkCount: _count?.chunks ?? 0,
-    })),
+    materials: page.map(({ _count, ...material }) => {
+      const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+        ...material,
+        chunkCount: _count?.chunks ?? 0,
+      };
+      // Only meaningful for a failed row; left off entirely elsewhere rather
+      // than emitted as a misleading `false` (#1749).
+      if (material.status === "FAILED") {
+        row.hasExtractedText = retryableIds.has(material.id);
+      }
+      return row;
+    }),
     nextCursor,
   });
 }
@@ -848,9 +942,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       // Staff receive the scheduling fields so the management UI can render and edit
       // them; students never do (they only ever see already-visible materials).
       const staff = isStaffAccess(access);
+      const retryableIds = await resolveRetryableMaterialIds(page);
       return json(200, {
         materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => {
-          const row = { ...material, chunkCount: _count?.chunks ?? 0 };
+          const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+            ...material,
+            chunkCount: _count?.chunks ?? 0,
+          };
+          // See the includeDeleted path above: failed rows only (#1749).
+          if (material.status === "FAILED") {
+            row.hasExtractedText = retryableIds.has(material.id);
+          }
           if (!staff) return row;
           return { ...row, visibleToStudents, availableAt };
         }),
