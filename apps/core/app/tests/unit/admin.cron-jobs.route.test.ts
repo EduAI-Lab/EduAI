@@ -235,12 +235,9 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
     );
     expect(status(res)).toBe(200);
     expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
-    expect(triggerCronJobAsync).toHaveBeenCalledWith(
-      "backup-nightly",
-      "backup-nightly.sh",
-      "run-1",
-      "owner-1",
-    );
+    // The web process records the run; the cron worker's dispatchManualCronRuns
+    // picks it up and dispatches it with the job's correct execution mode.
+    expect(triggerCronJobAsync).not.toHaveBeenCalled();
     const b = body(res);
     expect(b.runId).toBe("run-1");
   });

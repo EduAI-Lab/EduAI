@@ -10,7 +10,6 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { withErrorResponse } from "~/lib/errors.server";
@@ -85,10 +84,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
         // Acquisition is one atomic database operation: it reaps an expired lease,
         // fences competing owners, and returns the live run to losing callers.
+        //
+        // Recording is all the web process does. The cron worker's
+        // dispatchManualCronRuns picks the row up on its next 30s reconcile and
+        // dispatches it with the job's real `execution` mode — which a web
+        // process cannot do correctly for CORE jobs, and must not do at all.
         const result = await startCronRun(jobName);
-        if (result.created) {
-          triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
-        }
 
         return data({ runId: result.runId, reused: !result.created });
       }
