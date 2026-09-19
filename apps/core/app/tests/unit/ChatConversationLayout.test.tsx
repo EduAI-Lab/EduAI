@@ -568,3 +568,104 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
     ).not.toBeNull();
   });
 });
+
+// #1510: a failed /api/chat turn showed the student nothing at all — the
+// composer returned to idle and no banner, toast or retry appeared. Ahab's
+// product call for the fix was an inline banner *in the conversation* (not a
+// toast, which vanishes before a student reads it) carrying a retry.
+describe("ChatConversationLayout — inline chat error banner (#1510)", () => {
+  const providerDownNotice = {
+    kind: "provider-down" as const,
+    title: "The AI model isn't responding",
+    description: "Something went wrong on EduAI's side, not with your question.",
+  };
+  const failedTurn = [{ id: "u1", role: "user", content: "What is a p-value?" }];
+
+  it("renders no banner while the turn has not failed", () => {
+    render(<ChatConversationLayout {...baseProps} messages={failedTurn} />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renders the failure title and description once a turn fails", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={failedTurn}
+        chatError={providerDownNotice}
+      />,
+    );
+
+    expect(screen.getByText("The AI model isn't responding")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Something went wrong on EduAI's side, not with your question\./),
+    ).toBeInTheDocument();
+  });
+
+  it("announces the failure to screen readers", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={failedTurn}
+        chatError={providerDownNotice}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("The AI model isn't responding");
+  });
+
+  it("places the banner inside the transcript pane rather than floating over it", () => {
+    // The distinction the product call turns on: a toast is a sibling that
+    // disappears; this has to sit in the conversation, where the reply the
+    // student was waiting for would have been.
+    const { container } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={failedTurn}
+        chatError={providerDownNotice}
+      />,
+    );
+
+    const pane = container.querySelector(`.${CHAT_SCROLL_PANE_CLASS.split(" ").join(".")}`);
+    expect(pane).not.toBeNull();
+    expect(pane?.contains(screen.getByRole("alert"))).toBe(true);
+  });
+
+  it("offers a Try again control that re-sends the failed turn", () => {
+    const onRetryChat = vi.fn();
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={failedTurn}
+        chatError={providerDownNotice}
+        onRetryChat={onRetryChat}
+      />,
+    );
+
+    act(() => {
+      screen.getByRole("button", { name: /try again/i }).click();
+    });
+
+    expect(onRetryChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits Try again when the view wires no retry handler", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={failedTurn}
+        chatError={providerDownNotice}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
+  });
+
+  it("still surfaces the banner when the failed turn left the transcript empty", () => {
+    // Guards against nesting the banner in the non-empty branch of the
+    // transcript's messages.length ternary, where the one failure mode with no
+    // rendered user message would silently show nothing again.
+    render(<ChatConversationLayout {...baseProps} messages={[]} chatError={providerDownNotice} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("The AI model isn't responding");
+  });
+});
