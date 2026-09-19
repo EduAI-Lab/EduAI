@@ -74,15 +74,20 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
 
   it("clears only known retired rows and preserves admin-managed model rows", async () => {
     const { applyRoutingTierAssignments } = await import("../../../prisma/seed");
+    const { VLLM_RETIRED_MODEL_IDS } = await import("../../../prisma/ai-model-catalog");
 
     await applyRoutingTierAssignments();
 
+    // Read the retired set from the catalog rather than restating it: this
+    // assertion previously hardcoded the Qwen 3.5 ids, which meant it kept
+    // passing while the catalog retired the models the fleet actually serves
+    // (#1802).
     expect(aIModelUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           providerId: VLLM_PROVIDER.id,
           routerTier: { not: null },
-          modelId: { in: ["qwen3.5-2b-instruct", "qwen3.5-9b-instruct"] },
+          modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
         }),
         data: { routerTier: null },
       }),
