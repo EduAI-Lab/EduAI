@@ -62,6 +62,38 @@ describe("Core AIServiceIndicators", () => {
     expect(screen.getByText("Qwen:9b-01")).toBeInTheDocument();
   });
 
+  it("requests history exactly once when the endpoint keeps rejecting", async () => {
+    // Regression: the old `opened && history === null && !loading` guard
+    // re-entered on every rejection, so an open popover over a persistent
+    // 401/500 re-requested as fast as the server could answer.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        String(url).includes("/history")
+          ? { ok: false, status: 401, json: async () => ({}) }
+          : {
+              ok: true,
+              json: async () => ({
+                cloud: { state: "operational" },
+                ubc: { state: "operational" },
+                checkedAt: "2026-09-18T11:59:00.000Z",
+                stale: false,
+              }),
+            },
+      ),
+    );
+
+    render(<AIServiceIndicators />);
+    fireEvent.click(await screen.findByRole("button", { name: /UBC-hosted AI/i }));
+    expect(await screen.findByText(/could not load status history/i)).toBeInTheDocument();
+
+    // Several macrotask turns is plenty for a loop to show itself.
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: string[][] } }).mock.calls;
+    expect(calls.filter(([url]) => String(url).includes("/history"))).toHaveLength(1);
+  });
+
   it("does not fetch history when the cloud chip is clicked", async () => {
     render(<AIServiceIndicators />);
 

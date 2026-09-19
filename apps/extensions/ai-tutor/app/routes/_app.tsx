@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
@@ -9,6 +9,7 @@ import {
   CommandSearchButton,
   ThemeToggle,
   useAiServiceStatus,
+  useHistoryOnOpen,
   type BugReportSubmitData,
   type HistoryPayload,
 } from "@eduai/ui";
@@ -90,32 +91,21 @@ function AppLayoutInner() {
     intervalMs: 300_000,
   });
   const [bugReportOpen, setBugReportOpen] = useState(false);
-  const [aiHistory, setAiHistory] = useState<HistoryPayload | null>(null);
-  const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
-  const [aiHistoryError, setAiHistoryError] = useState<string | null>(null);
-  const [aiHistoryOpened, setAiHistoryOpened] = useState(false);
   const routeCourseId = getRouteCourseId(matches);
   const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
 
-  const loadAiHistory = useCallback(async () => {
-    setAiHistoryLoading(true);
-    setAiHistoryError(null);
-    try {
-      setAiHistory(await api.aiStatusHistory());
-    } catch {
-      // Keep the last payload; a single transient failure must not blank the panel.
-      setAiHistoryError("Could not load status history.");
-    } finally {
-      setAiHistoryLoading(false);
-    }
-  }, []);
+  const fetchAiHistory = useCallback(() => api.aiStatusHistory(), []);
 
-  // Fetch once on first open, then only on explicit refresh — reported via the
-  // shared component's `onUbcOpenChange` (see Core's `ai-service-indicators.tsx`
-  // for the same pattern).
-  useEffect(() => {
-    if (aiHistoryOpened && aiHistory === null && !aiHistoryLoading) void loadAiHistory();
-  }, [aiHistoryOpened, aiHistory, aiHistoryLoading, loadAiHistory]);
+  // One request per deliberate open, even when every one of them fails. The
+  // shared hook replaced three near-identical copies of this block that
+  // re-requested in a loop on a persistent 401/500 — see `useHistoryOnOpen`.
+  const {
+    data: aiHistory,
+    loading: aiHistoryLoading,
+    error: aiHistoryError,
+    onOpenChange: onAiHistoryOpenChange,
+    refresh: refreshAiHistory,
+  } = useHistoryOnOpen<HistoryPayload>(fetchAiHistory);
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -203,14 +193,15 @@ function AppLayoutInner() {
                 error={aiHistoryError}
                 stale={aiStatus.stale}
                 checkedAt={aiStatus.checkedAt}
+                current={aiStatus.ubc}
                 onRefresh={() => {
                   aiStatus.refresh();
-                  void loadAiHistory();
+                  refreshAiHistory();
                 }}
               />
             }
             onRefresh={aiStatus.refresh}
-            onUbcOpenChange={setAiHistoryOpened}
+            onUbcOpenChange={onAiHistoryOpenChange}
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>

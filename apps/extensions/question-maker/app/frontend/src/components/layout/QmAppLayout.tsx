@@ -13,6 +13,7 @@ import {
   Button,
   CommandSearchButton,
   AIServiceHistoryPanel,
+  useHistoryOnOpen,
   AIServiceIndicators,
   NavSecondary,
   type HistoryPayload,
@@ -156,10 +157,6 @@ function QmAppLayoutInner() {
   const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const aiStatus = useAiServicesStatus();
-  const [aiHistory, setAiHistory] = useState<HistoryPayload | null>(null);
-  const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
-  const [aiHistoryError, setAiHistoryError] = useState<string | null>(null);
-  const [aiHistoryOpened, setAiHistoryOpened] = useState(false);
   const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
   const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
@@ -170,24 +167,18 @@ function QmAppLayoutInner() {
   const questionMakerRole = navigationUser?.role;
   const attemptedCourseImport = useRef<string | null>(null);
 
-  const loadAiHistory = useCallback(async () => {
-    setAiHistoryLoading(true);
-    setAiHistoryError(null);
-    try {
-      setAiHistory(await eduaiService.getAiStatusHistory());
-    } catch {
-      // Keep the last payload; a single transient failure must not blank the panel.
-      setAiHistoryError("Could not load status history.");
-    } finally {
-      setAiHistoryLoading(false);
-    }
-  }, []);
+  const fetchAiHistory = useCallback(() => eduaiService.getAiStatusHistory(), []);
 
-  // Fetch once on first open, then only on explicit refresh — reported via the
-  // shared component's `onUbcOpenChange` (mirrors AI Tutor's `_app.tsx`).
-  useEffect(() => {
-    if (aiHistoryOpened && aiHistory === null && !aiHistoryLoading) void loadAiHistory();
-  }, [aiHistoryOpened, aiHistory, aiHistoryLoading, loadAiHistory]);
+  // One request per deliberate open, even when every one of them fails. The
+  // shared hook replaced three near-identical copies of this block that
+  // re-requested in a loop on a persistent 401/500 — see `useHistoryOnOpen`.
+  const {
+    data: aiHistory,
+    loading: aiHistoryLoading,
+    error: aiHistoryError,
+    onOpenChange: onAiHistoryOpenChange,
+    refresh: refreshAiHistory,
+  } = useHistoryOnOpen<HistoryPayload>(fetchAiHistory);
 
   useEffect(() => {
     if (!requestedCoreCourseId || isCoursesLoading || routeCourse) return;
@@ -313,9 +304,10 @@ function QmAppLayoutInner() {
                   error={aiHistoryError}
                   stale={aiStatus.stale}
                   checkedAt={aiStatus.checkedAt}
+                  current={aiStatus.ubc}
                   onRefresh={() => {
                     aiStatus.refresh();
-                    void loadAiHistory();
+                    refreshAiHistory();
                   }}
                 />
               }
@@ -327,7 +319,7 @@ function QmAppLayoutInner() {
                 // fetcher so the chip picks it up immediately.
                 void revalidateCloud().then(() => aiStatus.refresh());
               }}
-              onUbcOpenChange={setAiHistoryOpened}
+              onUbcOpenChange={onAiHistoryOpenChange}
             />
           </div>
           <div className="relative">

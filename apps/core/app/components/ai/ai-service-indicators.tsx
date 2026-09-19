@@ -17,39 +17,34 @@ import {
   AIServiceIndicators as SharedAIServiceIndicators,
   AIServiceHistoryPanel,
   useAiServiceStatus,
+  useHistoryOnOpen,
   type HistoryPayload,
 } from "@eduai/ui";
+
+/** Matches AI Tutor and Question Maker: the snapshot only changes when the cron probe runs. */
+const POLL_INTERVAL_MS = 300_000;
 
 export function AIServiceIndicators() {
   const { cloud, ubc, checkedAt, stale, refresh } = useAiServiceStatus({
     endpoint: "/api/ai-status",
-    intervalMs: 60_000,
+    intervalMs: POLL_INTERVAL_MS,
   });
 
-  const [history, setHistory] = React.useState<HistoryPayload | null>(null);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [opened, setOpened] = React.useState(false);
-
-  const loadHistory = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/ai-status/history?hours=72");
-      if (!res.ok) throw new Error(`Status history request failed: ${res.status}`);
-      setHistory((await res.json()) as HistoryPayload);
-    } catch {
-      // Keep the last payload; a single transient failure must not blank the panel.
-      setError("Could not load status history.");
-    } finally {
-      setLoading(false);
-    }
+  const fetchHistory = React.useCallback(async (): Promise<HistoryPayload> => {
+    const res = await fetch("/api/ai-status/history?hours=72");
+    if (!res.ok) throw new Error(`Status history request failed: ${res.status}`);
+    return (await res.json()) as HistoryPayload;
   }, []);
 
-  // Fetch once on first open, then only on explicit refresh.
-  React.useEffect(() => {
-    if (opened && history === null && !loading) void loadHistory();
-  }, [opened, history, loading, loadHistory]);
+  // One request per deliberate open, even when every one of them fails — see
+  // `useHistoryOnOpen` for the loop this replaced.
+  const {
+    data: history,
+    loading,
+    error,
+    onOpenChange,
+    refresh: refreshHistory,
+  } = useHistoryOnOpen(fetchHistory);
 
   const panel = (
     <AIServiceHistoryPanel
@@ -58,9 +53,10 @@ export function AIServiceIndicators() {
       error={error}
       stale={stale}
       checkedAt={checkedAt}
+      current={ubc}
       onRefresh={() => {
         refresh();
-        void loadHistory();
+        refreshHistory();
       }}
     />
   );
@@ -73,7 +69,7 @@ export function AIServiceIndicators() {
         ubc={ubc}
         ubcHistory={panel}
         onRefresh={refresh}
-        onUbcOpenChange={setOpened}
+        onUbcOpenChange={onOpenChange}
       />
     </span>
   );

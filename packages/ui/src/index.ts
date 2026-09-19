@@ -156,6 +156,8 @@ export type {
   UseAiServiceStatusOptions,
   UseAiServiceStatusResult,
 } from "./hooks/use-ai-service-status";
+export { useHistoryOnOpen } from "./hooks/use-history-on-open";
+export type { UseHistoryOnOpenOptions, UseHistoryOnOpenResult } from "./hooks/use-history-on-open";
 export { AccessibilitySettings } from "./settings/accessibility-settings";
 export type {
   AccessibilitySettingsProps,
