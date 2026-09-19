@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AdmissionTimeoutError,
   acquireAiAdmission,
+  admissionRetryAfterSeconds,
+  admissionTimeoutResponse,
   getAiAdmissionStats,
   resetAiAdmission,
   withAdmissionRelease,
@@ -133,5 +135,75 @@ describe("AI admission", () => {
     const admitted = await next;
     expect(getAiAdmissionStats().inflight).toBe(1);
     admitted.release();
+  });
+});
+
+/**
+ * #1804: the admission 503 carried no `Retry-After`, so a client had nothing to
+ * back off against and retried straight back into the same queue — six
+ * consecutive 503s over 138s in the COSC 301 pilot report. Both `/api/chat` and
+ * `/api/completion` now share one builder so they cannot drift.
+ */
+describe("admission timeout response", () => {
+  const originalWait = process.env.AI_ADMISSION_WAIT_MS;
+
+  afterEach(() => {
+    if (originalWait === undefined) delete process.env.AI_ADMISSION_WAIT_MS;
+    else process.env.AI_ADMISSION_WAIT_MS = originalWait;
+  });
+
+  it("is a 503 carrying Retry-After and the same code as before", async () => {
+    process.env.AI_ADMISSION_WAIT_MS = "15000";
+    const response = admissionTimeoutResponse();
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    expect(Number.isInteger(retryAfter)).toBe(true);
+    expect(retryAfter).toBeGreaterThanOrEqual(15);
+
+    const body = await response.json();
+    expect(body.code).toBe("AI_ADMISSION_TIMEOUT");
+    // The header and the body must agree, or a client that trusts one backs off
+    // differently from a client that trusts the other.
+    expect(body.retryAfter).toBe(retryAfter);
+  });
+
+  it("bases the delay on the configured admission window", () => {
+    process.env.AI_ADMISSION_WAIT_MS = "30000";
+    // No jitter, so the base is observable on its own.
+    expect(admissionRetryAfterSeconds(0)).toBe(30);
+
+    process.env.AI_ADMISSION_WAIT_MS = "5000";
+    expect(admissionRetryAfterSeconds(0)).toBe(5);
+  });
+
+  it("never suggests retrying immediately", () => {
+    // A sub-second window would otherwise round down to `Retry-After: 0`, which
+    // is an invitation to hot-loop.
+    process.env.AI_ADMISSION_WAIT_MS = "200";
+    expect(admissionRetryAfterSeconds(0)).toBe(1);
+
+    process.env.AI_ADMISSION_WAIT_MS = "0";
+    expect(admissionRetryAfterSeconds(0)).toBe(1);
+  });
+
+  it("spreads retries across the window instead of re-synchronizing them", () => {
+    process.env.AI_ADMISSION_WAIT_MS = "20000";
+
+    // A fixed delay would send every client back at the same instant; the pilot
+    // scenario is 25 clients against 8 slots.
+    expect(admissionRetryAfterSeconds(0.5, () => 0)).toBe(20);
+    expect(admissionRetryAfterSeconds(0.5, () => 0.999)).toBe(29);
+
+    const spread = new Set(
+      Array.from({ length: 50 }, (_, i) => admissionRetryAfterSeconds(0.5, () => i / 50)),
+    );
+    expect(spread.size).toBeGreaterThan(1);
+    for (const value of spread) {
+      expect(value).toBeGreaterThanOrEqual(20);
+      expect(value).toBeLessThanOrEqual(30);
+    }
   });
 });
