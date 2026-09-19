@@ -43,7 +43,6 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
@@ -762,10 +761,10 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { error: "CRON_JOB_NOT_TRIGGERABLE" };
   }
 
+  // Recording is all this does. The cron worker's dispatchManualCronRuns picks
+  // the row up on its next reconcile and dispatches it with the job's real
+  // `execution` mode. See docs/CRON_JOBS.md.
   const result = await startCronRun(jobName);
-  if (result.created) {
-    triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
-  }
   return { ok: true, runId: result.runId, jobName, reused: !result.created };
 }
 

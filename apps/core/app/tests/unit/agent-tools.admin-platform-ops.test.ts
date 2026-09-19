@@ -525,12 +525,7 @@ describe("triggerAdminCronJob", () => {
     });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run2", jobName: "backup-nightly", reused: false });
-    expect(triggerCronJobAsync).toHaveBeenCalledWith(
-      "backup-nightly",
-      "backup-nightly.sh",
-      "run2",
-      "lease-owner-2",
-    );
+    expect(triggerCronJobAsync).not.toHaveBeenCalled();
   });
 
   it("does not trigger the script when the run was reclaimed, not created", async () => {
