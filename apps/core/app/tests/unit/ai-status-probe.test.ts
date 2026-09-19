@@ -7,6 +7,7 @@ const probeVllmLoadMock = vi.hoisted(() => vi.fn());
 const createManyMock = vi.hoisted(() => vi.fn());
 const deleteManyMock = vi.hoisted(() => vi.fn());
 const findManyMock = vi.hoisted(() => vi.fn());
+const findScheduleOverrideMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/ai/status/hosts.server", () => ({ resolveStatusHosts: resolveStatusHostsMock }));
 vi.mock("~/lib/ai/routing/fleet/health", () => ({ getServerHealth: getServerHealthMock }));
@@ -20,6 +21,7 @@ vi.mock("~/lib/prisma.server", () => ({
       deleteMany: deleteManyMock,
       findMany: findManyMock,
     },
+    cronJobScheduleOverride: { findUnique: findScheduleOverrideMock },
   },
 }));
 
@@ -30,6 +32,7 @@ beforeEach(() => {
   createManyMock.mockResolvedValue({ count: 0 });
   deleteManyMock.mockResolvedValue({ count: 0 });
   findManyMock.mockResolvedValue([]);
+  findScheduleOverrideMock.mockResolvedValue(null);
   probeVllmLoadMock.mockResolvedValue({ waiting: 0, cacheUsage: 0.1 });
 });
 
@@ -184,6 +187,61 @@ describe("runAiStatusProbe", () => {
       where: { observedAt: { lt: expect.any(Date) } },
     });
     expect(result.message).toBe("1 hosts, 1 models: 1 up, 0 outage, 0 unknown; pruned 12");
+  });
+
+  // `intervalMinutes` exists so the READER never depends on env; stamping
+  // `pollMinutes()` made the WRITER depend on it, so an admin retuning the job
+  // left every row claiming the old cadence and the chip flapped to `unknown`
+  // for 45 minutes of every hour.
+  it("stamps the admin's schedule override, not the env default", async () => {
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },
+    ]);
+    getServerHealthMock.mockResolvedValue({ ok: true, modelIds: ["m"], checkedAt: 0 });
+    findScheduleOverrideMock.mockResolvedValue({ schedule: "0 */1 * * *" });
+
+    await runAiStatusProbe();
+
+    expect(findScheduleOverrideMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { jobName: "ai-status-probe" } }),
+    );
+    expect(createManyMock.mock.calls[0][0].data[0].intervalMinutes).toBe(60);
+  });
+
+  it("stamps a sub-hour override too", async () => {
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },
+    ]);
+    getServerHealthMock.mockResolvedValue({ ok: true, modelIds: ["m"], checkedAt: 0 });
+    findScheduleOverrideMock.mockResolvedValue({ schedule: "*/5 * * * *" });
+
+    await runAiStatusProbe();
+
+    expect(createManyMock.mock.calls[0][0].data[0].intervalMinutes).toBe(5);
+  });
+
+  it("falls back to the env default for a schedule that is not a fixed period", async () => {
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },
+    ]);
+    getServerHealthMock.mockResolvedValue({ ok: true, modelIds: ["m"], checkedAt: 0 });
+    findScheduleOverrideMock.mockResolvedValue({ schedule: "0 9,17 * * 1-5" });
+
+    await runAiStatusProbe();
+
+    expect(createManyMock.mock.calls[0][0].data[0].intervalMinutes).toBe(15);
+  });
+
+  it("still samples when the override table cannot be read", async () => {
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },
+    ]);
+    getServerHealthMock.mockResolvedValue({ ok: true, modelIds: ["m"], checkedAt: 0 });
+    findScheduleOverrideMock.mockRejectedValue(new Error("relation does not exist"));
+
+    await runAiStatusProbe();
+
+    expect(createManyMock.mock.calls[0][0].data[0].intervalMinutes).toBe(15);
   });
 
   it("writes nothing and says so when no UBC inference is configured", async () => {

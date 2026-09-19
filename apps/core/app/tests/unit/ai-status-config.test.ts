@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   cronEvery,
+  minutesFromCron,
   pollMinutes,
   retentionDays,
   MAX_WINDOW_HOURS,
@@ -57,5 +58,29 @@ describe("retentionDays", () => {
 
   it("allows a longer retention than the window", () => {
     expect(retentionDays({ AI_STATUS_SAMPLE_RETENTION_DAYS: "30" })).toBe(30);
+  });
+});
+
+describe("minutesFromCron", () => {
+  it("round-trips every cadence cronEvery can emit", () => {
+    for (const minutes of [5, 15, 30, 59, 60, 120, 720]) {
+      expect(minutesFromCron(cronEvery(minutes))).toBe(minutes);
+    }
+  });
+
+  it("reads a hand-written hourly or daily schedule", () => {
+    expect(minutesFromCron("7 * * * *")).toBe(60);
+    expect(minutesFromCron("0 2 * * *")).toBe(1440);
+  });
+
+  it("returns null for anything that is not a fixed period", () => {
+    // The caller falls back to the env default rather than inventing a number.
+    expect(minutesFromCron("0 9,17 * * 1-5")).toBeNull();
+    expect(minutesFromCron("*/15 * * * 1")).toBeNull();
+    expect(minutesFromCron("*/15 * 1 * *")).toBeNull();
+    expect(minutesFromCron("not a cron")).toBeNull();
+    expect(minutesFromCron(null)).toBeNull();
+    expect(minutesFromCron(undefined)).toBeNull();
+    expect(minutesFromCron("")).toBeNull();
   });
 });

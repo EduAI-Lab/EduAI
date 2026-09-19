@@ -10,7 +10,7 @@
  */
 import { getServerHealth } from "~/lib/ai/routing/fleet/health";
 import { probeVllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
-import { pollMinutes, retentionDays } from "~/lib/ai/status/config.server";
+import { minutesFromCron, pollMinutes, retentionDays } from "~/lib/ai/status/config.server";
 import { resolveStatusHosts, type StatusHost } from "~/lib/ai/status/hosts.server";
 import prisma from "~/lib/prisma.server";
 
@@ -120,13 +120,42 @@ async function sampleHost(host: StatusHost, intervalMinutes: number): Promise<Sa
   }));
 }
 
+/** The cron job name this probe runs under — the key its schedule override is stored against. */
+const JOB_NAME = "ai-status-probe";
+
+/**
+ * The cadence ACTUALLY in force, which is the admin's schedule override when
+ * there is one and only otherwise the env default.
+ *
+ * `intervalMinutes` exists so the reader never depends on env to judge
+ * staleness; stamping `pollMinutes()` made the writer depend on it instead. An
+ * admin retuning the job to hourly left rows claiming 15, so the reader's
+ * three-interval horizon expired 45 minutes into every hour and the chip
+ * flapped to `unknown`; retuning downward hid a dead worker for three times as
+ * long. A schedule we cannot read as a fixed period falls back to the default
+ * rather than to a guess.
+ */
+async function cadenceInForceMinutes(): Promise<number> {
+  try {
+    const override = await prisma.cronJobScheduleOverride.findUnique({
+      where: { jobName: JOB_NAME },
+      select: { schedule: true },
+    });
+    return minutesFromCron(override?.schedule) ?? pollMinutes();
+  } catch {
+    // The override table being unreadable must not stop the probe writing
+    // samples; the env default is the same answer it gave before.
+    return pollMinutes();
+  }
+}
+
 export async function runAiStatusProbe(): Promise<{ message: string }> {
   const hosts = resolveStatusHosts();
   if (hosts.length === 0) {
     return { message: "No UBC-hosted inference configured; nothing sampled" };
   }
 
-  const intervalMinutes = pollMinutes();
+  const intervalMinutes = await cadenceInForceMinutes();
   const settled = await Promise.allSettled(hosts.map((host) => sampleHost(host, intervalMinutes)));
 
   const rows: SampleRow[] = [];

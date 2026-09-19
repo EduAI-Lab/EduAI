@@ -35,6 +35,44 @@ export function retentionDays(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
+ * Read an every-N-minutes cadence back out of a cron expression — the inverse
+ * of `cronEvery`, plus the two fixed-time shapes an admin can type by hand.
+ *
+ * The probe stamps each sample with the cadence in force so the reader never
+ * has to consult env, but the cadence in force is whatever
+ * `CronJobScheduleOverride` says, not what env says. Returns null for anything
+ * it cannot read as a simple fixed period (e.g. `0 9,17 * * 1-5`), so the
+ * caller falls back to the env default rather than inventing a number.
+ */
+export function minutesFromCron(expression: string | null | undefined): number | null {
+  const raw = (expression ?? "").trim();
+  if (raw === "") return null;
+  const fields = raw.split(/\s+/);
+  if (fields.length !== 5) return null;
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
+  // A cadence restricted to particular days is not a fixed period at all.
+  if (dayOfMonth !== "*" || month !== "*" || dayOfWeek !== "*") return null;
+
+  const everyMinutes = /^\*\/(\d{1,4})$/.exec(minute);
+  if (everyMinutes && hour === "*") {
+    const n = Number(everyMinutes[1]);
+    return Number.isSafeInteger(n) && n > 0 && n < 60 ? n : null;
+  }
+
+  const isFixedMinute = /^\d{1,2}$/.test(minute) && Number(minute) < 60;
+  if (!isFixedMinute) return null;
+  if (hour === "*") return 60;
+
+  const everyHours = /^\*\/(\d{1,2})$/.exec(hour);
+  if (everyHours) {
+    const n = Number(everyHours[1]);
+    return Number.isSafeInteger(n) && n > 0 && n < 24 ? n * 60 : null;
+  }
+  if (/^\d{1,2}$/.test(hour) && Number(hour) < 24) return 1440;
+  return null;
+}
+
+/**
  * Build a node-cron expression for an every-N-minutes cadence. `*​/90` is not a
  * valid minute field, so anything that is neither sub-hour nor a whole number of
  * hours falls back to the default rather than leaving the job unscheduled.
