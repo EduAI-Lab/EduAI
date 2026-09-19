@@ -13,10 +13,16 @@
  * can't determine a state.
  *
  * Cloud is reported from key presence rather than a live call: pinging a paid API
- * on a header poll would cost tokens and hit rate limits. The UBC path is on
- * internal infra, so short reachability + `/metrics` probes are cheap and
- * meaningful. Results are cached briefly so many concurrent header polls collapse
- * to one probe.
+ * on a header poll would cost tokens and hit rate limits.
+ *
+ * This module does no I/O — it is pure classification and aggregation.
+ * `classifyCloudStatus` derives the cloud state from env key presence, and
+ * `aggregateUbcStatus` folds already-collected per-host probes into a single
+ * `ServiceStatus` using env-tunable thresholds. The actual UBC probing happens
+ * elsewhere: `apps/core/app/lib/ai/status-probe.server.ts` samples the fleet on a
+ * cron and persists the results, and `apps/core/app/lib/ai/status/read.server.ts`
+ * reads those samples back and calls `aggregateUbcStatus` here to derive the
+ * current UBC state.
  */
 import type { VllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
 
@@ -26,11 +32,6 @@ export interface ServiceStatus {
   state: ServiceState;
   /** Short human-readable explanation for the tooltip. */
   detail: string;
-}
-
-export interface AiServiceStatus {
-  cloud: ServiceStatus;
-  ubc: ServiceStatus;
 }
 
 /** Fleet-load thresholds above which the UBC path is reported `degraded`. */

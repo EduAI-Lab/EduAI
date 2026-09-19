@@ -36,6 +36,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         status: 200,
         headers: {
           "Content-Type": "application/json",
+          // The underlying sample only changes when the cron probe runs (~every
+          // 15 min), so 30s is generous headroom for a burst of header polls to
+          // share one response without ever serving data staler than the source.
           "Cache-Control": "private, max-age=30",
         },
       });
