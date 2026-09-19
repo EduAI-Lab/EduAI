@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
+import { cronEvery, pollMinutes } from "~/lib/ai/status/config.server";
 import prisma from "~/lib/prisma.server";
 import {
   redactErrorForConsole,
@@ -111,6 +112,14 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     scheduleLabel: "Daily at 02:00 UTC (QM server)",
     script: "",
     triggerEnabled: false,
+  },
+  {
+    name: "ai-status-probe",
+    description: "Sample UBC fleet health per model and persist a status history point",
+    schedule: cronEvery(pollMinutes()),
+    scheduleLabel: `Every ${pollMinutes()} minutes`,
+    script: "Core handler",
+    execution: "CORE",
   },
 ];
 
@@ -438,6 +447,27 @@ function persistedCronMessage(
   );
 }
 
+type CoreJobHandler = () => Promise<{ message: string }>;
+
+/**
+ * CORE jobs run in-process in the cron worker. Each entry resolves its handler
+ * lazily so the module graph stays as lazy as the previous single hardcoded
+ * import. Adding a job here is the only change a new CORE job needs.
+ */
+const CORE_JOB_HANDLERS = {
+  "notify-api-key-expiry": async () => {
+    const { notifyExpiringApiKeys } = await import("~/lib/cron-notify-api-key-expiry.server");
+    return async () => {
+      const { notified } = await notifyExpiringApiKeys();
+      return { message: `Sent ${notified} API key expiry notification(s)` };
+    };
+  },
+  "ai-status-probe": async () => {
+    const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");
+    return runAiStatusProbe;
+  },
+} satisfies Record<string, () => Promise<CoreJobHandler>>;
+
 export function triggerCronJobAsync(
   jobName: string,
   script: string,
@@ -446,17 +476,23 @@ export function triggerCronJobAsync(
   execution: CronJobExecution = "SCRIPT",
 ): void {
   if (execution === "CORE") {
-    void import("~/lib/cron-notify-api-key-expiry.server")
-      .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
-      .then(({ notified }) =>
-        finishCronRun(
-          runId,
-          leaseOwner,
-          "SUCCESS",
-          `Sent ${notified} API key expiry notification(s)`,
-          0,
-        ),
-      )
+    const resolve = CORE_JOB_HANDLERS[jobName as keyof typeof CORE_JOB_HANDLERS];
+    if (!resolve) {
+      void finishCronRun(
+        runId,
+        leaseOwner,
+        "ERROR",
+        `No CORE handler registered for "${jobName}"`,
+        1,
+      ).catch((cause: unknown) =>
+        console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
+      );
+      return;
+    }
+
+    void resolve()
+      .then((handler) => handler())
+      .then(({ message }) => finishCronRun(runId, leaseOwner, "SUCCESS", message, 0))
       .catch((cause: unknown) =>
         finishCronRun(
           runId,

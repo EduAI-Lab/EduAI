@@ -12,6 +12,11 @@ const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
+const runAiStatusProbeMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/ai/status-probe.server", () => ({
+  runAiStatusProbe: runAiStatusProbeMock,
+}));
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -564,6 +569,35 @@ describe("triggerCronJobAsync", () => {
       if (originalLeaseMs === undefined) delete process.env.CRON_RUN_LEASE_MS;
       else process.env.CRON_RUN_LEASE_MS = originalLeaseMs;
     }
+  });
+});
+
+describe("KNOWN_CRON_JOBS ai-status-probe entry", () => {
+  it("registers ai-status-probe as a CORE job on the configured cadence", () => {
+    const job = KNOWN_CRON_JOBS.find((j) => j.name === "ai-status-probe");
+
+    expect(job).toBeDefined();
+    expect(job?.execution).toBe("CORE");
+    expect(job?.schedule).toBe("*/15 * * * *");
+  });
+});
+
+describe("triggerCronJobAsync CORE handler map", () => {
+  it("dispatches ai-status-probe through the CORE handler map", async () => {
+    runAiStatusProbeMock.mockResolvedValue({ message: "ok" });
+    triggerCronJobAsync("ai-status-probe", "Core handler", "run-1", "owner-1", "CORE");
+
+    await vi.waitFor(() => expect(runAiStatusProbeMock).toHaveBeenCalledOnce());
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it("finishes an unknown CORE job as ERROR instead of holding the lease", async () => {
+    triggerCronJobAsync("does-not-exist", "Core handler", "run-2", "owner-2", "CORE");
+
+    await vi.waitFor(() => expect(mockExecuteRaw).toHaveBeenCalledOnce());
+    const [, status, message] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(status).toBe("ERROR");
+    expect(message).toContain("No CORE handler");
   });
 });
 
