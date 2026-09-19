@@ -48,14 +48,23 @@ export function resolveCoreHeaderTitle(pathname: string, title?: string): string
  * route that needs its own control there too (e.g. the chat page's mobile
  * history toggle) — mirrors the old bespoke SiteHeader's
  * `{actions}{CommandSearchButton}{AIServiceIndicators}{themeToggle}{BugReportSubmitDialog}`
- * order exactly.
+ * order exactly. The AI-service chips (UBC / Cloud) are the one piece that
+ * varies by role: `CoreAppShell` hides them for students, who have no reason
+ * to see backend AI-hosting status.
  */
-export function CoreHeaderActions({ extraActions }: { extraActions?: React.ReactNode }) {
+export function CoreHeaderActions({
+  extraActions,
+  showAiServiceIndicators = true,
+}: {
+  extraActions?: React.ReactNode;
+  /** Hidden for students — the UBC/Cloud AI-service chips are operational chrome, not learner-facing. */
+  showAiServiceIndicators?: boolean;
+}) {
   return (
     <>
       {extraActions}
       <CommandSearchButton eventName={CORE_COMMAND_EVENT} />
-      <AIServiceIndicators />
+      {showAiServiceIndicators ? <AIServiceIndicators /> : null}
       {/* Wrapper carries the dashboard tour's anchor — ThemeToggle itself only
           accepts `className`, so this follows the same pattern as
           AIServiceIndicators' own `data-tour` wrapper span. */}
@@ -126,7 +135,12 @@ export function CoreAppShell({
         sidebar={sidebar}
         title={resolvedTitle}
         breadcrumbs={breadcrumbs}
-        headerActions={<CoreHeaderActions extraActions={actions} />}
+        headerActions={
+          <CoreHeaderActions
+            extraActions={actions}
+            showAiServiceIndicators={user.role !== "STUDENT"}
+          />
+        }
         commandPalette={
           <>
             <CommandPalette user={user} />
