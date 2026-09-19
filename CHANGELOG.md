@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.18
+
+- Fix a failed chat turn showing a student nothing at all. `/api/chat` failing left the composer returning to its idle **Send** state with no error, no explanation and no way to retry — `chat-screen.tsx` never read `useChat`'s `error`, and `onError` only logged plus fired a toast that auto-dismissed carrying the raw rejection string. A failed turn now renders an inline banner in the conversation, where the missing reply would have been, with copy specific to what the student can do about it: wait (rate limit, naming the seconds), it is not your question (any provider failure, with the provider diagnostic withheld), or check your connection (network). **Try again** re-sends the question without retyping it. Cancelling a turn with **Stop** deliberately shows nothing. Closes #1510. (@Ayyhab, 2026-09-18) — [#1788](https://github.com/EduAI-Lab/EduAI/pull/1788)
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
