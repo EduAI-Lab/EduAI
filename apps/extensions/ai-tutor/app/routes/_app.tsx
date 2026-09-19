@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
+  AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
   Button,
@@ -9,6 +10,7 @@ import {
   ThemeToggle,
   useAiServiceStatus,
   type BugReportSubmitData,
+  type HistoryPayload,
 } from "@eduai/ui";
 import {
   IconBooks,
@@ -80,10 +82,41 @@ function AppLayoutInner() {
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
   const { captureScreenshot, getCapturedData, context } = useBugReport();
-  const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
+  // 300s, not the hook's 60s default: the underlying value only changes when
+  // the cron probe runs (roughly every 15 minutes), so polling every minute is
+  // pure waste — Core already sets this explicitly for the same reason.
+  const aiStatus = useAiServiceStatus({
+    fetcher: (signal) => api.aiStatus(signal),
+    intervalMs: 300_000,
+  });
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [aiHistory, setAiHistory] = useState<HistoryPayload | null>(null);
+  const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
+  const [aiHistoryError, setAiHistoryError] = useState<string | null>(null);
+  const [aiHistoryOpened, setAiHistoryOpened] = useState(false);
   const routeCourseId = getRouteCourseId(matches);
   const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
+
+  const loadAiHistory = useCallback(async () => {
+    setAiHistoryLoading(true);
+    setAiHistoryError(null);
+    try {
+      setAiHistory(await api.aiStatusHistory());
+    } catch {
+      // Keep the last payload; a single transient failure must not blank the panel.
+      setAiHistoryError("Could not load status history.");
+    } finally {
+      setAiHistoryLoading(false);
+    }
+  }, []);
+
+  // Fetch once on first open, then only on explicit refresh. The chip pair has
+  // no open-state prop to key off (a shared-component gap, tracked centrally),
+  // so — same as Core's `ai-service-indicators.tsx` — we track "opened" via an
+  // onClick on the chip-pair wrapper below.
+  useEffect(() => {
+    if (aiHistoryOpened && aiHistory === null && !aiHistoryLoading) void loadAiHistory();
+  }, [aiHistoryOpened, aiHistory, aiHistoryLoading, loadAiHistory]);
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -160,12 +193,27 @@ function AppLayoutInner() {
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
-          <AIServiceIndicators
-            cloud={aiStatus.cloud}
-            cloudLabel="Managed cloud AI"
-            ubc={aiStatus.ubc}
-            onRefresh={aiStatus.refresh}
-          />
+          <span onClick={() => setAiHistoryOpened(true)}>
+            <AIServiceIndicators
+              cloud={aiStatus.cloud}
+              cloudLabel="Managed cloud AI"
+              ubc={aiStatus.ubc}
+              ubcHistory={
+                <AIServiceHistoryPanel
+                  data={aiHistory}
+                  loading={aiHistoryLoading}
+                  error={aiHistoryError}
+                  stale={aiStatus.stale}
+                  checkedAt={aiStatus.checkedAt}
+                  onRefresh={() => {
+                    aiStatus.refresh();
+                    void loadAiHistory();
+                  }}
+                />
+              }
+              onRefresh={aiStatus.refresh}
+            />
+          </span>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>
             <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />

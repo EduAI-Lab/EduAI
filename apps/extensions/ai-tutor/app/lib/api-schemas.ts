@@ -112,8 +112,42 @@ export const aiStatusSchema = z
   .object({
     cloud: serviceStatusSchema,
     ubc: serviceStatusSchema,
+    checkedAt: z.string().nullable().optional(),
+    stale: z.boolean().optional(),
   })
   .passthrough() satisfies z.ZodType<AiServiceStatusPair>;
+
+/**
+ * 72-hour AI status history (Core's `/api/ai-status/history`), proxied
+ * verbatim. `state: null` on a bucket means "no data", distinct from any
+ * named state — see `@eduai/ui`'s `AIServiceHistoryPanel`.
+ */
+export const aiStatusHistorySchema = z.object({
+  windowHours: z.number(),
+  bucketMinutes: z.number(),
+  generatedAt: z.string(),
+  servers: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      waiting: z.number().nullable(),
+      cacheUsage: z.number().nullable(),
+      models: z.array(
+        z.object({
+          key: z.string(),
+          label: z.string(),
+          uptimePct: z.number(),
+          buckets: z.array(
+            z.object({
+              t: z.string(),
+              state: z.enum(["operational", "degraded", "outage", "unknown"]).nullable(),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
 
 const progressSchema = z
   .object({

@@ -114,9 +114,10 @@ export async function createApp(options = {}) {
   // /admin/settings/* or /admin/users* (system config / user management).
   app.use("/api", (req, res, next) => {
     if (req.path === "/health") return next();
-    // AI-service status is available to every authenticated role (incl. admins),
-    // so exempt it from the admin-only path isolation below.
-    if (req.path === "/ai-status") return next();
+    // AI-service status (and its 72h history) is available to every
+    // authenticated role (incl. admins), so exempt both from the admin-only
+    // path isolation below.
+    if (req.path === "/ai-status" || req.path === "/ai-status/history") return next();
     if (!req.user) return next();
     if (req.user.role === "ADMIN") {
       if (isAllowedAdminPath(req.path)) return next();
