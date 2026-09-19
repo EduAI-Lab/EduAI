@@ -24,6 +24,13 @@ export interface CourseMaterial {
    * already present on the course (#949) — points at the material that won.
    */
   duplicateOfId?: string | null;
+  /**
+   * Present only on FAILED rows (#1749): whether the extracted text survived
+   * on the server, which is what decides if indexing can be retried without
+   * the instructor uploading the file again. The text itself never reaches
+   * the client — the list resolves this server-side.
+   */
+  hasExtractedText?: boolean;
 }
 
 /**
@@ -112,6 +119,23 @@ export function useCourseMaterials(courseId: string) {
     async (materialId: string): Promise<void> => {
       const res = await fetch(`/api/courses/${courseId}/materials/${materialId}`, {
         method: "DELETE",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await fetchMaterials();
+    },
+    [courseId, fetchMaterials],
+  );
+
+  /**
+   * Retry a failed material's indexing from the text already on the server
+   * (#1749). The endpoint answers 202 and returns the row to PROCESSING, so
+   * the list's existing processing poll reports the outcome — same shape as
+   * an upload, and no file is sent.
+   */
+  const reprocessMaterial = useCallback(
+    async (materialId: string): Promise<void> => {
+      const res = await fetch(`/api/courses/${courseId}/materials/${materialId}/reprocess`, {
+        method: "POST",
       });
       if (!res.ok) throw new Error(await res.text());
       await fetchMaterials();
@@ -241,6 +265,7 @@ export function useCourseMaterials(courseId: string) {
     loadMore,
     uploadMaterial,
     deleteMaterial,
+    reprocessMaterial,
     refetch: fetchMaterials,
   };
 }

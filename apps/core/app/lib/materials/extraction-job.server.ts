@@ -492,6 +492,57 @@ export function startMaterialExtraction(
 }
 
 /**
+ * Re-run embedding for a material whose text is already extracted, without the
+ * instructor re-uploading anything (#1749).
+ *
+ * Only the embedding half is repeated. `runMaterialExtraction` writes `rawText`
+ * before it embeds, so a row that failed at the embedding step still holds
+ * everything this needs; a row that failed at extraction does not, and its
+ * upload blob is gone (`failMaterial` discards it), which is why the caller
+ * rejects that case instead of reaching here.
+ *
+ * Safe to repeat: `processMaterialEmbeddings` runs with `replace: true`, so a
+ * retry that lands on top of a partially-written chunk set replaces it rather
+ * than appending a second copy — the same reasoning that makes the sweeper's
+ * resumed extractions idempotent.
+ */
+async function runMaterialReembed(
+  materialId: string,
+  rawText: string,
+  requestContext: RequestContext,
+): Promise<void> {
+  try {
+    await processMaterialEmbeddings(materialId, rawText, { replace: true });
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
+    });
+  } catch (embeddingError) {
+    // Straight back to the same terminal state the first attempt reached, so a
+    // retry that fails again is indistinguishable from never having retried —
+    // no half-state for the list poll to get stuck on.
+    await failMaterial(
+      materialId,
+      "MATERIAL_EMBED_FAILED",
+      "Material embedding failed during an instructor-requested retry",
+      embeddingError,
+      requestContext,
+    );
+  }
+}
+
+/** Fire-and-forget entry point for the retry, mirroring startMaterialExtraction. */
+export function startMaterialReembed(
+  materialId: string,
+  rawText: string,
+  requestContext: RequestContext,
+): void {
+  void runMaterialReembed(materialId, rawText, requestContext).catch((cause: unknown) => {
+    console.error("Material re-embed job crashed:", cause);
+  });
+}
+
+/**
  * Resume every upload whose worker died: PROCESSING rows with an expired lease
  * and persisted bytes to re-run from.
  *

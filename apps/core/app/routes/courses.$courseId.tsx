@@ -136,6 +136,7 @@ export default function CourseDetailPage() {
     materials,
     uploadMaterial,
     deleteMaterial,
+    reprocessMaterial,
     hasMore: hasMoreMaterials,
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
@@ -299,6 +300,7 @@ export default function CourseDetailPage() {
               onRemoveTA={removeTA}
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
+              onReprocessMaterial={reprocessMaterial}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={
