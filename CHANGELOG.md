@@ -6,7 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.18
 
-- [core] test: Pin the course-material path for every type the upload picker advertises (`.pdf`, `.docx`, `.pptx`, `.txt`, `.md`): each extracts a planted phrase into a RAG `**Source**` header naming the file, empty retrieval uses `EMPTY_COURSE_RAG_INSTRUCTION` instead of world knowledge, and `findRelevantContent` keeps filtering by `courseId`. Export `ACCEPTED` so the picker list cannot drift from those tested types. Complements #1123. Closes #1785. (@Ayyhab, 2026-09-18) — #PR
+- [core] test: Pin the course-material path for every type the upload picker advertises (`.pdf`, `.docx`, `.pptx`, `.txt`, `.md`): each extracts a planted phrase into a RAG `**Source**` header naming the file, empty retrieval uses `EMPTY_COURSE_RAG_INSTRUCTION` instead of world knowledge, and `findRelevantContent` keeps filtering by `courseId`. Export `ACCEPTED` so the picker list cannot drift from those tested types. Complements #1123. Closes #1785. (@Ayyhab, 2026-09-18) — [#1798](https://github.com/EduAI-Lab/EduAI/pull/1798)
 
 ## 2026.09.16
 
