@@ -50,6 +50,10 @@ describe("AIServiceHistoryPanel", () => {
 
     expect(bars[0].getAttribute("data-bucket-state")).toBe("operational");
     expect(bars[1].getAttribute("data-bucket-state")).toBe("none");
+    // The attribute alone is a weak proxy: assert the actual rendered class
+    // differs too, so a collapsed color palette can't hide behind matching
+    // data attributes and silently paint a gap the same as healthy.
+    expect(bars[0].className).not.toBe(bars[1].className);
   });
 
   it("shows a stale banner when the data is stale", () => {

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AIServiceIndicators, isServiceActive } from "../ai-service-indicators";
@@ -41,6 +41,52 @@ describe("AIServiceIndicators", () => {
     );
     screen.getByLabelText("Cloud AI: Operational").click();
     expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the ubcHistory popover when the UBC chip is clicked", () => {
+    const onRefresh = vi.fn();
+    render(
+      <AIServiceIndicators
+        cloud={{ state: "operational" }}
+        ubc={{ state: "operational" }}
+        ubcHistory={<div>UBC history panel content</div>}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    const chip = screen.getByLabelText("UBC-hosted AI: Operational");
+    // The chip itself must BE the popover trigger. Asserting only that the panel
+    // appears is not enough: a chip that merely forwards an onClick prop will do
+    // that while dropping the trigger's ref (so the popper has no anchor) and all
+    // of its ARIA wiring.
+    expect(chip).toHaveAttribute("aria-haspopup", "dialog");
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("UBC history panel content")).not.toBeInTheDocument();
+
+    fireEvent.click(chip);
+
+    const panel = screen.getByText("UBC history panel content");
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toContainElement(panel);
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    expect(chip).toHaveAttribute("aria-controls", dialog.id);
+    // The popover replaces the refresh click for this chip.
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it("still shows the UBC tooltip while the history popover is wired up", () => {
+    render(
+      <AIServiceIndicators
+        cloud={{ state: "operational" }}
+        ubc={{ state: "degraded", detail: "UBC-hosted inference under heavy load." }}
+        ubcHistory={<div>UBC history panel content</div>}
+      />,
+    );
+
+    const chip = screen.getByLabelText("UBC-hosted AI: Degraded");
+    expect(screen.queryByText("UBC-hosted inference under heavy load.")).not.toBeInTheDocument();
+    fireEvent.focus(chip);
+    expect(screen.getAllByText("UBC-hosted inference under heavy load.").length).toBeGreaterThan(0);
   });
 
   it("treats operational and degraded as active, others as inactive", () => {

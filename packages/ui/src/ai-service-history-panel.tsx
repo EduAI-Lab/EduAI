@@ -157,7 +157,12 @@ export function AIServiceHistoryPanel({
       {error ? (
         <div className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1 text-xs">
           <span className="text-muted-foreground">{error}</span>
-          <button type="button" onClick={onRefresh} className="underline">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={!onRefresh}
+            className="underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+          >
             Retry
           </button>
         </div>

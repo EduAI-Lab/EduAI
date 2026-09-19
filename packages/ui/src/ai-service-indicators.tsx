@@ -70,18 +70,23 @@ const STATE_WORD = {
   unknown: "Unknown",
 } satisfies Record<ServiceState, string>;
 
+/**
+ * `buttonProps` (and `ref`) land on the real <button>, not on the Tooltip root.
+ * That matters when a Chip is used as a `PopoverTrigger asChild` child: Radix
+ * clones its ref and ARIA props onto this element, and the local `Tooltip` is a
+ * context-only provider that renders no DOM and would silently drop them.
+ */
 function Chip({
   label,
   status,
   active,
-  onClick,
+  className,
   children,
-}: {
+  ...buttonProps
+}: Omit<React.ComponentProps<"button">, "aria-label"> & {
   label: string;
   status: ServiceStatus;
   active: boolean;
-  onClick?: () => void;
-  children: React.ReactNode;
 }) {
   const tip = status.detail ?? `${label} · ${STATE_WORD[status.state]}`;
   return (
@@ -89,11 +94,12 @@ function Chip({
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={onClick}
+          {...buttonProps}
           aria-label={`${label}: ${STATE_WORD[status.state]}`}
           className={cn(
             "relative inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card align-middle shadow-sm transition-colors cursor-pointer hover:bg-muted",
             active ? "text-foreground" : "text-muted-foreground",
+            className,
           )}
         >
           {children}
