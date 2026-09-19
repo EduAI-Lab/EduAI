@@ -29,6 +29,7 @@ import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { materialFailure } from "~/lib/materials/failure-messages";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -145,6 +146,14 @@ export default function CourseDetailPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null);
+  /**
+   * The file behind the current error, kept so "Try again" can re-run the same
+   * upload (#1791). Most material failures are transient — a rate-limited
+   * embedding provider, a momentarily saturated PDF worker — and before this the
+   * only way to retry was to find the file again in a picker, which is also
+   * where the old "already exists" dead end started.
+   */
+  const [retryableUpload, setRetryableUpload] = useState<File | null>(null);
 
   const handleAssignInstructor = useCallback(
     async (instructorId: string) => {
@@ -190,42 +199,63 @@ export default function CourseDetailPage() {
     availableAt: m.availableAt ?? null,
   }));
 
-  const handleFileSelect = async (file: File) => {
-    setIsUploading(true);
-    setMaterialsError(null);
-    setMaterialsSuccess(null);
-    try {
-      // The upload endpoint returns 202 and processes in the background (#949),
-      // so the outcome arrives from polling rather than from the POST status.
-      const outcome = await uploadMaterial(file);
-      switch (outcome.status) {
-        case "ready":
-          setMaterialsSuccess("Material uploaded and processed successfully");
-          break;
-        case "duplicate": {
-          const existing = materials.find((m) => m.id === outcome.duplicateOfId);
-          setMaterialsError(
-            existing
-              ? `"${existing.title}" already contains identical content — nothing was added`
-              : "A file with identical content already exists in this course",
-          );
-          break;
+  const handleFileSelect = useCallback(
+    async (file: File) => {
+      setIsUploading(true);
+      setMaterialsError(null);
+      setMaterialsSuccess(null);
+      setRetryableUpload(null);
+      try {
+        // The upload endpoint returns 202 and processes in the background (#949),
+        // so the outcome arrives from polling rather than from the POST status.
+        const outcome = await uploadMaterial(file);
+        switch (outcome.status) {
+          case "ready":
+            setMaterialsSuccess("Material uploaded and processed successfully");
+            break;
+          case "restored":
+            // #1791: this upload is why the material is on the course, so it is
+            // reported as a success. Saying "already exists" here is what made
+            // a successful retry look like another refusal.
+            setMaterialsSuccess("Material processed successfully and is ready to use");
+            break;
+          case "duplicate": {
+            const existing = materials.find((m) => m.id === outcome.duplicateOfId);
+            setMaterialsError(
+              existing
+                ? `"${existing.title}" already contains identical content — nothing was added`
+                : "A file with identical content already exists in this course",
+            );
+            break;
+          }
+          case "failed": {
+            // #1791: name the actual failure. The reason used to reach only the
+            // server logs, so "rate limited, try again shortly" and "this file
+            // cannot be read" were the same sentence to an instructor.
+            const failure = materialFailure(outcome.failureCode);
+            setMaterialsError(failure.message);
+            if (failure.retryable) setRetryableUpload(file);
+            break;
+          }
+          case "processing":
+            setMaterialsSuccess(
+              "Upload accepted. Processing is taking a while — the list will update when it finishes.",
+            );
+            break;
         }
-        case "failed":
-          setMaterialsError("Processing failed for this file. Please try again.");
-          break;
-        case "processing":
-          setMaterialsSuccess(
-            "Upload accepted. Processing is taking a while — the list will update when it finishes.",
-          );
-          break;
+      } catch (e) {
+        setMaterialsError(e instanceof Error ? e.message : "Upload failed");
+        setRetryableUpload(file);
+      } finally {
+        setIsUploading(false);
       }
-    } catch (e) {
-      setMaterialsError(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setIsUploading(false);
-    }
-  };
+    },
+    [uploadMaterial, materials],
+  );
+
+  const handleRetryUpload = useCallback(() => {
+    if (retryableUpload) void handleFileSelect(retryableUpload);
+  }, [retryableUpload, handleFileSelect]);
 
   return (
     <CoreAppShell
@@ -283,6 +313,7 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
+              onMaterialsRetry={retryableUpload ? handleRetryUpload : null}
               onFileSelect={handleFileSelect}
               onCreateTopic={async (name) => {
                 await createTopic(name);
@@ -319,6 +350,7 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
+              onMaterialsRetry={retryableUpload ? handleRetryUpload : null}
               onFileSelect={handleFileSelect}
               courseId={course.id}
               currentUserId={user.id}
@@ -344,6 +376,7 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
+              onMaterialsRetry={retryableUpload ? handleRetryUpload : null}
               onFileSelect={handleFileSelect}
             />
           )}

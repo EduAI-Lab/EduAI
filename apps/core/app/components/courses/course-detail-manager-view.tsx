@@ -106,6 +106,8 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
+  /** Re-run the failed upload (#1791); null when retrying cannot help. */
+  onMaterialsRetry?: (() => void) | null;
   onFileSelect: (file: File) => void;
   onCreateTopic: (name: string) => Promise<void>;
   onDeleteTopic: (id: string) => Promise<void>;
@@ -211,6 +213,7 @@ export function CourseDetailManagerView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
+  onMaterialsRetry = null,
   onFileSelect,
   onCreateTopic,
   onDeleteTopic,
@@ -578,6 +581,7 @@ export function CourseDetailManagerView({
             isUploading={isUploading}
             error={materialsError}
             success={materialsSuccess}
+            onRetry={onMaterialsRetry}
             onFileSelect={onFileSelect}
           />
         </DialogContent>

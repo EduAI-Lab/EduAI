@@ -24,7 +24,28 @@ export interface CourseMaterial {
    * already present on the course (#949) — points at the material that won.
    */
   duplicateOfId?: string | null;
+  /**
+   * Set alongside `duplicateOfId` (#1791): `RESTORED` when this upload revived
+   * the material it points at (a failed or deleted one coming back), `EXISTING`
+   * when that material was already there and nothing was added.
+   */
+  duplicateResolution?: MaterialDuplicateResolution | null;
+  /** Why a FAILED row failed (#1791); null on rows that predate the column. */
+  failureCode?: MaterialFailureCode | null;
 }
+
+/**
+ * Why a material's background processing failed (#1791). Mirrors the Prisma
+ * enum; the UI turns these into sentences in `materialFailureMessage`.
+ */
+export type MaterialFailureCode =
+  | "MATERIAL_EXTRACT_FAILED"
+  | "MATERIAL_EXTRACT_BUSY"
+  | "MATERIAL_EXTRACT_ABANDONED"
+  | "MATERIAL_EMBED_FAILED"
+  | "MATERIAL_EMBED_RATE_LIMITED";
+
+export type MaterialDuplicateResolution = "EXISTING" | "RESTORED";
 
 /**
  * Outcome of an upload once background processing has settled (#949). The POST
@@ -32,16 +53,21 @@ export interface CourseMaterial {
  * polling the materials list until the row leaves PROCESSING.
  *
  * - `ready`      — extracted and embedded, the material is usable.
- * - `duplicate`  — the content already existed; `duplicateOfId` is the winner.
- *                  This replaces the old synchronous 409.
- * - `failed`     — extraction or embedding failed; the row is FAILED.
+ * - `restored`   — this upload revived a material that was failed or deleted
+ *                  (#1791). A success: the content is on the course *because of
+ *                  this upload*, which is why it is not folded into `duplicate`.
+ * - `duplicate`  — the content already existed and nothing was added;
+ *                  `duplicateOfId` is the winner. Replaces the old 409.
+ * - `failed`     — extraction or embedding failed; `failureCode` says which and
+ *                  whether it is worth retrying.
  * - `processing` — still running when the client stopped watching. Not an
  *                  error: the row keeps processing server-side.
  */
 export type UploadOutcome =
   | { status: "ready"; materialId: string }
+  | { status: "restored"; materialId: string; duplicateOfId: string }
   | { status: "duplicate"; materialId: string; duplicateOfId: string }
-  | { status: "failed"; materialId: string }
+  | { status: "failed"; materialId: string; failureCode: MaterialFailureCode | null }
   | { status: "processing"; materialId: string };
 
 /** How often to re-read the list while an upload is still PROCESSING. */
@@ -167,9 +193,16 @@ export function useCourseMaterials(courseId: string) {
   /**
    * Watch a material until it leaves PROCESSING (#949). Uploads are ordered
    * newest-first, so a brand-new row is always on page 1.
+   *
+   * `isReceipt` travels alongside the outcome rather than inside it because it
+   * answers a different question (#1791). The outcome says what the *user* is
+   * told; this says whether the watched row is a bookkeeping receipt pointing at
+   * some other material, and therefore whether to delete it. A failed restore is
+   * both — reported as `failed`, and still a receipt to clean up — so neither
+   * fact can be derived from the other.
    */
   const watchUpload = useCallback(
-    async (materialId: string): Promise<UploadOutcome> => {
+    async (materialId: string): Promise<{ outcome: UploadOutcome; isReceipt: boolean }> => {
       const deadline = Date.now() + UPLOAD_POLL_TIMEOUT_MS;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, UPLOAD_POLL_INTERVAL_MS));
@@ -180,16 +213,33 @@ export function useCourseMaterials(courseId: string) {
           continue; // transient read failure — the row is still processing server-side
         }
         const row = page.materials.find((m) => m.id === materialId);
-        if (!row) return { status: "processing", materialId };
+        if (!row) return { outcome: { status: "processing", materialId }, isReceipt: false };
         mergeMaterial(row);
-        if (row.status === "READY") return { status: "ready", materialId };
+        if (row.status === "READY") {
+          return { outcome: { status: "ready", materialId }, isReceipt: false };
+        }
         if (row.status === "FAILED") {
-          return row.duplicateOfId
-            ? { status: "duplicate", materialId, duplicateOfId: row.duplicateOfId }
-            : { status: "failed", materialId };
+          const failureCode = row.failureCode ?? null;
+          const duplicateOfId = row.duplicateOfId ?? null;
+          const isReceipt = duplicateOfId !== null;
+          // A receipt carrying a reason is a failed restore, not a duplicate
+          // (#1791): the upload pointed at an existing material and tried to
+          // revive it, and that attempt died. Reporting it as "already exists"
+          // is what made a rate-limited upload look permanent.
+          if (duplicateOfId !== null && !failureCode) {
+            return {
+              outcome: {
+                status: row.duplicateResolution === "RESTORED" ? "restored" : "duplicate",
+                materialId,
+                duplicateOfId,
+              },
+              isReceipt,
+            };
+          }
+          return { outcome: { status: "failed", materialId, failureCode }, isReceipt };
         }
       }
-      return { status: "processing", materialId };
+      return { outcome: { status: "processing", materialId }, isReceipt: false };
     },
     [fetchPage, mergeMaterial],
   );
@@ -201,7 +251,10 @@ export function useCourseMaterials(courseId: string) {
    *
    * A duplicate is reported late rather than as a 409. The server leaves a
    * FAILED receipt row pointing at the winner; we read it, then delete it so
-   * repeated attempts don't pile up in the list.
+   * repeated attempts don't pile up in the list. A *failed* restore leaves a
+   * receipt too (#1791) — the material it points at carries the real failure, so
+   * the receipt is cleaned up the same way rather than doubling the failure in
+   * the list.
    */
   const uploadMaterial = useCallback(
     async (file: File): Promise<UploadOutcome> => {
@@ -220,16 +273,20 @@ export function useCourseMaterials(courseId: string) {
 
       const materialId = body.materialId as string;
       await fetchMaterials(); // paint the PROCESSING row right away
-      const outcome = await watchUpload(materialId);
+      const { outcome, isReceipt } = await watchUpload(materialId);
 
-      if (outcome.status === "duplicate") {
+      if (isReceipt) {
         await deleteMaterial(materialId).catch(() => {
           /* receipt cleanup is best-effort; the outcome is already known */
         });
+        // The receipt is gone but the material it pointed at may have just
+        // changed (restored to READY, or failed with a reason), and that row is
+        // not the one we were watching (#1791).
+        await refreshFirstPage();
       }
       return outcome;
     },
-    [courseId, fetchMaterials, watchUpload, deleteMaterial],
+    [courseId, fetchMaterials, watchUpload, deleteMaterial, refreshFirstPage],
   );
 
   return {
