@@ -89,6 +89,8 @@ export function stopCronScheduler(): void {
 export function rescheduleJob(jobName: string, schedule: string | null): void {
   const job = KNOWN_CRON_JOBS.find((j) => j.name === jobName);
   if (!job?.script) return;
+  // See ensureCronSchedulerRunning: CORE jobs are the worker's alone.
+  if (job.execution === "CORE") return;
   scheduleOne(jobName, schedule ?? job.schedule, job.script);
 }
 
@@ -112,6 +114,10 @@ export function ensureCronSchedulerRunning(): Promise<void> {
     const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
     for (const job of KNOWN_CRON_JOBS) {
       if (!job.script) continue; // external extension jobs — skip
+      // CORE handlers run in-process, so only the dedicated worker may schedule
+      // them. A web replica winning the lease here would dispatch the truthy
+      // placeholder script (`bash ./Core handler`) and fail the run.
+      if (job.execution === "CORE") continue;
       try {
         scheduleOne(job.name, overrideMap.get(job.name) ?? job.schedule, job.script);
       } catch (err) {
