@@ -57,6 +57,58 @@ export async function resolveActiveChatModel(
   };
 }
 
+/** One row of the public model list served by `GET /api/models`. */
+export type ListedChatModel = {
+  /** The identifier callers pass as `model`, e.g. `vllm:qwen3.5-2b-instruct`. */
+  id: string;
+  provider: string;
+  name: string;
+  supportsTools: boolean;
+  supportsImages: boolean;
+  maxTokens: number | null;
+};
+
+/**
+ * Every model `/api/chat` and `/api/completion` will currently accept (#1805).
+ *
+ * The `where` clause is deliberately identical to `resolveActiveChatModel`'s:
+ * if the two drifted, this endpoint would advertise a model that the completion
+ * endpoint then rejects with `422 … not active in the Core model catalog`,
+ * which is exactly the confusion it exists to remove.
+ *
+ * Returns only what a caller needs to choose a model. It does not include the
+ * provider row — unlike the admin `/api/ai-models` list — because this endpoint
+ * has a wider audience and should not grow a provider-shaped payload by
+ * default.
+ */
+export async function listActiveChatModels(): Promise<ListedChatModel[]> {
+  const models = await prisma.aIModel.findMany({
+    where: {
+      provider: { isActive: true },
+      type: "CHAT",
+      isActive: true,
+    },
+    select: {
+      modelId: true,
+      name: true,
+      supportsTools: true,
+      supportsImages: true,
+      maxTokens: true,
+      provider: { select: { name: true } },
+    },
+    orderBy: [{ provider: { name: "asc" } }, { modelId: "asc" }],
+  });
+
+  return models.map((model) => ({
+    id: `${model.provider.name}:${model.modelId}`,
+    provider: model.provider.name,
+    name: model.name,
+    supportsTools: model.supportsTools,
+    supportsImages: model.supportsImages,
+    maxTokens: model.maxTokens,
+  }));
+}
+
 /** Total context window (input + output) for budgeting. */
 export function resolveModelContextWindow(
   dbMaxTokens: number | null | undefined,
