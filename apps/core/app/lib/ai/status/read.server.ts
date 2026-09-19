@@ -80,6 +80,26 @@ export async function loadLatestSamples(): Promise<LatestSample[]> {
   });
 }
 
+/**
+ * Fold model rows into one HostProbe per host for the fleet-wide verdict. Pure
+ * and DB-independent: a host counts as reachable if ANY of its model rows is,
+ * and a load value carries forward across the collapse (a row with unknown
+ * load does not blank out a load already seen from another row on that host).
+ */
+export function collapseToHostProbes(samples: LatestSample[]): HostProbe[] {
+  const byHost = new Map<string, HostProbe>();
+  for (const sample of samples) {
+    const existing = byHost.get(sample.serverId);
+    const reachable = sample.reachable || (existing?.reachable ?? false);
+    const load =
+      sample.waiting != null && sample.cacheUsage != null
+        ? { waiting: sample.waiting, cacheUsage: sample.cacheUsage }
+        : (existing?.load ?? null);
+    byHost.set(sample.serverId, { reachable, load });
+  }
+  return [...byHost.values()];
+}
+
 export async function getUbcStatusFromSamples(): Promise<{
   status: ServiceStatus;
   checkedAt: string | null;
@@ -95,11 +115,9 @@ export async function getUbcStatusFromSamples(): Promise<{
     };
   }
 
-  const newest = samples.reduce(
-    (acc, s) => (s.observedAt > acc ? s.observedAt : acc),
-    samples[0].observedAt,
-  );
-  const intervalMinutes = samples[0].intervalMinutes;
+  const newestSample = samples.reduce((acc, s) => (s.observedAt > acc.observedAt ? s : acc));
+  const newest = newestSample.observedAt;
+  const intervalMinutes = newestSample.intervalMinutes;
   const stale = isStale(newest, intervalMinutes);
   const checkedAt = newest.toISOString();
 
@@ -115,20 +133,8 @@ export async function getUbcStatusFromSamples(): Promise<{
     };
   }
 
-  // Collapse model rows to one HostProbe per host for the fleet-wide verdict.
-  const byHost = new Map<string, HostProbe>();
-  for (const sample of samples) {
-    const existing = byHost.get(sample.serverId);
-    const reachable = sample.reachable || (existing?.reachable ?? false);
-    const load =
-      sample.waiting != null && sample.cacheUsage != null
-        ? { waiting: sample.waiting, cacheUsage: sample.cacheUsage }
-        : (existing?.load ?? null);
-    byHost.set(sample.serverId, { reachable, load });
-  }
-
   return {
-    status: aggregateUbcStatus([...byHost.values()], resolveLoadThresholds()),
+    status: aggregateUbcStatus(collapseToHostProbes(samples), resolveLoadThresholds()),
     checkedAt,
     stale: false,
   };
