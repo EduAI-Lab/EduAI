@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.18
+
+- Fail a course-material upload at extraction when the file has no extractable text, instead of reporting it as an embedding failure. An image-only PDF scan, a figures-only DOCX, or a blank `.txt`/`.md` used to extract as `""`, hash to a constant checksum (so the next text-free upload on the course looked like a duplicate), and then throw `No content chunks generated` at embed time. Extraction now rejects those files with an instructor-facing OCR / text-based-version message, and a password-protected PDF names the password requirement instead of logging a bare `Error`. Closes #1781. Same defect as the COSC 111 PDF report (#1787). (@Ayyhab, 2026-09-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
