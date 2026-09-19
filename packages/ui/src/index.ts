@@ -141,6 +141,15 @@ export type {
   ServiceStatus,
   ServiceState,
 } from "./ai-service-indicators";
+export { AIServiceHistoryPanel } from "./ai-service-history-panel";
+export type {
+  AIServiceHistoryPanelProps,
+  HistoryPayload,
+  HistoryServer,
+  HistoryModel,
+  HistoryBucket,
+  HistoryBucketState,
+} from "./ai-service-history-panel";
 export { useAiServiceStatus } from "./hooks/use-ai-service-status";
 export type {
   AiServiceStatusPair,

@@ -19,6 +19,7 @@ import * as React from "react";
 import { IconCloud } from "@tabler/icons-react";
 
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { cn } from "./utils";
 
 export type ServiceState = "operational" | "degraded" | "outage" | "loading" | "unknown";
@@ -41,6 +42,12 @@ export interface AIServiceIndicatorsProps {
   cloud: ServiceStatus;
   ubc: ServiceStatus;
   cloudLabel?: string;
+  /**
+   * When supplied, clicking the UBC chip opens this in a popover instead of
+   * calling onRefresh. onRefresh then applies to the cloud chip only; the panel
+   * carries its own refresh control. Omit it to keep the original behaviour.
+   */
+  ubcHistory?: React.ReactNode;
   /** Called when a chip is clicked — wire to a re-check. Omit for static display. */
   onRefresh?: () => void;
   className?: string;
@@ -108,19 +115,33 @@ export function AIServiceIndicators({
   cloud,
   ubc,
   cloudLabel = "Cloud AI",
+  ubcHistory,
   onRefresh,
   className,
 }: AIServiceIndicatorsProps) {
+  const ubcChip = (
+    <Chip
+      label="UBC-hosted AI"
+      status={ubc}
+      active={isServiceActive(ubc.state)}
+      onClick={ubcHistory ? undefined : onRefresh}
+    >
+      <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
+    </Chip>
+  );
+
   return (
     <div className={cn("inline-flex items-center gap-1", className)}>
-      <Chip
-        label="UBC-hosted AI"
-        status={ubc}
-        active={isServiceActive(ubc.state)}
-        onClick={onRefresh}
-      >
-        <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
-      </Chip>
+      {ubcHistory ? (
+        <Popover>
+          <PopoverTrigger asChild>{ubcChip}</PopoverTrigger>
+          <PopoverContent align="end" className="w-auto p-3">
+            {ubcHistory}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        ubcChip
+      )}
       <Chip
         label={cloudLabel}
         status={cloud}
