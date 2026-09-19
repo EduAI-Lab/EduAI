@@ -6,7 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.18
 
-- Fail a course-material upload at extraction when the file has no extractable text, instead of reporting it as an embedding failure. An image-only PDF scan, a figures-only DOCX, or a blank `.txt`/`.md` used to extract as `""`, hash to a constant checksum (so the next text-free upload on the course looked like a duplicate), and then throw `No content chunks generated` at embed time. Extraction now rejects those files with an instructor-facing OCR / text-based-version message, and a password-protected PDF names the password requirement instead of logging a bare `Error`. Closes #1781. Same defect as the COSC 111 PDF report (#1787). (@Ayyhab, 2026-09-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- Fail a course-material upload at extraction when the file has no extractable text, instead of reporting it as an embedding failure. An image-only PDF scan, a figures-only DOCX, or a blank `.txt`/`.md` used to extract as `""`, hash to a constant checksum (so the next text-free upload on the course looked like a duplicate), and then throw `No content chunks generated` at embed time. Extraction now rejects those files with an instructor-facing OCR / text-based-version message, and a password-protected PDF names the password requirement instead of logging a bare `Error`. Closes #1781. Same defect as the COSC 111 PDF report (#1787). (@Ayyhab, 2026-09-18) — [#1797](https://github.com/EduAI-Lab/EduAI/pull/1797)
 
 ## 2026.09.16
 
