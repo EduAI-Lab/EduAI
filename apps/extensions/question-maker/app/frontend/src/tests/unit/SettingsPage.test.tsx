@@ -17,8 +17,10 @@ const { apiKeyStorage, eduaiService, canvasService, useAuthMock, setThemeMock, t
         setApiKey: vi.fn(async () => ({ storedRemotely: true })),
         removeApiKey: vi.fn(),
         removeProviderSetting: vi.fn(async () => undefined),
+        getValidation: vi.fn(() => ({ valid: null, validatedAt: null, error: null })),
+        setValidation: vi.fn(),
       },
-      eduaiService: { listModels: vi.fn() },
+      eduaiService: { listModels: vi.fn(), testApiKey: vi.fn() },
       canvasService: {
         getIntegration: vi.fn(),
         prefersTestMode: vi.fn(() => false),
@@ -76,7 +78,10 @@ beforeEach(() => {
     logout: vi.fn(),
   });
   apiKeyStorage.getAllApiKeys.mockResolvedValue({});
+  apiKeyStorage.getValidation.mockReturnValue({ valid: null, validatedAt: null, error: null });
+  apiKeyStorage.setValidation.mockReset();
   eduaiService.listModels.mockResolvedValue([]);
+  eduaiService.testApiKey.mockResolvedValue({ success: true, configured: true });
   canvasService.getIntegration.mockResolvedValue({ isConnected: false });
   localStorage.clear();
 });
@@ -119,6 +124,81 @@ describe("SettingsPage", () => {
     );
     await waitFor(() => expect(screen.getByText(/Configured/)).toBeInTheDocument());
     expect(toastFn).toHaveBeenCalledWith("Google AI (Gemini) API key saved");
+  });
+
+  // Task 15: save-time validation replaces the per-poll cloud round-trip.
+  // Saving a key now also runs one testApiKey check and caches the verdict —
+  // these cases are new, not replacements of prior coverage (there was none
+  // before this task, since save previously did not validate at all).
+  it("validates the key once at save time and caches a passing verdict", async () => {
+    apiKeyStorage.getAllApiKeys
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ google: "AIzaSyABCDEFGH1234" });
+    apiKeyStorage.setApiKey.mockResolvedValue({ storedRemotely: true });
+    eduaiService.testApiKey.mockResolvedValue({ success: true, configured: true });
+    apiKeyStorage.getValidation
+      .mockReturnValueOnce({ valid: null, validatedAt: null, error: null }) // initial refreshKeys
+      .mockReturnValue({
+        valid: true,
+        validatedAt: "2026-09-19T00:00:00.000Z",
+        error: null,
+      });
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByText("Google AI (Gemini)")).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText("AIza-..."), {
+      target: { value: "AIzaSyABCDEFGH1234" },
+    });
+    fireEvent.click(screen.getAllByText("Save")[0]);
+
+    await waitFor(() =>
+      expect(eduaiService.testApiKey).toHaveBeenCalledWith({
+        google: { apiKey: "AIzaSyABCDEFGH1234", isEnabled: true },
+      }),
+    );
+    await waitFor(() =>
+      expect(apiKeyStorage.setValidation).toHaveBeenCalledWith(
+        "google",
+        expect.objectContaining({ valid: true, error: null }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText(/Valid — checked when saved/)).toBeInTheDocument());
+  });
+
+  it("caches and renders a rejected verdict with the server's reason", async () => {
+    apiKeyStorage.getAllApiKeys
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ openai: "sk-bad" });
+    apiKeyStorage.setApiKey.mockResolvedValue({ storedRemotely: true });
+    eduaiService.testApiKey.mockResolvedValue({
+      success: false,
+      error: "Invalid API key",
+      configured: true,
+      statusCode: 401,
+    });
+    apiKeyStorage.getValidation
+      .mockReturnValueOnce({ valid: null, validatedAt: null, error: null })
+      .mockReturnValue({
+        valid: false,
+        validatedAt: "2026-09-19T00:00:00.000Z",
+        error: "Invalid API key",
+      });
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByText("OpenAI")).toBeInTheDocument());
+    // "sk-..." is also DeepSeek's placeholder; OpenAI is first in KEY_PROVIDERS order.
+    fireEvent.change(screen.getAllByPlaceholderText("sk-...")[0], {
+      target: { value: "sk-bad" },
+    });
+    fireEvent.click(screen.getAllByText("Save")[1]);
+
+    await waitFor(() =>
+      expect(apiKeyStorage.setValidation).toHaveBeenCalledWith(
+        "openai",
+        expect.objectContaining({ valid: false, error: "Invalid API key" }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText("Invalid API key")).toBeInTheDocument());
   });
 
   it("removes an existing API key", async () => {

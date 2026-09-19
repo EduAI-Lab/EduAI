@@ -14,6 +14,7 @@ const navigate = vi.fn();
 const startTour = vi.fn();
 const logout = vi.fn();
 const refresh = vi.fn();
+const revalidateCloud = vi.fn().mockResolvedValue(undefined);
 const openBugReport = vi.fn();
 let bugReportValue: { openBugReport: () => void } | null = { openBugReport };
 let coursesValue: any[] = [];
@@ -117,6 +118,7 @@ vi.mock("@/hooks/useCourses", () => ({
 
 vi.mock("@/hooks/useAiServicesStatus", () => ({
   useAiServicesStatus: () => ({ cloud: { state: "online" }, ubc: { state: "online" }, refresh }),
+  revalidateCloud: (...args: unknown[]) => revalidateCloud(...args),
 }));
 
 vi.mock("@/contexts/GuidedTourContext", () => ({
@@ -276,10 +278,14 @@ describe("QmAppLayout", () => {
     expect(screen.queryByLabelText("Report a bug")).toBeNull();
   });
 
-  it("refreshing AI status calls refresh()", () => {
+  // Task 15: clicking the cloud chip now re-validates the key on demand
+  // first (revalidateCloud), then refreshes so the chip picks up the fresh
+  // cached verdict — it no longer just calls refresh() directly.
+  it("clicking the cloud chip revalidates the key, then refreshes", async () => {
     render(<QmAppLayout />);
     fireEvent.click(screen.getByTestId("ai-indicators"));
-    expect(refresh).toHaveBeenCalled();
+    expect(revalidateCloud).toHaveBeenCalled();
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
   it("fetches AI status history on first open of the UBC panel, not before", async () => {

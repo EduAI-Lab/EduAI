@@ -1,25 +1,34 @@
 /**
- * Unit coverage for QM's dual-status hook (#764, #1551).
+ * Unit coverage for QM's dual-status hook (#764, #1551, task 15).
  *
  * The shared `@eduai/ui` polling loop is mocked so these tests drive QM's
- * fetcher directly. As of task 14, only the CLOUD chip runs a live per-user
- * probe (`eduaiService.testApiKey` with the caller's own key) — the UBC chip
- * now reads Core's shared fleet-status snapshot via QM's own
- * `GET /api/eduai/ai-status` proxy (`eduaiService.getAiStatus`), matching
- * Core and AI Tutor. QM's old live UBC probe (`testApiKey({ forceProvider:
- * 'vllm' })`) has been deleted, so this file no longer tests that path —
- * those cases are replaced below with the proxy-passthrough and 401
- * "sign in" cases the new contract requires (see task-14-report.md for the
- * full before/after mapping).
+ * fetcher directly.
+ *
+ * As of task 15, the CLOUD chip no longer runs a live per-user probe on every
+ * poll — it derives its state synchronously from the cached save-time verdict
+ * (`apiKeyStorage.getValidation`), which `SettingsPage` writes when a key is
+ * saved and `eduaiService.generateQuestions` invalidates on a live provider
+ * 401/403. The old cases that exercised a live `testApiKey` round-trip inside
+ * the poll fetcher (`reports cloud operational when the saved key validates`,
+ * `probes only the configured provider`, `reports cloud outage when
+ * validation returns an error`, `reports cloud outage when the probe throws`,
+ * `forwards the poll's AbortSignal to the cloud probe`) are replaced below
+ * with cases against the cached-verdict contract — the four required states
+ * (valid → operational, invalid → outage with the provider's reason, never
+ * validated + a key → unknown, no key → outage) — plus new coverage for
+ * `revalidateCloud`, the on-demand re-check the cloud chip's click now runs
+ * instead. The UBC-side cases are unchanged from task 14 (Core's shared
+ * snapshot via the QM proxy) and are not touched here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
 import type { AiServiceStatusPair } from "@eduai/ui";
-import type { ProviderApiKeys } from "@/services/apiKeyStorage";
 
 const testApiKey = vi.fn();
 const getAiStatus = vi.fn();
 const getAllApiKeys = vi.fn();
+const getValidation = vi.fn();
+const setValidation = vi.fn();
 const isCloudProvider = vi.fn();
 const isCampusProvider = vi.fn();
 
@@ -31,7 +40,11 @@ vi.mock("@/services/eduaiService", () => ({
 }));
 
 vi.mock("@/services/apiKeyStorage", () => ({
-  apiKeyStorage: { getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args) },
+  apiKeyStorage: {
+    getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args),
+    getValidation: (...args: unknown[]) => getValidation(...args),
+    setValidation: (...args: unknown[]) => setValidation(...args),
+  },
   CLOUD_PROVIDERS: ["google", "openai", "deepseek", "anthropic", "opencode"],
   isCloudProvider: (...args: unknown[]) => isCloudProvider(...args),
   isCampusProvider: (...args: unknown[]) => isCampusProvider(...args),
@@ -56,7 +69,7 @@ vi.mock("@eduai/ui", () => ({
   },
 }));
 
-import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import { useAiServicesStatus, revalidateCloud } from "@/hooks/useAiServicesStatus";
 
 /** Mount the hook and return the fetcher it registered with the shared loop. */
 function mountAndGetFetcher() {
@@ -75,6 +88,8 @@ describe("useAiServicesStatus", () => {
       stale: false,
     });
     getAllApiKeys.mockReset().mockResolvedValue({});
+    getValidation.mockReset().mockReturnValue({ valid: null, validatedAt: null, error: null });
+    setValidation.mockReset();
     isCloudProvider.mockReset().mockReturnValue(false);
     isCampusProvider.mockReset().mockReturnValue(false);
     capturedFetcher = undefined;
@@ -91,7 +106,7 @@ describe("useAiServicesStatus", () => {
     expect(capturedIntervalMs).toBe(300_000);
   });
 
-  describe("cloud probe (unchanged — still a live per-user key check)", () => {
+  describe("cloud status (task 15 — synchronous read of the cached verdict, no poll-time network call)", () => {
     it("reports cloud outage when no provider key is saved", async () => {
       getAllApiKeys.mockResolvedValue({});
       const fetcher = mountAndGetFetcher();
@@ -100,6 +115,7 @@ describe("useAiServicesStatus", () => {
 
       expect(cloud.state).toBe("outage");
       expect(cloud.detail).toMatch(/not configured/i);
+      expect(testApiKey).not.toHaveBeenCalled();
     });
 
     it("treats unreadable apiKeyStorage as no key configured", async () => {
@@ -112,73 +128,135 @@ describe("useAiServicesStatus", () => {
       expect(cloud.detail).toMatch(/not configured/i);
     });
 
-    it("reports cloud operational when the saved key validates as a cloud provider", async () => {
+    it("reports operational with the cached 'checked when saved' detail when the verdict is valid", async () => {
       getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
       isCloudProvider.mockReturnValue(true);
-      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+      getValidation.mockReturnValue({
+        valid: true,
+        validatedAt: new Date().toISOString(),
+        error: null,
+      });
       const fetcher = mountAndGetFetcher();
 
       const { cloud } = await fetcher(new AbortController().signal);
 
       expect(cloud.state).toBe("operational");
-      expect(cloud.detail).toMatch(/online/i);
+      expect(cloud.detail).toMatch(/valid — checked when saved/i);
+      expect(testApiKey).not.toHaveBeenCalled();
     });
 
-    it("probes only the configured provider when several cloud keys are saved", async () => {
+    it("reports outage with the provider's own reason when the cached verdict is invalid", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-bad" });
+      isCloudProvider.mockReturnValue(true);
+      getValidation.mockReturnValue({
+        valid: false,
+        validatedAt: new Date().toISOString(),
+        error: "Invalid API key",
+      });
+      const fetcher = mountAndGetFetcher();
+
+      const { cloud } = await fetcher(new AbortController().signal);
+
+      expect(cloud.state).toBe("outage");
+      expect(cloud.detail).toContain("Invalid API key");
+    });
+
+    it("reports 'unknown' (not operational) for a key that has never been validated", async () => {
+      // A key saved before task 15 shipped, or one whose validation write
+      // failed, has no earned verdict — rendering it green would reintroduce
+      // the exact lie this task removes.
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      isCloudProvider.mockReturnValue(true);
+      getValidation.mockReturnValue({ valid: null, validatedAt: null, error: null });
+      const fetcher = mountAndGetFetcher();
+
+      const { cloud } = await fetcher(new AbortController().signal);
+
+      expect(cloud.state).toBe("unknown");
+      expect(cloud.detail).toMatch(/not yet verified/i);
+    });
+
+    it("probes only the configured provider's verdict when several cloud keys are saved", async () => {
       localStorage.setItem("qm:default-model", "openai:gpt-4o-mini");
       getAllApiKeys.mockResolvedValue({ google: "google-key", openai: "openai-key" });
       isCloudProvider.mockImplementation((provider) => provider === "openai");
-      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+      getValidation.mockReturnValue({ valid: true, validatedAt: null, error: null });
       const fetcher = mountAndGetFetcher();
 
-      const { cloud } = await fetcher(new AbortController().signal);
+      await fetcher(new AbortController().signal);
 
-      expect(cloud.state).toBe("operational");
-      expect(testApiKey).toHaveBeenCalledTimes(1);
-      expect(testApiKey.mock.calls[0]?.[0]).toEqual({
-        openai: { apiKey: "openai-key", isEnabled: true },
-      });
+      expect(getValidation).toHaveBeenCalledWith("openai");
+      expect(getValidation).not.toHaveBeenCalledWith("google");
+    });
+  });
+
+  describe("revalidateCloud (task 15 — the cloud chip's on-demand re-check)", () => {
+    it("does nothing when no cloud key is saved", async () => {
+      getAllApiKeys.mockResolvedValue({});
+      await revalidateCloud();
+      expect(testApiKey).not.toHaveBeenCalled();
+      expect(setValidation).not.toHaveBeenCalled();
     });
 
-    it("reports cloud outage when validation returns an error", async () => {
-      getAllApiKeys.mockResolvedValue({ openai: "sk-bad" });
-      testApiKey.mockResolvedValue({ success: false, error: "bad key" });
-      const fetcher = mountAndGetFetcher();
-
-      const { cloud } = await fetcher(new AbortController().signal);
-
-      expect(cloud.state).toBe("outage");
-      expect(cloud.detail).toContain("bad key");
-    });
-
-    it("reports cloud outage when the probe throws (network down)", async () => {
+    it("runs the live check and caches a passing verdict", async () => {
       getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-      testApiKey.mockRejectedValue(new Error("ECONNREFUSED"));
-      const fetcher = mountAndGetFetcher();
-
-      const { cloud } = await fetcher(new AbortController().signal);
-
-      expect(cloud.state).toBe("outage");
-      expect(cloud.detail).toMatch(/unreachable/i);
-    });
-
-    it("forwards the poll's AbortSignal to the cloud probe (cancellation contract)", async () => {
-      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
       isCloudProvider.mockReturnValue(true);
-      const fetcher = mountAndGetFetcher();
+      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+
+      await revalidateCloud();
+
+      expect(testApiKey).toHaveBeenCalledWith(
+        { openai: { apiKey: "sk-x", isEnabled: true } },
+        expect.objectContaining({ signal: undefined }),
+      );
+      expect(setValidation).toHaveBeenCalledWith(
+        "openai",
+        expect.objectContaining({ valid: true, error: null }),
+      );
+    });
+
+    it("caches a failing verdict with the server's reason", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-bad" });
+      isCloudProvider.mockReturnValue(true);
+      testApiKey.mockResolvedValue({ success: false, error: "Invalid API key" });
+
+      await revalidateCloud();
+
+      expect(setValidation).toHaveBeenCalledWith(
+        "openai",
+        expect.objectContaining({ valid: false, error: "Invalid API key" }),
+      );
+    });
+
+    it("caches a failing verdict when the round-trip itself throws (network down)", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      isCloudProvider.mockReturnValue(true);
+      testApiKey.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      await revalidateCloud();
+
+      expect(setValidation).toHaveBeenCalledWith(
+        "openai",
+        expect.objectContaining({ valid: false }),
+      );
+    });
+
+    it("forwards the caller's AbortSignal to the live check", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      isCloudProvider.mockReturnValue(true);
+      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
       const signal = new AbortController().signal;
 
-      await fetcher(signal);
+      await revalidateCloud(signal);
 
       expect(testApiKey.mock.calls[0]?.[1]?.signal).toBe(signal);
     });
   });
 
-  describe("UBC status (new — read from Core's shared snapshot via the QM proxy)", () => {
+  describe("UBC status (read from Core's shared snapshot via the QM proxy — unchanged since task 14)", () => {
     it("passes through the proxy's ubc/checkedAt/stale verbatim on success", async () => {
       getAiStatus.mockResolvedValue({
-        cloud: { state: "outage" }, // proxy's own cloud field is ignored — QM keeps its live probe
+        cloud: { state: "outage" }, // proxy's own cloud field is ignored — QM keeps its own cache
         ubc: { state: "operational", detail: "UBC-hosted AI · Online." },
         checkedAt: "2026-09-19T01:23:00.000Z",
         stale: false,
@@ -225,7 +303,6 @@ describe("useAiServicesStatus", () => {
 
     it("never calls the deleted UBC live probe (forceProvider: 'vllm')", async () => {
       getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
       isCloudProvider.mockReturnValue(true);
       const fetcher = mountAndGetFetcher();
 

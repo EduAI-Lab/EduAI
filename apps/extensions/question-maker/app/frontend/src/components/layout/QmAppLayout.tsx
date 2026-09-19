@@ -31,7 +31,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutContext";
 import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
 import { useCourses } from "@/hooks/useCourses";
-import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import { useAiServicesStatus, revalidateCloud } from "@/hooks/useAiServicesStatus";
 import eduaiService from "@/services/eduaiService";
 import { useGuidedTour } from "@/contexts/GuidedTourContext";
 import { useBugReport } from "@/contexts/BugReportContext";
@@ -319,7 +319,14 @@ function QmAppLayoutInner() {
                   }}
                 />
               }
-              onRefresh={() => void aiStatus.refresh()}
+              onRefresh={() => {
+                // Clicking the cloud chip re-validates on demand (task 15) —
+                // the one live provider round-trip this hook otherwise
+                // avoids. revalidateCloud() caches the fresh verdict, then
+                // aiStatus.refresh() re-runs the (synchronous, cache-only)
+                // fetcher so the chip picks it up immediately.
+                void revalidateCloud().then(() => aiStatus.refresh());
+              }}
               onUbcOpenChange={setAiHistoryOpened}
             />
           </div>

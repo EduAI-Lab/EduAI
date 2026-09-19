@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const get = vi.fn();
 const post = vi.fn();
 const getAllApiKeys = vi.fn();
+const getProviderFromModel = vi.fn();
+const setValidation = vi.fn();
 
 vi.mock("../../services/api", () => ({
   default: {
@@ -19,7 +21,11 @@ vi.mock("../../services/api", () => ({
 }));
 
 vi.mock("../../services/apiKeyStorage", () => ({
-  apiKeyStorage: { getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args) },
+  apiKeyStorage: {
+    getAllApiKeys: (...args: unknown[]) => getAllApiKeys(...args),
+    getProviderFromModel: (...args: unknown[]) => getProviderFromModel(...args),
+    setValidation: (...args: unknown[]) => setValidation(...args),
+  },
 }));
 
 vi.mock("@eduai/ui", () => ({
@@ -31,6 +37,8 @@ import { eduaiService } from "../../services/eduaiService";
 beforeEach(() => {
   vi.clearAllMocks();
   getAllApiKeys.mockResolvedValue({});
+  getProviderFromModel.mockReturnValue(null);
+  setValidation.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -59,6 +67,50 @@ describe("eduaiService.generateQuestions", () => {
     const result = await eduaiService.generateQuestions(request as any);
     expect(post).toHaveBeenCalledWith("/api/eduai/generate-questions", request);
     expect(result.success).toBe(true);
+  });
+
+  it("invalidates the cached verdict for the request's provider on a 401", async () => {
+    post.mockRejectedValue({ response: { status: 401, data: { error: "revoked" } } });
+    getProviderFromModel.mockReturnValue("google");
+    const request = { prompt: "p", courseCode: "C1", model: "google:gemini-2.5-flash" };
+
+    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
+
+    expect(getProviderFromModel).toHaveBeenCalledWith("google:gemini-2.5-flash");
+    expect(setValidation).toHaveBeenCalledWith("google", {
+      valid: false,
+      validatedAt: expect.any(String),
+      error: "Key was rejected during generation.",
+    });
+  });
+
+  it("invalidates on a 403 too", async () => {
+    post.mockRejectedValue({ response: { status: 403, data: {} } });
+    getProviderFromModel.mockReturnValue("openai");
+    const request = { prompt: "p", courseCode: "C1", model: "openai:gpt-4o" };
+
+    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
+
+    expect(setValidation).toHaveBeenCalledWith("openai", expect.objectContaining({ valid: false }));
+  });
+
+  it("does not touch the cache on a non-auth failure", async () => {
+    post.mockRejectedValue({ response: { status: 500, data: {} } });
+    const request = { prompt: "p", courseCode: "C1", model: "google:gemini-2.5-flash" };
+
+    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
+
+    expect(setValidation).not.toHaveBeenCalled();
+  });
+
+  it("skips the cache write when the model has no recognizable provider", async () => {
+    post.mockRejectedValue({ response: { status: 401, data: {} } });
+    getProviderFromModel.mockReturnValue(null);
+    const request = { prompt: "p", courseCode: "C1", model: "ollama:llama3" };
+
+    await expect(eduaiService.generateQuestions(request as any)).rejects.toBeDefined();
+
+    expect(setValidation).not.toHaveBeenCalled();
   });
 });
 
@@ -127,17 +179,36 @@ describe("eduaiService.testApiKey", () => {
       response: { status: 400, data: { success: false, error: "bad key" } },
     });
     const result = await eduaiService.testApiKey({});
-    expect(result).toEqual({ success: false, error: "bad key", configured: true });
+    expect(result).toEqual({ success: false, error: "bad key", configured: true, statusCode: 400 });
   });
 
-  it("rethrows a non-400 error", async () => {
-    post.mockRejectedValue({ response: { status: 500, data: {} } });
-    await expect(eduaiService.testApiKey({})).rejects.toBeDefined();
+  // Superseded by "returns the server's error body for any status, not only
+  // 400" below (#task-15): a 500 with a server-supplied body is now returned,
+  // not rethrown, because save-time validation needs the real reason a key
+  // was rejected regardless of status code. This case now covers the one
+  // situation that must still throw — no server response at all.
+  it("rethrows when the failure has no server response (network failure)", async () => {
+    post.mockRejectedValue(new Error("Network Error"));
+    await expect(eduaiService.testApiKey({})).rejects.toThrow("Network Error");
   });
 
   it("rethrows when there is no response body on a 400", async () => {
     post.mockRejectedValue({ response: { status: 400, data: null } });
     await expect(eduaiService.testApiKey({})).rejects.toBeDefined();
+  });
+
+  it("returns the server's error body for any status, not only 400", async () => {
+    for (const status of [400, 401, 403, 422, 429, 503]) {
+      post.mockRejectedValueOnce({
+        response: { status, data: { success: false, error: `failed-${status}` } },
+      });
+
+      const res = await eduaiService.testApiKey({ google: { apiKey: "k", isEnabled: true } });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toBe(`failed-${status}`);
+      expect(res.statusCode).toBe(status);
+    }
   });
 });
 
