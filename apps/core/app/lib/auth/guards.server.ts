@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { auth } from "./server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
@@ -41,6 +42,63 @@ type GuardResult = {
 };
 
 /**
+ * Codes the api-key plugin reports for "this key is real, but it has spent its
+ * allowance" — as opposed to "this key is not valid". `RATE_LIMITED` is the
+ * windowed limit; `USAGE_EXCEEDED` is the per-key `remaining` counter.
+ */
+const API_KEY_THROTTLE_CODES = new Set(["RATE_LIMITED", "USAGE_EXCEEDED"]);
+
+/** Cap an advisory Retry-After so a misconfigured window cannot emit an absurd one. */
+const MAX_RETRY_AFTER_SECONDS = 60 * 60 * 24;
+
+/** The plugin's `tryAgainIn`, in milliseconds, when it is usable as a retry hint. */
+const retryHintMsSchema = z.number().finite().positive();
+
+type ApiKeyVerificationError = {
+  code?: string | null;
+  details?: { tryAgainIn?: unknown } | null;
+} | null;
+
+/**
+ * Translate a failed `verifyApiKey` into a response that says what happened.
+ *
+ * #1803: every failure used to collapse into `401 Unauthorized`, so a
+ * rate-limited key, a spent key, an expired key and a forged key were
+ * indistinguishable — the caller had nothing to retry against and no way to
+ * tell a transient denial from a permanent one. Returns null when the failure
+ * is a genuine credential problem, leaving the caller's 401 path in place.
+ */
+function throttleResponseForApiKeyError(error: ApiKeyVerificationError): Response | null {
+  const code = error?.code;
+  if (!code || !API_KEY_THROTTLE_CODES.has(code)) return null;
+
+  // `tryAgainIn` is milliseconds remaining in the window. It is absent for
+  // USAGE_EXCEEDED (a spent key does not refill on a timer) and arrives from a
+  // third-party plugin, so it is parsed here at its boundary rather than
+  // trusted: a zero, negative or non-numeric value yields no retry hint at all,
+  // which is honest, instead of a misleading `Retry-After: 0`.
+  const retryAfterMs = retryHintMsSchema.safeParse(error?.details?.tryAgainIn);
+  const retryAfter = retryAfterMs.success
+    ? Math.min(Math.ceil(retryAfterMs.data / 1000), MAX_RETRY_AFTER_SECONDS)
+    : null;
+
+  if (retryAfter === null) {
+    return new Response(JSON.stringify({ error: code }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(JSON.stringify({ error: code, retryAfter }), {
+    status: 429,
+    headers: {
+      "Content-Type": "application/json",
+      "Retry-After": String(retryAfter),
+    },
+  });
+}
+
+/**
  * Enforce: if request includes `x-api-key`, only ADMIN users may proceed.
  * Returns `{ response, session }` so callers can reuse the fetched session.
  *
@@ -66,6 +124,29 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     if (cookieSession?.user) {
       return { response: null, session: null };
     }
+
+    // A throttled key is a real credential that has spent its allowance, not a
+    // rejected one. Answer 429 with a Retry-After and audit it under its own
+    // action code, so it stops reading as a credential failure in the logs
+    // (#1803).
+    const throttled = throttleResponseForApiKeyError(
+      (verification as { error?: ApiKeyVerificationError })?.error ?? null,
+    );
+    if (throttled) {
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(cookieSession?.user ?? null),
+          ...getRequestContext(request),
+          actionCode: "API_KEY_RATE_LIMITED",
+          outcome: "DENIED",
+          entityType: "Auth",
+          entityId: cookieSession?.user?.id ?? null,
+          entityLabel: cookieSession?.user?.email ?? null,
+        }),
+      );
+      return { response: throttled, session: null };
+    }
+
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(cookieSession?.user ?? null),
