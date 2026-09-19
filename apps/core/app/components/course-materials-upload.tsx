@@ -1,8 +1,15 @@
 import { useRef, useState } from "react";
 import { Spinner } from "@eduai/ui";
 import { cn } from "@eduai/ui";
-import { Alert, AlertDescription } from "@eduai/ui";
-import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck, IconX } from "@tabler/icons-react";
+import { Alert, AlertDescription, Button } from "@eduai/ui";
+import {
+  IconUpload,
+  IconFile,
+  IconAlertCircle,
+  IconCircleCheck,
+  IconRefresh,
+  IconX,
+} from "@tabler/icons-react";
 
 export interface CourseMaterial {
   id: string;
@@ -32,6 +39,13 @@ export interface CourseMaterialsUploadProps {
   error?: string | null;
   success?: string | null;
   onFileSelect: (file: File) => void;
+  /**
+   * Re-run the upload that just failed (#1791). Present only when the failure is
+   * one retrying could actually fix — a rate-limited AI service, a busy
+   * extraction worker — so the button never invites a re-upload that is certain
+   * to fail the same way. Omitted, and the alert stays a plain message.
+   */
+  onRetry?: (() => void) | null;
 }
 
 const ACCEPTED =
@@ -44,6 +58,7 @@ export function CourseMaterialsUpload({
   error = null,
   success = null,
   onFileSelect,
+  onRetry = null,
 }: CourseMaterialsUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -160,7 +175,21 @@ export function CourseMaterialsUpload({
       {error && (
         <Alert variant="destructive">
           <IconAlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>{error}</span>
+            {onRetry && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isUploading}
+                onClick={onRetry}
+              >
+                <IconRefresh className="h-3.5 w-3.5" />
+                Try again
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
       {success && (

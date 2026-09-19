@@ -53,6 +53,8 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
+  /** Re-run the failed upload (#1791); null when retrying cannot help. */
+  onMaterialsRetry?: (() => void) | null;
   onFileSelect: (file: File) => void;
   courseId?: string;
   /** Current viewer's user id — TAs may delete only their OWN uploads (§7). */
@@ -88,6 +90,7 @@ export function CourseDetailTaView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
+  onMaterialsRetry = null,
   onFileSelect,
   courseId,
   currentUserId,
@@ -301,6 +304,7 @@ export function CourseDetailTaView({
               isUploading={isUploading}
               error={materialsError}
               success={materialsSuccess}
+              onRetry={onMaterialsRetry}
               onFileSelect={onFileSelect}
             />
           </DialogContent>

@@ -46,6 +46,8 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
+  /** Re-run the failed upload (#1791); null when retrying cannot help. */
+  onMaterialsRetry?: (() => void) | null;
   onFileSelect?: (file: File) => void;
 }
 
@@ -81,6 +83,7 @@ export function CourseDetailStudentView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
+  onMaterialsRetry = null,
   onFileSelect,
 }: Props) {
   const { isEnabled } = usePolicyGate();
@@ -296,6 +299,7 @@ export function CourseDetailStudentView({
                   isUploading={isUploading}
                   error={materialsError}
                   success={materialsSuccess}
+                  onRetry={onMaterialsRetry}
                   onFileSelect={onFileSelect}
                 />
               </div>
