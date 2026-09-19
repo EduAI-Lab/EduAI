@@ -81,7 +81,7 @@ Full-stack tool for building course question banks and assessments. Supports AI-
 
 Question authoring surfaces let instructors expand an explicit “Add topic” control when they need to create a Core-synchronized course topic. Authoring toasts appear in the top-right and can be dismissed.
 
-Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
+Campus AI defaults (as of the Qwen 3.5 fleet generation): generation/OCR prefer `vllm:qwen3.5-9b-instruct`, connectivity probes prefer `vllm:qwen3.5-2b-instruct` (`FALLBACK_GENERATION_MODEL` / `FALLBACK_PROBE_MODEL` in the Question Maker frontend), and both resolve from Core’s live model catalog when available — these ids are only the last resort when that catalog is empty. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
 Core disables Qwen3.5 thinking-mode output for vLLM chat requests by default. Set `VLLM_DISABLE_THINKING=0` only when the model's `<think>` reasoning output is explicitly required.
 
