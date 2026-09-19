@@ -18,10 +18,7 @@
  * meaningful. Results are cached briefly so many concurrent header polls collapse
  * to one probe.
  */
-import { getAllFleetServers, fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import { getServerHealth } from "~/lib/ai/routing/fleet/health";
-import { ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
-import { probeVllmLoad, type VllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
+import type { VllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
 
 export type ServiceState = "operational" | "degraded" | "outage" | "unknown";
 
@@ -142,97 +139,4 @@ export function aggregateUbcStatus(probes: HostProbe[], thresholds: LoadThreshol
 
   const scope = total > 1 ? ` (${up}/${total} hosts healthy)` : "";
   return { state: "operational", detail: `UBC-hosted inference is reachable${scope}.` };
-}
-
-/** GET a URL with a hard timeout; true iff the health endpoint succeeds. */
-async function reachable(url: string, timeoutMs = 1500): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { method: "GET", signal: controller.signal });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function probeUbcStatus(): Promise<ServiceStatus> {
-  const thresholds = resolveLoadThresholds();
-
-  // Fleet mode: probe every configured vLLM host for liveness (/v1/models, via
-  // the cached fleet health check) and load (/metrics), then aggregate.
-  if (fleetRoutingEnabled()) {
-    const servers = getAllFleetServers();
-    const probes = await Promise.all(
-      servers.map(async (server): Promise<HostProbe> => {
-        const [health, load] = await Promise.all([
-          getServerHealth(server.baseUrl),
-          probeVllmLoad(server.baseUrl),
-        ]);
-        return { reachable: health.ok, load };
-      }),
-    );
-    return aggregateUbcStatus(probes, thresholds);
-  }
-
-  // Legacy single-URL mode (no fleet.config.json / fleet env vars). vLLM is
-  // OpenAI-compatible (/models) and also exposes /metrics; Ollama (/tags) has no
-  // load metrics, so it reports liveness only.
-  const { vllm, ollama } = resolveUbcBaseUrls();
-  if (!vllm && !ollama) {
-    return { state: "outage", detail: "No UBC-hosted inference URL configured." };
-  }
-
-  const probes: HostProbe[] = [];
-  if (vllm) {
-    const base = vllm.replace(/\/$/, "");
-    const [live, load] = await Promise.all([reachable(`${base}/models`), probeVllmLoad(base)]);
-    probes.push({ reachable: live, load });
-  }
-  if (ollama) {
-    probes.push({ reachable: await reachable(ollamaTagsUrl(ollama)), load: null });
-  }
-  return aggregateUbcStatus(probes, thresholds);
-}
-
-// Short in-memory cache so a burst of header polls triggers at most one probe.
-const CACHE_TTL_MS = 30_000;
-let cache: { at: number; value: AiServiceStatus } | null = null;
-// Holds the probe promise while it's running so concurrent callers on a cold
-// cache share the single in-flight probe instead of each firing their own.
-let inFlight: Promise<AiServiceStatus> | null = null;
-
-/** Clear the status cache (unit tests / after a config change). */
-export function resetAiServiceStatusCache(): void {
-  cache = null;
-  inFlight = null;
-}
-
-export async function getAiServiceStatus(): Promise<AiServiceStatus> {
-  const now = Date.now();
-  if (cache && now - cache.at < CACHE_TTL_MS) {
-    return cache.value;
-  }
-  if (inFlight) return inFlight;
-
-  inFlight = (async () => {
-    try {
-      const cloud = classifyCloudStatus({
-        openai: process.env.OPENAI_API_KEY,
-        google: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-        openrouter: process.env.OPENROUTER_API_KEY,
-      });
-      const ubc = await probeUbcStatus();
-
-      const value: AiServiceStatus = { cloud, ubc };
-      cache = { at: Date.now(), value };
-      return value;
-    } finally {
-      inFlight = null;
-    }
-  })();
-
-  return inFlight;
 }

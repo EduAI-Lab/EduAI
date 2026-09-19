@@ -1,12 +1,18 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { getAiServiceStatus } from "~/lib/ai/service-status.server";
+import { classifyCloudStatus } from "~/lib/ai/service-status.server";
+import { getUbcStatusFromSamples } from "~/lib/ai/status/read.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
 /**
- * Dual AI-service status for the header indicators (issue #764). Auth-gated but
- * available to any signed-in user — it exposes only up/down state, no secrets —
- * so students can also see at a glance whether the AI is live.
+ * Dual AI-service status for the header indicators (issue #764).
+ *
+ * The UBC path is read from `ai_service_samples`, written every ~15 minutes by
+ * the `ai-status-probe` cron job — NOT probed per request. `checkedAt` and
+ * `stale` let the UI say how old the answer is rather than implying it is live.
+ *
+ * Auth-gated but available to any signed-in user: it exposes only up/down state,
+ * no secrets and no internal hostnames.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   return withErrorResponse(
@@ -19,13 +25,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         });
       }
 
-      const status = await getAiServiceStatus();
-      return new Response(JSON.stringify(status), {
+      const cloud = classifyCloudStatus({
+        openai: process.env.OPENAI_API_KEY,
+        google: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+        openrouter: process.env.OPENROUTER_API_KEY,
+      });
+      const { status: ubc, checkedAt, stale } = await getUbcStatusFromSamples();
+
+      return new Response(JSON.stringify({ cloud, ubc, checkedAt, stale }), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          // Let the browser reuse the response for a few seconds between polls.
-          "Cache-Control": "private, max-age=15",
+          "Cache-Control": "private, max-age=30",
         },
       });
     },
