@@ -62,7 +62,7 @@ beforeEach(() => {
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
   mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
-  globalThis.__manualCronRunIds = undefined;
+  delete globalThis.__manualCronRunIds;
 });
 
 describe("listCronJobStatuses", () => {
@@ -470,5 +470,24 @@ describe("triggerCronJobAsync", () => {
       if (originalLeaseMs === undefined) delete process.env.CRON_RUN_LEASE_MS;
       else process.env.CRON_RUN_LEASE_MS = originalLeaseMs;
     }
+  });
+});
+
+describe("dispatchManualCronRuns", () => {
+  // dispatchManualCronRuns calls triggerCronJobAsync as a same-module call,
+  // which cannot be spied on cleanly. Assert the observable behaviour
+  // instead: a recorded CORE run reaches its Core handler and never spawns
+  // a shell script, proving the worker forwards the job's execution mode.
+  it("dispatches a recorded CORE run through its Core handler, not spawn", async () => {
+    mockQueryRaw.mockResolvedValueOnce([
+      { id: "run-9", jobName: "notify-api-key-expiry", leaseOwner: "owner-9" },
+    ]);
+
+    await dispatchManualCronRuns();
+
+    await vi.waitFor(() => {
+      expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
+    });
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 });
