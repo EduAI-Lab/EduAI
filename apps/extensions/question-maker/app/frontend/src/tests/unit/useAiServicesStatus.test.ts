@@ -1,8 +1,16 @@
 /**
- * Unit coverage for QM's independent dual-status hook (#1551). The shared
- * `@eduai/ui` polling loop is mocked so these tests drive QM's own cloud/UBC
- * probes directly — including the cancellation contract (the poll's AbortSignal
- * must reach each Axios probe, per the PR #1586 review).
+ * Unit coverage for QM's dual-status hook (#764, #1551).
+ *
+ * The shared `@eduai/ui` polling loop is mocked so these tests drive QM's
+ * fetcher directly. As of task 14, only the CLOUD chip runs a live per-user
+ * probe (`eduaiService.testApiKey` with the caller's own key) — the UBC chip
+ * now reads Core's shared fleet-status snapshot via QM's own
+ * `GET /api/eduai/ai-status` proxy (`eduaiService.getAiStatus`), matching
+ * Core and AI Tutor. QM's old live UBC probe (`testApiKey({ forceProvider:
+ * 'vllm' })`) has been deleted, so this file no longer tests that path —
+ * those cases are replaced below with the proxy-passthrough and 401
+ * "sign in" cases the new contract requires (see task-14-report.md for the
+ * full before/after mapping).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
@@ -10,12 +18,16 @@ import type { AiServiceStatusPair } from "@eduai/ui";
 import type { ProviderApiKeys } from "@/services/apiKeyStorage";
 
 const testApiKey = vi.fn();
+const getAiStatus = vi.fn();
 const getAllApiKeys = vi.fn();
 const isCloudProvider = vi.fn();
 const isCampusProvider = vi.fn();
 
 vi.mock("@/services/eduaiService", () => ({
-  default: { testApiKey: (...args: unknown[]) => testApiKey(...args) },
+  default: {
+    testApiKey: (...args: unknown[]) => testApiKey(...args),
+    getAiStatus: (...args: unknown[]) => getAiStatus(...args),
+  },
 }));
 
 vi.mock("@/services/apiKeyStorage", () => ({
@@ -53,9 +65,15 @@ function mountAndGetFetcher() {
   return capturedFetcher;
 }
 
-describe("useAiServicesStatus probes", () => {
+describe("useAiServicesStatus", () => {
   beforeEach(() => {
     testApiKey.mockReset();
+    getAiStatus.mockReset().mockResolvedValue({
+      cloud: { state: "operational" },
+      ubc: { state: "operational", detail: "UBC-hosted AI · Online." },
+      checkedAt: "2026-09-19T00:00:00.000Z",
+      stale: false,
+    });
     getAllApiKeys.mockReset().mockResolvedValue({});
     isCloudProvider.mockReset().mockReturnValue(false);
     isCampusProvider.mockReset().mockReturnValue(false);
@@ -73,148 +91,148 @@ describe("useAiServicesStatus probes", () => {
     expect(capturedIntervalMs).toBe(300_000);
   });
 
-  it("reports cloud outage when no provider key is saved", async () => {
-    getAllApiKeys.mockResolvedValue({});
-    // UBC: server has no vLLM configured.
-    testApiKey.mockResolvedValue({ configured: false });
-    const fetcher = mountAndGetFetcher();
+  describe("cloud probe (unchanged — still a live per-user key check)", () => {
+    it("reports cloud outage when no provider key is saved", async () => {
+      getAllApiKeys.mockResolvedValue({});
+      const fetcher = mountAndGetFetcher();
 
-    const { cloud } = await fetcher(new AbortController().signal);
+      const { cloud } = await fetcher(new AbortController().signal);
 
-    expect(cloud.state).toBe("outage");
-    expect(cloud.detail).toMatch(/not configured/i);
-  });
+      expect(cloud.state).toBe("outage");
+      expect(cloud.detail).toMatch(/not configured/i);
+    });
 
-  it("treats unreadable apiKeyStorage as no key configured", async () => {
-    getAllApiKeys.mockRejectedValue(new Error("storage broken"));
-    testApiKey.mockResolvedValue({ configured: false });
-    const fetcher = mountAndGetFetcher();
+    it("treats unreadable apiKeyStorage as no key configured", async () => {
+      getAllApiKeys.mockRejectedValue(new Error("storage broken"));
+      const fetcher = mountAndGetFetcher();
 
-    const { cloud } = await fetcher(new AbortController().signal);
+      const { cloud } = await fetcher(new AbortController().signal);
 
-    expect(cloud.state).toBe("outage");
-    expect(cloud.detail).toMatch(/not configured/i);
-  });
+      expect(cloud.state).toBe("outage");
+      expect(cloud.detail).toMatch(/not configured/i);
+    });
 
-  it("reports cloud operational when the saved key validates as a cloud provider", async () => {
-    getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-    isCloudProvider.mockReturnValue(true);
-    testApiKey.mockResolvedValue({ success: true, provider: "openai" });
-    const fetcher = mountAndGetFetcher();
+    it("reports cloud operational when the saved key validates as a cloud provider", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      isCloudProvider.mockReturnValue(true);
+      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+      const fetcher = mountAndGetFetcher();
 
-    const { cloud } = await fetcher(new AbortController().signal);
+      const { cloud } = await fetcher(new AbortController().signal);
 
-    expect(cloud.state).toBe("operational");
-    expect(cloud.detail).toMatch(/online/i);
-  });
+      expect(cloud.state).toBe("operational");
+      expect(cloud.detail).toMatch(/online/i);
+    });
 
-  it("probes only the configured provider when several cloud keys are saved", async () => {
-    localStorage.setItem("qm:default-model", "openai:gpt-4o-mini");
-    getAllApiKeys.mockResolvedValue({ google: "google-key", openai: "openai-key" });
-    isCloudProvider.mockImplementation((provider) => provider === "openai");
-    testApiKey.mockImplementation((_keys: ProviderApiKeys, opts?: { forceProvider?: string }) =>
-      opts?.forceProvider === "vllm"
-        ? Promise.resolve({ configured: false })
-        : Promise.resolve({ success: true, provider: "openai" }),
-    );
-    const fetcher = mountAndGetFetcher();
+    it("probes only the configured provider when several cloud keys are saved", async () => {
+      localStorage.setItem("qm:default-model", "openai:gpt-4o-mini");
+      getAllApiKeys.mockResolvedValue({ google: "google-key", openai: "openai-key" });
+      isCloudProvider.mockImplementation((provider) => provider === "openai");
+      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+      const fetcher = mountAndGetFetcher();
 
-    const { cloud } = await fetcher(new AbortController().signal);
+      const { cloud } = await fetcher(new AbortController().signal);
 
-    expect(cloud.state).toBe("operational");
-    const cloudCall = testApiKey.mock.calls.find((c) => !c[1]?.forceProvider);
-    expect(cloudCall?.[0]).toEqual({
-      openai: { apiKey: "openai-key", isEnabled: true },
+      expect(cloud.state).toBe("operational");
+      expect(testApiKey).toHaveBeenCalledTimes(1);
+      expect(testApiKey.mock.calls[0]?.[0]).toEqual({
+        openai: { apiKey: "openai-key", isEnabled: true },
+      });
+    });
+
+    it("reports cloud outage when validation returns an error", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-bad" });
+      testApiKey.mockResolvedValue({ success: false, error: "bad key" });
+      const fetcher = mountAndGetFetcher();
+
+      const { cloud } = await fetcher(new AbortController().signal);
+
+      expect(cloud.state).toBe("outage");
+      expect(cloud.detail).toContain("bad key");
+    });
+
+    it("reports cloud outage when the probe throws (network down)", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      testApiKey.mockRejectedValue(new Error("ECONNREFUSED"));
+      const fetcher = mountAndGetFetcher();
+
+      const { cloud } = await fetcher(new AbortController().signal);
+
+      expect(cloud.state).toBe("outage");
+      expect(cloud.detail).toMatch(/unreachable/i);
+    });
+
+    it("forwards the poll's AbortSignal to the cloud probe (cancellation contract)", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+      isCloudProvider.mockReturnValue(true);
+      const fetcher = mountAndGetFetcher();
+      const signal = new AbortController().signal;
+
+      await fetcher(signal);
+
+      expect(testApiKey.mock.calls[0]?.[1]?.signal).toBe(signal);
     });
   });
 
-  it("reports cloud outage when validation returns an error", async () => {
-    getAllApiKeys.mockResolvedValue({ openai: "sk-bad" });
-    testApiKey.mockResolvedValue({ success: false, error: "bad key" });
-    const fetcher = mountAndGetFetcher();
+  describe("UBC status (new — read from Core's shared snapshot via the QM proxy)", () => {
+    it("passes through the proxy's ubc/checkedAt/stale verbatim on success", async () => {
+      getAiStatus.mockResolvedValue({
+        cloud: { state: "outage" }, // proxy's own cloud field is ignored — QM keeps its live probe
+        ubc: { state: "operational", detail: "UBC-hosted AI · Online." },
+        checkedAt: "2026-09-19T01:23:00.000Z",
+        stale: false,
+      });
+      const fetcher = mountAndGetFetcher();
 
-    const { cloud } = await fetcher(new AbortController().signal);
+      const result = await fetcher(new AbortController().signal);
 
-    expect(cloud.state).toBe("outage");
-    expect(cloud.detail).toContain("bad key");
-  });
-
-  it("reports cloud outage when the probe throws (network down)", async () => {
-    getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-    testApiKey.mockImplementation((keys: ProviderApiKeys) => {
-      // Cloud probe throws; UBC probe (forceProvider) resolves to an outage.
-      if (Object.keys(keys).length > 0) return Promise.reject(new Error("ECONNREFUSED"));
-      return Promise.resolve({ configured: false });
+      expect(result.ubc).toEqual({ state: "operational", detail: "UBC-hosted AI · Online." });
+      expect(result.checkedAt).toBe("2026-09-19T01:23:00.000Z");
+      expect(result.stale).toBe(false);
     });
-    const fetcher = mountAndGetFetcher();
 
-    const { cloud } = await fetcher(new AbortController().signal);
+    it("renders 'unknown' with a sign-in prompt on a 401 from the proxy, not 'outage'", async () => {
+      const err: any = new Error("Unauthorized");
+      err.response = { status: 401 };
+      getAiStatus.mockRejectedValue(err);
+      const fetcher = mountAndGetFetcher();
 
-    expect(cloud.state).toBe("outage");
-    expect(cloud.detail).toMatch(/unreachable/i);
-  });
+      const { ubc, stale } = await fetcher(new AbortController().signal);
 
-  it("reports UBC operational when the forced vLLM probe validates", async () => {
-    isCampusProvider.mockReturnValue(true);
-    testApiKey.mockImplementation(
-      (_keys: ProviderApiKeys | undefined, opts?: { forceProvider?: string }) => {
-        if (opts?.forceProvider === "vllm")
-          return Promise.resolve({ success: true, provider: "vllm" });
-        return Promise.resolve({ configured: false });
-      },
-    );
-    const fetcher = mountAndGetFetcher();
+      expect(ubc.state).toBe("unknown");
+      expect(ubc.detail).toMatch(/sign in to core/i);
+      expect(stale).toBe(true);
+    });
 
-    const { ubc } = await fetcher(new AbortController().signal);
+    it("renders 'unknown' (not 'outage') when the proxy is unreachable for any other reason", async () => {
+      getAiStatus.mockRejectedValue(new Error("network down"));
+      const fetcher = mountAndGetFetcher();
 
-    expect(ubc.state).toBe("operational");
-    expect(ubc.detail).toMatch(/online/i);
-  });
+      const { ubc } = await fetcher(new AbortController().signal);
 
-  it("reports UBC outage 'not configured on the server' when configured is false", async () => {
-    testApiKey.mockImplementation(
-      (_keys: ProviderApiKeys | undefined, opts?: { forceProvider?: string }) => {
-        if (opts?.forceProvider === "vllm") return Promise.resolve({ configured: false });
-        return Promise.resolve({ configured: false });
-      },
-    );
-    const fetcher = mountAndGetFetcher();
+      expect(ubc.state).toBe("unknown");
+    });
 
-    const { ubc } = await fetcher(new AbortController().signal);
+    it("forwards the poll's AbortSignal to the proxy call (cancellation contract)", async () => {
+      const fetcher = mountAndGetFetcher();
+      const signal = new AbortController().signal;
 
-    expect(ubc.state).toBe("outage");
-    expect(ubc.detail).toMatch(/not configured on the server/i);
-  });
+      await fetcher(signal);
 
-  it("reports UBC outage when the forced vLLM probe throws", async () => {
-    testApiKey.mockImplementation(
-      (_keys: ProviderApiKeys | undefined, opts?: { forceProvider?: string }) => {
-        if (opts?.forceProvider === "vllm") return Promise.reject(new Error("timeout"));
-        return Promise.resolve({ configured: false });
-      },
-    );
-    const fetcher = mountAndGetFetcher();
+      expect(getAiStatus).toHaveBeenCalledWith(signal);
+    });
 
-    const { ubc } = await fetcher(new AbortController().signal);
+    it("never calls the deleted UBC live probe (forceProvider: 'vllm')", async () => {
+      getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
+      testApiKey.mockResolvedValue({ success: true, provider: "openai" });
+      isCloudProvider.mockReturnValue(true);
+      const fetcher = mountAndGetFetcher();
 
-    expect(ubc.state).toBe("outage");
-    expect(ubc.detail).toMatch(/unavailable/i);
-  });
+      await fetcher(new AbortController().signal);
 
-  it("forwards the poll's AbortSignal to both probes (cancellation contract)", async () => {
-    getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-    testApiKey.mockResolvedValue({ configured: false });
-    const fetcher = mountAndGetFetcher();
-    const signal = new AbortController().signal;
-
-    await fetcher(signal);
-
-    // Cloud probe: testApiKey(keys, { signal }).
-    const cloudCall = testApiKey.mock.calls.find((c) => !c[1]?.forceProvider);
-    // UBC probe: testApiKey({}, { forceProvider: 'vllm', signal }).
-    const ubcCall = testApiKey.mock.calls.find((c) => c[1]?.forceProvider === "vllm");
-
-    expect(cloudCall?.[1]?.signal).toBe(signal);
-    expect(ubcCall?.[1]?.signal).toBe(signal);
+      const vllmCall = testApiKey.mock.calls.find((c) => c[1]?.forceProvider === "vllm");
+      expect(vllmCall).toBeUndefined();
+    });
   });
 });

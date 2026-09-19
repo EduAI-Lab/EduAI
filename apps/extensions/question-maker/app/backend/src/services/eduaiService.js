@@ -1032,6 +1032,41 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       }
     }
   }
+
+  /**
+   * Reads Core's shared AI fleet status (issue #764 §QM). Forwards ONLY the
+   * caller's session cookie — Core's `/api/ai-status` authenticates by session
+   * alone, and attaching the service key here would contradict the BOLA
+   * reasoning in `listCourses` above (a scoped read has no business carrying
+   * the platform-wide credential). Never throws: callers get back whatever
+   * status Core answered with (including 401), or a synthesized failure if
+   * Core itself is unreachable, so the route can forward it verbatim.
+   */
+  async getAiStatus({ cookie } = {}) {
+    return this.#fetchAiStatusPath("/api/ai-status", cookie);
+  }
+
+  /** Same contract as `getAiStatus`, for the 72h history panel. */
+  async getAiStatusHistory({ cookie } = {}) {
+    return this.#fetchAiStatusPath("/api/ai-status/history?hours=72", cookie);
+  }
+
+  async #fetchAiStatusPath(path, cookie) {
+    if (!this.isConfigured()) {
+      return { status: 503, body: { error: "EduAI service is not configured" } };
+    }
+    try {
+      const response = await fetch(`${this.baseURL}${path}`, {
+        headers: { cookie: typeof cookie === "string" ? cookie : "" },
+        signal: AbortSignal.timeout(5000),
+      });
+      const body = await response.json().catch(() => ({}));
+      return { status: response.status, body };
+    } catch (error) {
+      console.error(`${DEBUG_PREFIX} ai-status request failed`, safeRequestLogFields(error));
+      return { status: 502, body: { error: "Upstream AI status unreachable" } };
+    }
+  }
 }
 
 // Export singleton instance

@@ -64,7 +64,22 @@ vi.mock("@eduai/ui", () => ({
   ),
   CommandSearchButton: () => <div data-testid="command-search-button" />,
   AIServiceIndicators: (props: any) => (
-    <button data-testid="ai-indicators" onClick={props.onRefresh} />
+    <div>
+      <button data-testid="ai-indicators" onClick={props.onRefresh} />
+      <button data-testid="ubc-open" onClick={() => props.onUbcOpenChange?.(true)} />
+      <button data-testid="ubc-close" onClick={() => props.onUbcOpenChange?.(false)} />
+      <div data-testid="ubc-history">{props.ubcHistory}</div>
+    </div>
+  ),
+  AIServiceHistoryPanel: (props: any) => (
+    <div
+      data-testid="history-panel"
+      data-loading={String(!!props.loading)}
+      data-error={props.error ?? ""}
+    >
+      {props.data ? "has-data" : "no-data"}
+      <button data-testid="history-refresh" onClick={props.onRefresh} />
+    </div>
   ),
   NavSecondary: () => null,
 }));
@@ -143,11 +158,17 @@ vi.mock("@/services/courseService", () => ({
   courseService: { createCourse },
 }));
 
+const getAiStatusHistory = vi.fn();
+vi.mock("@/services/eduaiService", () => ({
+  default: { getAiStatusHistory: (...args: unknown[]) => getAiStatusHistory(...args) },
+}));
+
 import { QmAppLayout, QmAccessShell } from "@/components/layout/QmAppLayout";
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  getAiStatusHistory.mockReset();
   pathnameValue = "/dashboard";
   searchParamsValue = new URLSearchParams();
   coursesValue = [];
@@ -259,6 +280,53 @@ describe("QmAppLayout", () => {
     render(<QmAppLayout />);
     fireEvent.click(screen.getByTestId("ai-indicators"));
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("fetches AI status history on first open of the UBC panel, not before", async () => {
+    getAiStatusHistory.mockResolvedValue({ windowHours: 72, bucketMinutes: 5, servers: [] });
+    render(<QmAppLayout />);
+    expect(getAiStatusHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("ubc-open"));
+
+    await waitFor(() => expect(getAiStatusHistory).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId("history-panel")).toHaveTextContent("has-data"));
+  });
+
+  it("does not refetch history on a second open once it has loaded", async () => {
+    getAiStatusHistory.mockResolvedValue({ windowHours: 72, bucketMinutes: 5, servers: [] });
+    render(<QmAppLayout />);
+
+    fireEvent.click(screen.getByTestId("ubc-open"));
+    await waitFor(() => expect(getAiStatusHistory).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId("ubc-close"));
+    fireEvent.click(screen.getByTestId("ubc-open"));
+
+    expect(getAiStatusHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an error in the history panel when the history fetch fails, without throwing", async () => {
+    getAiStatusHistory.mockRejectedValue(new Error("network down"));
+    render(<QmAppLayout />);
+
+    fireEvent.click(screen.getByTestId("ubc-open"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("history-panel").dataset.error).toMatch(/could not load/i),
+    );
+  });
+
+  it("refreshing from within the history panel calls both aiStatus.refresh and reloads history", async () => {
+    getAiStatusHistory.mockResolvedValue({ windowHours: 72, bucketMinutes: 5, servers: [] });
+    render(<QmAppLayout />);
+    fireEvent.click(screen.getByTestId("ubc-open"));
+    await waitFor(() => expect(getAiStatusHistory).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId("history-refresh"));
+
+    expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(getAiStatusHistory).toHaveBeenCalledTimes(2));
   });
 
   it("opens a Core course that has not been mirrored yet", async () => {

@@ -2,7 +2,7 @@
  * Frontend wrapper around AI service endpoints for chat, question generation, course/topics, and model list.
  * Passes through provider API keys as needed and returns typed results.
  */
-import { termLabelLong } from "@eduai/ui";
+import { termLabelLong, type AiServiceStatusPair, type HistoryPayload } from "@eduai/ui";
 import api from "./api";
 import {
   apiKeyStorage,
@@ -219,6 +219,29 @@ class EduAIService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Reads Core's shared AI fleet-status snapshot (issue #764 §QM) via QM's
+   * backend proxy (`GET /api/eduai/ai-status`), which forwards only the
+   * caller's session cookie to Core. Throws on a non-2xx response (including
+   * 401) — the caller (`useAiServicesStatus`) is responsible for translating
+   * that into a chip state, since "signed out" and "Core unreachable" render
+   * differently.
+   */
+  async getAiStatus(signal?: AbortSignal): Promise<AiServiceStatusPair> {
+    const response = await api.get("/api/eduai/ai-status", { signal });
+    return response.data;
+  }
+
+  /**
+   * 72h AI status history for the UBC chip's history panel, via QM's backend
+   * proxy (`GET /api/eduai/ai-status/history`). Same auth/error contract as
+   * `getAiStatus`.
+   */
+  async getAiStatusHistory(signal?: AbortSignal): Promise<HistoryPayload> {
+    const response = await api.get("/api/eduai/ai-status/history", { signal });
+    return response.data;
   }
 
   /**

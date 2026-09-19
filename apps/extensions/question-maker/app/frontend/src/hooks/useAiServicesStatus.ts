@@ -1,28 +1,31 @@
 /**
- * Independent dual AI-service status for the header chips (issues #764, #1551).
- * Unlike the single-provider `useEduAIStatus` (which reports whichever one path
- * is live), this probes the cloud and UBC-hosted providers SEPARATELY so each
- * chip reflects only its own availability — neither depends on the other.
+ * Dual AI-service status for the header chips (issues #764, #1551).
+ * Feeds the shared `@eduai/ui` AIServiceIndicators.
  *
- *   - cloud: probed with the user's saved cloud key (outage when none is saved).
- *   - ubc:   probed with an explicit `forceProvider: 'vllm'`, pinning the
- *            UBC-hosted path even when the server has its own cloud key.
+ *   - cloud: still probed with the user's saved cloud key (outage when none is
+ *     saved) — a live `test-api-key` round-trip via `probeCloud`, unchanged
+ *     from before. This validates the caller's OWN key, which Core's shared
+ *     snapshot has no way to know about.
+ *   - ubc:   now read from Core's shared fleet-status snapshot via QM's own
+ *     `GET /api/eduai/ai-status` backend proxy, the same DB-backed source
+ *     Core's and AI Tutor's header chips already read (#764 task 14). QM no
+ *     longer runs its own per-user live probe of the UBC path — that probe
+ *     (`POST /api/eduai/test-api-key` with `forceProvider: 'vllm'`) has been
+ *     deleted. The probe and Core's snapshot could disagree for reasons
+ *     unrelated to fleet health (auth/routing on the QM→Core leg that also
+ *     carries real generation calls), so removing it makes the chip consistent
+ *     with Core/AI Tutor without independently proving that leg is healthy.
  *
- * Feeds the shared `@eduai/ui` AIServiceIndicators. The poll / abort / last-known
- * retention loop is the shared `useAiServiceStatus` hook (#1551 unification) —
- * QM just injects its own two probes as the `fetcher`, so it now refreshes over
- * time instead of checking only once on mount.
+ * The poll / abort / last-known retention loop is the shared `useAiServiceStatus`
+ * hook (#1551 unification) — QM injects its own `fetcher`, combining the local
+ * cloud probe with the proxied UBC snapshot.
  *
- * Interval is deliberately LONGER than Core/AI Tutor's 60s default. Each probe
- * here is a live `test-api-key` validation (two per cycle: cloud + vLLM), a real
- * provider round-trip — not the cheap Core-cached `/api/ai-status` the others
- * poll. A 5-minute cadence keeps the chips fresh while bounding per-tab load on
- * the key-validation endpoint and any upstream provider rate limits.
+ * `checkedAt` / `stale` are reported for the UBC snapshot only (there is no
+ * equivalent concept for the live cloud probe, which is always "now").
  *
- * NOTE: QM's health tiers are `operational` / `outage` only. It has no route to
- * the vLLM fleet's `/metrics`, so it can't observe the UBC `degraded` (heavy
- * load) state — that signal is Core-side. QM's probe answers a different
- * question ("does the user's key / the UBC path work from here?"), by design.
+ * Interval matches Core/AI Tutor's shared-snapshot cadence (5 min) rather than
+ * the old two-live-probe cadence, since the UBC side no longer spends a live
+ * provider round-trip on every poll.
  */
 import { useCallback } from "react";
 import { useAiServiceStatus, type AiServiceStatusPair, type ServiceStatus } from "@eduai/ui";
@@ -31,7 +34,6 @@ import {
   apiKeyStorage,
   CLOUD_PROVIDERS,
   isCloudProvider,
-  isCampusProvider,
   type ProviderApiKeys,
 } from "../services/apiKeyStorage";
 import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
@@ -80,37 +82,55 @@ async function probeCloud(signal: AbortSignal): Promise<ServiceStatus> {
   }
 }
 
-async function probeUbc(signal: AbortSignal): Promise<ServiceStatus> {
+const UBC_SIGN_IN_REQUIRED: ServiceStatus = {
+  state: "unknown",
+  detail: "Sign in to Core to see AI status.",
+};
+const UBC_UNAVAILABLE: ServiceStatus = {
+  state: "unknown",
+  detail: "UBC-hosted AI status unavailable.",
+};
+
+/**
+ * Reads the UBC-hosted status from Core's shared snapshot via QM's backend
+ * proxy. On a 401 (no/expired Core session) this deliberately renders
+ * `unknown` rather than `outage` — today's behaviour flattens every failure
+ * mode to "needs UBC wifi/VPN", which is wrong for an auth failure. Any other
+ * failure (network, 5xx, proxy misconfiguration) also renders `unknown`: QM
+ * cannot tell those apart from here, and guessing "outage" would be the same
+ * false diagnosis in a different shape.
+ */
+async function fetchUbcFromCoreSnapshot(
+  signal: AbortSignal,
+): Promise<Pick<AiServiceStatusPair, "ubc" | "checkedAt" | "stale">> {
   try {
-    // Force the UBC-hosted (vLLM) path explicitly. Sending `{}` alone is not
-    // enough — with no client key the backend may fall back to its own Google key
-    // and would probe Cloud, so the UBC chip must pin the provider.
-    const res = await eduaiService.testApiKey({}, { forceProvider: "vllm", signal });
-    if (res?.success && isCampusProvider(res.provider)) {
-      return { state: "operational", detail: "UBC-hosted AI · Online." };
-    }
-    if (res?.configured === false) {
-      return { state: "outage", detail: "UBC-hosted AI · Not configured on the server." };
-    }
+    const data = await eduaiService.getAiStatus(signal);
     return {
-      state: "outage",
-      detail: res?.error || "UBC-hosted AI · Unavailable (needs UBC wifi/VPN).",
+      ubc: data?.ubc ?? UBC_UNAVAILABLE,
+      checkedAt: data?.checkedAt ?? null,
+      stale: data?.stale ?? true,
     };
-  } catch {
-    return { state: "outage", detail: "UBC-hosted AI · Unavailable (needs UBC wifi/VPN)." };
+  } catch (err: any) {
+    if (err?.response?.status === 401) {
+      return { ubc: UBC_SIGN_IN_REQUIRED, checkedAt: null, stale: true };
+    }
+    return { ubc: UBC_UNAVAILABLE, checkedAt: null, stale: true };
   }
 }
 
-/** 5 min — see the interval note in the file header (live key-validation probes). */
+/** Matches Core/AI Tutor's shared-snapshot cadence — see the file header. */
 const QM_POLL_INTERVAL_MS = 300_000;
 
 export function useAiServicesStatus() {
   const fetcher = useCallback(async (signal: AbortSignal): Promise<AiServiceStatusPair> => {
-    // Forward the poll's signal to both live probes so refresh / unmount /
-    // timeout tears down a wedged request instead of letting it overwrite
-    // newer state (issue #1551).
-    const [cloud, ubc] = await Promise.all([probeCloud(signal), probeUbc(signal)]);
-    return { cloud, ubc };
+    // Forward the poll's signal to both calls so refresh / unmount / timeout
+    // tears down a wedged request instead of letting it overwrite newer state
+    // (issue #1551).
+    const [cloud, ubcResult] = await Promise.all([
+      probeCloud(signal),
+      fetchUbcFromCoreSnapshot(signal),
+    ]);
+    return { cloud, ...ubcResult };
   }, []);
 
   return useAiServiceStatus({ fetcher, intervalMs: QM_POLL_INTERVAL_MS });

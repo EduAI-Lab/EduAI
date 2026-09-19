@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
@@ -12,8 +12,10 @@ import {
   BreadcrumbSeparator,
   Button,
   CommandSearchButton,
+  AIServiceHistoryPanel,
   AIServiceIndicators,
   NavSecondary,
+  type HistoryPayload,
 } from "@eduai/ui";
 import {
   IconBooks,
@@ -30,6 +32,7 @@ import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutConte
 import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
 import { useCourses } from "@/hooks/useCourses";
 import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import eduaiService from "@/services/eduaiService";
 import { useGuidedTour } from "@/contexts/GuidedTourContext";
 import { useBugReport } from "@/contexts/BugReportContext";
 import { getFooterNavForUser, getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
@@ -153,6 +156,10 @@ function QmAppLayoutInner() {
   const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const aiStatus = useAiServicesStatus();
+  const [aiHistory, setAiHistory] = useState<HistoryPayload | null>(null);
+  const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
+  const [aiHistoryError, setAiHistoryError] = useState<string | null>(null);
+  const [aiHistoryOpened, setAiHistoryOpened] = useState(false);
   const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
   const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
@@ -162,6 +169,25 @@ function QmAppLayoutInner() {
   const navigationUser = user ? { ...user, role: user.questionMakerRole ?? user.role } : user;
   const questionMakerRole = navigationUser?.role;
   const attemptedCourseImport = useRef<string | null>(null);
+
+  const loadAiHistory = useCallback(async () => {
+    setAiHistoryLoading(true);
+    setAiHistoryError(null);
+    try {
+      setAiHistory(await eduaiService.getAiStatusHistory());
+    } catch {
+      // Keep the last payload; a single transient failure must not blank the panel.
+      setAiHistoryError("Could not load status history.");
+    } finally {
+      setAiHistoryLoading(false);
+    }
+  }, []);
+
+  // Fetch once on first open, then only on explicit refresh — reported via the
+  // shared component's `onUbcOpenChange` (mirrors AI Tutor's `_app.tsx`).
+  useEffect(() => {
+    if (aiHistoryOpened && aiHistory === null && !aiHistoryLoading) void loadAiHistory();
+  }, [aiHistoryOpened, aiHistory, aiHistoryLoading, loadAiHistory]);
 
   useEffect(() => {
     if (!requestedCoreCourseId || isCoursesLoading || routeCourse) return;
@@ -280,7 +306,21 @@ function QmAppLayoutInner() {
             <AIServiceIndicators
               cloud={aiStatus.cloud}
               ubc={aiStatus.ubc}
+              ubcHistory={
+                <AIServiceHistoryPanel
+                  data={aiHistory}
+                  loading={aiHistoryLoading}
+                  error={aiHistoryError}
+                  stale={aiStatus.stale}
+                  checkedAt={aiStatus.checkedAt}
+                  onRefresh={() => {
+                    aiStatus.refresh();
+                    void loadAiHistory();
+                  }}
+                />
+              }
               onRefresh={() => void aiStatus.refresh()}
+              onUbcOpenChange={setAiHistoryOpened}
             />
           </div>
           <div className="relative">

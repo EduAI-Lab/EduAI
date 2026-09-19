@@ -185,6 +185,24 @@ const requireQmAuthoringOrLiveTa = async (req, res, next) => {
   });
 };
 
+/**
+ * GET /api/eduai/ai-status – proxies Core's shared fleet-status snapshot for
+ * the header chips. Readable by any signed-in user (no authoring/TA gate) —
+ * status is not a privileged surface, and gating it here would reintroduce a
+ * role-dependent chip. Forwards only the caller's session cookie, matching
+ * Core's own session-only auth on this endpoint.
+ */
+router.get("/ai-status", async (req, res) => {
+  const upstream = await eduaiService.getAiStatus({ cookie: req.headers.cookie ?? "" });
+  return res.status(upstream.status).json(upstream.body);
+});
+
+/** GET /api/eduai/ai-status/history – proxies Core's 72h history for the UBC chip's panel. */
+router.get("/ai-status/history", async (req, res) => {
+  const upstream = await eduaiService.getAiStatusHistory({ cookie: req.headers.cookie ?? "" });
+  return res.status(upstream.status).json(upstream.body);
+});
+
 router.get("/provider-settings", async (req, res, next) => {
   try {
     res.json(await getUserProviderSettingsFromCore(req.headers.cookie ?? ""));
