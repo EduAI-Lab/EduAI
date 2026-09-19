@@ -159,7 +159,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `VLLM_TRUSTED_BASE_URLS` | — | SSRF allowlist for every vLLM base URL (chat **and** embeddings) |
 | `FLEET_HEALTH_CACHE_TTL_MS` / `FLEET_HEALTH_TIMEOUT_MS` / `FLEET_FAILURE_EJECTION_MS` | `30000` / `5000` / `30000` | Fleet health probing and failure ejection |
 | `FLEET_STREAM_PROBE_MS` | `10000` | Soft deadline waiting for the first stream chunk before retrying another host |
-| `AI_MAX_INFLIGHT` / `AI_ADMISSION_WAIT_MS` | `8` / `15000` | Process-local FIFO admission gate for local-GPU inference (`0` disables) |
+| `AI_MAX_INFLIGHT` / `AI_ADMISSION_WAIT_MS` | `8` / `15000` | Process-local FIFO admission gate for local-GPU inference (`0` disables). The cap is **per Node process and global** — it has no per-course dimension, and N app replicas allow N×`AI_MAX_INFLIGHT` concurrent requests against one shared GPU fleet, so it is not a fleet-wide quota. A caller that loses the race gets `503 {"code":"AI_ADMISSION_TIMEOUT","retryAfter":<seconds>}` plus a jittered `Retry-After` derived from `AI_ADMISSION_WAIT_MS`. `/api/chat` and `/api/completion` share this gate, so interactive chat and extension completions contend for the same slots. |
 | `AWS_BEARER_TOKEN_BEDROCK` / `BEDROCK_REGION` / `BEDROCK_MODEL_ID` | — / `us-east-1` / `meta.llama3-70b-instruct-v1:0` | Bedrock **overflow** target — server env only, never client-selectable |
 | `BEDROCK_RATE_LIMIT` / `BEDROCK_RATE_WINDOW_MS` | `20` / `60000` | Aggregate AWS cost cap (global, not per user) |
 | `VLLM_CHAT_TOOLS` | off | `1` honours the DB `supportsTools` flag for vLLM models instead of forcing hybrid RAG |

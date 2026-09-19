@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.19
+
+- Add `Retry-After` to the `503 AI_ADMISSION_TIMEOUT` returned when a request loses the local-GPU admission race. The 503 previously carried no retry hint at all — unlike the `429` on the same route — so a client had nothing to back off against and retried straight into the back of the same queue; the COSC 301 pilot report shows six consecutive 503s over 138s from exactly that loop. PR: #PR. Closes #1804.
+- Derive the advisory delay from `AI_ADMISSION_WAIT_MS` (the window the caller just lost), floor it at 1s so a sub-second window cannot emit `Retry-After: 0`, and jitter it across the window — a fixed delay would re-synchronize a class-sized burst (25 students against a default 8 slots) into the next window instead of spreading it.
+- Serve that 503 from one shared builder (`admissionTimeoutResponse` in `lib/ai/admission.server.ts`) used by both `POST /api/chat` and `POST /api/completion`. The two routes had duplicated the response literal, which is why only one of them was named in the original report though both behaved identically.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
