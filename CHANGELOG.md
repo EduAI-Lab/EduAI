@@ -6,7 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.18
 
-- Fix `reembed-course-materials.test.ts` failing on any machine with an `apps/core/.env`. Vitest loads that file into `process.env`, and it sets `OPENROUTER_API_KEY`; since `getCloudEmbeddingModel` resolves OpenRouter before OpenAI, the leaked key silently moved the immutable-settings-snapshot test onto the OpenRouter branch, which addresses models provider-qualified (`openai/model-a`) rather than bare (`model-a`). CI has no `.env`, so it only ever bit locally. The suite now clears the provider-selecting variables and restores them; no production behaviour changed and no assertion was edited. Adds coverage pinning the per-provider prefix handling on both sides, which nothing asserted before. Closes #1792. (@Ayyhab, 2026-09-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- Fix `reembed-course-materials.test.ts` failing on any machine with an `apps/core/.env`. Vitest loads that file into `process.env`, and it sets `OPENROUTER_API_KEY`; since `getCloudEmbeddingModel` resolves OpenRouter before OpenAI, the leaked key silently moved the immutable-settings-snapshot test onto the OpenRouter branch, which addresses models provider-qualified (`openai/model-a`) rather than bare (`model-a`). CI has no `.env`, so it only ever bit locally. The suite now clears the provider-selecting variables and restores them; no production behaviour changed and no assertion was edited. Adds coverage pinning the per-provider prefix handling on both sides, which nothing asserted before. Closes #1792. (@Ayyhab, 2026-09-18) — [#1793](https://github.com/EduAI-Lab/EduAI/pull/1793)
 
 ## 2026.09.16
 
