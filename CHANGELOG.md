@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.18
+
+- [core] test: Pin the course-material path for every type the upload picker advertises (`.pdf`, `.docx`, `.pptx`, `.txt`, `.md`): each extracts a planted phrase into a RAG `**Source**` header naming the file, empty retrieval uses `EMPTY_COURSE_RAG_INSTRUCTION` instead of world knowledge, and `findRelevantContent` keeps filtering by `courseId`. Export `ACCEPTED` so the picker list cannot drift from those tested types. Complements #1123. Closes #1785. (@Ayyhab, 2026-09-18) — [#1798](https://github.com/EduAI-Lab/EduAI/pull/1798)
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.

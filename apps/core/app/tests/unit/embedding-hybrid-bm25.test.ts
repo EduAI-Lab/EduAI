@@ -460,3 +460,23 @@ describe("findRelevantContent — student-visibility gate (#839)", () => {
     expect(capturedSql(0)).toContain('cm."deletedAt" IS NULL');
   });
 });
+
+describe("findRelevantContent — course scope (#1785)", () => {
+  it("filters both retrieval paths to the requested courseId so another course is never retrieved", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(capturedSql()).toContain('cm."courseId" =');
+    expect(capturedParams()).toContain(COURSE_ID);
+
+    // vi.clearAllMocks() wipes queryRawMock.mock.calls, but the pgvector
+    // version-gate check is cached at module scope (not per-test) and was
+    // already resolved by the call above — the second findRelevantContent()
+    // call below issues only the retrieval query, landing back at index 0.
+    vi.clearAllMocks();
+    queryRawMock.mockResolvedValue([]);
+    process.env.RAG_HYBRID_BM25 = "1";
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const hybridSql = capturedSql(0);
+    expect(hybridSql.match(/cm\."courseId" =/g)).toHaveLength(2);
+    expect(capturedParams(0)).toContain(COURSE_ID);
+  });
+});

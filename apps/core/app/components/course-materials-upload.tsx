@@ -34,7 +34,7 @@ export interface CourseMaterialsUploadProps {
   onFileSelect: (file: File) => void;
 }
 
-const ACCEPTED =
+export const ACCEPTED =
   ".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown";
 
 // ── component ─────────────────────────────────────────────────────────────────

@@ -1052,6 +1052,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`email-verification.email.test.ts`](apps/core/app/tests/unit/email-verification.email.test.ts) | The email verification template includes the Better Auth verification link and escapes it in the HTML body. |
 | [`fleet-config.route.test.ts`](apps/core/app/tests/unit/fleet-config.route.test.ts) | The fleet config API tests every saved server and returns the fetched model ids, reports a useful per-server failure when a connection test fails, neither tests nor saves when the administrator guard rejects the request, runs no connection test on a read-only config load, and rejects a `baseUrl` outside the deployment-owned vLLM allowlist before saving or probing. |
 | [`seed-routing-tiers.test.ts`](apps/core/app/tests/unit/seed-routing-tiers.test.ts) | `applyRoutingTierAssignments` in the seed tiers every currently-declared vLLM model by its real `modelId`, clears only known retired rows while preserving admin-managed model rows, and also clears any leftover tier on Google rows. |
+| [`accepted-material-types-rag-path.test.ts`](apps/core/app/tests/unit/accepted-material-types-rag-path.test.ts) | (#1785) Every file type the course-materials upload input advertises (`.pdf`, `.docx`, `.pptx`, `.txt`, `.md`) extracts a planted phrase and that phrase appears in the RAG system block under a `**Source**` header naming the file; empty retrieval uses `EMPTY_COURSE_RAG_INSTRUCTION` instead of world knowledge. Complements #1123. |
 
 ## EduAI Integration Tests
 
