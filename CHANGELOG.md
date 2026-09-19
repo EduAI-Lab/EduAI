@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.18
+
+- Fix `reembed-course-materials.test.ts` failing on any machine with an `apps/core/.env`. Vitest loads that file into `process.env`, and it sets `OPENROUTER_API_KEY`; since `getCloudEmbeddingModel` resolves OpenRouter before OpenAI, the leaked key silently moved the immutable-settings-snapshot test onto the OpenRouter branch, which addresses models provider-qualified (`openai/model-a`) rather than bare (`model-a`). CI has no `.env`, so it only ever bit locally. The suite now clears the provider-selecting variables and restores them; no production behaviour changed and no assertion was edited. Adds coverage pinning the per-provider prefix handling on both sides, which nothing asserted before. Closes #1792. (@Ayyhab, 2026-09-18) — [#1793](https://github.com/EduAI-Lab/EduAI/pull/1793)
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
