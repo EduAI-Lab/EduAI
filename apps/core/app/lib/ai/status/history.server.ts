@@ -19,7 +19,12 @@ export interface HistoryBucket {
 export interface HistoryModel {
   key: string;
   label: string;
-  uptimePct: number;
+  /**
+   * Percentage of JUDGEABLE buckets that were up. Null when none were: with
+   * nothing to divide by, any number would be an invention, and 0 in
+   * particular would report a configuration fault as total downtime.
+   */
+  uptimePct: number | null;
   buckets: HistoryBucket[];
 }
 
@@ -116,12 +121,16 @@ export function bucketSamples(
       const load = hostLoad.get(serverId);
       const models: HistoryModel[] = [...byModel.entries()]
         .map(([modelId, buckets]) => {
-          const observed = buckets.filter((b): b is DerivedState => b !== null);
-          const up = observed.filter((b) => UP_STATES.has(b)).length;
+          // `unknown` means "we could not tell" — a missing key, a malformed
+          // config, a probe that threw. Counting it against uptime reported a
+          // configuration fault to the user as downtime, so it is excluded
+          // from the denominator rather than treated as a failed hour.
+          const judged = buckets.filter((b): b is DerivedState => b !== null && b !== "unknown");
+          const up = judged.filter((b) => UP_STATES.has(b)).length;
           return {
             key: modelKey(modelId, serverId, allIds),
             label: modelDisplayLabel(modelId, serverId, allIds),
-            uptimePct: observed.length === 0 ? 0 : (up / observed.length) * 100,
+            uptimePct: judged.length === 0 ? null : (up / judged.length) * 100,
             buckets: buckets.map((state, i) => ({
               t: new Date(startMs + i * bucketMs).toISOString(),
               state,

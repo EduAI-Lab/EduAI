@@ -94,6 +94,26 @@ async function sampleHost(host: StatusHost, intervalMinutes: number): Promise<Sa
 
   if (health.ok) {
     const models = health.modelIds ?? [];
+    if (models.length === 0) {
+      // A host that answers /v1/models with an empty list wrote no rows at all,
+      // so it vanished from the fleet and the chip read green over whichever
+      // hosts survived — the aggregate degrades on `up < total`, and this host
+      // was in neither count. It can serve nothing, which is that host's
+      // outage however politely it answered; the reason it differs from an
+      // unreachable host is recorded in `detail`, not thrown away.
+      return [
+        {
+          serverId: host.serverId,
+          modelId: UNKNOWN_MODEL_SENTINEL,
+          state: "OUTAGE" as const,
+          reachable: false,
+          waiting: null,
+          cacheUsage: null,
+          intervalMinutes,
+          detail: "host reachable but advertising no models",
+        },
+      ];
+    }
     return models.map((modelId) => ({
       serverId: host.serverId,
       modelId,

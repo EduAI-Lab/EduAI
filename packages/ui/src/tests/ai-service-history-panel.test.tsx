@@ -116,6 +116,25 @@ describe("AIServiceHistoryPanel", () => {
     expect(bar?.className).toContain("bg-muted-foreground/40");
   });
 
+  it("renders an unmeasurable uptime as n/a rather than 0%", () => {
+    // 0% would report "we could not tell" (a configuration fault, a probe that
+    // threw) as total downtime — the lie this panel exists to prevent.
+    const unknownOnly = {
+      ...payload,
+      servers: [
+        {
+          ...payload.servers[0],
+          models: [{ ...payload.servers[0].models[0], uptimePct: null }],
+        },
+      ],
+    };
+    render(<AIServiceHistoryPanel data={unknownOnly} />);
+
+    expect(screen.getByText("n/a")).toBeInTheDocument();
+    expect(screen.queryByText("0.0%")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/no uptime recorded over the last 72 hours/i)).toBeInTheDocument();
+  });
+
   it("shows a cold-start message when there is no history at all", () => {
     render(<AIServiceHistoryPanel data={{ ...payload, servers: [] }} coldStartMinutes={15} />);
     expect(screen.getByText(/first check runs within 15 minutes/i)).toBeInTheDocument();

@@ -101,6 +101,46 @@ describe("bucketSamples", () => {
     expect(out.servers[0].models[0].uptimePct).toBeCloseTo(66.7, 1);
   });
 
+  it("does not count an unknown hour against uptime", () => {
+    // UNKNOWN is "we could not tell" — a missing key, a malformed config, a
+    // probe that threw. Counting it as downtime reported a configuration fault
+    // to the user as an outage.
+    const out = bucketSamples(
+      [
+        s({ observedAt: new Date("2026-09-18T09:10:00Z") }),
+        s({
+          observedAt: new Date("2026-09-18T10:10:00Z"),
+          state: "UNKNOWN",
+          reachable: false,
+          waiting: null,
+          cacheUsage: null,
+        }),
+        s({ observedAt: new Date("2026-09-18T11:10:00Z") }),
+      ],
+      { windowHours: 3, now: NOW, thresholds: THRESHOLDS, liveServerIds: ["cmps01"] },
+    );
+
+    // 2 judgeable buckets, both up — the unknown one is excluded, not failed.
+    expect(out.servers[0].models[0].uptimePct).toBe(100);
+  });
+
+  it("reports no uptime at all rather than 0% when every bucket is unknown", () => {
+    const out = bucketSamples(
+      [
+        s({
+          observedAt: new Date("2026-09-18T10:10:00Z"),
+          state: "UNKNOWN",
+          reachable: false,
+          waiting: null,
+          cacheUsage: null,
+        }),
+      ],
+      { windowHours: 3, now: NOW, thresholds: THRESHOLDS, liveServerIds: ["cmps01"] },
+    );
+
+    expect(out.servers[0].models[0].uptimePct).toBeNull();
+  });
+
   it("widens the bucket to the poll interval when that exceeds an hour", () => {
     const out = bucketSamples(
       [s({ observedAt: new Date("2026-09-18T11:10:00Z"), intervalMinutes: 120 })],

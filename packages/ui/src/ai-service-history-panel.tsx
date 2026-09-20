@@ -24,7 +24,13 @@ export interface HistoryBucket {
 export interface HistoryModel {
   key: string;
   label: string;
-  uptimePct: number;
+  /**
+   * Percentage of judgeable buckets that were up, or null when none were —
+   * `unknown` hours are excluded from the denominator, so a model whose every
+   * sample was "we could not tell" has no uptime to report. Rendered as "n/a"
+   * rather than as 0%, which would read as total downtime.
+   */
+  uptimePct: number | null;
   buckets: HistoryBucket[];
 }
 
@@ -131,13 +137,18 @@ function ModelRow({
   const currentPhrase = stale
     ? "current state unknown — status data is stale"
     : `currently ${(BAR_WORD[newest] ?? BAR_WORD.unknown).toLowerCase()}`;
+  const uptimeText = model.uptimePct == null ? "n/a" : `${model.uptimePct.toFixed(1)}%`;
+  const uptimePhrase =
+    model.uptimePct == null
+      ? `no uptime recorded over the last ${windowHours} hours`
+      : `${model.uptimePct.toFixed(1)}% uptime over the last ${windowHours} hours`;
   return (
     <div className="flex items-center gap-2 py-1">
       <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">{model.label}</span>
       {/* One sentence per model; a screen reader must not announce 72 bars. */}
       <div
         className="flex flex-1 items-center gap-[1px]"
-        aria-label={`${model.label}: ${model.uptimePct.toFixed(1)}% uptime over the last ${windowHours} hours, ${currentPhrase}`}
+        aria-label={`${model.label}: ${uptimePhrase}, ${currentPhrase}`}
         role="img"
       >
         <span aria-hidden className="flex w-full items-center gap-[1px]">
@@ -146,9 +157,7 @@ function ModelRow({
           ))}
         </span>
       </div>
-      <span className="w-12 shrink-0 text-right text-xs tabular-nums">
-        {model.uptimePct.toFixed(1)}%
-      </span>
+      <span className="w-12 shrink-0 text-right text-xs tabular-nums">{uptimeText}</span>
     </div>
   );
 }

@@ -244,6 +244,27 @@ describe("runAiStatusProbe", () => {
     expect(createManyMock.mock.calls[0][0].data[0].intervalMinutes).toBe(15);
   });
 
+  it("records a reachable host that advertises no models instead of letting it vanish", async () => {
+    // Writing no rows dropped the host from the fleet entirely, so the chip
+    // read green over the survivors — the aggregate degrades on `up < total`
+    // and this host counted in neither.
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "http://cmps01:8001", configuredModels: [] },
+    ]);
+    getServerHealthMock.mockResolvedValue({ ok: true, modelIds: [], checkedAt: 0 });
+
+    await runAiStatusProbe();
+
+    const rows = createManyMock.mock.calls[0][0].data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      serverId: "cmps01",
+      state: "OUTAGE",
+      reachable: false,
+      detail: "host reachable but advertising no models",
+    });
+  });
+
   it("writes nothing and says so when no UBC inference is configured", async () => {
     resolveStatusHostsMock.mockReturnValue([]);
 
