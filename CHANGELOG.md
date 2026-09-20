@@ -4,6 +4,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.19
+
+- Add a full **AI service status** page at `/status` in Core, opened from the UBC chip's history popover via a new "View full status" link. It renders the same persisted 72-hour history the popover shows, but at full width: the fleet-wide UBC verdict as a banner, the managed-cloud verdict as a single line (there is no cloud history to chart — `ai_service_samples` records UBC hosts only), then a section per host with one bar row and uptime figure per model. The page is server-rendered from its route loader, so it arrives with data instead of spinning, and is readable by any signed-in user — it exposes only up/down state, never hostnames or fleet ids.
+- AI Tutor and Question Maker link out to Core's page rather than each building their own; the bars, rows and legend now live in one shared `@eduai/ui` module used by both the popover and the page, so the two can never disagree about what a grey bar means.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
