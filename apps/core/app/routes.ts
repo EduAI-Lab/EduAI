@@ -5,6 +5,7 @@ export default [
   route("/api/health", "routes/api/health.ts"),
   route("/api/ai-status", "routes/api/ai-status.ts"),
   route("/api/ai-status/history", "routes/api/ai-status.history.ts"),
+  route("/status", "routes/status.tsx"),
   route("/api/ai-jobs/:jobId", "routes/api.ai-jobs.$jobId.ts"),
   route("/api/auth/*", "routes/api/auth.$.ts"),
   route("/api/courses", "routes/api/courses.$.ts"),
