@@ -4,50 +4,27 @@
  * Presentational only — each app fetches `/api/ai-status/history` its own way
  * and passes the decoded payload, exactly as AIServiceIndicators does.
  *
- * A bucket with no samples renders as `none`, visually distinct from
- * operational. Painting missing data as healthy is the failure this panel
- * exists to prevent, so "no data" is never green.
+ * The bars, rows and legend live in `ai-service-history-rows.tsx`, shared with
+ * Core's full `/status` page. This file is the popover wrapper around them:
+ * header verdict, freshness, stale banner, error and cold-start copy.
  */
 import * as React from "react";
 
 import type { ServiceStatus } from "./ai-service-indicators";
-import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import {
+  HISTORY_STATE_CLASS,
+  HISTORY_STATE_WORD,
+  HistoryLegend,
+  HistoryServerSection,
+  type HistoryBucket,
+  type HistoryBucketState,
+  type HistoryModel,
+  type HistoryPayload,
+  type HistoryServer,
+} from "./ai-service-history-rows";
 import { cn } from "./utils";
 
-export type HistoryBucketState = "operational" | "degraded" | "outage" | "unknown";
-
-export interface HistoryBucket {
-  t: string;
-  state: HistoryBucketState | null;
-}
-
-export interface HistoryModel {
-  key: string;
-  label: string;
-  /**
-   * Percentage of judgeable buckets that were up, or null when none were —
-   * `unknown` hours are excluded from the denominator, so a model whose every
-   * sample was "we could not tell" has no uptime to report. Rendered as "n/a"
-   * rather than as 0%, which would read as total downtime.
-   */
-  uptimePct: number | null;
-  buckets: HistoryBucket[];
-}
-
-export interface HistoryServer {
-  key: string;
-  label: string;
-  waiting: number | null;
-  cacheUsage: number | null;
-  models: HistoryModel[];
-}
-
-export interface HistoryPayload {
-  windowHours: number;
-  bucketMinutes: number;
-  generatedAt: string;
-  servers: HistoryServer[];
-}
+export type { HistoryBucket, HistoryBucketState, HistoryModel, HistoryPayload, HistoryServer };
 
 export interface AIServiceHistoryPanelProps {
   data: HistoryPayload | null;
@@ -67,99 +44,19 @@ export interface AIServiceHistoryPanelProps {
   coldStartMinutes?: number;
 }
 
-const BAR_CLASS = {
-  operational: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  outage: "bg-red-500",
-  unknown: "bg-muted-foreground/40",
-  none: "bg-muted-foreground/15",
-} satisfies Record<HistoryBucketState | "none", string>;
-
-const BAR_WORD = {
-  operational: "Operational",
-  degraded: "Degraded",
-  outage: "Outage",
-  unknown: "Unknown",
-  none: "No data",
-} satisfies Record<HistoryBucketState | "none", string>;
-
-function minutesAgo(iso: string): number {
-  return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-}
-
 /** Chip-state words, including the one state a bucket can never be. */
 const CURRENT_WORD = {
-  ...BAR_WORD,
+  ...HISTORY_STATE_WORD,
   loading: "Checking…",
 } satisfies Record<HistoryBucketState | "none" | "loading", string>;
 
 const CURRENT_DOT_CLASS = {
-  ...BAR_CLASS,
+  ...HISTORY_STATE_CLASS,
   loading: "bg-amber-400 animate-pulse",
 } satisfies Record<HistoryBucketState | "none" | "loading", string>;
 
-function Bar({ bucket }: { bucket: HistoryBucket }) {
-  const key = bucket.state ?? "none";
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          data-bucket-state={key}
-          // An unrecognised state must still paint something: falling through to
-          // `undefined` left an invisible gap that reads as "no data".
-          className={cn(
-            "h-5 min-w-[2px] flex-1 rounded-[1px]",
-            BAR_CLASS[key] ?? BAR_CLASS.unknown,
-          )}
-        />
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        {new Date(bucket.t).toLocaleString()} · {BAR_WORD[key] ?? BAR_WORD.unknown}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function ModelRow({
-  model,
-  windowHours,
-  stale,
-}: {
-  model: HistoryModel;
-  windowHours: number;
-  stale: boolean;
-}) {
-  const newest = [...model.buckets].reverse().find((b) => b.state !== null)?.state ?? "unknown";
-  // The newest non-null bucket is only "current" while the data is fresh. With
-  // the probe worker dead ten hours it is a ten-hour-old reading, and saying
-  // "currently operational" is the exact lie the stale banner exists to stop —
-  // a sighted user sees the banner, so a screen-reader user must hear it.
-  const currentPhrase = stale
-    ? "current state unknown — status data is stale"
-    : `currently ${(BAR_WORD[newest] ?? BAR_WORD.unknown).toLowerCase()}`;
-  const uptimeText = model.uptimePct == null ? "n/a" : `${model.uptimePct.toFixed(1)}%`;
-  const uptimePhrase =
-    model.uptimePct == null
-      ? `no uptime recorded over the last ${windowHours} hours`
-      : `${model.uptimePct.toFixed(1)}% uptime over the last ${windowHours} hours`;
-  return (
-    <div className="flex items-center gap-2 py-1">
-      <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">{model.label}</span>
-      {/* One sentence per model; a screen reader must not announce 72 bars. */}
-      <div
-        className="flex flex-1 items-center gap-[1px]"
-        aria-label={`${model.label}: ${uptimePhrase}, ${currentPhrase}`}
-        role="img"
-      >
-        <span aria-hidden className="flex w-full items-center gap-[1px]">
-          {model.buckets.map((bucket) => (
-            <Bar key={bucket.t} bucket={bucket} />
-          ))}
-        </span>
-      </div>
-      <span className="w-12 shrink-0 text-right text-xs tabular-nums">{uptimeText}</span>
-    </div>
-  );
+function minutesAgo(iso: string): number {
+  return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
 }
 
 export function AIServiceHistoryPanel({
@@ -252,36 +149,17 @@ export function AIServiceHistoryPanel({
 
       {hasData
         ? data.servers.map((server) => (
-            <div key={server.key} className="space-y-0.5">
-              <div className="flex items-baseline justify-between text-xs">
-                <span className="font-medium">{server.label}</span>
-                <span className="text-muted-foreground">
-                  {server.waiting != null ? `queue ${server.waiting}` : "queue n/a"}
-                  {server.cacheUsage != null ? ` · ${Math.round(server.cacheUsage * 100)}%` : ""}
-                </span>
-              </div>
-              {server.models.map((model) => (
-                <ModelRow
-                  key={model.key}
-                  model={model}
-                  windowHours={data.windowHours}
-                  stale={stale}
-                />
-              ))}
-            </div>
+            <HistoryServerSection
+              key={server.key}
+              server={server}
+              windowHours={data.windowHours}
+              stale={stale}
+              dense
+            />
           ))
         : null}
 
-      <div className="flex flex-wrap gap-3 border-t border-border pt-2 text-[10px] text-muted-foreground">
-        {/* `unknown` paints its own grey and must be nameable; without an entry
-            it was indistinguishable from "no data" to anyone reading the key. */}
-        {(["operational", "degraded", "outage", "unknown", "none"] as const).map((key) => (
-          <span key={key} className="inline-flex items-center gap-1">
-            <span className={cn("h-2 w-2 rounded-[1px]", BAR_CLASS[key])} aria-hidden />
-            {BAR_WORD[key]}
-          </span>
-        ))}
-      </div>
+      <HistoryLegend />
     </div>
   );
 }
