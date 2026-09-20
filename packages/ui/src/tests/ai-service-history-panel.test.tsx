@@ -145,4 +145,32 @@ describe("AIServiceHistoryPanel", () => {
     expect(screen.getByText("Qwen:9b-01")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
+
+  it("links to the full status page when given an href", () => {
+    render(<AIServiceHistoryPanel data={payload} statusPageHref="/status" />);
+
+    const link = screen.getByRole("link", { name: /view full status/i });
+    expect(link).toHaveAttribute("href", "/status");
+  });
+
+  it("omits the full-status link when no href is given", () => {
+    render(<AIServiceHistoryPanel data={payload} />);
+    expect(screen.queryByRole("link", { name: /view full status/i })).not.toBeInTheDocument();
+  });
+
+  it("opens the full status page in a new tab when told to", () => {
+    // AI Tutor and QM point at Core's origin, so the link must not navigate the
+    // extension away from itself.
+    render(
+      <AIServiceHistoryPanel
+        data={payload}
+        statusPageHref="https://core.example.com/status"
+        statusPageTarget="_blank"
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /view full status/i });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
 });

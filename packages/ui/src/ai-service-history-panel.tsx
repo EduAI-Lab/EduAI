@@ -42,6 +42,14 @@ export interface AIServiceHistoryPanelProps {
   current?: ServiceStatus | null;
   /** Interval in minutes, used only in the cold-start copy. */
   coldStartMinutes?: number;
+  /**
+   * Destination for the "View full status" link. A plain string, rendered by a
+   * plain <a>: this package is router-agnostic, and the extensions point at
+   * Core's origin rather than at a route of their own.
+   */
+  statusPageHref?: string;
+  /** `_blank` for the extensions, whose link leaves their origin for Core's. */
+  statusPageTarget?: "_blank" | "_self";
 }
 
 /** Chip-state words, including the one state a bucket can never be. */
@@ -68,6 +76,8 @@ export function AIServiceHistoryPanel({
   current = null,
   onRefresh,
   coldStartMinutes = 15,
+  statusPageHref,
+  statusPageTarget = "_self",
 }: AIServiceHistoryPanelProps) {
   const hasData = data != null && data.servers.length > 0;
   const currentState = current?.state ?? null;
@@ -158,6 +168,19 @@ export function AIServiceHistoryPanel({
             />
           ))
         : null}
+
+      {statusPageHref ? (
+        <a
+          href={statusPageHref}
+          target={statusPageTarget}
+          // Set unconditionally: harmless same-tab, and required the moment a
+          // caller passes _blank at an origin it does not control.
+          rel="noopener noreferrer"
+          className="block text-xs underline underline-offset-2 hover:text-foreground"
+        >
+          View full status →
+        </a>
+      ) : null}
 
       <HistoryLegend />
     </div>
