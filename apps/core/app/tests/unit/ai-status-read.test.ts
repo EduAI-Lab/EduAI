@@ -9,8 +9,15 @@ vi.mock("~/lib/prisma.server", () => ({
   default: { aiServiceSample: { findMany: findManyMock } },
 }));
 
-const { deriveRowState, isStale, collapseToHostProbes, getUbcStatusFromSamples } =
-  await import("~/lib/ai/status/read.server");
+const {
+  deriveRowState,
+  isStale,
+  collapseToHostProbes,
+  getUbcStatusFromSamples,
+  getUbcStatusCached,
+  clearUbcStatusCache,
+  loadLatestSamples,
+} = await import("~/lib/ai/status/read.server");
 
 const THRESHOLDS = { waiting: 4, cachePct: 0.9 };
 
@@ -154,5 +161,71 @@ describe("getUbcStatusFromSamples", () => {
 
     expect(result.stale).toBe(true);
     expect(result.checkedAt).toBe(newest.observedAt.toISOString());
+  });
+});
+
+describe("loadLatestSamples", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "x", configuredModels: [] },
+    ]);
+    findManyMock.mockResolvedValue([]);
+  });
+
+  // Prisma applies `distinct` after fetching, so an unbounded query over the
+  // whole retention window read every sample in the table to keep a handful.
+  it("bounds the query by row count and by time", async () => {
+    await loadLatestSamples();
+
+    const args = findManyMock.mock.calls[0][0];
+    expect(args.take).toBeGreaterThan(0);
+    expect(args.where.observedAt.gte).toBeInstanceOf(Date);
+    expect(args.orderBy).toEqual({ observedAt: "desc" });
+  });
+});
+
+describe("getUbcStatusCached", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearUbcStatusCache();
+    resolveStatusHostsMock.mockReturnValue([
+      { serverId: "cmps01", baseUrl: "x", configuredModels: [] },
+    ]);
+    findManyMock.mockResolvedValue([sample()]);
+  });
+
+  it("collapses a burst of header polls onto one read", async () => {
+    const results = await Promise.all([
+      getUbcStatusCached(),
+      getUbcStatusCached(),
+      getUbcStatusCached(),
+    ]);
+
+    expect(findManyMock).toHaveBeenCalledTimes(1);
+    expect(results[0]).toEqual(results[2]);
+  });
+
+  it("serves a later poll from the cache and re-reads once it expires", async () => {
+    vi.setSystemTime(new Date("2026-09-18T12:00:00Z"));
+    await getUbcStatusCached();
+    vi.setSystemTime(new Date("2026-09-18T12:00:30Z"));
+    await getUbcStatusCached();
+    expect(findManyMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date("2026-09-18T12:01:30Z"));
+    await getUbcStatusCached();
+    vi.useRealTimers();
+
+    expect(findManyMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches nothing when the read fails, so the next poll retries", async () => {
+    findManyMock.mockRejectedValueOnce(new Error("db down"));
+
+    await expect(getUbcStatusCached()).rejects.toThrow("db down");
+    await getUbcStatusCached();
+
+    expect(findManyMock).toHaveBeenCalledTimes(2);
   });
 });

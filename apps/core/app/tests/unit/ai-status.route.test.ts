@@ -2,13 +2,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getRequestSessionMock = vi.hoisted(() => vi.fn());
-const getUbcStatusFromSamplesMock = vi.hoisted(() => vi.fn());
+const getUbcStatusCachedMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/auth/request-session.server", () => ({
   getRequestSession: getRequestSessionMock,
 }));
+// The route reads through the 60s single-flight cache, not the raw query.
 vi.mock("~/lib/ai/status/read.server", () => ({
-  getUbcStatusFromSamples: getUbcStatusFromSamplesMock,
+  getUbcStatusCached: getUbcStatusCachedMock,
 }));
 
 const { loader } = await import("~/routes/api/ai-status");
@@ -30,7 +31,7 @@ describe("GET /api/ai-status", () => {
   });
 
   it("returns the persisted UBC status with checkedAt and stale", async () => {
-    getUbcStatusFromSamplesMock.mockResolvedValue({
+    getUbcStatusCachedMock.mockResolvedValue({
       status: {
         state: "degraded",
         detail: "UBC-hosted inference degraded: heavy load — 6 queued.",
@@ -53,7 +54,7 @@ describe("GET /api/ai-status", () => {
   });
 
   it("reports unknown and stale when the probe has stopped running", async () => {
-    getUbcStatusFromSamplesMock.mockResolvedValue({
+    getUbcStatusCachedMock.mockResolvedValue({
       status: { state: "unknown", detail: "Status data is stale — last checked 47 minutes ago." },
       checkedAt: "2026-09-18T19:13:00.000Z",
       stale: true,

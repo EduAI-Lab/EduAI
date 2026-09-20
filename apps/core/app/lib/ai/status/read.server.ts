@@ -14,8 +14,19 @@ import {
   type HostProbe,
   type ServiceStatus,
 } from "~/lib/ai/service-status.server";
+import { retentionDays } from "~/lib/ai/status/config.server";
 import { resolveStatusHosts } from "~/lib/ai/status/hosts.server";
 import prisma from "~/lib/prisma.server";
+
+/**
+ * Upper bound on the rows fetched for "newest per (serverId, modelId)".
+ *
+ * Prisma applies `distinct` after fetching, so an unbounded `findMany` over a
+ * whole retention window reads every sample in the table to keep a handful.
+ * Ordered newest-first, the current tick's rows come first, so a few hundred
+ * rows covers many ticks' worth of every host × model pair.
+ */
+const LATEST_SAMPLE_SCAN_LIMIT = 500;
 
 export interface LatestSample {
   serverId: string;
@@ -61,12 +72,18 @@ export async function loadLatestSamples(): Promise<LatestSample[]> {
   const liveIds = resolveStatusHosts().map((host) => host.serverId);
   if (liveIds.length === 0) return [];
 
+  // Nothing older than retention exists (the probe prunes it), so this bound
+  // changes no answer — it just stops the query planner reading the whole
+  // table when pruning is behind or retention is long.
+  const since = new Date(Date.now() - retentionDays() * 24 * 60 * 60 * 1000);
+
   // A decommissioned host's final OUTAGE row would otherwise hold the chip amber
   // for the whole retention window.
   return prisma.aiServiceSample.findMany({
-    where: { serverId: { in: liveIds } },
+    where: { serverId: { in: liveIds }, observedAt: { gte: since } },
     distinct: ["serverId", "modelId"],
     orderBy: { observedAt: "desc" },
+    take: LATEST_SAMPLE_SCAN_LIMIT,
     select: {
       serverId: true,
       modelId: true,
@@ -100,11 +117,13 @@ export function collapseToHostProbes(samples: LatestSample[]): HostProbe[] {
   return [...byHost.values()];
 }
 
-export async function getUbcStatusFromSamples(): Promise<{
+export interface UbcStatusRead {
   status: ServiceStatus;
   checkedAt: string | null;
   stale: boolean;
-}> {
+}
+
+export async function getUbcStatusFromSamples(): Promise<UbcStatusRead> {
   const samples = await loadLatestSamples();
 
   if (samples.length === 0) {
@@ -138,4 +157,42 @@ export async function getUbcStatusFromSamples(): Promise<{
     checkedAt,
     stale: false,
   };
+}
+
+/**
+ * Header polls collapse onto one read (#764 follow-on review).
+ *
+ * Every signed-in tab in all three apps polls `/api/ai-status`, but the
+ * underlying sample only changes when the cron probe runs (~15 min), so each
+ * poll re-ran the same query. A short module-level cache plus single-flight
+ * means a burst of tabs costs one query, and the value can never be staler than
+ * a minute — far fresher than its source. Deliberately not per-user: the fleet
+ * verdict is identical for everyone and carries no user data.
+ */
+const STATUS_CACHE_TTL_MS = 60_000;
+
+let cachedStatus: { at: number; value: UbcStatusRead } | null = null;
+let inFlightStatus: Promise<UbcStatusRead> | null = null;
+
+export async function getUbcStatusCached(): Promise<UbcStatusRead> {
+  if (cachedStatus && Date.now() - cachedStatus.at < STATUS_CACHE_TTL_MS) {
+    return cachedStatus.value;
+  }
+  // A second caller arriving mid-read joins the first one rather than issuing
+  // its own query; a failed read caches nothing, so the next call retries.
+  inFlightStatus ??= getUbcStatusFromSamples()
+    .then((value) => {
+      cachedStatus = { at: Date.now(), value };
+      return value;
+    })
+    .finally(() => {
+      inFlightStatus = null;
+    });
+  return inFlightStatus;
+}
+
+/** Drops the cached read. For tests, and for any caller that just wrote samples. */
+export function clearUbcStatusCache(): void {
+  cachedStatus = null;
+  inFlightStatus = null;
 }

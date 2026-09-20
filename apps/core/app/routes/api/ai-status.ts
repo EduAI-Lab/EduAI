@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { classifyCloudStatus } from "~/lib/ai/service-status.server";
-import { getUbcStatusFromSamples } from "~/lib/ai/status/read.server";
+import { getUbcStatusCached } from "~/lib/ai/status/read.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
@@ -30,7 +30,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         google: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         openrouter: process.env.OPENROUTER_API_KEY,
       });
-      const { status: ubc, checkedAt, stale } = await getUbcStatusFromSamples();
+      // Cached for 60s with single-flight: every tab in all three apps polls
+      // this, and the underlying sample only changes when the cron probe runs.
+      const { status: ubc, checkedAt, stale } = await getUbcStatusCached();
 
       return new Response(JSON.stringify({ cloud, ubc, checkedAt, stale }), {
         status: 200,
