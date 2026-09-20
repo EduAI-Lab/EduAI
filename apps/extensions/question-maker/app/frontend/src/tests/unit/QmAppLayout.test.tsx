@@ -39,7 +39,11 @@ vi.mock("react-router", () => ({
 
 let capturedAppShellProps: any = null;
 
-vi.mock("@eduai/ui", () => ({
+// The shell primitives are stubbed, but `useHistoryOnOpen` is the REAL hook:
+// its one-request-per-open contract is what the history wiring below asserts,
+// and a stub would assert nothing.
+vi.mock("@eduai/ui", async (importOriginal) => ({
+  useHistoryOnOpen: (await importOriginal<any>()).useHistoryOnOpen,
   AppShell: (props: any) => {
     capturedAppShellProps = props;
     return (
