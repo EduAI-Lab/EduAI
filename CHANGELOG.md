@@ -4,10 +4,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
-## 2026.09.19
+## 2026.09.20
 
-- Add a full **AI service status** page at `/status` in Core, opened from the UBC chip's history popover via a new "View full status" link. It renders the same persisted 72-hour history the popover shows, but at full width: the fleet-wide UBC verdict as a banner, the managed-cloud verdict as a single line (there is no cloud history to chart — `ai_service_samples` records UBC hosts only), then a section per host with one bar row and uptime figure per model. The page is server-rendered from its route loader, so it arrives with data instead of spinning, and is readable by any signed-in user — it exposes only up/down state, never hostnames or fleet ids.
-- AI Tutor and Question Maker link out to Core's page rather than each building their own; the bars, rows and legend now live in one shared `@eduai/ui` module used by both the popover and the page, so the two can never disagree about what a grey bar means.
+- PR Link: #PR
+- Add persisted **AI service status**: an `ai-status-probe` cron job samples each UBC fleet host's `/v1/models` and `/metrics` on a configurable cadence and writes one row per model into a new `ai_service_samples` table. `GET /api/ai-status` now reads that snapshot instead of probing the fleet live on every request, and reports `checkedAt` and `stale` so the UI can say how old the answer is rather than implying it is current.
+- Record a missing key or malformed config as **UNKNOWN, never OUTAGE** — "we could not tell" is not downtime, and `unknown` hours are excluded from the uptime denominator so a configuration fault is never reported to users as a service failure.
+- Add `GET /api/ai-status/history` and a 72-hour per-model history panel, opened from the UBC chip in Core, AI Tutor and Question Maker. A bucket with no samples renders grey, never green.
+- Add a full status page at **`/status`** in Core, linked from that panel. Server-rendered from its loader, so it arrives with data rather than spinning. AI Tutor and Question Maker link out to it rather than each building their own.
+- Fix CORE cron jobs being scheduled in web replicas, where the placeholder `script` would have failed the run — they now execute only in the dedicated cron worker. Manual triggers record their provenance so the worker actually dispatches them.
+- Question Maker now reads Core's shared status snapshot instead of running its own per-user live probe, so its chip agrees with Core's and AI Tutor's. Provider keys are validated once at save time and the verdict cached, replacing a live provider round-trip on every status poll; a revoked key is corrected by the API client's interceptor when a real rejection arrives. Closes #1779.
+- Drop the header status poll from 60s to 5 minutes in all three apps — the underlying value only changes when the cron probe runs.
+- Document `AI_STATUS_POLL_MINUTES` and `AI_STATUS_SAMPLE_RETENTION_DAYS`, and add preflight checks for the cron worker's `fleet.config.json` readability and `VLLM_API_KEY`.
 
 ## 2026.09.16
 
