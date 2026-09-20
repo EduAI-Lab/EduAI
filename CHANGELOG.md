@@ -4,6 +4,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Fix student registration dead-ending when no instructor has synced their course yet. The student-number onboarding step used to reject a number that matched no active Canvas roster row with a 403 ("Student number and verified email do not match an active Canvas roster"), leaving the student stuck on the form with no way forward but a skip button labelled for people who have no student number at all. The number is now accepted and stored as an *uncorroborated claim* — `User.studentIdVerifiedAt` stays null — and the student goes straight to the dashboard. Closes #1828. — [#PR](https://github.com/EduAI-Lab/EduAICore/pull/PR)
+- Keep the identity guarantee that the old 403 provided by moving it to where the enrollments are granted rather than where the account is created: an uncorroborated number earns Canvas enrollments only from a roster row that carries the account's own verified email, in both the per-user link path (`resolveCanvasEnrollmentsForUser`) and the per-course sync path (`linkEnrollmentsFromStagingForCourse`). The first roster row that matches stamps `studentIdVerifiedAt`, after which the number matches on the number alone again, so a second course whose roster carries a different address still enrolls them. Administrative linking (`linkCanvasRoster` without `requireVerifiedRoster`, and the admin user-update path) stamps the number itself, since an admin is vouching for it.
+- Tell students with no courses why their dashboard is empty — the course panel now reads "Your professor hasn't added you to their course yet. Contact them to add you to it." for STUDENT instead of the generic "No courses found." plus a "Browse courses" link that only led to a second empty, enrolment-scoped list. Other roles are unchanged.
+- Add the `User.studentIdVerifiedAt` column, backfilled for every account that already has a student number so no existing enrollment is disturbed on deploy.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
