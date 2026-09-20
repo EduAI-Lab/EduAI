@@ -19,6 +19,9 @@ vi.mock("~/lib/prisma.server", () => ({
     },
     enrollment: {
       upsert: vi.fn(),
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
 }));
@@ -96,23 +99,66 @@ describe("Canvas roster linking", () => {
         data: expect.objectContaining({ studentIdLookup: stored.studentIdLookup }),
       }),
     );
+    // An admin vouches for the number, so it lands corroborated.
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ studentIdVerifiedAt: expect.any(Date) }),
+      }),
+    );
     expect(prisma.enrollment.upsert).not.toHaveBeenCalled();
     // The administrative path does not gate on a matching staging row.
     expect(prisma.canvasRosterMember.findFirst).not.toHaveBeenCalled();
   });
 
-  it("does not self-link an identifier without a matching active roster identity", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-      studentId: null,
-      email: "student@example.com",
-      emailVerified: true,
-    } as never);
-    vi.mocked(prisma.canvasRosterMember.findFirst).mockResolvedValue(null as never);
+  /**
+   * This used to be a 403 that dead-ended registration for every student whose
+   * instructor had not synced their course yet. The number is now stored as an
+   * uncorroborated claim instead: no enrollments, no `studentIdVerifiedAt`, and
+   * the student lands on the dashboard rather than back on the form.
+   */
+  it("stores an unmatched self-service number as an uncorroborated claim", async () => {
+    const stored = prepareStudentIdStorage("12345678");
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce({
+        studentId: null,
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      } as never)
+      .mockResolvedValueOnce({
+        studentId: stored.studentId,
+        studentIdLookup: stored.studentIdLookup,
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
 
-    await expect(
-      linkCanvasRosterSelfService("self-service-no-match", "STUDENT", "12345678"),
-    ).rejects.toMatchObject({ statusCode: 403 });
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([] as never);
+
+    const result = await linkCanvasRosterSelfService(
+      "self-service-no-match",
+      "STUDENT",
+      "12345678",
+    );
+
+    expect(result).toEqual({ studentId: "12345678", enrollmentsLinked: 0 });
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "self-service-no-match" },
+        data: expect.objectContaining({ studentIdLookup: stored.studentIdLookup }),
+      }),
+    );
+
+    // The claim must NOT be corroborated — that is what withholds enrollments
+    // until a roster row carrying this student's own email turns up.
+    expect(vi.mocked(prisma.user.update).mock.calls[0][0]).not.toHaveProperty(
+      "data.studentIdVerifiedAt",
+    );
+    expect(prisma.enrollment.upsert).not.toHaveBeenCalled();
+    expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
   });
 
   it("does not self-link before the account email is verified", async () => {
@@ -120,6 +166,7 @@ describe("Canvas roster linking", () => {
       studentId: null,
       email: "student@example.com",
       emailVerified: false,
+      studentIdVerifiedAt: null,
     } as never);
 
     await expect(
@@ -136,35 +183,51 @@ describe("Canvas roster linking", () => {
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it("self-links when the verified email and student number match an active roster row", async () => {
+  it("self-links and corroborates when an active roster row carries the verified email", async () => {
     const stored = prepareStudentIdStorage("12345678");
     vi.mocked(prisma.user.findUnique)
       .mockResolvedValueOnce({
         studentId: null,
         email: " Student@Example.com ",
         emailVerified: true,
+        studentIdVerifiedAt: null,
       } as never)
       .mockResolvedValueOnce({
         studentId: stored.studentId,
         studentIdLookup: stored.studentIdLookup,
+        email: " Student@Example.com ",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
       } as never);
-    vi.mocked(prisma.canvasRosterMember.findFirst).mockResolvedValue({ id: "roster-1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.user.update).mockResolvedValue({} as never);
-    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      {
+        courseId: "course-1",
+        role: "STUDENT",
+        canvasUserId: "101",
+        email: "student@example.com",
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
 
     const result = await linkCanvasRosterSelfService("self-service-match", "STUDENT", "12345678");
 
-    expect(result).toEqual({ studentId: "12345678", enrollmentsLinked: 0 });
-    expect(prisma.canvasRosterMember.findFirst).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        isActive: true,
-        email: { equals: "student@example.com", mode: "insensitive" },
-      }),
-      select: { id: true },
-    });
+    expect(result).toEqual({ studentId: "12345678", enrollmentsLinked: 1 });
     expect(prisma.user.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "self-service-match" } }),
+      expect.objectContaining({
+        where: { id: "self-service-match" },
+        data: expect.objectContaining({ studentIdLookup: stored.studentIdLookup }),
+      }),
     );
+
+    // The roster row this student's own verified email matches is what
+    // corroborates the claim — the same pairing the old up-front 403 demanded,
+    // now enforced where the enrollments are actually granted.
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "self-service-match" },
+      data: { studentIdVerifiedAt: expect.any(Date) },
+    });
   });
 });

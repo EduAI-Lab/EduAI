@@ -44,4 +44,15 @@ describe("DashboardBody (STUDENT)", () => {
     expect(screen.getByText("Your courses")).toBeInTheDocument();
     expect(screen.getByText("Recent conversations")).toBeInTheDocument();
   });
+
+  it("explains why the course panel is empty instead of showing the generic state", () => {
+    renderStudentDashboard();
+
+    expect(
+      screen.getByText(
+        "Your professor hasn't added you to their course yet. Contact them to add you to it.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No courses found.")).not.toBeInTheDocument();
+  });
 });

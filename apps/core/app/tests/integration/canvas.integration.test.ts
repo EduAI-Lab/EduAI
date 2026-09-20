@@ -661,7 +661,14 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     }
   });
 
-  it("rejects a student number without a verified active roster match", async () => {
+  /**
+   * This used to be a 403. A student whose instructor had not synced them yet
+   * could not get past onboarding at all, which made registration a dead end
+   * for everyone ahead of their course's first sync. The number is now accepted
+   * and stored as an uncorroborated claim: no enrollments, no
+   * `studentIdVerifiedAt`, and the student lands on the dashboard.
+   */
+  it("accepts a student number with no active roster match, granting no enrollments", async () => {
     const student = await prisma.user.create({
       data: {
         email: `canvas-no-match-${Date.now()}@test.com`,
@@ -671,19 +678,68 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
       },
     });
 
-    sessionFor(student.id, "STUDENT");
-    const res = await call("POST", "link-roster", { studentNumber: "99999999" });
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.success).toBe(false);
+    try {
+      sessionFor(student.id, "STUDENT");
+      const res = await call("POST", "link-roster", { studentNumber: "99999999" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data).toMatchObject({ studentId: "99999999", enrollmentsLinked: 0 });
 
-    const unchanged = await prisma.user.findUnique({
-      where: { id: student.id },
-      select: { studentId: true },
+      const stored = await prisma.user.findUnique({
+        where: { id: student.id },
+        select: { studentId: true, studentIdVerifiedAt: true },
+      });
+      expect(readStoredStudentId(stored?.studentId)).toBe("99999999");
+
+      expect(stored?.studentIdVerifiedAt).toBeNull();
+      expect(await prisma.enrollment.count({ where: { userId: student.id } })).toBe(0);
+    } finally {
+      await prisma.enrollment.deleteMany({ where: { userId: student.id } });
+      await prisma.user.delete({ where: { id: student.id } });
+    }
+  });
+
+  /**
+   * The other half of the promise the dashboard now makes ("contact your
+   * professor to add you"). The instructor's sync is what settles the claim,
+   * and only via a roster row carrying the student's own verified email.
+   */
+  it("enrolls a claimed number once the instructor syncs a roster carrying that email", async () => {
+    const student = await prisma.user.create({
+      data: {
+        email: "student3@example.com",
+        name: "Waiting Student",
+        role: "STUDENT",
+        emailVerified: true,
+      },
     });
-    expect(unchanged?.studentId).toBeNull();
 
-    await prisma.user.delete({ where: { id: student.id } });
+    try {
+      // Claim first — no course has been synced yet in this test.
+      sessionFor(student.id, "STUDENT");
+      const claimRes = await call("POST", "link-roster", { studentNumber: "10000003" });
+      expect(claimRes.status).toBe(200);
+      expect((await claimRes.json()).data.enrollmentsLinked).toBe(0);
+
+      // Now the instructor adds the course, whose roster lists this student.
+      await connectTestMode();
+      sessionFor(instructorId, "INSTRUCTOR");
+      const syncRes = await call("POST", "sync", { canvasCourseIds: ["2"] });
+      expect(syncRes.status).toBe(200);
+
+      const settled = await prisma.user.findUnique({
+        where: { id: student.id },
+        select: { studentIdVerifiedAt: true },
+      });
+      expect(settled?.studentIdVerifiedAt).not.toBeNull();
+      expect(await prisma.enrollment.count({ where: { userId: student.id, isActive: true } })).toBe(
+        1,
+      );
+    } finally {
+      await prisma.enrollment.deleteMany({ where: { userId: student.id } });
+      await prisma.user.delete({ where: { id: student.id } });
+    }
   });
 
   it("returns 409 when student number is already linked to another account", async () => {

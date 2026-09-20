@@ -3,6 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_ENCRYPTION_KEY = "test-encryption-key-32bytes!!";
+/**
+ * A student number corroborated by some earlier roster sync. Every user fixture
+ * that is not specifically exercising the uncorroborated-claim path carries it,
+ * which is also what the migration backfilled onto existing rows.
+ */
+const VERIFIED_AT = new Date("2026-01-01T00:00:00.000Z");
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -15,6 +21,7 @@ vi.mock("~/lib/prisma.server", () => ({
       findMany: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     enrollment: {
       upsert: vi.fn(),
@@ -58,7 +65,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-1", studentId: "12345678" },
+      { id: "user-1", studentId: "12345678", studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
@@ -112,7 +119,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-1", studentId: "12345678" },
+      { id: "user-1", studentId: "12345678", studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
       {
@@ -140,8 +147,8 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       { id: "s-b", role: "TA", sisUserId: "22222222", canvasUserId: "401" },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-a", studentId: "11111111" },
-      { id: "user-b", studentId: "22222222" },
+      { id: "user-a", studentId: "11111111", studentIdVerifiedAt: VERIFIED_AT },
+      { id: "user-b", studentId: "22222222", studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
       {
@@ -188,7 +195,11 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
 
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue(rows as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue(
-      rows.map((row, i) => ({ id: `user-${i}`, studentId: row.sisUserId })) as never,
+      rows.map((row, i) => ({
+        id: `user-${i}`,
+        studentId: row.sisUserId,
+        studentIdVerifiedAt: VERIFIED_AT,
+      })) as never,
     );
     // Half already enrolled with a stale role, half brand new.
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue(
@@ -236,7 +247,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-1", studentId: user.studentId },
+      { id: "user-1", studentId: user.studentId, studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
@@ -262,7 +273,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-null-email", studentId: "87654321" },
+      { id: "user-null-email", studentId: "87654321", studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
@@ -293,8 +304,8 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-a", studentId: "11111111" },
-      { id: "user-b", studentId: "22222222" },
+      { id: "user-a", studentId: "11111111", studentIdVerifiedAt: VERIFIED_AT },
+      { id: "user-b", studentId: "22222222", studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 2 } as never);
@@ -325,7 +336,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "user-dup", studentId: "33333333" },
+      { id: "user-dup", studentId: "33333333", studentIdVerifiedAt: VERIFIED_AT },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
@@ -345,6 +356,136 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       }),
     );
   });
+
+  // A student may now finish registration before any instructor has synced
+  // them, which leaves their student number stored but uncorroborated. The sync
+  // that finally lists them is what settles the claim — and it only settles it
+  // for a roster row carrying their own verified account email, which is the
+  // pairing the old up-front self-service check demanded.
+  it("does not enroll an uncorroborated claim from a roster row with a different email", async () => {
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      {
+        id: "staging-claim",
+        role: "STUDENT",
+        sisUserId: "12345678",
+        canvasUserId: "101",
+        email: "someone.else@ubc.ca",
+      },
+    ] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      {
+        id: "user-claim",
+        studentId: "12345678",
+        email: "impostor@ubc.ca",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+
+    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+
+    expect(linked).toBe(0);
+    expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not enroll an uncorroborated claim whose account email is unverified", async () => {
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      {
+        id: "staging-claim",
+        role: "STUDENT",
+        sisUserId: "12345678",
+        canvasUserId: "101",
+        email: "student@ubc.ca",
+      },
+    ] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      {
+        id: "user-claim",
+        studentId: "12345678",
+        email: "student@ubc.ca",
+        emailVerified: false,
+        studentIdVerifiedAt: null,
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+
+    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+
+    expect(linked).toBe(0);
+    expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("enrolls and corroborates a claim when the roster row carries the verified account email", async () => {
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      {
+        id: "staging-claim",
+        role: "STUDENT",
+        sisUserId: "12345678",
+        canvasUserId: "101",
+        email: "Student@UBC.ca",
+      },
+    ] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      {
+        id: "user-claim",
+        studentId: "12345678",
+        email: "student@ubc.ca",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.user.updateMany).mockResolvedValue({ count: 1 } as never);
+
+    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+
+    expect(linked).toBe(1);
+    expect(prisma.enrollment.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ courseId: "course-1", userId: "user-claim" })],
+      }),
+    );
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["user-claim"] } },
+      data: { studentIdVerifiedAt: expect.any(Date) },
+    });
+  });
+
+  // An already-corroborated number keeps matching on the number alone, so the
+  // instructor of a *second* course can still enroll the student even though
+  // their roster export carries a different address.
+  it("enrolls a corroborated number from a roster row with an unrelated email", async () => {
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      {
+        id: "staging-second-course",
+        role: "STUDENT",
+        sisUserId: "12345678",
+        canvasUserId: "101",
+        email: "personal@example.com",
+      },
+    ] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      {
+        id: "user-known",
+        studentId: "12345678",
+        email: "student@ubc.ca",
+        emailVerified: true,
+        studentIdVerifiedAt: VERIFIED_AT,
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
+
+    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+
+    expect(linked).toBe(1);
+    // Nothing to corroborate — it already was.
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveCanvasEnrollmentsForUser", () => {
@@ -361,6 +502,7 @@ describe("resolveCanvasEnrollmentsForUser", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       studentId: "10000002",
       studentIdLookup: null,
+      studentIdVerifiedAt: VERIFIED_AT,
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValue({} as never);
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
@@ -393,6 +535,7 @@ describe("resolveCanvasEnrollmentsForUser", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       studentId: "10000002",
       studentIdLookup: null,
+      studentIdVerifiedAt: VERIFIED_AT,
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValue({} as never);
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
@@ -414,6 +557,7 @@ describe("resolveCanvasEnrollmentsForUser", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       studentId: "10000002",
       studentIdLookup: null,
+      studentIdVerifiedAt: VERIFIED_AT,
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValue({} as never);
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
@@ -434,6 +578,58 @@ describe("resolveCanvasEnrollmentsForUser", () => {
         update: expect.objectContaining({ role: "TA", externalId: "202", isActive: true }),
       }),
     );
+  });
+
+  // Linking a student number before any instructor has synced the course is no
+  // longer an error — it resolves to zero enrollments and leaves the claim
+  // uncorroborated for a later sync to settle.
+  it("returns zero without corroborating when no roster row carries the account email", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      studentId: "10000002",
+      studentIdLookup: "lookup-1",
+      email: "student@ubc.ca",
+      emailVerified: true,
+      studentIdVerifiedAt: null,
+    } as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      { courseId: "course-a", role: "STUDENT", canvasUserId: "202", email: "other@ubc.ca" },
+    ] as never);
+
+    const linked = await resolveCanvasEnrollmentsForUser("user-2");
+
+    expect(linked).toBe(0);
+    expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("corroborates and links when a roster row already carries the account email", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      studentId: "10000002",
+      studentIdLookup: "lookup-1",
+      email: "student@ubc.ca",
+      emailVerified: true,
+      studentIdVerifiedAt: null,
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      { courseId: "course-a", role: "STUDENT", canvasUserId: "202", email: "Student@UBC.ca" },
+      { courseId: "course-b", role: "STUDENT", canvasUserId: "202", email: "other@ubc.ca" },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
+
+    const linked = await resolveCanvasEnrollmentsForUser("user-2");
+
+    // Only the corroborating row enrolls; the other course waits for its own
+    // sync, which will then match on the now-corroborated number.
+    expect(linked).toBe(1);
+    expect(firstCallArg<{ data: unknown[] }>(prisma.enrollment.createMany).data).toEqual([
+      expect.objectContaining({ courseId: "course-a", userId: "user-2" }),
+    ]);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-2" },
+      data: { studentIdVerifiedAt: expect.any(Date) },
+    });
   });
 });
 
