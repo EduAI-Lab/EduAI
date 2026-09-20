@@ -7,3 +7,8 @@ export function getCoreUrl(): string {
 export function getCoreLoginUrl(returnUrl = window.location.href): string {
   return `${getCoreUrl()}/login?force=1&redirect=${encodeURIComponent(returnUrl)}`;
 }
+
+/** Core's AI service status page — the extensions have no such route of their own. */
+export function getCoreStatusUrl(): string {
+  return `${getCoreUrl()}/status`;
+}

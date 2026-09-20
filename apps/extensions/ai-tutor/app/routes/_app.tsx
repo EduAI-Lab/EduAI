@@ -13,6 +13,7 @@ import {
   type BugReportSubmitData,
   type HistoryPayload,
 } from "@eduai/ui";
+import { getCoreStatusUrl } from "../lib/coreUrl";
 import {
   IconBooks,
   IconBug,
@@ -194,6 +195,8 @@ function AppLayoutInner() {
                 stale={aiStatus.stale}
                 checkedAt={aiStatus.checkedAt}
                 current={aiStatus.ubc}
+                statusPageHref={getCoreStatusUrl()}
+                statusPageTarget="_blank"
                 onRefresh={() => {
                   aiStatus.refresh();
                   refreshAiHistory();
