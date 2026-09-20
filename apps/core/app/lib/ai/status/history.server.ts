@@ -8,8 +8,12 @@
  * than in SQL: nothing Postgres-specific, and the logic is unit-testable with
  * no database.
  */
+import { resolveLoadThresholds } from "~/lib/ai/service-status.server";
+import { MAX_WINDOW_HOURS, retentionDays } from "~/lib/ai/status/config.server";
+import { resolveStatusHosts } from "~/lib/ai/status/hosts.server";
 import { deriveRowState, type DerivedState, type LatestSample } from "~/lib/ai/status/read.server";
 import { modelDisplayLabel, modelKey, serverDisplayLabel, serverKey } from "~/lib/ai/status/labels";
+import prisma from "~/lib/prisma.server";
 
 export interface HistoryBucket {
   t: string;
@@ -155,4 +159,53 @@ export function bucketSamples(
     generatedAt: now.toISOString(),
     servers,
   };
+}
+
+/** The window served when the caller asks for nothing, or for nonsense. */
+export const DEFAULT_WINDOW_HOURS = 72;
+
+/**
+ * Read the persisted samples for one window and bucket them for the UI.
+ *
+ * Shared by `GET /api/ai-status/history` and Core's `/status` page loader, so
+ * the two can never disagree about the clamp or about which hosts count as
+ * live. Callers own their own auth; this function only reads.
+ */
+export async function loadHistoryPayload({
+  hours,
+  now = new Date(),
+}: {
+  hours?: number;
+  now?: Date;
+}): Promise<HistoryPayload> {
+  // `Number(undefined)` is NaN, so the finite check alone rejects both a
+  // missing window and a caller's garbage `?hours=` value.
+  const requested = Number(hours);
+  const asked = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_WINDOW_HOURS;
+  // Clamp to the retention actually in force, and report what was applied,
+  // so a short retention reads as configuration rather than as downtime.
+  const windowHours = Math.min(asked, MAX_WINDOW_HOURS, retentionDays() * 24);
+
+  const since = new Date(now.getTime() - windowHours * 60 * 60 * 1000);
+  const samples = await prisma.aiServiceSample.findMany({
+    where: { observedAt: { gte: since } },
+    orderBy: { observedAt: "asc" },
+    select: {
+      serverId: true,
+      modelId: true,
+      state: true,
+      reachable: true,
+      waiting: true,
+      cacheUsage: true,
+      intervalMinutes: true,
+      observedAt: true,
+    },
+  });
+
+  return bucketSamples(samples, {
+    windowHours,
+    now,
+    thresholds: resolveLoadThresholds(),
+    liveServerIds: resolveStatusHosts().map((h) => h.serverId),
+  });
 }
