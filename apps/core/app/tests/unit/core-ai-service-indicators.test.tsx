@@ -104,4 +104,13 @@ describe("Core AIServiceIndicators", () => {
     const calls = (fetch as unknown as { mock: { calls: string[][] } }).mock.calls;
     expect(calls.some(([url]) => String(url).includes("/history"))).toBe(false);
   });
+
+  it("offers a way through to the full status page", async () => {
+    render(<AIServiceIndicators />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /UBC-hosted AI/i }));
+
+    const link = await screen.findByRole("link", { name: /view full status/i });
+    expect(link).toHaveAttribute("href", "/status");
+  });
 });

@@ -54,6 +54,7 @@ export function AIServiceIndicators() {
       stale={stale}
       checkedAt={checkedAt}
       current={ubc}
+      statusPageHref="/status"
       onRefresh={() => {
         refresh();
         refreshHistory();
