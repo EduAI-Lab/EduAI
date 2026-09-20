@@ -25,6 +25,42 @@ export function normalizeRosterEmail(value: string | null | undefined): string |
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** The identity fields that decide whether a roster row may enroll a user. */
+type RosterIdentityUser = {
+  email: string | null;
+  emailVerified: boolean;
+  studentIdVerifiedAt: Date | null;
+};
+
+/**
+ * A student number that no roster has corroborated yet is a *claim* — the
+ * account holder typed it during onboarding and nothing has confirmed it is
+ * theirs. A claim only earns enrollments from a roster row carrying the same
+ * address as the account's verified email, which is exactly the pairing the
+ * self-service link check used to demand up front (and used to reject the
+ * student's whole registration over). Once corroborated, the number matches on
+ * its own again, so an instructor adding the student to a second course still
+ * works even though that roster row may carry a different address.
+ *
+ * A roster row with no `email` can never corroborate a claim. That was equally
+ * true of the old up-front check, and the administrative link path
+ * (`linkCanvasRoster` without `requireVerifiedRoster`) remains the way to
+ * resolve such a student.
+ */
+function rosterRowCorroboratesUser(
+  user: RosterIdentityUser,
+  rosterEmail: string | null | undefined,
+): boolean {
+  if (user.studentIdVerifiedAt != null) {
+    return true;
+  }
+  if (!user.emailVerified) {
+    return false;
+  }
+  const accountEmail = normalizeRosterEmail(user.email);
+  return accountEmail != null && accountEmail === normalizeRosterEmail(rosterEmail);
+}
+
 type CanvasEnrollmentUpdate = {
   role?: EnrollmentRole;
   isActive?: boolean;
@@ -205,6 +241,13 @@ async function writeCanvasEnrollments(
 
 /**
  * Links active staging rows to Users with a matching studentId and upserts Enrollments.
+ *
+ * A user whose student number is still an uncorroborated claim is only
+ * linked by a roster row that also carries their verified account email — see
+ * `rosterRowCorroboratesUser`. This sync is where such a claim is settled: the
+ * instructor adding the student to their Canvas course is precisely the event
+ * the student was told to wait for, so a row that corroborates the claim also
+ * stamps `studentIdVerifiedAt`.
  */
 export async function linkEnrollmentsFromStagingForCourse(
   courseId: string,
@@ -221,6 +264,7 @@ export async function linkEnrollmentsFromStagingForCourse(
       role: true,
       sisUserId: true,
       canvasUserId: true,
+      email: true,
     },
   });
 
@@ -238,16 +282,23 @@ export async function linkEnrollmentsFromStagingForCourse(
 
   const users = await db.user.findMany({
     where: studentIdsMatchFilter(sisIds),
-    select: { id: true, studentId: true },
+    select: {
+      id: true,
+      studentId: true,
+      email: true,
+      emailVerified: true,
+      studentIdVerifiedAt: true,
+    },
   });
 
   const userByStudentId = new Map(
     users
-      .map((user) => [readStoredStudentId(user.studentId), user.id] as const)
-      .filter((entry): entry is [string, string] => entry[0] != null),
+      .map((user) => [readStoredStudentId(user.studentId), user] as const)
+      .filter((entry): entry is [string, (typeof users)[number]] => entry[0] != null),
   );
 
   const targets: CanvasEnrollmentTarget[] = [];
+  const corroboratedUserIds = new Set<string>();
 
   for (const row of stagingRows) {
     const sisUserId = readStoredStudentId(row.sisUserId);
@@ -255,16 +306,31 @@ export async function linkEnrollmentsFromStagingForCourse(
       continue;
     }
 
-    const userId = userByStudentId.get(sisUserId);
-    if (!userId) {
+    const user = userByStudentId.get(sisUserId);
+    if (!user) {
       continue;
+    }
+
+    if (!rosterRowCorroboratesUser(user, row.email)) {
+      continue;
+    }
+
+    if (user.studentIdVerifiedAt == null) {
+      corroboratedUserIds.add(user.id);
     }
 
     targets.push({
       courseId,
-      userId,
+      userId: user.id,
       role: row.role,
       externalId: row.canvasUserId,
+    });
+  }
+
+  if (corroboratedUserIds.size > 0) {
+    await db.user.updateMany({
+      where: { id: { in: [...corroboratedUserIds] } },
+      data: { studentIdVerifiedAt: new Date() },
     });
   }
 
@@ -273,11 +339,21 @@ export async function linkEnrollmentsFromStagingForCourse(
 
 /**
  * Links all active staging rows for a user after studentId is set or updated.
+ *
+ * Backfills the lookup digest for a legacy plaintext row on the way through.
+ * The backfill branch returns the whole user merged with the prepared pair, not
+ * the pair alone — callers read the identity fields off this result too.
  */
 async function ensureUserStudentIdLookup(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { studentId: true, studentIdLookup: true },
+    select: {
+      studentId: true,
+      studentIdLookup: true,
+      email: true,
+      emailVerified: true,
+      studentIdVerifiedAt: true,
+    },
   });
 
   if (!user?.studentId || user.studentIdLookup) {
@@ -295,9 +371,16 @@ async function ensureUserStudentIdLookup(userId: string) {
     data: prepared,
   });
 
-  return prepared;
+  return { ...user, ...prepared };
 }
 
+/**
+ * An uncorroborated student number resolves to enrollments only through
+ * roster rows that also carry the account's verified email, and finding one
+ * corroborates the number for good. A student who links before their instructor
+ * has synced them matches nothing here and gets 0 — which is now a normal
+ * outcome that leaves them on the dashboard, not an error that blocks them.
+ */
 export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<number> {
   const user = await ensureUserStudentIdLookup(userId);
 
@@ -314,12 +397,26 @@ export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<n
       courseId: true,
       role: true,
       canvasUserId: true,
+      email: true,
     },
   });
 
+  const corroborated = stagingRows.filter((row) => rosterRowCorroboratesUser(user, row.email));
+
+  if (corroborated.length === 0) {
+    return 0;
+  }
+
+  if (user.studentIdVerifiedAt == null) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { studentIdVerifiedAt: new Date() },
+    });
+  }
+
   return writeCanvasEnrollments(
     prisma,
-    stagingRows.map((row) => ({
+    corroborated.map((row) => ({
       courseId: row.courseId,
       userId,
       role: row.role,

@@ -97,6 +97,13 @@ export type DashboardViewProps = {
    * course-scoped ops assistant, not the learning one.
    */
   chatHref?: string;
+  /**
+   * What the course panel says when this role has no courses. A student can
+   * finish registration before any instructor has added them to a course, so
+   * that state needs copy naming the actual reason rather than the generic
+   * "No courses found."
+   */
+  emptyCoursesMessage?: string;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -123,11 +130,14 @@ function CourseListPanel({
   loading,
   title,
   chatHref = "/chat",
+  emptyMessage,
 }: {
   courses: DashboardCourse[];
   loading: boolean;
   title: string;
   chatHref?: string;
+  /** Role-specific copy for the no-courses state (see `emptyCoursesMessage`). */
+  emptyMessage?: string;
 }) {
   const navigate = useNavigate();
   if (loading) {
@@ -150,6 +160,18 @@ function CourseListPanel({
   }
 
   if (courses.length === 0) {
+    // A role that supplies its own copy also explains what to do about it, so
+    // the "Browse courses" link is dropped there — /courses is scoped to the
+    // caller's own enrolments, so it would only lead to a second empty list and
+    // read as though the courses were merely hidden.
+    if (emptyMessage) {
+      return (
+        <div className="rounded-xl border border-border bg-card shadow-2xs px-5 py-8 text-center">
+          <p className="text-sm text-muted-foreground text-balance">{emptyMessage}</p>
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-xl border border-border bg-card shadow-2xs px-5 py-8 text-center">
         <p className="text-sm text-muted-foreground">No courses found.</p>
@@ -409,6 +431,7 @@ export function DashboardView({
   recentChatsLoading = false,
   analytics,
   chatHref = "/chat",
+  emptyCoursesMessage,
 }: DashboardViewProps) {
   const showQuickActions = Boolean(quickActions && quickActions.length > 0);
   const panelTitle = leftPanelTitle ?? (showQuickActions ? "Quick actions" : "Your courses");
@@ -463,6 +486,7 @@ export function DashboardView({
                 loading={coursesLoading}
                 title={panelTitle}
                 chatHref={chatHref}
+                emptyMessage={emptyCoursesMessage}
               />
             )}
           </div>
