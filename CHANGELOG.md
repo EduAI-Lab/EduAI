@@ -6,7 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.20
 
-- PR Link: #PR
+- PR Link: https://github.com/EduAI-Lab/EduAICore/pull/1827
 - Add persisted **AI service status**: an `ai-status-probe` cron job samples each UBC fleet host's `/v1/models` and `/metrics` on a configurable cadence and writes one row per model into a new `ai_service_samples` table. `GET /api/ai-status` now reads that snapshot instead of probing the fleet live on every request, and reports `checkedAt` and `stale` so the UI can say how old the answer is rather than implying it is current.
 - Record a missing key or malformed config as **UNKNOWN, never OUTAGE** — "we could not tell" is not downtime, and `unknown` hours are excluded from the uptime denominator so a configuration fault is never reported to users as a service failure.
 - Add `GET /api/ai-status/history` and a 72-hour per-model history panel, opened from the UBC chip in Core, AI Tutor and Question Maker. A bucket with no samples renders grey, never green.
