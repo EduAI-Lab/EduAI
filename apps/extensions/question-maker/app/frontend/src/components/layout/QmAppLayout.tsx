@@ -28,6 +28,7 @@ import {
   IconRoute,
   type Icon,
 } from "@tabler/icons-react";
+import { getCoreStatusUrl } from "@/lib/coreUrl";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutContext";
 import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
@@ -305,6 +306,8 @@ function QmAppLayoutInner() {
                   stale={aiStatus.stale}
                   checkedAt={aiStatus.checkedAt}
                   current={aiStatus.ubc}
+                  statusPageHref={getCoreStatusUrl()}
+                  statusPageTarget="_blank"
                   onRefresh={() => {
                     aiStatus.refresh();
                     refreshAiHistory();

@@ -13,6 +13,11 @@ export function getCoreDashboardUrl(): string {
   return `${getCoreUrl()}/dashboard`;
 }
 
+/** Core's AI service status page — the extensions have no such route of their own. */
+export function getCoreStatusUrl(): string {
+  return `${getCoreUrl()}/status`;
+}
+
 /** AI Tutor extension base URL for cross-app preview links. */
 export function getAiTutorUrl(): string {
   return import.meta.env.VITE_AI_TUTOR_URL || "http://localhost:3001";

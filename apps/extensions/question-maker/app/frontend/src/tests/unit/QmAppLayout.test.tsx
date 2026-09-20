@@ -81,6 +81,8 @@ vi.mock("@eduai/ui", async (importOriginal) => ({
       data-testid="history-panel"
       data-loading={String(!!props.loading)}
       data-error={props.error ?? ""}
+      data-status-href={props.statusPageHref ?? ""}
+      data-status-target={props.statusPageTarget ?? ""}
     >
       {props.data ? "has-data" : "no-data"}
       <button data-testid="history-refresh" onClick={props.onRefresh} />
@@ -301,6 +303,16 @@ describe("QmAppLayout", () => {
 
     await waitFor(() => expect(getAiStatusHistory).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByTestId("history-panel")).toHaveTextContent("has-data"));
+  });
+
+  it("points the panel's full-status link at Core, in a new tab", () => {
+    // QM has no /status route of its own; the page lives in Core, so the link
+    // must leave this origin rather than 404 inside the extension.
+    render(<QmAppLayout />);
+
+    const panel = screen.getByTestId("history-panel");
+    expect(panel.dataset.statusHref).toBe("http://localhost:3000/status");
+    expect(panel.dataset.statusTarget).toBe("_blank");
   });
 
   it("does not refetch history on a second open once it has loaded", async () => {
