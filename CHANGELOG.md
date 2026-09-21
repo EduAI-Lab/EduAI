@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Fix the weekly team time report silently discarding almost every self-reported hours line. `parseIssueHours` required `Hours to complete:` immediately followed by a value, but the format documented in the issue form and `eduai-summer-2026/CONVENTIONS.md` carries a per-week scope — `Hours to complete (Week 2): 3 hours [handle]` — which the pattern rejected. Across the 313 open issues only 2 of 82 hours lines parsed; 28 now count, recovering 133.5 reported hours. Also stop flagging the same contributor twice on one issue as a duplicate when the lines name different weeks, which is the shape the form's own example demonstrates, and accept a bare hour count with no unit. Hours lines inside a fenced code block are ignored, so an issue that documents the format is not counted as reporting time. Lines that remain unparsed (a name in parentheses instead of a bracketed handle, `TBD`, `rolls up from sub-issues`, bare headings) are genuinely ambiguous and still surface as warnings for manual review. Closes #1830.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
