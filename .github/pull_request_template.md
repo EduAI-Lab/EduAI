@@ -12,7 +12,7 @@
 
 ## Issue Linkage
 
-<!-- Every PR must close at least one open issue. Each linked issue must have an EPIC link, assignees, week label, and be on the project board. -->
+<!-- Every PR must close at least one open issue. Each linked issue must have an EPIC link, assignees, board fields set, and be on the Edu AI Core board. -->
 
 Closes #
 
@@ -21,8 +21,8 @@ Closes #
 - [ ] Linked issue is open
 - [ ] Linked issue contains an `EPIC:` link
 - [ ] Linked issue has all contributors assigned
-- [ ] Linked issue has the correct `Week N` label
-- [ ] Linked issue is on the Edu AI Core Summer 2026 project board
+- [ ] Linked issue has Size, Priority and Iteration set on the Edu AI Core board
+- [ ] Linked issue is on the Edu AI Core board
 - [ ] Branch is up to date with `development`
 - [ ] Tests written or updated for all non-trivial code changes
 - [ ] Full applicable test suite passes with no inappropriate skipped tests
