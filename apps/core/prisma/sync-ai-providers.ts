@@ -48,9 +48,7 @@ async function applyRoutingTierAssignments() {
     });
   }
 
-  // Clear stale tiers and deactivate retired vLLM rows (e.g. after a fleet
-  // generation change) so loadTierRows() cannot keep selecting them and
-  // resolveActiveChatModel cannot keep addressing them — mirrors seed.ts.
+  // Clear stale tiers and deactivate retired vLLM rows — mirrors seed.ts.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -65,10 +63,7 @@ async function applyRoutingTierAssignments() {
       data: { routerTier: null, isActive: false },
     });
 
-    // Direct-addressed models (e.g. qwen2.5-32b-instruct) stay active for
-    // their consumer but must never carry a leftover tier from a previous
-    // catalog generation — otherwise they re-enter the Auto pool alongside
-    // the current tier's model (#1802 review).
+    // Direct-addressed models stay active but must not carry a stale tier.
     await prisma.aIModel.updateMany({
       where: {
         providerId: vllm.id,

@@ -1,10 +1,7 @@
 // @vitest-environment node
 //
-// Mirrors seed-routing-tiers.test.ts for sync-ai-providers.ts's copy of the
-// same tier-assignment/cleanup logic (#1802 review): retired vLLM rows must
-// be deactivated (not just untiered) on an already-seeded deployment, and
-// direct-addressed rows must have a leftover tier cleared without being
-// deactivated.
+// Mirrors seed-routing-tiers.test.ts for sync-ai-providers.ts's own copy of
+// the same tier-assignment/cleanup logic (#1802).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const aIProviderFindUnique = vi.fn();
@@ -43,9 +40,7 @@ beforeEach(() => {
   aIProviderUpsert.mockImplementation(upsertByName);
   aIModelUpdateMany.mockResolvedValue({ count: 1 });
   aIModelUpsert.mockResolvedValue({});
-  // sync-ai-providers.ts calls main() (and process.exit on failure) at import
-  // time — stub exit so a rejected promise in the module's own .catch() can't
-  // tear down the test worker.
+  // main() runs at import time and calls process.exit() on failure.
   vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
 });
 
