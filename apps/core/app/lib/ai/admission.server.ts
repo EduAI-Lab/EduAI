@@ -54,7 +54,8 @@ export function admissionRetryAfterSeconds(
   random: () => number = Math.random,
 ): number {
   const base = Math.max(1, Math.ceil(waitMs() / 1000));
-  return base + Math.floor(random() * base * jitterRatio);
+  const maxJitter = Math.floor(base * jitterRatio);
+  return base + Math.floor(random() * (maxJitter + 1));
 }
 
 /**

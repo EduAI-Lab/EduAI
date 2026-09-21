@@ -195,7 +195,8 @@ describe("admission timeout response", () => {
     // A fixed delay would send every client back at the same instant; the pilot
     // scenario is 25 clients against 8 slots.
     expect(admissionRetryAfterSeconds(0.5, () => 0)).toBe(20);
-    expect(admissionRetryAfterSeconds(0.5, () => 0.999)).toBe(29);
+    // The upper bound (base + floor(base * jitterRatio)) must be reachable.
+    expect(admissionRetryAfterSeconds(0.5, () => 0.999)).toBe(30);
 
     const spread = new Set(
       Array.from({ length: 50 }, (_, i) => admissionRetryAfterSeconds(0.5, () => i / 50)),

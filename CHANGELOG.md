@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Review follow-up on #1808: `admissionRetryAfterSeconds`'s jitter was half-open (`Math.random()` never returns 1), so the documented `base * (1 + jitterRatio)` upper bound was never actually emitted. Fixed to an inclusive `[base, base + floor(base * jitterRatio)]`.
+
 ## 2026.09.19
 
 - Add `Retry-After` to the `503 AI_ADMISSION_TIMEOUT` returned when a request loses the local-GPU admission race. The 503 previously carried no retry hint at all — unlike the `429` on the same route — so a client had nothing to back off against and retried straight into the back of the same queue; the COSC 301 pilot report shows six consecutive 503s over 138s from exactly that loop. PR: https://github.com/EduAI-Lab/EduAI/pull/1808. Closes #1804.
