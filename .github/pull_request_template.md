@@ -30,11 +30,17 @@ Closes #
 - [ ] `CHANGELOG.md` updated with the PR-open date and PR link
 - [ ] `README.md` updated, or no README changes were needed
 - [ ] `.claude/memory/MEMORY.md` updated, or no memory update was needed
-- [ ] Code comments explain only non-obvious reasoning
-- [ ] New files are grouped with related code
-- [ ] Implementation follows modularity, separation of concerns, and avoids redundancy
 - [ ] PR assignees include everyone who contributed
 - [ ] Two reviewers assigned: one dev team reviewer and one project lead
+
+<!--
+Items a reviewer verifies by reading the code -- naming, structure, comment quality,
+separation of concerns -- are deliberately not checkboxes. That is what the review
+itself is for; a tickbox asking whether the code is good only ever collects a tick.
+
+The four items above that a machine could verify (linked issue open, branch up to
+date, TESTS.md, CHANGELOG.md) stay on this list until CI actually enforces them.
+-->
 
 ## Reviewer Notes
 
