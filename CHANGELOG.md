@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.21
+
+- Review follow-up on #1809: `GET /api/models` now filters out any `AIModel` whose provider name isn't in `PROVIDER_CONFIGS` (an admin-renamed provider row was otherwise listed here as live while `/api/chat` 422s it as unparseable), adds a `requiresApiKey` flag per model so a caller can tell which ones work without a key, and is rate-limited under the shared chat limiter (`models:` prefix) instead of left uncached.
+
 ## 2026.09.19
 
 - Add `GET /api/models`, returning the active chat models as `provider:modelId` strings — exactly what `POST /api/chat` and `POST /api/completion` will accept. There was previously no way to ask which models are live without an admin browser session: `/api/vllm-models` and `/api/ollama-models` are ADMIN cookie-session only, and `/api/ai-models` requires `page` and `pageSize` and answers `400 PAGINATION_REQUIRED` without them. An instructor writing a grading script had to guess a model id and read a `422` to find out it was wrong. PR: https://github.com/EduAI-Lab/EduAI/pull/1809. Closes #1805.

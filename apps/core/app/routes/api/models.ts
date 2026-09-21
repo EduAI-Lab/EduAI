@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { listActiveChatModels } from "~/lib/ai/providers.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
@@ -24,6 +25,9 @@ import { withErrorResponse } from "~/lib/errors.server";
  * Unpaginated on purpose: the active catalog is a handful of rows and the point
  * is a cheap liveness check. If it ever grows past that, add paging here rather
  * than pointing callers back at the admin endpoint.
+ *
+ * Rate-limited under the shared chat limiter (`models:` prefix) rather than
+ * left uncached, since "cheap liveness check" also means "likely polled".
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   return withErrorResponse(
@@ -31,12 +35,35 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
       if (apiKeyGuard) return apiKeyGuard;
 
+      let rateLimitIdentity = apiKeySession?.user?.id ?? null;
       if (!apiKeySession?.user) {
         const session = await getRequestSession(request);
-        if (!session?.user) {
+        if (session?.user) {
+          rateLimitIdentity = session.user.id;
+        } else {
           const serviceKeyError = await requireServiceKey(request);
           if (serviceKeyError) return serviceKeyError;
+          rateLimitIdentity = "service";
         }
+      }
+
+      const { limit, windowMs } = getChatRateLimitConfig();
+      const rateLimit = await checkRateLimit(
+        `models:${rateLimitIdentity ?? "service"}`,
+        limit,
+        windowMs,
+      );
+      if (rateLimit.limited) {
+        return new Response(
+          JSON.stringify({ error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": String(rateLimit.retryAfter),
+            },
+          },
+        );
       }
 
       const models = await listActiveChatModels();

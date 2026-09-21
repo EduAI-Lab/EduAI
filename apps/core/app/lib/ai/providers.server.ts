@@ -1,5 +1,6 @@
 import prisma from "../prisma.server";
 import { parseModelIdentifier, type SupportedProvider } from "./providers";
+import { PROVIDER_CONFIGS } from "./provider-types";
 
 export type ActiveChatModel = {
   name: string;
@@ -66,15 +67,17 @@ export type ListedChatModel = {
   supportsTools: boolean;
   supportsImages: boolean;
   maxTokens: number | null;
+  /** Whether a caller must supply this provider's key for the model to work. */
+  requiresApiKey: boolean;
 };
 
 /**
  * Every model `/api/chat` and `/api/completion` will currently accept (#1805).
  *
- * The `where` clause is deliberately identical to `resolveActiveChatModel`'s:
- * if the two drifted, this endpoint would advertise a model that the completion
- * endpoint then rejects with `422 … not active in the Core model catalog`,
- * which is exactly the confusion it exists to remove.
+ * The `where` clause matches `resolveActiveChatModel`'s, plus the same
+ * provider-name filter `parseModelIdentifier` applies: an `AIProvider` row can
+ * be named anything, and an unrecognized name would otherwise be advertised
+ * here while `/api/chat` 422s it as unparseable.
  *
  * Returns only what a caller needs to choose a model. It does not include the
  * provider row — unlike the admin `/api/ai-models` list — because this endpoint
@@ -99,14 +102,20 @@ export async function listActiveChatModels(): Promise<ListedChatModel[]> {
     orderBy: [{ provider: { name: "asc" } }, { modelId: "asc" }],
   });
 
-  return models.map((model) => ({
-    id: `${model.provider.name}:${model.modelId}`,
-    provider: model.provider.name,
-    name: model.name,
-    supportsTools: model.supportsTools,
-    supportsImages: model.supportsImages,
-    maxTokens: model.maxTokens,
-  }));
+  return models
+    .filter((model) => model.provider.name in PROVIDER_CONFIGS)
+    .map((model) => {
+      const providerId = model.provider.name as SupportedProvider;
+      return {
+        id: `${providerId}:${model.modelId}`,
+        provider: providerId,
+        name: model.name,
+        supportsTools: model.supportsTools,
+        supportsImages: model.supportsImages,
+        maxTokens: model.maxTokens,
+        requiresApiKey: PROVIDER_CONFIGS[providerId].requiresApiKey,
+      };
+    });
 }
 
 /** Total context window (input + output) for budgeting. */

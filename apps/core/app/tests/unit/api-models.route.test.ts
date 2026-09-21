@@ -7,11 +7,20 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { enforceAdminIfApiKey, getRequestSession, requireServiceKey, findMany } = vi.hoisted(() => ({
+const {
+  enforceAdminIfApiKey,
+  getRequestSession,
+  requireServiceKey,
+  findMany,
+  checkRateLimit,
+  getChatRateLimitConfig,
+} = vi.hoisted(() => ({
   enforceAdminIfApiKey: vi.fn(),
   getRequestSession: vi.fn(),
   requireServiceKey: vi.fn(),
   findMany: vi.fn(),
+  checkRateLimit: vi.fn(),
+  getChatRateLimitConfig: vi.fn(),
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
@@ -21,6 +30,11 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/auth/request-session.server", () => ({
   getRequestSession,
+}));
+
+vi.mock("~/lib/auth/rate-limit.server", () => ({
+  checkRateLimit,
+  getChatRateLimitConfig,
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -62,6 +76,8 @@ beforeEach(() => {
   getRequestSession.mockResolvedValue(null);
   requireServiceKey.mockResolvedValue(null);
   findMany.mockResolvedValue(ROWS);
+  getChatRateLimitConfig.mockReturnValue({ limit: 100, windowMs: 60_000 });
+  checkRateLimit.mockResolvedValue({ limited: false, retryAfter: 0 });
 });
 
 describe("GET /api/models", () => {
@@ -83,7 +99,47 @@ describe("GET /api/models", () => {
       supportsTools: false,
       supportsImages: false,
       maxTokens: 8192,
+      requiresApiKey: false,
     });
+    // Google requires a key; vLLM does not — the flag must come from the
+    // provider, not be a blanket true/false.
+    expect(body.models[1].requiresApiKey).toBe(true);
+  });
+
+  it("excludes a model whose provider name is not one /api/chat can parse", async () => {
+    getRequestSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    findMany.mockResolvedValue([
+      ...ROWS,
+      {
+        modelId: "claude-x",
+        name: "Renamed row",
+        supportsTools: false,
+        supportsImages: false,
+        maxTokens: 4096,
+        // Not a key of PROVIDER_CONFIGS — e.g. an admin-renamed provider row.
+        provider: { name: "anthropic" },
+      },
+    ]);
+
+    const response = await loader(makeArgs());
+    const body = await response.json();
+
+    expect(body.models.map((m: { id: string }) => m.id)).toEqual([
+      "vllm:qwen3.5-2b-instruct",
+      "google:gemini-2.5-flash",
+    ]);
+  });
+
+  it("rate-limits under the shared chat limiter", async () => {
+    getRequestSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    checkRateLimit.mockResolvedValue({ limited: true, retryAfter: 12 });
+
+    const response = await loader(makeArgs());
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("12");
+    expect(findMany).not.toHaveBeenCalled();
+    expect(checkRateLimit).toHaveBeenCalledWith("models:u1", 100, 60_000);
   });
 
   it("only lists models the completion endpoint would also accept", async () => {
