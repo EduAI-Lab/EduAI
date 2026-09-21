@@ -77,6 +77,24 @@ describe("parseEnrollmentCsv — line endings and blank lines", () => {
     const parsed = expectParsed(parseEnrollmentCsv('email,name\n"alice@test.edu","Doe, Alice"\n'));
     expect(parsed.rows).toEqual([{ line: 2, email: "alice@test.edu", role: "STUDENT" }]);
   });
+
+  it("keeps a mid-field quote instead of swallowing it, so the cell is reported", () => {
+    // RFC 4180: a quote only delimits when it leads the field. Dropping one
+    // from the middle would turn `a"lice@test.edu` into a well-formed address
+    // nobody typed — the import would then report USER_NOT_FOUND for a stranger
+    // rather than pointing the instructor at the malformed cell.
+    const parsed = expectParsed(parseEnrollmentCsv('email\na"lice@test.edu\nbob@test.edu\n'));
+
+    expect(parsed.rows.map((r) => r.email)).toEqual(["bob@test.edu"]);
+    expect(parsed.errors).toEqual([
+      { line: 2, email: 'a"lice@test.edu', code: "INVALID_EMAIL", message: expect.any(String) },
+    ]);
+  });
+
+  it("still honours a quote that closes and is followed by text", () => {
+    const parsed = expectParsed(parseEnrollmentCsv('email,name\n"alice@test.edu","Doe" Jr\n'));
+    expect(parsed.rows).toEqual([{ line: 2, email: "alice@test.edu", role: "STUDENT" }]);
+  });
 });
 
 describe("parseEnrollmentCsv — per-row errors", () => {

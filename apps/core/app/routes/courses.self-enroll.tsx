@@ -17,6 +17,8 @@ import {
   previewSelfEnrollmentLink,
   redeemSelfEnrollmentLink,
 } from "~/lib/courses/self-enrollment.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 /**
  * A `Map` because the code arrives as a plain string from the library's result
@@ -45,14 +47,20 @@ function friendlyError(code: string): string {
 }
 
 /**
- * Send an anonymous visitor to log in and come straight back here. Without the
- * `returnTo` the student loses the link the moment they authenticate, which for
- * a one-off shared URL usually means losing it for good.
+ * Send an anonymous visitor to log in and come straight back here — token and
+ * all. Without that round trip the student loses the link the moment they
+ * authenticate, which for a one-off shared URL means losing it for good: the
+ * raw token is shown to the instructor exactly once and cannot be re-read.
+ *
+ * The parameter name is load-bearing: `routes/auth/login.tsx` reads `redirect`
+ * and nothing else, so any other spelling is silently dropped and lands the
+ * student on `/dashboard`. `validateRedirectUrl` passes a relative path through
+ * unchanged, query string included.
  */
 function loginRedirect(request: Request): Response {
   const url = new URL(request.url);
-  const returnTo = `${url.pathname}${url.search}`;
-  return redirect(`/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
+  const redirectTo = `${url.pathname}${url.search}`;
+  return redirect(`/auth/login?redirect=${encodeURIComponent(redirectTo)}`);
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -85,6 +93,31 @@ export async function action({ request }: ActionFunctionArgs) {
   const token = String(formData.get("token") ?? "").trim();
 
   const result = await redeemSelfEnrollmentLink({ token, userId: session.user.id });
+  if (result.status === "201") {
+    // Every other path that creates an enrollment logs it — the single-add
+    // route and the CSV import both do — so a roster built from a shared link
+    // must not be the one that is invisible when someone asks who joined this
+    // course and how. `source` names the link so the answer is "and how".
+    // Only on 201: a 200 means the student was already enrolled and this
+    // request wrote nothing.
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(session.user),
+        ...getRequestContext(request),
+        actionCode: "ENROLLMENT_ADDED",
+        category: "ENROLLMENT",
+        entityType: "Enrollment",
+        entityId: result.enrollmentId,
+        details: {
+          courseId: result.courseId,
+          role: "STUDENT",
+          targetUserId: session.user.id,
+          source: "SELF_ENROLLMENT_LINK",
+          linkId: result.linkId,
+        },
+      }),
+    );
+  }
   if (result.status === "201" || result.status === "200") {
     // Both outcomes mean "you are in this course" — land the student on it
     // rather than making them read a confirmation they did not ask for.

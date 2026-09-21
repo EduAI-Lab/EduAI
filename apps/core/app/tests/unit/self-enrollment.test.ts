@@ -14,6 +14,9 @@ const prismaMock = vi.hoisted(() => {
       findMany: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      // `releaseRedemptionSlot` hands a claimed slot back through `updateMany`,
+      // which no-ops rather than throwing when the row is already gone.
+      updateMany: vi.fn(),
     },
     course: { findFirst: vi.fn() },
     enrollment: { findUnique: vi.fn() },
@@ -334,6 +337,110 @@ describe("redeemSelfEnrollmentLink — rejections", () => {
   });
 });
 
+/**
+ * A link can change between the preview a student is looking at and the moment
+ * they click Join. The locked re-check is the only place that sees it happen,
+ * so it has to report WHICH thing changed — telling a student whose link was
+ * just revoked that it "reached its limit" sends them to ask for a bigger cap
+ * for a link that will never work again.
+ */
+describe("redeemSelfEnrollmentLink — the link changes mid-session", () => {
+  /** Live at resolve time, something else by the time the row is locked. */
+  function mockChangedUnderLock(fresh: LinkRowFixture | null) {
+    mockLiveLink();
+    tx.selfEnrollmentLink.findUnique.mockResolvedValue(fresh);
+  }
+
+  it("reports a revocation as LINK_REVOKED, not LINK_EXHAUSTED", async () => {
+    // Expiry deliberately still open, so a 403 here can only come from the
+    // revocation rather than from a link that lapsed on its own.
+    mockChangedUnderLock(linkRow({ revokedAt: new Date(), expiresAt: FUTURE }));
+
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+
+    expect(result).toEqual({ status: "403", error: "LINK_REVOKED" });
+    expect(tx.selfEnrollmentLink.update).not.toHaveBeenCalled();
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  it("reports an expiry as LINK_EXPIRED", async () => {
+    mockChangedUnderLock(linkRow({ expiresAt: PAST }));
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+    expect(result).toEqual({ status: "410", error: "LINK_EXPIRED" });
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a cap reached under the lock as LINK_EXHAUSTED", async () => {
+    mockChangedUnderLock(linkRow({ maxRedemptions: 1, redemptionCount: 1 }));
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+    expect(result).toEqual({ status: "409", error: "LINK_EXHAUSTED" });
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a link deleted under the lock as INVALID_TOKEN", async () => {
+    mockChangedUnderLock(null);
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+    expect(result).toEqual({ status: "404", error: "INVALID_TOKEN" });
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The slot is claimed in its own committed transaction before `addEnrollment`
+ * runs, so a failure afterwards must not leave a capped link permanently one
+ * redemption shorter with nobody enrolled for it.
+ */
+describe("redeemSelfEnrollmentLink — a spent slot follows the enrollment", () => {
+  const releaseCall = {
+    where: { id: "link-1", redemptionCount: { gt: 0 } },
+    data: { redemptionCount: { decrement: 1 } },
+  };
+
+  it("gives the slot back when addEnrollment refuses", async () => {
+    mockLiveLink({ maxRedemptions: 30 });
+    addEnrollmentMock.mockResolvedValue({ status: "422", error: "USER_NOT_FOUND" } as Awaited<
+      ReturnType<typeof addEnrollment>
+    >);
+
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "ghost" });
+
+    expect(result).toEqual({ status: "422", error: "USER_NOT_FOUND" });
+    expect(tx.selfEnrollmentLink.update).toHaveBeenCalledTimes(1);
+    expect(prismaMock.selfEnrollmentLink.updateMany).toHaveBeenCalledWith(releaseCall);
+  });
+
+  it("gives the slot back when addEnrollment throws, and rethrows", async () => {
+    mockLiveLink({ maxRedemptions: 30 });
+    addEnrollmentMock.mockRejectedValue(new Error("db hiccup"));
+
+    await expect(
+      redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" }),
+    ).rejects.toThrow("db hiccup");
+
+    expect(prismaMock.selfEnrollmentLink.updateMany).toHaveBeenCalledWith(releaseCall);
+  });
+
+  it("keeps the slot on a successful enrollment", async () => {
+    mockLiveLink({ maxRedemptions: 30 });
+    await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+    expect(prismaMock.selfEnrollmentLink.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps the slot when a concurrent redemption won the race", async () => {
+    // The student ends up enrolled, which is what they asked for — one slot is
+    // the accepted cost of not reporting a false failure.
+    mockLiveLink({ maxRedemptions: 30 });
+    addEnrollmentMock.mockResolvedValue({ status: "409", error: "ALREADY_ENROLLED" } as Awaited<
+      ReturnType<typeof addEnrollment>
+    >);
+
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+
+    expect(result).toMatchObject({ status: "200", alreadyEnrolled: true });
+    expect(prismaMock.selfEnrollmentLink.updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("redeemSelfEnrollmentLink — success", () => {
   it("enrolls the redeemer as a STUDENT and never as staff", async () => {
     mockLiveLink();
@@ -370,6 +477,7 @@ describe("redeemSelfEnrollmentLink — success", () => {
       status: "200",
       courseId: "course-1",
       enrollmentId: "enr-1",
+      linkId: "link-1",
       alreadyEnrolled: true,
     });
     expect(addEnrollmentMock).not.toHaveBeenCalled();
@@ -431,5 +539,19 @@ describe("previewSelfEnrollmentLink", () => {
       ok: false,
       error: "INVALID_TOKEN",
     });
+  });
+
+  it("refuses an exhausted link up front instead of at the Join click", async () => {
+    // A cap of 50 that has been redeemed 50 times. Student 51 must not be shown
+    // "Join COSC 111" with a live button that can only answer 409 — preview and
+    // redeem run the same usability check precisely so they cannot disagree.
+    mockLiveLink({ maxRedemptions: 50, redemptionCount: 50 });
+
+    expect(await previewSelfEnrollmentLink("raw-token")).toEqual({
+      ok: false,
+      error: "LINK_EXHAUSTED",
+    });
+    expect(tx.selfEnrollmentLink.update).not.toHaveBeenCalled();
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,12 @@ vi.mock("~/lib/auth/request-session.server", () => ({ getRequestSession: vi.fn()
 
 vi.mock("~/lib/auth/course-access.server", () => ({ resolveCourseAccessGate: vi.fn() }));
 
+// The route reads `authBaseURL` to build the share URL on the configured public
+// origin rather than on `request.url`. Stubbed here — as the invitation service
+// test does — so the suite does not pull in the real Better Auth module, and so
+// the origin under test is deliberately NOT the request's.
+vi.mock("~/lib/auth/server", () => ({ authBaseURL: "https://eduai.ok.ubc.ca" }));
+
 vi.mock("~/lib/courses/self-enrollment.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/courses/self-enrollment.server")>();
   // `selfEnrollmentUrl` stays real — the share URL the instructor copies is
@@ -169,7 +175,7 @@ describe("/api/courses/:id/self-enroll — link management", () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({
       token: "raw-token-xyz",
-      url: "http://localhost/courses/self-enroll?token=raw-token-xyz",
+      url: "https://eduai.ok.ubc.ca/courses/self-enroll?token=raw-token-xyz",
       link: { id: "link-1", status: "ACTIVE" },
     });
     expect(createSelfEnrollmentLink).toHaveBeenCalledWith({
@@ -178,6 +184,17 @@ describe("/api/courses/:id/self-enroll — link management", () => {
       ttlDays: 14,
       maxRedemptions: undefined,
     });
+  });
+
+  it("builds the share URL on the configured public origin, not the request's", async () => {
+    // Behind the TLS-terminating proxy `request.url` stays `http://` (see
+    // root.tsx), and this URL carries a bearer token. The request here is
+    // `http://localhost/...` while `authBaseURL` is `https://eduai.ok.ubc.ca`,
+    // so a share URL built from the request would be caught by this.
+    const res = await apiAction(apiArgs(jsonRequest("POST", {})));
+    const body = (await res.json()) as { url: string };
+    expect(new URL(body.url).origin).toBe("https://eduai.ok.ubc.ca");
+    expect(body.url.startsWith("http://")).toBe(false);
   });
 
   it("passes an explicit redemption cap through", async () => {
@@ -266,6 +283,7 @@ describe("/courses/self-enroll — redemption page", () => {
       status: "201",
       courseId: "course-1",
       enrollmentId: "enr-1",
+      linkId: "link-1",
       alreadyEnrolled: false,
     });
   });
@@ -279,8 +297,12 @@ describe("/courses/self-enroll — redemption page", () => {
     const redirectTo = (res as Response).headers.get("Location") ?? "";
     expect((res as Response).status).toBe(302);
     expect(redirectTo).toContain("/auth/login");
-    // The token must survive the login round trip or the student loses the link.
-    expect(decodeURIComponent(redirectTo)).toContain("/courses/self-enroll?token=abc");
+    // The token must survive the login round trip or the student loses the link
+    // for good. Asserted by PARAMETER NAME, not by substring: `routes/auth/
+    // login.tsx` reads `?redirect=` and nothing else, so a value parked under
+    // any other key is silently dropped and the student lands on /dashboard.
+    const loginUrl = new URL(redirectTo, "http://localhost");
+    expect(loginUrl.searchParams.get("redirect")).toBe("/courses/self-enroll?token=abc");
     expect(previewSelfEnrollmentLink).not.toHaveBeenCalled();
   });
 
@@ -331,6 +353,7 @@ describe("/courses/self-enroll — redemption page", () => {
       status: "200",
       courseId: "course-1",
       enrollmentId: "enr-1",
+      linkId: "link-1",
       alreadyEnrolled: true,
     });
     const form = new FormData();
@@ -359,5 +382,55 @@ describe("/courses/self-enroll — redemption page", () => {
     const res = await pageAction(pageArgs(new Request(PAGE_URL, { method: "POST", body: form })));
     expect((res as Response).status).toBe(302);
     expect(redeemSelfEnrollmentLink).not.toHaveBeenCalled();
+  });
+
+  it("audits the enrollment it creates, naming the link as the source", async () => {
+    // Without this, a roster built from a shared link is the one enrollment
+    // path invisible to "who joined this course, and how?" — the single-add
+    // route and the CSV import both log ENROLLMENT_ADDED.
+    const form = new FormData();
+    form.set("token", "abc");
+    await pageAction(pageArgs(new Request(PAGE_URL, { method: "POST", body: form })));
+
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "ENROLLMENT_ADDED",
+        category: "ENROLLMENT",
+        entityType: "Enrollment",
+        entityId: "enr-1",
+        details: expect.objectContaining({
+          courseId: "course-1",
+          role: "STUDENT",
+          targetUserId: "student-1",
+          source: "SELF_ENROLLMENT_LINK",
+          linkId: "link-1",
+        }),
+      }),
+    );
+  });
+
+  it("never puts the raw token in the audit entry", async () => {
+    const form = new FormData();
+    form.set("token", "super-secret-token");
+    await pageAction(pageArgs(new Request(PAGE_URL, { method: "POST", body: form })));
+
+    expect(JSON.stringify(vi.mocked(logAuditAction).mock.calls)).not.toContain(
+      "super-secret-token",
+    );
+  });
+
+  it("logs nothing when the student was already enrolled — that request wrote nothing", async () => {
+    vi.mocked(redeemSelfEnrollmentLink).mockResolvedValue({
+      status: "200",
+      courseId: "course-1",
+      enrollmentId: "enr-1",
+      linkId: "link-1",
+      alreadyEnrolled: true,
+    });
+    const form = new FormData();
+    form.set("token", "abc");
+    await pageAction(pageArgs(new Request(PAGE_URL, { method: "POST", body: form })));
+
+    expect(logAuditAction).not.toHaveBeenCalled();
   });
 });

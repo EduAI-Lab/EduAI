@@ -19,6 +19,7 @@ import { z } from "zod";
 import { jsonResponse } from "~/lib/api/json-response.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { authBaseURL } from "~/lib/auth/server";
 import {
   createSelfEnrollmentLink,
   listSelfEnrollmentLinks,
@@ -33,6 +34,27 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 
 /** §6: managing enrollments — and therefore minting a link — is rank >= 2. */
 const MANAGE_ENROLLMENTS_RANK = 2;
+
+/**
+ * The origin the share URL is built on.
+ *
+ * NOT `request.url`: `root.tsx` documents that behind the TLS-terminating
+ * Apache proxy `@react-router/express` builds it from `req.protocol`, which
+ * stays `http` because Express does not trust `X-Forwarded-Proto`. The token in
+ * this URL is a bearer credential, so minting it with a plaintext scheme means
+ * every student click is either an extra redirect hop carrying the token or an
+ * outright failure. `authBaseURL` (`BETTER_AUTH_URL`) is the configured public
+ * origin, and is the same source the sibling invitation flow builds its accept
+ * URL from. The request origin stays as a fallback for the case where that env
+ * var is unparseable, which is also what keeps dev and unit tests working.
+ */
+function shareOrigin(request: Request): string {
+  try {
+    return new URL(authBaseURL).origin;
+  } catch {
+    return new URL(request.url).origin;
+  }
+}
 
 /**
  * Both options are optional; the library owns their ranges so an out-of-range
@@ -178,15 +200,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }),
       );
 
-      // `origin` comes off the request so the link works on whichever host the
-      // instructor is actually using (localhost, staging, production) without a
-      // separate base-URL setting to keep in sync.
-      const origin = new URL(request.url).origin;
       return jsonResponse(
         {
           link: result.link,
           token: result.token,
-          url: selfEnrollmentUrl(origin, result.token),
+          url: selfEnrollmentUrl(shareOrigin(request), result.token),
         },
         201,
       );

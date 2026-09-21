@@ -94,6 +94,14 @@ export type EnrollmentCsvParseResult =
  * and the doubled-quote escape (`""`). Small on purpose — a roster CSV never
  * contains embedded newlines inside a quoted field, and supporting those would
  * mean giving up line-at-a-time parsing and therefore accurate line numbers.
+ *
+ * Per RFC 4180 a quote only opens a quoted run when it LEADS the field. One
+ * appearing mid-field is kept as an ordinary character, which matters because
+ * dropping it silently rewrites the cell: a spreadsheet export or a normalised
+ * smart-quote turns `a"b@ubc.ca` into `ab@ubc.ca`, an address nobody typed that
+ * still looks well-formed, so the import reports USER_NOT_FOUND instead of
+ * pointing at the malformed cell. Kept in place, the quote fails
+ * `EMAIL_PATTERN` and the row is reported as INVALID_EMAIL by line number.
  */
 function splitCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -115,7 +123,7 @@ function splitCsvLine(line: string): string[] {
       }
       continue;
     }
-    if (char === '"') {
+    if (char === '"' && current === "") {
       inQuotes = true;
     } else if (char === ",") {
       fields.push(current);

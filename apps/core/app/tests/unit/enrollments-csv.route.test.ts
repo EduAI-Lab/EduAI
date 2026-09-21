@@ -191,6 +191,90 @@ describe("POST /api/courses/:id/enrollments/csv — body handling", () => {
       2,
     );
   });
+
+  it("413s an oversized body that declares no Content-Length", async () => {
+    // The header precheck is a courtesy to honest clients. A chunked request
+    // declares no length at all, so if the cap were only enforced there, this
+    // payload would be buffered in full before anything objected to its size.
+    const oversized = `email\n${"a@test.edu\n".repeat(40_000)}`;
+    expect(new TextEncoder().encode(oversized).length).toBeGreaterThan(MAX_CSV_BYTES);
+
+    const request = new Request(ROUTE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/csv" },
+      // A stream body makes this a chunked request: undici sets no
+      // Content-Length for it, which is exactly the hole being closed.
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(oversized));
+          controller.close();
+        },
+      }),
+      duplex: "half",
+    } as RequestInit);
+
+    const res = await action(routeArgs(request));
+
+    expect(request.headers.get("Content-Length")).toBeNull();
+    expect(res.status).toBe(413);
+    expect(await res.json()).toMatchObject({ error: "FILE_TOO_LARGE" });
+    expect(importEnrollmentRows).not.toHaveBeenCalled();
+  });
+
+  it("does not charge multipart framing against the CSV's own byte cap", async () => {
+    // A browser posts the CSV wrapped in boundary markers, a
+    // Content-Disposition header and CRLFs, so its Content-Length is the roster
+    // PLUS that framing. Charging the total against MAX_CSV_BYTES rejects a
+    // roster the parser would happily accept, with a message quoting a limit
+    // the file is genuinely under.
+    //
+    // The declared length is the thing under test here, so it is set directly
+    // rather than inferred: undici omits Content-Length for a FormData body.
+    const boundary = "----EduAIFormBoundary1756";
+    const multipart =
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="file"; filename="roster.csv"\r\n' +
+      "Content-Type: text/csv\r\n\r\n" +
+      "email\nalice@test.edu\n" +
+      `\r\n--${boundary}--\r\n`;
+
+    const request = new Request(ROUTE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        // Just over the CSV cap, as a nearly-full roster plus framing would be,
+        // and within the framing allowance the route adds for multipart.
+        "Content-Length": String(MAX_CSV_BYTES + 200),
+      },
+      body: multipart,
+    });
+
+    const res = await action(routeArgs(request));
+
+    expect(res.status).toBe(200);
+    expect(importEnrollmentRows).toHaveBeenCalledWith(
+      "course-1",
+      [{ line: 2, email: "alice@test.edu", role: "STUDENT" }],
+      [],
+      2,
+    );
+  });
+
+  it("still 413s a multipart request past the CSV cap plus its framing allowance", async () => {
+    const request = new Request(ROUTE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "multipart/form-data; boundary=----EduAIFormBoundary1756",
+        "Content-Length": String(MAX_CSV_BYTES + 64 * 1024),
+      },
+      body: "email\na@test.edu\n",
+    });
+
+    const res = await action(routeArgs(request));
+
+    expect(res.status).toBe(413);
+    expect(importEnrollmentRows).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/courses/:id/enrollments/csv — result reporting", () => {

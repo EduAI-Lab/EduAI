@@ -363,10 +363,18 @@ export function CourseDetailManagerView({
   const [csvSummary, setCsvSummary] = useState<EnrollmentCsvImportSummary | null>(null);
   // #1756 — self-enrollment links.
   const [selfEnrollLinks, setSelfEnrollLinks] = useState<SelfEnrollmentLinkSummary[]>([]);
-  const [selfEnrollUrl, setSelfEnrollUrl] = useState<string | null>(null);
+  /**
+   * The link just minted, carried as `{ linkId, url }` rather than a bare URL.
+   * The id is what lets a revocation tell "the link on screen" from "some other
+   * link in the list" — clearing the wrong one destroys a URL that is shown
+   * once and cannot be re-read.
+   */
+  const [mintedLink, setMintedLink] = useState<{ linkId: string; url: string } | null>(null);
   const [selfEnrollBusy, setSelfEnrollBusy] = useState(false);
   const [selfEnrollError, setSelfEnrollError] = useState<string | null>(null);
   const [selfEnrollCopied, setSelfEnrollCopied] = useState(false);
+  /** Set when the list read comes back 401/403 — see `refreshSelfEnrollLinks`. */
+  const [selfEnrollForbidden, setSelfEnrollForbidden] = useState(false);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess);
@@ -538,12 +546,30 @@ export function CourseDetailManagerView({
     if (!courseId) return;
     try {
       const res = await fetch(`/api/courses/${courseId}/self-enroll`, { signal });
-      if (!res.ok) return;
+      if (!res.ok) {
+        // A refused read is not the same as a flaky one. The gate guarding this
+        // GET guards the POST and DELETE too, so an instructor whose
+        // `manageEnrollments` policy was switched off while this page stayed
+        // open would otherwise see an empty section that looks merely unused,
+        // click Create link, and get a generic "please try again" for something
+        // retrying cannot fix. Say so instead.
+        if (res.status === 401 || res.status === 403) {
+          setSelfEnrollLinks([]);
+          setSelfEnrollForbidden(true);
+        }
+        return;
+      }
       const parsed = selfEnrollmentListSchema.safeParse(await res.json());
-      if (parsed.success) setSelfEnrollLinks(parsed.data.links);
-    } catch {
-      // A failed list read is not worth an error banner — the create and revoke
-      // buttons still work, and the next refresh will pick the list up.
+      if (parsed.success) {
+        setSelfEnrollForbidden(false);
+        setSelfEnrollLinks(parsed.data.links);
+      }
+    } catch (error: unknown) {
+      // An abort is this component unmounting or the course changing — not a
+      // failure, and nothing to tell the instructor about.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      // Anything else is transient: the list stays as it was and the next
+      // refresh picks it up, which is not worth an error banner.
     }
   };
 
@@ -564,7 +590,7 @@ export function CourseDetailManagerView({
         return;
       }
       // Shown once and only once: the server cannot re-issue this URL.
-      setSelfEnrollUrl(parsed.data.url);
+      setMintedLink({ linkId: parsed.data.link.id, url: parsed.data.url });
       await refreshSelfEnrollLinks();
     } catch {
       setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
@@ -586,8 +612,11 @@ export function CourseDetailManagerView({
         setSelfEnrollError("Could not turn off that link. Please try again.");
         return;
       }
-      // The revoked link's URL must stop being offered for copying.
-      setSelfEnrollUrl(null);
+      // The revoked link's URL must stop being offered for copying — but only
+      // if it is the one on screen. Tidying up last term's link must not wipe a
+      // URL minted seconds ago and not yet copied, because nothing can bring
+      // that one back.
+      setMintedLink((current) => (current?.linkId === linkId ? null : current));
       await refreshSelfEnrollLinks();
     } catch {
       setSelfEnrollError("Could not turn off that link. Please try again.");
@@ -597,9 +626,9 @@ export function CourseDetailManagerView({
   };
 
   const handleCopySelfEnrollUrl = async () => {
-    if (!selfEnrollUrl) return;
+    if (!mintedLink) return;
     try {
-      await navigator.clipboard.writeText(selfEnrollUrl);
+      await navigator.clipboard.writeText(mintedLink.url);
       setSelfEnrollCopied(true);
     } catch {
       // Clipboard access can be denied; the URL is selectable in the field.
@@ -1560,9 +1589,9 @@ export function CourseDetailManagerView({
                       <Label htmlFor="enrollment-csv">Import a roster CSV</Label>
                       <p className="text-xs text-muted-foreground">
                         Needs a header row with an <code>email</code> column. An optional{" "}
-                        <code>role</code> column accepts STUDENT or TA. Up to {CSV_MAX_ROWS} rows
-                        and {CSV_MAX_KB} KB per upload. Rows that fail are reported by line number;
-                        the rest are still enrolled.
+                        <code>role</code> column accepts STUDENT or TA — and INSTRUCTOR for
+                        administrators. Up to {CSV_MAX_ROWS} rows and {CSV_MAX_KB} KB per upload.
+                        Rows that fail are reported by line number; the rest are still enrolled.
                       </p>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <input
@@ -1624,17 +1653,25 @@ export function CourseDetailManagerView({
                         <p className="text-sm text-destructive">{selfEnrollError}</p>
                       )}
 
+                      {selfEnrollForbidden && (
+                        <p className="text-sm text-muted-foreground">
+                          You no longer have permission to manage self-enrollment links for this
+                          course. Reload the page, or ask an administrator if you think this is
+                          wrong.
+                        </p>
+                      )}
+
                       <Button
                         variant="outline"
                         className="self-start"
-                        disabled={selfEnrollBusy}
+                        disabled={selfEnrollBusy || selfEnrollForbidden}
                         onClick={() => void handleCreateSelfEnrollLink()}
                       >
                         <IconLink className="w-4 h-4 mr-1" />
                         {selfEnrollBusy ? "Working…" : "Create link"}
                       </Button>
 
-                      {selfEnrollUrl && (
+                      {mintedLink && (
                         <Card>
                           <CardContent className="py-3 space-y-2">
                             <p className="text-xs text-muted-foreground">
@@ -1643,7 +1680,7 @@ export function CourseDetailManagerView({
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                               <Input
                                 readOnly
-                                value={selfEnrollUrl}
+                                value={mintedLink.url}
                                 aria-label="Self-enrollment link"
                               />
                               <Button

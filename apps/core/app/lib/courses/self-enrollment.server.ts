@@ -200,7 +200,29 @@ export type SelfEnrollmentRejection =
   | { status: "404"; error: "COURSE_NOT_FOUND" }
   | { status: "403"; error: "LINK_REVOKED" }
   | { status: "403"; error: "COURSE_NOT_PUBLISHED" }
-  | { status: "410"; error: "LINK_EXPIRED" };
+  | { status: "410"; error: "LINK_EXPIRED" }
+  | { status: "409"; error: "LINK_EXHAUSTED" };
+
+/**
+ * Why this link cannot be used right now, or `null` when it can.
+ *
+ * The single source of truth for link usability, deliberately shared by the
+ * resolve-then-preview path and the locked re-check inside the redemption
+ * transaction. Both callers asking the SAME function is what makes "preview and
+ * redeem can never disagree" a property of the code rather than a promise in a
+ * comment — and it is why each cause keeps its own status instead of collapsing
+ * into one. A student told "this link has reached its limit" when it was
+ * actually revoked is being pointed at the wrong remedy.
+ *
+ * Order matters and mirrors `linkStatus`: revocation is a deliberate staff act,
+ * so it wins over an expiry that may also have passed.
+ */
+function linkUsabilityFailure(link: LinkRow, now: Date): SelfEnrollmentRejection | null {
+  if (link.revokedAt) return { status: "403", error: "LINK_REVOKED" };
+  if (link.expiresAt <= now) return { status: "410", error: "LINK_EXPIRED" };
+  if (isExhausted(link)) return { status: "409", error: "LINK_EXHAUSTED" };
+  return null;
+}
 
 type ResolvedLink = {
   ok: true;
@@ -235,11 +257,13 @@ async function resolveSelfEnrollmentLink(
   if (expectedCourseId !== undefined && link.courseId !== expectedCourseId) {
     return { ok: false, failure: { status: "404", error: "COURSE_MISMATCH" } };
   }
-  if (link.revokedAt) {
-    return { ok: false, failure: { status: "403", error: "LINK_REVOKED" } };
-  }
-  if (link.expiresAt <= new Date()) {
-    return { ok: false, failure: { status: "410", error: "LINK_EXPIRED" } };
+  // Includes exhaustion, so a capped link that is already full refuses at the
+  // preview instead of showing an enabled "Join course" button that can only
+  // fail. `linkStatus` has always surfaced EXHAUSTED to staff; this is the same
+  // condition, asked on the student's behalf.
+  const unusable = linkUsabilityFailure(link, new Date());
+  if (unusable) {
+    return { ok: false, failure: unusable };
   }
 
   const course = await prisma.course.findFirst({
@@ -280,10 +304,18 @@ export async function previewSelfEnrollmentLink(token: string) {
  * The cap has to hold under concurrent redemptions, so the row is locked and
  * re-read inside the transaction before the count is compared and incremented —
  * the same lock-then-decide shape `enrollments.server` uses for the instructor
- * floor. Revocation and expiry are re-checked here too, so a link revoked
- * between the resolve above and this write still cannot be redeemed.
+ * floor. Revocation, expiry and exhaustion are all re-checked here, so a link
+ * revoked between the resolve above and this write still cannot be redeemed.
+ *
+ * Answers WHY it refused rather than a bare boolean. This is the one place that
+ * observes a link changing underneath a student who is already looking at the
+ * preview, so it is exactly where the distinction is worth something: a link
+ * revoked mid-session reports 403 LINK_REVOKED, not a 409 that sends the
+ * student off to ask for a bigger cap.
  */
-async function claimRedemptionSlot(linkId: string): Promise<boolean> {
+async function claimRedemptionSlot(
+  linkId: string,
+): Promise<{ ok: true } | { ok: false; failure: SelfEnrollmentRejection }> {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
       SELECT "id"
@@ -295,14 +327,43 @@ async function claimRedemptionSlot(linkId: string): Promise<boolean> {
       where: { id: linkId },
       select: LINK_SELECT,
     });
-    if (!fresh || fresh.revokedAt || fresh.expiresAt <= new Date() || isExhausted(fresh)) {
-      return false;
+    // Deleted between resolve and claim — indistinguishable to a student from a
+    // token that was never valid, and reported the same way.
+    if (!fresh) {
+      return { ok: false as const, failure: { status: "404", error: "INVALID_TOKEN" } as const };
+    }
+    const unusable = linkUsabilityFailure(fresh, new Date());
+    if (unusable) {
+      return { ok: false as const, failure: unusable };
     }
     await tx.selfEnrollmentLink.update({
       where: { id: linkId },
       data: { redemptionCount: { increment: 1 } },
     });
-    return true;
+    return { ok: true as const };
+  });
+}
+
+/**
+ * Hand a claimed slot back after the enrollment it was claimed for did not
+ * happen.
+ *
+ * Claiming commits in its own transaction before `addEnrollment` runs, so
+ * without this a failed enrollment would spend a slot on a link capped at 30
+ * and leave it permanently at 29 with nobody enrolled. Spending a slot on a
+ * *successful* redemption — including the concurrent-redemption 409, where the
+ * student does end up enrolled — is intended; spending one on an outcome that
+ * enrolled nobody is not.
+ *
+ * `updateMany` with a `gt: 0` guard rather than `update`: the decrement must
+ * never push the count negative and must not throw if the row has since been
+ * deleted, because the caller is usually already carrying a more important
+ * failure.
+ */
+async function releaseRedemptionSlot(linkId: string): Promise<void> {
+  await prisma.selfEnrollmentLink.updateMany({
+    where: { id: linkId, redemptionCount: { gt: 0 } },
+    data: { redemptionCount: { decrement: 1 } },
   });
 }
 
@@ -334,24 +395,36 @@ export async function redeemSelfEnrollmentLink(input: RedeemSelfEnrollmentInput)
       status: "200",
       courseId: course.id,
       enrollmentId: existing.id,
+      linkId: resolved.link.id,
       alreadyEnrolled: true,
     } as const;
   }
 
-  if (!(await claimRedemptionSlot(resolved.link.id))) {
-    return { status: "409", error: "LINK_EXHAUSTED" } as const;
+  const claim = await claimRedemptionSlot(resolved.link.id);
+  if (!claim.ok) return claim.failure;
+
+  // From here a slot is spent. Every path that ends without an enrollment has
+  // to hand it back, including the one where `addEnrollment` throws.
+  let result;
+  try {
+    result = await addEnrollment(
+      course.id,
+      { userId: input.userId, role: SELF_ENROLLMENT_ROLE },
+      SELF_ENROLLMENT_ACTOR_RANK,
+    );
+  } catch (error: unknown) {
+    // Swallow a failure to release: the caller needs the original error, not a
+    // second one raised while tidying up after it.
+    await releaseRedemptionSlot(resolved.link.id).catch(() => undefined);
+    throw error;
   }
 
-  const result = await addEnrollment(
-    course.id,
-    { userId: input.userId, role: SELF_ENROLLMENT_ROLE },
-    SELF_ENROLLMENT_ACTOR_RANK,
-  );
   if (result.status === "201") {
     return {
       status: "201",
       courseId: course.id,
       enrollmentId: result.enrollment.id,
+      linkId: resolved.link.id,
       alreadyEnrolled: false,
     } as const;
   }
@@ -363,8 +436,12 @@ export async function redeemSelfEnrollmentLink(input: RedeemSelfEnrollmentInput)
       status: "200",
       courseId: course.id,
       enrollmentId: null,
+      linkId: resolved.link.id,
       alreadyEnrolled: true,
     } as const;
   }
+  // Nobody was enrolled (USER_NOT_FOUND, a validation refusal, a role the
+  // redemption rank may not grant): the slot bought nothing, so give it back.
+  await releaseRedemptionSlot(resolved.link.id);
   return { status: "422", error: result.error } as const;
 }

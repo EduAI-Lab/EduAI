@@ -48,21 +48,99 @@ const FILE_ERROR_STATUS = {
 } as const;
 
 /**
+ * Slack allowed on top of `MAX_CSV_BYTES` for a multipart request.
+ *
+ * A browser upload wraps the CSV in boundary markers, a `Content-Disposition`
+ * header carrying the filename and a handful of CRLFs — on the order of a few
+ * hundred bytes for one part. Without this allowance the framing is charged
+ * against the CSV's own budget, and a roster a few hundred bytes under the cap
+ * is rejected with a message quoting a limit it is genuinely under. 8 KiB is
+ * far more than one part needs and negligible against a 256 KiB cap.
+ */
+const MULTIPART_FRAMING_ALLOWANCE = 8 * 1024;
+
+function isMultipart(request: Request): boolean {
+  return (request.headers.get("Content-Type") ?? "").includes("multipart/form-data");
+}
+
+/**
+ * Pull the body into memory while counting, and give up the moment it goes past
+ * `maxBytes`.
+ *
+ * `request.text()` and `request.formData()` both read the entire body first, so
+ * checking a size afterwards is no defence at all: a `Transfer-Encoding:
+ * chunked` request declares no `Content-Length`, sails past the header
+ * precheck, and is fully buffered before anything gets to object. Counting the
+ * chunks as they arrive is the only cap that actually binds.
+ *
+ * `null` means "over the limit"; the stream is cancelled rather than drained.
+ *
+ * Backed by an explicitly allocated `ArrayBuffer` so the result is a
+ * `Uint8Array<ArrayBuffer>` rather than the `ArrayBufferLike` default, which
+ * `BodyInit` does not accept.
+ */
+async function readBoundedBody(
+  request: Request,
+  maxBytes: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const stream = request.body;
+  if (!stream) return new Uint8Array(new ArrayBuffer(0));
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(new ArrayBuffer(total));
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+/** `false` when the body exceeded `maxBytes` and was abandoned unread. */
+type CsvBodyResult = { ok: true; csv: string } | { ok: false };
+
+/**
  * Accept either a raw `text/csv` body or a multipart upload with a `file`
  * field, because a browser `<input type="file">` posts the latter and scripted
- * callers (curl, admin tooling) post the former.
+ * callers (curl, admin tooling) post the former. Either way the bytes are
+ * counted on the way in.
  */
-async function readCsvBody(request: Request): Promise<string> {
-  const contentType = request.headers.get("Content-Type") ?? "";
-  if (!contentType.includes("multipart/form-data")) {
-    return request.text();
+async function readCsvBody(request: Request, maxBytes: number): Promise<CsvBodyResult> {
+  const bytes = await readBoundedBody(request, maxBytes);
+  if (bytes === null) return { ok: false };
+
+  if (!isMultipart(request)) {
+    return { ok: true, csv: new TextDecoder().decode(bytes) };
   }
-  const form = await request.formData();
+
+  // Hand the bytes we already hold back to the platform's multipart parser
+  // rather than re-implementing it — the size decision has been made by now, so
+  // this parse is bounded. The Content-Type header is passed through because it
+  // carries the boundary the parser needs.
+  const form = await new Request(request.url, {
+    method: "POST",
+    headers: { "Content-Type": request.headers.get("Content-Type") ?? "" },
+    body: bytes,
+  }).formData();
   const file = form.get("file");
   // `FormData.get` answers with a `File` for a real upload and a string when a
   // caller posted the CSV as a plain field; both are legitimate here.
-  if (file instanceof File) return file.text();
-  return file ?? "";
+  if (file instanceof File) return { ok: true, csv: await file.text() };
+  return { ok: true, csv: file ?? "" };
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -105,17 +183,27 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
       }
 
-      // Reject an oversized upload before buffering it. The parser re-checks the
-      // real byte length, since Content-Length is client-supplied and optional.
-      const declaredLength = Number(request.headers.get("Content-Length") ?? "0");
-      if (Number.isFinite(declaredLength) && declaredLength > MAX_CSV_BYTES) {
-        return jsonResponse(
+      // Three checks, narrowing: `Content-Length` is a free early-out when the
+      // client is honest, the counting read is the one that actually binds, and
+      // the parser has the last word on the CSV itself. The budget here is the
+      // whole HTTP body, which for a multipart upload is the CSV plus its
+      // framing — the parser still holds the extracted CSV to MAX_CSV_BYTES.
+      const maxBodyBytes = MAX_CSV_BYTES + (isMultipart(request) ? MULTIPART_FRAMING_ALLOWANCE : 0);
+      const tooLarge = () =>
+        jsonResponse(
           { error: "FILE_TOO_LARGE", message: `The maximum upload is ${MAX_CSV_BYTES} bytes.` },
           413,
         );
+
+      const declaredLength = Number(request.headers.get("Content-Length") ?? "0");
+      if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
+        return tooLarge();
       }
 
-      const parsed = parseEnrollmentCsv(await readCsvBody(request));
+      const body = await readCsvBody(request, maxBodyBytes);
+      if (!body.ok) return tooLarge();
+
+      const parsed = parseEnrollmentCsv(body.csv);
       if (!parsed.ok) {
         return jsonResponse(
           { error: parsed.error, message: parsed.message },
