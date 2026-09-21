@@ -93,6 +93,17 @@ describe("seed catalog agrees with the declared campus catalog", () => {
     expect(tieredIds).not.toContain(RETAINED_ASSIST_MODEL_ID);
   });
 
+  it("keeps every direct-addressed model out of the Auto routing pool", () => {
+    // A direct-addressed row (e.g. qwen2.5-32b-instruct) must never gain a
+    // routerTier here — that only declares intent. What actually matters is
+    // that the seed/sync clear any tier the row already carries from a prior
+    // catalog generation (#1802 review); this pins the declarative half.
+    const tieredIds = VLLM_ROUTING_TIER_ASSIGNMENTS.map((a) => a.modelId);
+    for (const direct of DIRECT_ADDRESSED_MODEL_IDS) {
+      expect(tieredIds).not.toContain(direct);
+    }
+  });
+
   it("routes a small tier-1 and a large tier-3 model, as local-vLLM routing expects", () => {
     // lib/ai/routing/local-vllm.ts remaps every tier-2 pick to tier 3, so a
     // local deployment needs exactly these two tiers populated to route at all.

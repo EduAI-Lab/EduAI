@@ -72,7 +72,7 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
     }
   });
 
-  it("clears only known retired rows and preserves admin-managed model rows", async () => {
+  it("clears and deactivates only known retired rows, and preserves admin-managed model rows", async () => {
     const { applyRoutingTierAssignments } = await import("../../../prisma/seed");
     const { VLLM_RETIRED_MODEL_IDS } = await import("../../../prisma/ai-model-catalog");
 
@@ -81,20 +81,46 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
     // Read the retired set from the catalog rather than restating it: this
     // assertion previously hardcoded the Qwen 3.5 ids, which meant it kept
     // passing while the catalog retired the models the fleet actually serves
-    // (#1802).
+    // (#1802). Retired rows must also be deactivated, not just untiered —
+    // otherwise they stay directly addressable and listed as live (#1802 review).
+    expect(aIModelUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          providerId: VLLM_PROVIDER.id,
+          modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
+        }),
+        data: { routerTier: null, isActive: false },
+      }),
+    );
+
+    const cleanup = aIModelUpdateMany.mock.calls.find(
+      ([args]) =>
+        args?.where?.modelId?.in &&
+        JSON.stringify(args.data) === JSON.stringify({ routerTier: null, isActive: false }),
+    )?.[0];
+    expect(cleanup?.where?.modelId?.notIn).toBeUndefined();
+  });
+
+  it("clears a leftover tier on direct-addressed rows without deactivating them", async () => {
+    const { applyRoutingTierAssignments } = await import("../../../prisma/seed");
+    const { DIRECT_ADDRESSED_MODEL_IDS } = await import("~/lib/ai/campus-model-catalog");
+
+    await applyRoutingTierAssignments();
+
+    // qwen2.5-32b-instruct (and anything else addressed directly rather than
+    // through Auto routing) must have any stale tier from a previous catalog
+    // generation cleared, but stay active — its consumer resolves it by id
+    // regardless of tier (#1802 review).
     expect(aIModelUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           providerId: VLLM_PROVIDER.id,
           routerTier: { not: null },
-          modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
+          modelId: { in: [...DIRECT_ADDRESSED_MODEL_IDS] },
         }),
         data: { routerTier: null },
       }),
     );
-
-    const cleanup = aIModelUpdateMany.mock.calls.find(([args]) => args?.where?.modelId?.in)?.[0];
-    expect(cleanup?.where?.modelId?.notIn).toBeUndefined();
   });
 
   it("also clears any leftover tier on Google rows", async () => {
