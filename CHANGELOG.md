@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Review follow-up on #1807: the plugin stamps `rateLimitMax`/`rateLimitTimeWindow` onto each key row at creation, so #1807's config change only applied to new keys. Backfill migration `20260920180000_backfill_api_key_rate_limit` raises every existing key to 1000/24h and resets its usage counter; the schema default is now 1000 too. Also fixed `parsePositiveInt` accepting `"0.5"` (it floored to 0 after the `<=0` check instead of before).
+
 ## 2026.09.19
 
 - Fix EduAI API keys being capped at **10 requests per 24 hours**. The Better Auth api-key plugin rate-limits every key whether or not the host configures it, and its defaults are `maxRequests: 10` / `timeWindow: 24h`; Core passed only `apiKeyHeaders` and `keyExpiration`, so every key silently inherited that. Core now always passes an explicit `rateLimit`, defaulting to 1000 requests per 24h and tunable via `API_KEY_RATE_LIMIT_MAX`, `API_KEY_RATE_LIMIT_WINDOW_MS` and `API_KEY_RATE_LIMIT_ENABLED`. PR: https://github.com/EduAI-Lab/EduAI/pull/1807. Closes #1803.

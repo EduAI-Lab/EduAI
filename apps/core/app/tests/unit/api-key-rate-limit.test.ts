@@ -120,8 +120,8 @@ describe("api key rate limit configuration", () => {
 
   it("ignores values that would deny every request", () => {
     // A zero/negative/NaN ceiling would lock out every caller; fall back rather
-    // than brick API-key auth on a typo.
-    for (const bad of ["0", "-5", "abc", "   "]) {
+    // than brick API-key auth on a typo. "0.5" floors to 0.
+    for (const bad of ["0", "-5", "abc", "   ", "0.5"]) {
       process.env.API_KEY_RATE_LIMIT_MAX = bad;
       expect(getApiKeyRateLimitConfig().maxRequests).toBe(DEFAULT_API_KEY_RATE_LIMIT_MAX);
     }

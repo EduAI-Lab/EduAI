@@ -33,11 +33,12 @@ export const DEFAULT_API_KEY_RATE_LIMIT_WINDOW_MS = DAY_MS;
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === "") return fallback;
-  const parsed = Number(value);
+  // Floor before the <= 0 check, or "0.5" passes the check and floors to 0.
+  const parsed = Math.floor(Number(value));
   // A zero or negative ceiling would deny every request, and NaN would make the
   // plugin's comparison always false. Neither is a configuration anyone means.
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.floor(parsed);
+  return parsed;
 }
 
 export function getApiKeyRateLimitConfig(): ApiKeyRateLimitConfig {
