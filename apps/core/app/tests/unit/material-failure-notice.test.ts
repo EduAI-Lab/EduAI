@@ -8,7 +8,10 @@
 // no bytes left to retry from.
 import { describe, it, expect } from "vitest";
 
-import { describeMaterialFailure } from "~/lib/material-failure-notice";
+import {
+  describeMaterialFailure,
+  describeMaterialRetryFailure,
+} from "~/lib/material-failure-notice";
 
 const failedIndexing = {
   status: "FAILED" as const,
@@ -97,5 +100,51 @@ describe("describeMaterialFailure — indexing failed", () => {
     const notice = describeMaterialFailure(failedIndexing);
 
     expect(notice?.description).not.toMatch(/corrupt|invalid file|unsupported/i);
+  });
+});
+
+// #1795 review: the retry's rejection had nowhere to go — `handleReprocessMaterial`
+// had a `finally` but no `catch`, and the click discarded the promise with
+// `void`, so every server-side refusal became an unhandled rejection. The user
+// saw "Retrying…" flash and the button come back, with no indication that
+// anything had happened, and clicking again reproduced it forever.
+describe("describeMaterialRetryFailure", () => {
+  it("explains a row that settled between the list read and the click", () => {
+    const message = describeMaterialRetryFailure('{"error":"MATERIAL_NOT_FAILED"}');
+
+    expect(message).toMatch(/no longer failed|already/i);
+    expect(message).not.toMatch(/MATERIAL_NOT_FAILED/);
+  });
+
+  it("explains text that is gone, and points at the one thing that still works", () => {
+    const message = describeMaterialRetryFailure('{"error":"MATERIAL_TEXT_UNAVAILABLE"}');
+
+    expect(message).toMatch(/upload/i);
+    expect(message).not.toMatch(/MATERIAL_TEXT_UNAVAILABLE/);
+  });
+
+  it("explains a duplicate receipt, which retrying cannot change", () => {
+    const message = describeMaterialRetryFailure('{"error":"MATERIAL_DUPLICATE"}');
+
+    expect(message).toMatch(/already on (this|the) course/i);
+  });
+
+  it("explains a refusal by the permission gate", () => {
+    const message = describeMaterialRetryFailure('{"error":"Forbidden"}');
+
+    expect(message).toMatch(/permission/i);
+  });
+
+  it("falls back to something an instructor can read, never a raw response body", () => {
+    // A 500 or a dropped connection has no code to look up, and the body is
+    // whatever the server happened to emit.
+    const message = describeMaterialRetryFailure("<html>502 Bad Gateway</html>");
+
+    expect(message).toMatch(/couldn't retry/i);
+    expect(message).not.toMatch(/html|502/i);
+  });
+
+  it("says something useful when there is no message at all", () => {
+    expect(describeMaterialRetryFailure("")).toMatch(/couldn't retry/i);
   });
 });

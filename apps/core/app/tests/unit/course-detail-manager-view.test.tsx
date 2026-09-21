@@ -801,3 +801,59 @@ describe("CourseDetailManagerView — access-gated visibility", () => {
     expect(taTab).not.toBeInTheDocument();
   });
 });
+
+// #1795 review: `handleReprocessMaterial` had a `finally` but no `catch`, and
+// the click site discarded the promise with `void`. `reprocessMaterial` throws
+// on any non-2xx, so a 409 from a row that settled between the list read and
+// the click, a 403 from the policy gate, a 500 or a dropped connection all
+// became unhandled rejections: "Retrying…" flashed, the button came back, and
+// nothing said why. Every other mutation on this page reports its failures.
+describe("CourseDetailManagerView — a retry the server refuses (#1749)", () => {
+  const failedMaterial: CourseMaterial = {
+    ...MATERIAL,
+    id: "m-failed",
+    status: "FAILED",
+    hasExtractedText: true,
+  };
+
+  async function openFailureRetry() {
+    fireEvent.click(screen.getByRole("button", { name: /why did this fail/i }));
+    return screen.findByRole("button", { name: /try again/i });
+  }
+
+  it("reports the refusal instead of resetting the button with no explanation", async () => {
+    const onReprocessMaterial = vi
+      .fn()
+      .mockRejectedValue(new Error('{"error":"MATERIAL_TEXT_UNAVAILABLE"}'));
+    renderView({ materials: [failedMaterial], onReprocessMaterial });
+
+    fireEvent.click(await openFailureRetry());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/upload/i);
+  });
+
+  it("does not leave the row stuck in its retrying state after a refusal", async () => {
+    const onReprocessMaterial = vi.fn().mockRejectedValue(new Error("boom"));
+    renderView({ materials: [failedMaterial], onReprocessMaterial });
+
+    fireEvent.click(await openFailureRetry());
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /try again/i })).not.toBeDisabled(),
+    );
+  });
+
+  it("clears a previous refusal when the instructor tries again", async () => {
+    const onReprocessMaterial = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(undefined);
+    renderView({ materials: [failedMaterial], onReprocessMaterial });
+
+    fireEvent.click(await openFailureRetry());
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+});

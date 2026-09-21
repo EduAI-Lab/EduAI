@@ -6,6 +6,7 @@ vi.mock("~/lib/prisma.server", () => ({
     courseMaterial: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
@@ -68,6 +69,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.courseMaterial.update).mockResolvedValue({} as never);
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null as never);
+  vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue(null as never);
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
@@ -343,6 +345,147 @@ describe("sweepStrandedMaterialExtractions", () => {
 
     expect(result).toEqual({ resumed: 0, abandoned: 0 });
     expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  // #1795 review: the #1749 retry flips a FAILED row to PROCESSING and hands
+  // the work to a fire-and-forget in-process job. A restart in between left the
+  // row PROCESSING with no recovery path at all: this sweep could not see it
+  // (a reprocessed row has a real content checksum, not `pending:`, and no
+  // blob — `failMaterial` dropped it on the original failure), the failure
+  // popover was gone because the status was no longer FAILED, and the only
+  // escape was delete + re-upload — worse than where the instructor started.
+  describe("retries stranded by a dead worker", () => {
+    /** The scan finds no stranded upload, then one stranded retry. */
+    function mockStrandedReembed(rows: Array<{ id: string }> = [{ id: "mat-1" }]) {
+      vi.mocked(prisma.courseMaterial.findMany)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce(rows as never);
+    }
+
+    it("looks for PROCESSING rows with an expired lease, surviving text and no bytes", async () => {
+      await sweepStrandedMaterialExtractions(CTX);
+
+      const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[1] as [any];
+      expect(args.where).toEqual(
+        expect.objectContaining({
+          status: "PROCESSING",
+          rawText: { not: null },
+          uploadBlob: { is: null },
+        }),
+      );
+      // A *non-null* expired lease, which is also what keeps this off a Canvas
+      // import: those sit in PROCESSING with no lease, and `{ lt: now }` cannot
+      // match null.
+      expect(args.where.extractionLeaseUntil).toEqual({ lt: expect.any(Date) });
+    });
+
+    it("never scans the document text of the whole batch", async () => {
+      // Same reasoning as the blob scan above: `rawText` is the entire
+      // document, so the batch is ids only and each row's text is read inside
+      // the loop.
+      await sweepStrandedMaterialExtractions(CTX);
+
+      const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[1] as [any];
+      expect(args.select.rawText).toBeUndefined();
+    });
+
+    it("re-embeds a stranded retry from the text still on the row", async () => {
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+        rawText: "extracted lecture text",
+      } as never);
+
+      const result = await sweepStrandedMaterialExtractions(CTX);
+
+      expect(result).toEqual({ resumed: 1, abandoned: 0 });
+      expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "extracted lecture text", {
+        replace: true,
+      });
+      // It lands the row somewhere terminal rather than leaving it PROCESSING.
+      expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "mat-1" },
+          data: expect.objectContaining({ status: "READY", extractionLeaseUntil: null }),
+        }),
+      );
+    });
+
+    it("takes the lease before re-embedding, so a second sweeper skips the row", async () => {
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+        rawText: "extracted lecture text",
+      } as never);
+
+      await sweepStrandedMaterialExtractions(CTX);
+
+      const claim = vi
+        .mocked(prisma.courseMaterial.updateMany)
+        .mock.calls.map(([args]: [any]) => args)
+        .find((args: any) => args.where.id === "mat-1");
+      expect(claim.where).toEqual(
+        expect.objectContaining({
+          status: "PROCESSING",
+          extractionLeaseUntil: { lt: expect.any(Date) },
+        }),
+      );
+      expect(claim.data.extractionLeaseUntil).toBeInstanceOf(Date);
+    });
+
+    it("skips a row another sweeper claimed first", async () => {
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 0 } as never);
+
+      const result = await sweepStrandedMaterialExtractions(CTX);
+
+      expect(result).toEqual({ resumed: 0, abandoned: 0 });
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("skips a row whose text is gone by the time the sweep reaches it", async () => {
+      // Settled between the scan and the read: a completed retry is READY and
+      // has nothing left for this to resume.
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue(null as never);
+
+      const result = await sweepStrandedMaterialExtractions(CTX);
+
+      expect(result).toEqual({ resumed: 0, abandoned: 0 });
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("fails a stranded retry that cannot embed, rather than leaving it PROCESSING", async () => {
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+        rawText: "extracted lecture text",
+      } as never);
+      vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("provider down"));
+
+      await sweepStrandedMaterialExtractions(CTX);
+
+      // Back to FAILED, where the popover explains it and offers the retry
+      // again — the state the instructor can actually act on.
+      expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "mat-1" },
+          data: expect.objectContaining({ status: "FAILED" }),
+        }),
+      );
+    });
+
+    it("keeps going after one stranded retry fails", async () => {
+      mockStrandedReembed([{ id: "mat-bad" }, { id: "mat-good" }]);
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+        rawText: "extracted lecture text",
+      } as never);
+      vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("provider down"));
+
+      const result = await sweepStrandedMaterialExtractions(CTX);
+
+      expect(result.resumed).toBe(2);
+      expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-good", "extracted lecture text", {
+        replace: true,
+      });
+    });
   });
 });
 

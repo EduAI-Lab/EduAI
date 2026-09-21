@@ -60,7 +60,10 @@ import { Label } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { MaterialFailureDetail } from "~/components/courses/material-failure-detail";
-import { describeMaterialFailure } from "~/lib/material-failure-notice";
+import {
+  describeMaterialFailure,
+  describeMaterialRetryFailure,
+} from "~/lib/material-failure-notice";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
 import {
@@ -562,12 +565,35 @@ export function CourseDetailManagerView({
   // show progress instead of accepting a second click.
   const [retryingMaterialId, setRetryingMaterialId] = useState<string | null>(null);
 
+  // #1795 review: why the last retry was refused, keyed by material. The
+  // handler below had no `catch`, so every non-2xx — a 409 from a row that
+  // settled between the list read and the click, a 403 from the policy gate, a
+  // 500, a dropped connection — became an unhandled rejection and the
+  // instructor saw only "Retrying…" flash. It is scoped to the row because the
+  // page's other error slot (`materialsError`) lives inside the upload dialog,
+  // which is closed while a row is being retried.
+  const [retryErrorByMaterialId, setRetryErrorByMaterialId] = useState<Record<string, string>>({});
+
   const handleReprocessMaterial = useCallback(
     async (materialId: string) => {
       if (!onReprocessMaterial) return;
       setRetryingMaterialId(materialId);
+      // A fresh attempt starts from a clean slate: leaving the last refusal up
+      // while this one runs would say nothing true about either.
+      setRetryErrorByMaterialId((prev) => {
+        if (!(materialId in prev)) return prev;
+        const { [materialId]: _cleared, ...rest } = prev;
+        return rest;
+      });
       try {
         await onReprocessMaterial(materialId);
+      } catch (error) {
+        setRetryErrorByMaterialId((prev) => ({
+          ...prev,
+          [materialId]: describeMaterialRetryFailure(
+            error instanceof Error ? error.message : String(error),
+          ),
+        }));
       } finally {
         setRetryingMaterialId(null);
       }
@@ -1043,6 +1069,7 @@ export function CourseDetailManagerView({
                     onReprocessMaterial ? () => void handleReprocessMaterial(item.id) : undefined
                   }
                   retrying={retryingMaterialId === item.id}
+                  retryError={retryErrorByMaterialId[item.id] ?? null}
                 />
               );
             }}

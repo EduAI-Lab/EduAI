@@ -82,3 +82,49 @@ describe("MaterialFailureDetail — retrying", () => {
     expect(await screen.findByRole("button", { name: /retrying/i })).toBeDisabled();
   });
 });
+
+// #1795 review: every server-side refusal reached this component as a rejected
+// promise nobody caught, so a click that could never succeed looked exactly
+// like one that had not been made yet.
+describe("MaterialFailureDetail — a retry that was refused", () => {
+  it("shows why the retry did not happen, instead of silently resetting", async () => {
+    render(
+      <MaterialFailureDetail
+        notice={indexingFailure}
+        onRetry={vi.fn()}
+        retryError="The extracted text is no longer available."
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /why did this fail/i }));
+
+    expect(
+      await screen.findByText("The extracted text is no longer available."),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the refusal as an alert, so it is announced rather than just drawn", async () => {
+    render(<MaterialFailureDetail notice={indexingFailure} onRetry={vi.fn()} retryError="Nope." />);
+
+    fireEvent.click(screen.getByRole("button", { name: /why did this fail/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Nope.");
+  });
+
+  it("leaves Try again usable, since a transient failure is worth another click", async () => {
+    render(<MaterialFailureDetail notice={indexingFailure} onRetry={vi.fn()} retryError="Nope." />);
+
+    fireEvent.click(screen.getByRole("button", { name: /why did this fail/i }));
+
+    expect(await screen.findByRole("button", { name: /try again/i })).not.toBeDisabled();
+  });
+
+  it("shows no refusal before one has happened", async () => {
+    render(<MaterialFailureDetail notice={indexingFailure} onRetry={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /why did this fail/i }));
+
+    await screen.findByRole("button", { name: /try again/i });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});

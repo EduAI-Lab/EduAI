@@ -13,6 +13,12 @@ export interface MaterialFailureDetailProps {
   onRetry?: () => void;
   /** A retry for this material is already in flight. */
   retrying?: boolean;
+  /**
+   * Why the last retry did not happen, if one was refused. Shown beside the
+   * button rather than swallowed: `reprocessMaterial` throws on any non-2xx,
+   * and without this the instructor saw the button reset and nothing else.
+   */
+  retryError?: string | null;
 }
 
 /**
@@ -34,6 +40,7 @@ export function MaterialFailureDetail({
   notice,
   onRetry,
   retrying = false,
+  retryError = null,
 }: MaterialFailureDetailProps) {
   const canRetry = notice.canRetry && onRetry !== undefined;
 
@@ -54,17 +61,26 @@ export function MaterialFailureDetail({
         <p className="text-[13px] font-medium text-foreground">{notice.title}</p>
         <p className="text-[12px] leading-relaxed text-muted-foreground">{notice.description}</p>
         {canRetry && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onRetry}
-            disabled={retrying}
-            className="w-full"
-          >
-            <IconRefresh className="h-3.5 w-3.5" />
-            {retrying ? "Retrying…" : "Try again"}
-          </Button>
+          <>
+            {retryError && (
+              // Left clickable behind this: a provider that was down a moment
+              // ago is exactly the case the retry exists for.
+              <p role="alert" className="text-[12px] leading-relaxed text-destructive">
+                {retryError}
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRetry}
+              disabled={retrying}
+              className="w-full"
+            >
+              <IconRefresh className="h-3.5 w-3.5" />
+              {retrying ? "Retrying…" : "Try again"}
+            </Button>
+          </>
         )}
       </PopoverContent>
     </Popover>

@@ -10,6 +10,7 @@ import { createHash } from "crypto";
 import { validateUploadedFile } from "~/lib/ai/file-processing";
 import prisma from "~/lib/prisma.server";
 import {
+  EXTRACTION_LEASE_MS,
   PENDING_CHECKSUM_PREFIX,
   ensureMaterialSweeperRunning,
   isChecksumConflict,
@@ -18,6 +19,10 @@ import {
   startMaterialReembed,
   toBytesColumn,
 } from "~/lib/materials/extraction-job.server";
+import {
+  hasIndexableText,
+  selectMaterialIdsWithIndexableText,
+} from "~/lib/materials/indexable-text.server";
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
@@ -140,16 +145,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const requestContext = getRequestContext(request);
 
+      // #1749: `.../:materialId/reprocess` retries a failed material from the
+      // text already on the row. Three routes map to this module and two of
+      // them supply `params.materialId`, so the param cannot tell them apart
+      // (#1795 review) — keying off it made `POST /materials/:id` a second,
+      // untested spelling of reprocess, and let DELETE/PATCH on the reprocess
+      // path act on the material as though the last segment were not there.
+      // The matched path is the discriminator; the loader already reads
+      // `request.url` for its cursor params, so nothing new is assumed of it.
+      const isReprocessRoute = new URL(request.url).pathname.endsWith("/reprocess");
+      if (isReprocessRoute && request.method !== "POST") {
+        return json(405, { error: "METHOD_NOT_ALLOWED" });
+      }
+
       switch (request.method) {
         case "POST": {
-          // #1749: `.../:materialId/reprocess` retries a failed material from
-          // the text already on the row. Only that route gives a POST a
-          // `materialId` — the collection POST is the upload — so the param is
-          // the discriminator, rather than parsing `request.url`, which is not
-          // guaranteed to be present on every caller's request object. Same
-          // staff gate as upload below (it writes course RAG content), so it
-          // is dispatched after that gate rather than before it.
-          const reprocessMaterialId = params.materialId;
+          // Same staff gate as upload below (a retry rewrites course RAG
+          // content), so it is dispatched after that gate rather than before it.
 
           // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
           // Students cannot upload materials UNLESS the students.canUploadMaterials
@@ -184,7 +196,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
               courseId,
             });
           }
-          if (reprocessMaterialId) {
+          if (isReprocessRoute) {
+            const reprocessMaterialId = params.materialId;
+            if (!reprocessMaterialId) {
+              return json(400, { error: "MATERIAL_ID_REQUIRED" });
+            }
             return reprocessMaterial(courseId, reprocessMaterialId, requestContext);
           }
           return uploadMaterial(request, courseId, user, requestContext);
@@ -553,14 +569,35 @@ async function reprocessMaterial(
   if (material.duplicateOfId !== null) {
     return json(409, { error: "MATERIAL_DUPLICATE" });
   }
-  if (!material.rawText) {
+  // The same predicate the list asked before it offered the button, so a row
+  // that was offered a retry is a row this accepts (#1795 review).
+  if (!hasIndexableText(material.rawText)) {
     return json(409, { error: "MATERIAL_TEXT_UNAVAILABLE" });
   }
 
-  await prisma.courseMaterial.update({
-    where: { id: materialId },
-    data: { status: "PROCESSING", processedAt: null },
+  // Claim conditionally rather than reading FAILED and then writing: two
+  // requests that both saw FAILED would otherwise both start a replace-mode
+  // embed over the same chunk set, and while `replace: true` converges, the
+  // interleaving leaves a window where the row reads READY over a half-replaced
+  // set. The `retrying` flag in the UI only guards a single tab. Losing the
+  // claim is the same answer as arriving late: the row is no longer FAILED.
+  //
+  // The lease is what makes the row recoverable: the re-embed below is a
+  // fire-and-forget in-process job, so a deploy or an OOM between here and its
+  // end would strand the row in PROCESSING. `sweepStrandedMaterialExtractions`
+  // picks up an expired lease and resumes it.
+  const claimed = await prisma.courseMaterial.updateMany({
+    where: { id: materialId, courseId, status: "FAILED" },
+    data: {
+      status: "PROCESSING",
+      processedAt: null,
+      extractionLeaseUntil: new Date(Date.now() + EXTRACTION_LEASE_MS),
+    },
   });
+  if (claimed.count === 0) {
+    return json(409, { error: "MATERIAL_NOT_FAILED" });
+  }
+
   startMaterialReembed(materialId, material.rawText, requestContext);
 
   return json(202, { materialId, status: "PROCESSING" });
@@ -740,13 +777,7 @@ async function resolveRetryableMaterialIds(
   rows: Array<{ id: string; status: string }>,
 ): Promise<Set<string>> {
   const failedIds = rows.filter((row) => row.status === "FAILED").map((row) => row.id);
-  if (failedIds.length === 0) return new Set<string>();
-
-  const withText = await prisma.courseMaterial.findMany({
-    where: { id: { in: failedIds }, rawText: { not: null } },
-    select: { id: true },
-  });
-  return new Set(withText.map((row) => row.id));
+  return selectMaterialIdsWithIndexableText(failedIds);
 }
 
 const MATERIAL_LIST_SELECT = {

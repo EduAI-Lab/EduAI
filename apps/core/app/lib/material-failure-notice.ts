@@ -92,3 +92,54 @@ export function describeMaterialFailure(
     duplicateOfId: null,
   };
 }
+
+/**
+ * Copy for a retry the server refused (#1795 review).
+ *
+ * `reprocessMaterial` throws on any non-2xx with the raw response body as its
+ * message, so what arrives here is `{"error":"MATERIAL_TEXT_UNAVAILABLE"}`, a
+ * proxy's HTML error page, or a fetch failure's own text. None of those belong
+ * in front of an instructor, and none of them was shown at all before: the
+ * rejection had no `catch`, so the only feedback was "Retrying…" flashing and
+ * the button coming back.
+ *
+ * Each refusal the route can answer with is a different next step, which is why
+ * they are not collapsed into one apology. Anything unrecognised — a 500, a
+ * dropped connection — says only that the retry did not happen, because that is
+ * all that is actually known.
+ */
+export function describeMaterialRetryFailure(message: string): string {
+  switch (readErrorCode(message)) {
+    case "MATERIAL_NOT_FAILED":
+      // The row settled between the list read and the click: a poll or another
+      // tab already resolved it, so there is nothing to retry.
+      return "This material is no longer failed — refresh to see where it got to.";
+    case "MATERIAL_DUPLICATE":
+      return "This file is already on the course, so there is nothing to retry.";
+    case "MATERIAL_TEXT_UNAVAILABLE":
+      return "The extracted text is no longer available, so this cannot be retried. Upload the file again.";
+    case "MATERIAL_NOT_FOUND":
+      return "This material is no longer on the course.";
+    case "Forbidden":
+      return "You do not have permission to retry this material.";
+    default:
+      return "Couldn't retry this material. Try again in a moment.";
+  }
+}
+
+/**
+ * The `error` code out of an API error body, or null for a body that is not
+ * one — an HTML error page from a proxy, or a network failure's message.
+ */
+function readErrorCode(message: string): string | null {
+  try {
+    // SAFETY: the shape is asserted, not trusted. Every branch above matches a
+    // known string code, so a body carrying anything else under `error` — or no
+    // `error` at all — simply matches nothing and falls through to the generic
+    // copy, which is the right answer for a response this did not recognise.
+    const parsed = JSON.parse(message) as { error?: string } | null;
+    return parsed?.error ?? null;
+  } catch {
+    return null;
+  }
+}

@@ -22,6 +22,7 @@
  * the same row and exactly one proceeds.
  */
 import prisma from "~/lib/prisma.server";
+import { hasIndexableText } from "~/lib/materials/indexable-text.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
@@ -630,7 +631,75 @@ export async function sweepStrandedMaterialExtractions(
     if (ran) resumed += 1;
   }
 
+  resumed += await resumeStrandedReembeds(now, requestContext);
+
   return { resumed, abandoned };
+}
+
+/**
+ * Resume every #1749 retry whose worker died: PROCESSING rows with an expired
+ * lease and extracted text, but no bytes.
+ *
+ * A second stranded shape, invisible to the scan above (#1795 review). That one
+ * requires a `pending:` checksum and a persisted blob, and a reprocessed row has
+ * neither — it was promoted to a real content checksum before it ever embedded,
+ * and `failMaterial` discarded its blob on the original failure. So a deploy or
+ * an OOM between the retry's claim and the end of its embedding left the row
+ * PROCESSING forever: the list polls it, the failure popover is gone because
+ * the status is no longer FAILED, and delete + re-upload is the only way out.
+ *
+ * A *non-null* expired lease is what identifies these. It is also what keeps
+ * this off Canvas imports, which sit in PROCESSING for reasons this sweeper
+ * knows nothing about: `extractionLeaseUntil` is only ever written by this
+ * module, so theirs is null and `{ lt: now }` can never match it.
+ *
+ * There is no attempts ceiling to apply here, and none is needed: a resumed
+ * re-embed either reaches READY or is failed back to FAILED by
+ * `runMaterialReembed`. Either way it is terminal, so this cannot loop.
+ */
+async function resumeStrandedReembeds(now: Date, requestContext: RequestContext): Promise<number> {
+  const stranded = await prisma.courseMaterial.findMany({
+    where: {
+      status: "PROCESSING",
+      extractionLeaseUntil: { lt: now },
+      rawText: { not: null },
+      uploadBlob: { is: null },
+    },
+    // Ids only — `rawText` is the whole document, and selecting the batch's
+    // text at once is the same OOM the blob scan above avoids. Each row's text
+    // is read inside the loop instead.
+    select: { id: true },
+    take: SWEEP_BATCH_SIZE,
+  });
+
+  let resumed = 0;
+
+  for (const row of stranded) {
+    // Same conditional claim the retry route makes, for the same reason: a
+    // second sweeper — or a row that settled between the scan and here — loses
+    // it and is skipped rather than starting a parallel replace-mode embed.
+    const claimed = await prisma.courseMaterial.updateMany({
+      where: { id: row.id, status: "PROCESSING", extractionLeaseUntil: { lt: now } },
+      data: { extractionLeaseUntil: new Date(Date.now() + EXTRACTION_LEASE_MS) },
+    });
+    if (claimed.count === 0) continue;
+
+    // Re-read after the claim: a row finalized in between has already been
+    // handled, and there is nothing here to resume.
+    const fresh = await prisma.courseMaterial.findUnique({
+      where: { id: row.id },
+      select: { rawText: true },
+    });
+    if (!hasIndexableText(fresh?.rawText)) continue;
+
+    // Awaited, not fire-and-forget: it bounds the sweep to one embed at a time
+    // and keeps the returned summary honest. Failure is terminal inside
+    // `runMaterialReembed`, so the row never comes back to this sweep.
+    await runMaterialReembed(row.id, fresh.rawText, requestContext);
+    resumed += 1;
+  }
+
+  return resumed;
 }
 
 declare global {
