@@ -7,9 +7,9 @@ body:
       value: |
         Use this form for every EduAI work item.
 
-        **The title is a plain description of the work.** Do not put a size, a week
-        number, or any other metadata in it — those live in board fields, where they
-        can be filtered and cannot go stale. See
+        **The title is a plain description of the work.** Do not put a size or a week
+        number in it — those go in the fields below, where they can be filtered and
+        cannot go stale. See
         [`docs/ISSUE-CONVENTIONS.md`](https://github.com/EduAI-Lab/EduAI/blob/main/docs/ISSUE-CONVENTIONS.md).
 
         Size guide:
@@ -18,6 +18,11 @@ body:
         - `L` = 8 to 16 hours
 
         Split the issue if the task exceeds 16 hours.
+
+        Hours format:
+        `Hours to complete (Week N): X hours [github-handle]`
+
+        Use one hours line per week per contributor. Use bracketed GitHub handles only.
 
   - type: dropdown
     id: size
@@ -28,6 +33,18 @@ body:
         - S - 0 to 4 hours
         - M - 4 to 8 hours
         - L - 8 to 16 hours
+    validations:
+      required: true
+
+  - type: input
+    id: week
+    attributes:
+      label: Week
+      description: |
+        Which week this work belongs to. Use `Week N`, `Week N, Week M`, or `Week N-M`.
+        This moves to the board's Iteration field once that is set up; until then this is
+        the field that says which week an issue is for.
+      placeholder: "Week 3"
     validations:
       required: true
 

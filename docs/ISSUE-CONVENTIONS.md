@@ -4,9 +4,13 @@ How work is tracked. One fact has one home; if you find the same fact in two pla
 and the other copy is stale.
 
 > **Rollout status.** The issue form, the PR template and this document are live. The `Term` and
-> `Iteration` fields and the `archive/*` label namespace are being rolled out — see
-> [`docs/board-audit/PLAN.md`](board-audit/PLAN.md). Until they land, week still lives in titles and
-> `Week N` labels. Do not add new metadata to titles in the meantime.
+> `Iteration` fields and the `archive/*` label namespace are not built yet — see
+> [`docs/board-audit/PLAN.md`](board-audit/PLAN.md).
+>
+> Until the `Iteration` field exists, **the issue form's `Week` field is where week lives**, and the
+> per-week hours lines carry it too. The form no longer puts a week in the *title*, which is the part
+> that collides every September. Week moves to `Iteration` when that field is created, and only then
+> does the `Week` form field go away.
 
 ## The two boards
 
@@ -24,7 +28,7 @@ Projects 9, 7 and 5 are summer per-extension boards and are being retired.
 | What the work is | Issue title | — |
 | Size (S/M/L) | Board `Size` field | Title prefix, `## Size:` body |
 | Priority (P0–P3) | Board `Priority` field | `p0`–`p3` labels |
-| Which week | Board `Iteration` field | Title, `Week N` labels |
+| Which week | Board `Iteration` field (today: the form's `Week` field) | **The title** |
 | Term of origin | Board `Term` field | — |
 | Which epic | `epic/*` label | `EPIC:` body line alone |
 | Kind of work | Issue Type (Task / Bug / Feature) | `bug`/`enhancement` labels |
