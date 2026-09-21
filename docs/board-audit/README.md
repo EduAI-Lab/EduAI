@@ -59,10 +59,12 @@ Only board 8's `Blocked` and `Future Epics` are genuinely empty and safe to dele
 
 ## Blocking hazards recorded at snapshot time
 
-1. **`Auto-close issue` is enabled on both boards** (and on #9/#7/#5). Its configured trigger status
-   is not exposed by the API, and the only workflow mutation in the schema is
-   `deleteProjectV2Workflow` — there is no create, update or disable. **No bulk Status write may run
-   until it is disabled in the browser.** Workflow lists and `enabled` flags are in `snap-fields.json`.
+1. **Workflow behaviour, read from the UI on 2026-09-20** (the API exposes only `{name, enabled}`):
+   `Auto-close issue` fires when Status becomes **`Done`** and closes the issue. `Item added to
+   project` fires on add and sets **`Status: Backlog`**. Neither needs disabling. The binding rule is
+   that **no bulk write may set Status to `Done`**, and that every add lands in `Backlog` first, so
+   an add is two mutations when another status is intended. `Auto-add to project` and
+   `Auto-archive items` exist but are off.
 2. **Single-select option ids are load-bearing.** `updateProjectV2Field` overwrites the whole option
    set; omitting an existing option's `id` recreates it and clears the value from every item holding
    it. Board 8 and board 11 share identical Priority option ids:
@@ -76,6 +78,6 @@ Only board 8's `Blocked` and `Future Epics` are genuinely empty and safe to dele
 ## Status
 
 - [x] Phase 0 — audit and snapshot
-- [ ] Disable `Auto-close issue` + `Item added to project` on boards 8 and 11 (browser; blocks all Status writes)
+- [x] Workflow triggers verified in the UI — no disabling needed; guardrail is "never bulk-write `Done`"
 - [ ] Week 2 board reconciliation (Monday slice)
 - [ ] Remaining phases

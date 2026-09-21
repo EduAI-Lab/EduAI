@@ -62,30 +62,33 @@ Corrections carried forward from the audit (full table in `README.md`):
 
 ---
 
-# ⛔ P1 — MANUAL, BROWSER, BLOCKING. Nothing that writes Status runs before this.
+# P1 — Workflow behaviour: verified, no action needed
 
-`Auto-close issue` is **enabled on boards 8, 11, 9, 7 and 5**. It closes the underlying issue when an
-item reaches a configured status. That status is **not exposed by the API**, and the only workflow
-mutation in the GraphQL schema is `deleteProjectV2Workflow` — there is no create, no update, **no
-disable**. The workflow list and `enabled` flags are readable (they are in `snap-fields.json`); the
-toggle is not.
+Both enabled workflows that touch Status were inspected in the UI on 2026-09-20 and **neither is a
+hazard**. No workflow needs disabling.
 
-Later phases write Status across ~180 items. If `Auto-close issue` fires, open issues close without
-approval and `Item closed` then moves them to Done. The "never close without approval" guardrail is
-unenforceable until this is off.
+| Workflow | Board 8 | Trigger | Action |
+|---|---|---|---|
+| `Auto-close issue` | on | status updated to **`Done`** | close the issue |
+| `Item added to project` | on | item added (issue, PR) | set **`Status: Backlog`** |
 
-In the browser, on **board 8** and **board 11** (project ⚙ → Workflows):
+The API exposes only `{name, enabled}` for workflows — the trigger and action are UI-only — which is
+why this had to be read by hand. It is worth re-reading by hand if anyone reports unexpected closures.
 
-1. Open **`Auto-close issue`** (workflow #9 on both boards). **Record its configured trigger status
-   in `README.md` before changing anything.** Then disable it.
-2. Open **`Item added to project`** (workflow #12 on both boards). **Record the status it sets.**
-   Then disable it — otherwise the 102 issues added in P5 each get that status, overriding intent.
-3. Confirm both now report `enabled: false`:
-   ```sh
-   gh api graphql -f query='query($n:Int!){organization(login:"EduAI-Lab"){projectV2(number:$n){
-     workflows(first:30){nodes{number name enabled}}}}}' -F n=8
-   ```
-4. Re-enable both in P5's workflow step, after the bulk writes.
+**Two consequences that bind every later phase:**
+
+1. **Guardrail — no bulk write may ever set Status to `Done`.** That is the one value that closes an
+   issue. Moving items to `Done` stays a human action. This replaces the earlier idea of disabling
+   the workflow, which would have broken correct team behaviour and left something to remember to
+   undo.
+2. **Every item added to board 8 lands in `Backlog` first.** `Item added to project` fires on the
+   add itself, so an add is two mutations when the intended status is anything else: add, then set.
+   Budget accordingly for the 102 adds in P5, and assert the final status rather than assuming the
+   add carried it.
+
+Also confirmed from the workflow list: **`Auto-add to project` and `Auto-archive items` exist as
+default workflows and are simply off**, not absent. P5 toggles them rather than creating them.
+`Auto-archive items` stays off — it is what hid 70 issues.
 
 # P2 — Monday slice: Week 2 board reconciliation
 
@@ -289,7 +292,7 @@ carried with a named owner — nothing carries by default.
   that is why P10 renames rather than deletes.
 - **Never close, retitle, re-parent, archive, reassign, or edit an issue body without explicit
   approval.** Propose, then wait.
-- **No bulk Status write before P1's browser disable is confirmed.**
+- **No bulk write may set Status to `Done`** — that value closes the issue via `Auto-close issue`.
 - **Never send a partial single-select option set.** Always resend existing options with their ids.
 - **Never delete a single-select option without re-deriving occupancy from the issue side.**
 - Read from `snap-items.jsonl`. Re-query only to verify after writing.
