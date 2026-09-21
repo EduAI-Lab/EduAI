@@ -78,11 +78,8 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
 
     await applyRoutingTierAssignments();
 
-    // Read the retired set from the catalog rather than restating it: this
-    // assertion previously hardcoded the Qwen 3.5 ids, which meant it kept
-    // passing while the catalog retired the models the fleet actually serves
-    // (#1802). Retired rows must also be deactivated, not just untiered —
-    // otherwise they stay directly addressable and listed as live (#1802 review).
+    // Read the retired set from the catalog rather than restating it (#1802).
+    // Retired rows must also be deactivated, not just untiered.
     expect(aIModelUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -107,10 +104,7 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
 
     await applyRoutingTierAssignments();
 
-    // qwen2.5-32b-instruct (and anything else addressed directly rather than
-    // through Auto routing) must have any stale tier from a previous catalog
-    // generation cleared, but stay active — its consumer resolves it by id
-    // regardless of tier (#1802 review).
+    // Direct-addressed rows (e.g. qwen2.5-32b-instruct) stay active.
     expect(aIModelUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

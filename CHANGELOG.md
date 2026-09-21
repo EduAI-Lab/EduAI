@@ -6,9 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.20
 
-- Close a gap in #1806's fix left by review: on a deployment seeded before that PR, `vllm:qwen2.5-32b-instruct` kept the `routerTier` a prior fleet generation had given it, so Auto's TIER_3 silently had two members (`qwen3.5-9b-instruct` and the retired-generation 32B), decided by the tie-break's order-of-magnitude carbon/energy estimates — invisible on a fresh `db:reset`, live on the pilot. `seed.ts` and `sync-ai-providers.ts` now clear `routerTier` on every id in `DIRECT_ADDRESSED_MODEL_IDS` without touching `isActive`, alongside the existing retired-id cleanup.
-- Both files also now set `isActive: false` on rows in `VLLM_RETIRED_MODEL_IDS`, not just clear their tier — a retired id was otherwise still directly addressable via `model: "vllm:…"` and would have been listed as live by #1809's `GET /api/models` against a `--served-model-name` the fleet no longer serves.
-- `sync-ai-providers.ts`'s per-model upsert now writes `maxTokens` on the `update` branch too (previously `create`-only, unlike `seed.ts`), so re-running the sync against an already-seeded deployment converges an existing row's context window to the corrected value instead of leaving the old one in place.
+- Review follow-up on #1806: `seed.ts` and `sync-ai-providers.ts` now deactivate `VLLM_RETIRED_MODEL_IDS` rows (previously only cleared their tier) and clear any stale `routerTier` on `DIRECT_ADDRESSED_MODEL_IDS` rows (e.g. `qwen2.5-32b-instruct`) without deactivating them — on an already-seeded deployment, a stale tier there was putting two models in TIER_3. `sync-ai-providers.ts`'s vLLM upsert also now writes `maxTokens` on update, not just create.
 
 ## 2026.09.19
 
