@@ -79,5 +79,7 @@ Only board 8's `Blocked` and `Future Epics` are genuinely empty and safe to dele
 
 - [x] Phase 0 — audit and snapshot
 - [x] Workflow triggers verified in the UI — no disabling needed; guardrail is "never bulk-write `Done`"
-- [ ] Week 2 board reconciliation (Monday slice)
+- [x] Week 2 board reconciliation (Monday slice) — 2026-09-20. Added #1791 (`To do`) and #1801
+      (`Parent Issues`) to board 8; moved #1747, #1748, #1749, #1779, #1780, #1794, #1799 from
+      `Backlog` to `To do`. All nine asserted after writing; nothing closed.
 - [ ] Remaining phases
