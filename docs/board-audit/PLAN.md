@@ -219,6 +219,16 @@ Dry-run with counts and ~15 samples per type, then stop for approval.
 
 # P8 — `Term` field (replaces the milestone scheme)
 
+**DONE on board 8, 2026-09-21.** Field `PVTSSF_lADODgsi_s4BWmLezhjAGDA`, options
+`117f869a` Legacy 2025 / `489425cf` Summer 2026 / `084cf563` Winter 2026. Backfilled 125 open
+issues from creation date: 54 Summer, 71 Winter, 0 Legacy (the 17 legacy issues are not on board 8).
+Every value verified against its issue's `createdAt`. Board 11 still to do.
+
+**Open gap: nothing keeps Term filled.** An issue added to the board after the backfill has no Term —
+#1837 was created mid-backfill and needed setting by hand. The `Item added to project` workflow sets
+Status only, and project workflows cannot set an arbitrary field. Either run a periodic backfill or
+accept that Term is set by hand at triage. Decide before relying on the filter.
+
 Single-select on **both** boards: **`Legacy 2025` / `Summer 2026` / `Winter 2026`**.
 
 Derive by creation date — **17 / 216 / 80**, computed from the snapshot. The 17 are all 2025
@@ -257,7 +267,11 @@ Parse first: `S:`/`M:`/`L:` → `Size` (**96 safe writes on board 8, 0 conflicts
 
 Then **rename, do not delete**:
 
-- `Week 4` … `Week 18` → `archive/week-04` … `archive/week-18`
+- ~~`Week 4` … `Week 18` → `archive/week-04` … `archive/week-18`~~ **DONE 2026-09-21 as
+  `Summer Week 4` … `Summer Week 18`.** `archive/` was the wrong name — these are not archived,
+  they are summer work that may still be picked up, and every one of the 91 open issues carrying a
+  week label was summer-created, so the rename is safe by construction. 91 open and 933 closed
+  assignments preserved; label count unchanged at 61.
 - `p0`–`p3` → `archive/p0`–`archive/p3`
 - `term/this-term|later|defer` → `archive/term-*`
 

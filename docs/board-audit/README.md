@@ -82,4 +82,9 @@ Only board 8's `Blocked` and `Future Epics` are genuinely empty and safe to dele
 - [x] Week 2 board reconciliation (Monday slice) — 2026-09-20. Added #1791 (`To do`) and #1801
       (`Parent Issues`) to board 8; moved #1747, #1748, #1749, #1779, #1780, #1794, #1799 from
       `Backlog` to `To do`. All nine asserted after writing; nothing closed.
+- [x] Week labels renamed `Week N` -> `Summer Week N` (15 labels, 2026-09-21) — all 91 open and
+      933 closed assignments preserved
+- [x] `Term` field created on board 8 and backfilled from creation date (2026-09-21) — 54 Summer,
+      71 Winter, every value verified against `createdAt`
+- [ ] Term on board 11; Term for the 189 open issues not yet on board 8
 - [ ] Remaining phases
