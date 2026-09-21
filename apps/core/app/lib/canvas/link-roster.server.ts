@@ -129,17 +129,21 @@ export async function linkCanvasRoster(
   // corroborated and keeps matching roster rows on the number alone — the
   // behaviour admins had before claims existed. Self-service claims stay
   // uncorroborated until a roster row backs them.
-  const vouchedByAdmin = !options.requireVerifiedRoster && user.studentIdVerifiedAt == null;
+  const adminVouches = !options.requireVerifiedRoster;
+  const stampsNow = adminVouches && user.studentIdVerifiedAt == null;
+  const clearsStamp = !adminVouches && needsStudentIdWrite && user.studentIdVerifiedAt != null;
 
-  if (needsStudentIdWrite || vouchedByAdmin) {
-    const data: Partial<StoredStudentId> & { studentIdVerifiedAt?: Date } = {};
+  if (needsStudentIdWrite || stampsNow || clearsStamp) {
+    const data: Partial<StoredStudentId> & { studentIdVerifiedAt?: Date | null } = {};
     if (needsStudentIdWrite) {
       const stored = prepareStudentIdStorage(normalized);
       data.studentId = stored.studentId;
       data.studentIdLookup = stored.studentIdLookup;
     }
-    if (vouchedByAdmin) {
+    if (stampsNow) {
       data.studentIdVerifiedAt = new Date();
+    } else if (clearsStamp) {
+      data.studentIdVerifiedAt = null;
     }
     await prisma.user.update({ where: { id: userId }, data });
   }

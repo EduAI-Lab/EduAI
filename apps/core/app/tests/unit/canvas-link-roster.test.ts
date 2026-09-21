@@ -6,8 +6,8 @@ import { isCanvasLinkRosterRateLimited } from "~/lib/canvas/guards.server";
 
 const TEST_ENCRYPTION_KEY = "test-encryption-key-32bytes!!";
 
-vi.mock("~/lib/prisma.server", () => ({
-  default: {
+vi.mock("~/lib/prisma.server", () => {
+  const client = {
     user: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -23,8 +23,13 @@ vi.mock("~/lib/prisma.server", () => ({
       createMany: vi.fn(),
       updateMany: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn(),
+  };
+  client.$transaction.mockImplementation((run: (tx: typeof client) => Promise<number>) =>
+    run(client),
+  );
+  return { default: client };
+});
 
 import prisma from "~/lib/prisma.server";
 import { linkCanvasRoster, linkCanvasRosterSelfService } from "~/lib/canvas/link-roster.server";
@@ -181,6 +186,69 @@ describe("Canvas roster linking", () => {
       linkCanvasRosterSelfService("self-service-instructor", "INSTRUCTOR", "12345678"),
     ).rejects.toMatchObject({ statusCode: 403 });
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("clears a stale corroboration stamp when a self-service claim changes the number", async () => {
+    // A legacy plaintext row is exempt from the reassign guard and was stamped by
+    // the backfill, so without clearing, the new number would inherit a stamp it
+    // never earned and skip the roster-email check outright.
+    const nextStored = prepareStudentIdStorage("87654321");
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce({
+        studentId: "12345678",
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+      } as never)
+      .mockResolvedValueOnce({
+        studentId: nextStored.studentId,
+        studentIdLookup: nextStored.studentIdLookup,
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([] as never);
+
+    await linkCanvasRosterSelfService("legacy-reassign", "STUDENT", "87654321");
+
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "legacy-reassign" },
+        data: expect.objectContaining({
+          studentIdLookup: nextStored.studentIdLookup,
+          studentIdVerifiedAt: null,
+        }),
+      }),
+    );
+  });
+
+  it("keeps the stamp when an administrator changes the number", async () => {
+    const nextStored = prepareStudentIdStorage("87654321");
+    vi.mocked(prisma.user.findUnique)
+      .mockResolvedValueOnce({
+        studentId: "12345678",
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+      } as never)
+      .mockResolvedValueOnce({
+        studentId: nextStored.studentId,
+        studentIdLookup: nextStored.studentIdLookup,
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+      } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([] as never);
+
+    await linkCanvasRoster("admin-reassign", "87654321");
+
+    expect(vi.mocked(prisma.user.update).mock.calls[0][0]).not.toHaveProperty(
+      "data.studentIdVerifiedAt",
+    );
   });
 
   it("self-links and corroborates when an active roster row carries the verified email", async () => {

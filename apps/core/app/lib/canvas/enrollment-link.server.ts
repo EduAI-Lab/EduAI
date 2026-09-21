@@ -61,6 +61,29 @@ function rosterRowCorroboratesUser(
   return accountEmail != null && accountEmail === normalizeRosterEmail(rosterEmail);
 }
 
+type UncorroboratedSkipReason = "no_roster_email" | "email_mismatch";
+
+export type StagingLinkResult = {
+  linked: number;
+  skippedUncorroborated: number;
+};
+
+function auditUncorroboratedSkip(
+  courseId: string,
+  userId: string,
+  reason: UncorroboratedSkipReason,
+) {
+  console.info(
+    JSON.stringify({
+      event: "canvas_enrollment_skipped_uncorroborated",
+      courseId,
+      userId,
+      reason,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
 type CanvasEnrollmentUpdate = {
   role?: EnrollmentRole;
   isActive?: boolean;
@@ -248,11 +271,18 @@ async function writeCanvasEnrollments(
  * instructor adding the student to their Canvas course is precisely the event
  * the student was told to wait for, so a row that corroborates the claim also
  * stamps `studentIdVerifiedAt`.
+ *
+ * Skips are counted and logged rather than dropped silently. A token without
+ * permission to read user emails makes Canvas omit `include[]=email` entirely,
+ * so every roster row lands emailless and *every* uncorroborated claim in the
+ * course is skipped — the check is effectively off, and without the count
+ * nothing anywhere says so while the student waits on a dashboard that tells
+ * them to contact an instructor who can see them on the roster.
  */
 export async function linkEnrollmentsFromStagingForCourse(
   courseId: string,
   db: EnrollmentLinkDb = prisma,
-): Promise<number> {
+): Promise<StagingLinkResult> {
   const stagingRows = await db.canvasRosterMember.findMany({
     where: {
       courseId,
@@ -269,7 +299,7 @@ export async function linkEnrollmentsFromStagingForCourse(
   });
 
   if (stagingRows.length === 0) {
-    return 0;
+    return { linked: 0, skippedUncorroborated: 0 };
   }
 
   const sisIds = [
@@ -299,6 +329,7 @@ export async function linkEnrollmentsFromStagingForCourse(
 
   const targets: CanvasEnrollmentTarget[] = [];
   const corroboratedUserIds = new Set<string>();
+  const skipped: { userId: string; reason: UncorroboratedSkipReason }[] = [];
 
   for (const row of stagingRows) {
     const sisUserId = readStoredStudentId(row.sisUserId);
@@ -312,6 +343,14 @@ export async function linkEnrollmentsFromStagingForCourse(
     }
 
     if (!rosterRowCorroboratesUser(user, row.email)) {
+      // `no_roster_email` means the Canvas token cannot read emails and no claim
+      // in this course can ever settle; `email_mismatch` means this one student's
+      // account address differs from the one on the roster. The two need very
+      // different responses, so they are logged apart.
+      skipped.push({
+        userId: user.id,
+        reason: normalizeRosterEmail(row.email) == null ? "no_roster_email" : "email_mismatch",
+      });
       continue;
     }
 
@@ -334,15 +373,18 @@ export async function linkEnrollmentsFromStagingForCourse(
     });
   }
 
-  return writeCanvasEnrollments(db, targets);
+  for (const skip of skipped) {
+    auditUncorroboratedSkip(courseId, skip.userId, skip.reason);
+  }
+
+  return {
+    linked: await writeCanvasEnrollments(db, targets),
+    skippedUncorroborated: skipped.length,
+  };
 }
 
 /**
  * Links all active staging rows for a user after studentId is set or updated.
- *
- * Backfills the lookup digest for a legacy plaintext row on the way through.
- * The backfill branch returns the whole user merged with the prepared pair, not
- * the pair alone — callers read the identity fields off this result too.
  */
 async function ensureUserStudentIdLookup(userId: string) {
   const user = await prisma.user.findUnique({
@@ -374,13 +416,6 @@ async function ensureUserStudentIdLookup(userId: string) {
   return { ...user, ...prepared };
 }
 
-/**
- * An uncorroborated student number resolves to enrollments only through
- * roster rows that also carry the account's verified email, and finding one
- * corroborates the number for good. A student who links before their instructor
- * has synced them matches nothing here and gets 0 — which is now a normal
- * outcome that leaves them on the dashboard, not an error that blocks them.
- */
 export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<number> {
   const user = await ensureUserStudentIdLookup(userId);
 
@@ -407,22 +442,24 @@ export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<n
     return 0;
   }
 
-  if (user.studentIdVerifiedAt == null) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { studentIdVerifiedAt: new Date() },
-    });
-  }
+  return prisma.$transaction(async (tx) => {
+    if (user.studentIdVerifiedAt == null) {
+      await tx.user.update({
+        where: { id: userId },
+        data: { studentIdVerifiedAt: new Date() },
+      });
+    }
 
-  return writeCanvasEnrollments(
-    prisma,
-    corroborated.map((row) => ({
-      courseId: row.courseId,
-      userId,
-      role: row.role,
-      externalId: row.canvasUserId,
-    })),
-  );
+    return writeCanvasEnrollments(
+      tx,
+      corroborated.map((row) => ({
+        courseId: row.courseId,
+        userId,
+        role: row.role,
+        externalId: row.canvasUserId,
+      })),
+    );
+  });
 }
 
 /** Deactivates canvas-sourced enrollments for users no longer on the active roster. */

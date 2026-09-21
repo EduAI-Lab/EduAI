@@ -98,7 +98,7 @@ beforeEach(() => {
   mocks.transactionClient.enrollment.upsert.mockResolvedValue({ id: "enrollment-1" });
   mocks.ensureDefaultBank.mockResolvedValue({ id: "bank-1" });
   mocks.syncCourseRoster.mockResolvedValue(3);
-  mocks.linkEnrollments.mockResolvedValue(2);
+  mocks.linkEnrollments.mockResolvedValue({ linked: 2, skippedUncorroborated: 0 });
   mocks.deactivateEnrollments.mockResolvedValue(undefined);
 });
 
@@ -121,6 +121,7 @@ describe("Canvas sync conflict recovery", () => {
           coreCourseId: "core-course-1",
           rosterMembersSynced: 3,
           enrollmentsLinked: 2,
+          enrollmentsSkipped: 0,
         },
       ],
       unsynced: [],

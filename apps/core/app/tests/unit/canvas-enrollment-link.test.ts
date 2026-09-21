@@ -10,8 +10,8 @@ const TEST_ENCRYPTION_KEY = "test-encryption-key-32bytes!!";
  */
 const VERIFIED_AT = new Date("2026-01-01T00:00:00.000Z");
 
-vi.mock("~/lib/prisma.server", () => ({
-  default: {
+vi.mock("~/lib/prisma.server", () => {
+  const client = {
     canvasRosterMember: {
       findMany: vi.fn(),
       count: vi.fn(),
@@ -29,8 +29,13 @@ vi.mock("~/lib/prisma.server", () => ({
       createMany: vi.fn(),
       updateMany: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn(),
+  };
+  client.$transaction.mockImplementation((run: (tx: typeof client) => Promise<number>) =>
+    run(client),
+  );
+  return { default: client };
+});
 
 import prisma from "~/lib/prisma.server";
 
@@ -70,7 +75,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     expect(prisma.user.findMany).toHaveBeenCalledWith(
@@ -101,7 +106,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
   it("returns zero when no staging rows exist", async () => {
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([]);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(0);
     expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
@@ -133,7 +138,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
       },
     ] as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
@@ -172,7 +177,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     ] as never);
     vi.mocked(prisma.enrollment.updateMany).mockResolvedValue({ count: 2 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(2);
     expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
@@ -216,7 +221,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 100 } as never);
     vi.mocked(prisma.enrollment.updateMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(ROSTER_SIZE);
     // 200 roster rows used to cost 200 upserts. Now: one read, one createMany for
@@ -252,7 +257,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     expect(prisma.enrollment.createMany).toHaveBeenCalledWith(
@@ -278,7 +283,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     expect(prisma.enrollment.createMany).toHaveBeenCalledWith(
@@ -310,7 +315,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 2 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(2);
     expect(prisma.enrollment.createMany).toHaveBeenCalledTimes(1);
@@ -341,7 +346,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     expect(prisma.enrollment.createMany).toHaveBeenCalledWith(
@@ -383,7 +388,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(0);
     expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
@@ -411,7 +416,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(0);
     expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
@@ -441,7 +446,7 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
     vi.mocked(prisma.user.updateMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     expect(prisma.enrollment.createMany).toHaveBeenCalledWith(
@@ -480,10 +485,49 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
 
-    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+    const { linked } = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
     // Nothing to corroborate — it already was.
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("counts a claim the roster could not corroborate instead of dropping it silently", async () => {
+    // An under-scoped Canvas token makes every roster row emailless, which skips
+    // every uncorroborated claim in the course. Without the count nothing tells
+    // the instructor the check is off.
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      { id: "r1", role: "STUDENT", sisUserId: "12345678", canvasUserId: "101", email: null },
+      {
+        id: "r2",
+        role: "STUDENT",
+        sisUserId: "87654321",
+        canvasUserId: "102",
+        email: "other@example.com",
+      },
+    ] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      {
+        id: "user-1",
+        studentId: "12345678",
+        email: "student@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      },
+      {
+        id: "user-2",
+        studentId: "87654321",
+        email: "mine@example.com",
+        emailVerified: true,
+        studentIdVerifiedAt: null,
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+
+    const result = await linkEnrollmentsFromStagingForCourse("course-1");
+
+    expect(result).toEqual({ linked: 0, skippedUncorroborated: 2 });
+    expect(prisma.enrollment.createMany).not.toHaveBeenCalled();
     expect(prisma.user.updateMany).not.toHaveBeenCalled();
   });
 });
