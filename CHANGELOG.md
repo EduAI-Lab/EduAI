@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Move the issue form to `.github/ISSUE_TEMPLATE/task.yml` and the PR template to `.github/pull_request_template.md`, the only paths GitHub reads — the form previously sat in `.github/eduai-issue-template/` and the PR template carried an `EDUAI_SUMMER_2026_` prefix, so neither ever loaded and nobody filing an issue had seen the form. Drops the form's `S: Week N - Task` title default so titles carry a description and nothing else, adds `config.yml` to disable blank issues, and adds `docs/ISSUE-CONVENTIONS.md`. Updates the PR checklist, which still asked for a `Week N` label and a board retired in August, and removes three checkboxes asking the author to attest to code quality rather than to a verifiable fact. Takes effect only once `development` reaches `main`. Closes #1832.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
