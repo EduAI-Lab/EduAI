@@ -34,6 +34,86 @@ test("parseIssueHours accepts required valid formats", () => {
   );
 });
 
+test("parseIssueHours accepts the documented per-week line format", () => {
+  const body = [
+    "Hours to complete (Week 1): 3 hours [Whiteknight07]",
+    "Hours to complete (Week 2): 2.5 hours [ahmadamemon02]",
+    "**Hours to complete (Week X):** 2h [@shlokshah]",
+  ].join("\n");
+
+  const parsed = parseIssueHours(body, {
+    number: 10,
+    assignees: [{ login: "Whiteknight07" }],
+  });
+
+  assert.equal(parsed.invalidLines.length, 0);
+  assert.equal(parsed.entries.length, 3);
+  assert.deepEqual(
+    parsed.entries.map((entry) => entry.hours),
+    [3, 2.5, 2],
+  );
+  assert.deepEqual(
+    parsed.entries.map((entry) => entry.scope),
+    ["Week 1", "Week 2", "Week X"],
+  );
+});
+
+test("parseIssueHours counts one line per week per contributor", () => {
+  const parsed = parseIssueHours(
+    [
+      "Hours to complete (Week 1): 3 hours [Whiteknight07]",
+      "Hours to complete (Week 1): 4 hours [evanbones]",
+      "Hours to complete (Week 2): 2 hours [Whiteknight07]",
+    ].join("\n"),
+    { number: 11, assignees: [{ login: "Whiteknight07" }, { login: "evanbones" }] },
+  );
+
+  assert.equal(parsed.entries.length, 3);
+  assert.equal(parsed.manualReviewRows.length, 0);
+  assert.equal(
+    parsed.entries
+      .filter((entry) => entry.username === "Whiteknight07")
+      .reduce((sum, entry) => sum + entry.hours, 0),
+    5,
+  );
+});
+
+test("parseIssueHours still flags the same person twice in one week", () => {
+  const parsed = parseIssueHours(
+    [
+      "Hours to complete (Week 1): 3 hours [Whiteknight07]",
+      "Hours to complete (Week 1): 4 hours [Whiteknight07]",
+    ].join("\n"),
+    { number: 12, assignees: [{ login: "Whiteknight07" }] },
+  );
+
+  assert.equal(parsed.entries.length, 0);
+  assert.equal(parsed.manualReviewRows.length, 2);
+  assert(parsed.warnings.some((warning) => warning.type === "duplicate-person-hours"));
+});
+
+test("parseIssueHours accepts a bare hour count with no unit", () => {
+  const parsed = parseIssueHours("Hours to complete: 3", {
+    number: 13,
+    assignees: [{ login: "soloAssignee" }],
+  });
+
+  assert.equal(parsed.invalidLines.length, 0);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(parsed.entries[0].hours, 3);
+  assert.equal(parsed.entries[0].username, "soloAssignee");
+});
+
+test("parseIssueHours still rejects non-numeric hour values", () => {
+  const parsed = parseIssueHours(
+    ["Hours to complete: many hours", "Hours to complete: rolls up from sub-issues"].join("\n"),
+    { number: 14, assignees: [{ login: "soloAssignee" }] },
+  );
+
+  assert.equal(parsed.entries.length, 0);
+  assert.equal(parsed.invalidLines.length, 2);
+});
+
 test("parseIssueHours excludes unnamed hours when multiple assignees exist", () => {
   const parsed = parseIssueHours("Hours to complete: 4 hours", {
     number: 2,
