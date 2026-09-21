@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Close a gap in #1806's fix left by review: on a deployment seeded before that PR, `vllm:qwen2.5-32b-instruct` kept the `routerTier` a prior fleet generation had given it, so Auto's TIER_3 silently had two members (`qwen3.5-9b-instruct` and the retired-generation 32B), decided by the tie-break's order-of-magnitude carbon/energy estimates — invisible on a fresh `db:reset`, live on the pilot. `seed.ts` and `sync-ai-providers.ts` now clear `routerTier` on every id in `DIRECT_ADDRESSED_MODEL_IDS` without touching `isActive`, alongside the existing retired-id cleanup.
+- Both files also now set `isActive: false` on rows in `VLLM_RETIRED_MODEL_IDS`, not just clear their tier — a retired id was otherwise still directly addressable via `model: "vllm:…"` and would have been listed as live by #1809's `GET /api/models` against a `--served-model-name` the fleet no longer serves.
+- `sync-ai-providers.ts`'s per-model upsert now writes `maxTokens` on the `update` branch too (previously `create`-only, unlike `seed.ts`), so re-running the sync against an already-seeded deployment converges an existing row's context window to the corrected value instead of leaving the old one in place.
+
 ## 2026.09.19
 
 - Fix the vLLM model catalog seeding a retired model generation — `prisma/ai-model-catalog.ts` seeded the Qwen 2.5 pair and listed the Qwen 3.5 models the fleet actually serves (`infra/cmps01/migrate.sh`) in `VLLM_RETIRED_MODEL_IDS`, so after any `db:seed` or `db:sync-ai-providers` run `vllm:qwen3.5-2b-instruct` had no active catalog row and every request for it failed `422 … not active in the Core model catalog`, with its `routerTier` cleared on top. Now seeds `qwen3.5-2b-instruct` (TIER_1), `qwen3.5-9b-instruct` (TIER_3, tools) and the `qwen3.8-27b-instruct` Assist model, and retires only `qwen2.5-7b-instruct` and `qwen3.5-4b-instruct`. PR: https://github.com/EduAI-Lab/EduAI/pull/1806. Closes #1802.
