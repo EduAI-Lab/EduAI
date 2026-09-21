@@ -114,6 +114,23 @@ test("parseIssueHours still rejects non-numeric hour values", () => {
   assert.equal(parsed.invalidLines.length, 2);
 });
 
+test("parseIssueHours ignores hours lines inside a fenced code block", () => {
+  const body = [
+    "The documented format is:",
+    "```",
+    "Hours to complete (Week 2): 3 hours [github-handle]",
+    "```",
+    "Hours to complete (Week 2): 4 hours [realPerson]",
+  ].join("\n");
+
+  const parsed = parseIssueHours(body, { number: 15, assignees: [{ login: "realPerson" }] });
+
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(parsed.entries[0].username, "realPerson");
+  assert.equal(parsed.entries[0].hours, 4);
+  assert.equal(parsed.invalidLines.length, 0);
+});
+
 test("parseIssueHours excludes unnamed hours when multiple assignees exist", () => {
   const parsed = parseIssueHours("Hours to complete: 4 hours", {
     number: 2,

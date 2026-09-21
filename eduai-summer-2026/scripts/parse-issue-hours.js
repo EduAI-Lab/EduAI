@@ -29,7 +29,19 @@ function parseIssueHours(body, issue = {}) {
   const invalidLines = [];
   const warnings = [];
 
+  // A fenced block documents the format rather than reporting time, so lines inside
+  // one are neither counted nor warned about.
+  let insideFence = false;
+
   lines.forEach((line, index) => {
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      insideFence = !insideFence;
+      return;
+    }
+    if (insideFence) {
+      return;
+    }
+
     const match = line.match(HOURS_LINE_PATTERN);
     if (match) {
       validLines.push({
