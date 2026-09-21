@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import prisma from "~/lib/prisma.server";
 import { acquireReEmbedJob, resumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import { INDEXING_RETRY_BUDGET } from "~/lib/ai/embedding";
 import { seedCourse, cleanupRbac } from "../helpers/rbac";
 
 let courseId: string;
@@ -156,6 +157,7 @@ describe("durable course re-embed jobs", () => {
     });
     const originalFetch = globalThis.fetch;
     const originalTimeout = process.env.EMBEDDING_REQUEST_TIMEOUT_MS;
+    const originalIndexingBudget = { ...INDEXING_RETRY_BUDGET };
     const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       const signal = init?.signal;
       if (!signal) return Promise.reject(new Error("TEST_MISSING_ABORT_SIGNAL"));
@@ -166,6 +168,14 @@ describe("durable course re-embed jobs", () => {
 
     try {
       process.env.EMBEDDING_REQUEST_TIMEOUT_MS = "100";
+      // Indexing's real budget (#1791) is ~60s of backoff across 8 attempts —
+      // proving termination for real would blow the test timeout, and worse,
+      // the retry loop would keep running as an orphaned promise past this
+      // test's `it()` returning, restoring `globalThis.fetch` in the `finally`
+      // below whenever it finally settles and clobbering whatever later test
+      // has since installed its own fetch mock. Shrink the budget for the
+      // duration of this test so it actually finishes within it.
+      Object.assign(INDEXING_RETRY_BUDGET, { maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 10 });
       globalThis.fetch = fetchMock as typeof fetch;
       const { job } = await acquireReEmbedJob(courseId);
 
@@ -186,6 +196,7 @@ describe("durable course re-embed jobs", () => {
       globalThis.fetch = originalFetch;
       if (originalTimeout === undefined) delete process.env.EMBEDDING_REQUEST_TIMEOUT_MS;
       else process.env.EMBEDDING_REQUEST_TIMEOUT_MS = originalTimeout;
+      Object.assign(INDEXING_RETRY_BUDGET, originalIndexingBudget);
       await prisma.courseMaterial.deleteMany({ where: { id: material.id } });
     }
   });
