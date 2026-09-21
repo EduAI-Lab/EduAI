@@ -3,6 +3,7 @@
  * Safe to run on every dev start (existing DB with users).
  */
 import { PrismaClient } from "@prisma/client";
+import { DIRECT_ADDRESSED_MODEL_IDS } from "~/lib/ai/campus-model-catalog";
 import {
   VLLM_MODELS,
   VLLM_RETIRED_MODEL_IDS,
@@ -47,8 +48,7 @@ async function applyRoutingTierAssignments() {
     });
   }
 
-  // Clear stale tiers on retired vLLM rows (e.g. after a fleet generation
-  // change) so loadTierRows() cannot keep selecting them — mirrors seed.ts.
+  // Clear stale tiers and deactivate retired vLLM rows — mirrors seed.ts.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -58,8 +58,17 @@ async function applyRoutingTierAssignments() {
     await prisma.aIModel.updateMany({
       where: {
         providerId: vllm.id,
-        routerTier: { not: null },
         modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
+      },
+      data: { routerTier: null, isActive: false },
+    });
+
+    // Direct-addressed models stay active but must not carry a stale tier.
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { in: [...DIRECT_ADDRESSED_MODEL_IDS] },
       },
       data: { routerTier: null },
     });
@@ -235,6 +244,7 @@ async function main() {
       },
       update: {
         isActive: true,
+        maxTokens: m.maxTokens,
         supportsTools: m.supportsTools,
         supportsImages: m.supportsImages,
       },

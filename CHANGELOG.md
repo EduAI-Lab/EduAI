@@ -4,6 +4,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.20
+
+- Review follow-up on #1806: `seed.ts` and `sync-ai-providers.ts` now deactivate `VLLM_RETIRED_MODEL_IDS` rows (previously only cleared their tier) and clear any stale `routerTier` on `DIRECT_ADDRESSED_MODEL_IDS` rows (e.g. `qwen2.5-32b-instruct`) without deactivating them — on an already-seeded deployment, a stale tier there was putting two models in TIER_3. `sync-ai-providers.ts`'s vLLM upsert also now writes `maxTokens` on update, not just create.
+
+## 2026.09.19
+
+- Fix the vLLM model catalog seeding a retired model generation — `prisma/ai-model-catalog.ts` seeded the Qwen 2.5 pair and listed the Qwen 3.5 models the fleet actually serves (`infra/cmps01/migrate.sh`) in `VLLM_RETIRED_MODEL_IDS`, so after any `db:seed` or `db:sync-ai-providers` run `vllm:qwen3.5-2b-instruct` had no active catalog row and every request for it failed `422 … not active in the Core model catalog`, with its `routerTier` cleared on top. Now seeds `qwen3.5-2b-instruct` (TIER_1), `qwen3.5-9b-instruct` (TIER_3, tools) and the `qwen3.8-27b-instruct` Assist model, and retires only `qwen2.5-7b-instruct` and `qwen3.5-4b-instruct`. PR: https://github.com/EduAI-Lab/EduAI/pull/1806. Closes #1802.
+- Keep `qwen2.5-32b-instruct` seeded and out of the retired list: `ADHD_ASSIST_AUTO_MODEL_ID` and `DEFAULT_TOPIC_ANALYSIS_MODEL` still address it literally and fail closed without an active catalog row, and repointing them is gated on re-validating Assist's structural contract (#1523). Recorded as `DIRECT_ADDRESSED_MODEL_IDS` in `campus-model-catalog.ts`.
+- Energy and carbon figures for the newly seeded models are **estimates**, scaled linearly in parameter count from the retired Qwen 2.5 7B row, not measurements — nothing in the codebase measures them and the seed is their only source. They affect sustainability reporting, not model selection (one model per routed tier, so the tie-break never fires).
+- Pin the two catalogs against each other in `campus-model-catalog.test.ts` so this drift fails CI rather than the pilot, and stop `seed-routing-tiers.test.ts` restating the retired model ids — it hardcoded the Qwen 3.5 ids and so kept passing while the catalog retired the live fleet.
+
 ## 2026.09.16
 
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
