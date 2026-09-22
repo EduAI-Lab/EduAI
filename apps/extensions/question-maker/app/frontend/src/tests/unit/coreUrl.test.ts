@@ -11,6 +11,7 @@ import {
   getAiTutorUrl,
   getCoreDashboardUrl,
   getCoreLoginUrl,
+  getCoreStatusUrl,
   getCoreUrl,
 } from "../../lib/coreUrl";
 
@@ -99,5 +100,18 @@ describe("getAiTutorInstructorUrl", () => {
     expect(getAiTutorInstructorUrl({ coreCourseId: "core/7 8" })).toBe(
       `https://tutor.example.com/instructor?coreCourseId=${encodeURIComponent("core/7 8")}`,
     );
+  });
+});
+
+describe("getCoreStatusUrl", () => {
+  it("points at Core's status page when Core's origin is configured", () => {
+    vi.stubEnv("VITE_CORE_URL", "https://core.example.com");
+    expect(getCoreStatusUrl()).toBe("https://core.example.com/status");
+  });
+
+  it("falls back to localhost Core, not to a path on this app", () => {
+    // A bare "/status" would 404 inside QM: the page lives in Core.
+    vi.stubEnv("VITE_CORE_URL", "");
+    expect(getCoreStatusUrl()).toBe("http://localhost:3000/status");
   });
 });
