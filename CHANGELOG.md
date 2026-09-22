@@ -15,6 +15,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - Question Maker now reads Core's shared status snapshot instead of running its own per-user live probe, so its chip agrees with Core's and AI Tutor's. Provider keys are validated once at save time and the verdict cached, replacing a live provider round-trip on every status poll; a revoked key is corrected by the API client's interceptor when a real rejection arrives. Closes #1779.
 - Drop the header status poll from 60s to 5 minutes in all three apps — the underlying value only changes when the cron probe runs.
 - Document `AI_STATUS_POLL_MINUTES` and `AI_STATUS_SAMPLE_RETENTION_DAYS`, and add preflight checks for the cron worker's `fleet.config.json` readability and `VLLM_API_KEY`.
+- Probe an **Ollama** host at its own `/api/tags` rather than through the vLLM fleet check, which requires `VLLM_API_KEY` and a bearer token it neither needs nor accepts. On an Ollama-only deployment that key is legitimately absent, so every sample was recorded `UNKNOWN` forever for a host that answers perfectly well — losing the reachability signal the previous live probe reported. Its load stays unknown, since Ollama serves no vLLM `/metrics`.
+- Report a fleet with **no hosts configured** as an outage again, rather than as `unknown`. "Nothing is configured" and "nothing has been sampled yet" both reach the reader as zero rows, but only the second is a cold start the next cron tick resolves; the first is a settled fact, and calling it `unknown` under-read a plainly absent service.
+- Fix the AI Tutor status popover collapsing into a generic "Could not load status history." whenever any one model had no judgeable buckets: its response schema rejected the `null` uptime Core emits for that case, so one such model hid every server's history behind a load error.
+- Stop re-querying a down host's last-known model list on every probe tick — the answer cannot change while the host is unreachable, so it is resolved once and dropped as soon as the host answers again.
 
 ## 2026.09.16
 
