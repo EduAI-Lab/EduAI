@@ -112,8 +112,47 @@ export const aiStatusSchema = z
   .object({
     cloud: serviceStatusSchema,
     ubc: serviceStatusSchema,
+    checkedAt: z.string().nullable().optional(),
+    stale: z.boolean().optional(),
   })
   .passthrough() satisfies z.ZodType<AiServiceStatusPair>;
+
+/**
+ * 72-hour AI status history (Core's `/api/ai-status/history`), proxied
+ * verbatim. `state: null` on a bucket means "no data", distinct from any
+ * named state — see `@eduai/ui`'s `AIServiceHistoryPanel`.
+ */
+export const aiStatusHistorySchema = z.object({
+  windowHours: z.number(),
+  bucketMinutes: z.number(),
+  generatedAt: z.string(),
+  servers: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      waiting: z.number().nullable(),
+      cacheUsage: z.number().nullable(),
+      models: z.array(
+        z.object({
+          key: z.string(),
+          label: z.string(),
+          // Null when a model had no judgeable buckets — every sample was
+          // `unknown`, so there is no uptime to report and the panel renders
+          // "n/a". Core emits this (`history.server.ts`); declaring it
+          // non-nullable made one such model throw a ZodError in `decode()`
+          // and collapse the whole popover into a generic load error.
+          uptimePct: z.number().nullable(),
+          buckets: z.array(
+            z.object({
+              t: z.string(),
+              state: z.enum(["operational", "degraded", "outage", "unknown"]).nullable(),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
 
 const progressSchema = z
   .object({
