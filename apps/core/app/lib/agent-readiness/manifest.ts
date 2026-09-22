@@ -98,6 +98,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/ai-status/history",
+    readiness: "excluded",
+    reason: "UI AI-status history panel; not an agent operation",
+    routeFile: "routes/api/ai-status.history.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/disciplines",
     readiness: "excluded",
     reason: "Reference data for course forms; not platform ops",

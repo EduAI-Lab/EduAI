@@ -2,7 +2,7 @@
  * Frontend wrapper around AI service endpoints for chat, question generation, course/topics, and model list.
  * Passes through provider API keys as needed and returns typed results.
  */
-import { termLabelLong } from "@eduai/ui";
+import { termLabelLong, type AiServiceStatusPair, type HistoryPayload } from "@eduai/ui";
 import api from "./api";
 import {
   apiKeyStorage,
@@ -149,6 +149,13 @@ export interface EduAITestResponse {
   configured: boolean;
   /** Which provider path was validated: a cloud provider or campus (`vllm` / legacy `ollama`). */
   provider?: AIProvider | CampusProvider;
+  /**
+   * HTTP status of the underlying response, present whenever the server
+   * returned a body alongside a non-2xx status (e.g. 401/403 for a rejected
+   * key). Absent on success. Lets callers (save-time validation) tell a
+   * provider-auth rejection apart from a generic failure.
+   */
+  statusCode?: number;
 }
 
 class EduAIService {
@@ -158,7 +165,17 @@ class EduAIService {
     return response.data;
   }
 
-  /** Generates questions via the AI service with the provided course/prompt/model settings. */
+  /**
+   * Generates questions via the AI service with the provided course/prompt/model settings.
+   *
+   * A provider-auth failure (401/403) here means the cached save-time verdict
+   * lied — the key looked valid when saved but has since been revoked or
+   * expired upstream. That invalidation is handled centrally by the shared
+   * `api` client's response interceptor (`services/api.ts`,
+   * `invalidateProviderKeyOnAuthFailure`) rather than here, so OCR extraction
+   * (`questionService.extractQuestionsFromText`) and any future AI call get
+   * the same self-correcting behaviour without duplicating this catch block.
+   */
   async generateQuestions(
     request: EduAIQuestionGenerationRequest,
   ): Promise<EduAIQuestionGenerationResponse> {
@@ -211,14 +228,42 @@ class EduAIService {
       const response = await api.post("/api/eduai/test-api-key", body, { signal: opts?.signal });
       return { ...response.data, configured: response.data.configured ?? true };
     } catch (err: any) {
-      if (err.response?.status === 400 && err.response?.data) {
+      // Any status with a server-supplied body is a real answer, not a network
+      // failure. Re-throwing everything but 400 made a provider 401 render as
+      // "needs UBC wifi/VPN", which is the opposite of diagnostic.
+      const data = err?.response?.data;
+      if (data instanceof Object) {
         return {
-          ...err.response.data,
-          configured: err.response.data.configured ?? true,
+          ...data,
+          statusCode: err.response.status,
+          configured: data.configured ?? true,
         };
       }
       throw err;
     }
+  }
+
+  /**
+   * Reads Core's shared AI fleet-status snapshot (issue #764 §QM) via QM's
+   * backend proxy (`GET /api/eduai/ai-status`), which forwards only the
+   * caller's session cookie to Core. Throws on a non-2xx response (including
+   * 401) — the caller (`useAiServicesStatus`) is responsible for translating
+   * that into a chip state, since "signed out" and "Core unreachable" render
+   * differently.
+   */
+  async getAiStatus(signal?: AbortSignal): Promise<AiServiceStatusPair> {
+    const response = await api.get("/api/eduai/ai-status", { signal });
+    return response.data;
+  }
+
+  /**
+   * 72h AI status history for the UBC chip's history panel, via QM's backend
+   * proxy (`GET /api/eduai/ai-status/history`). Same auth/error contract as
+   * `getAiStatus`.
+   */
+  async getAiStatusHistory(signal?: AbortSignal): Promise<HistoryPayload> {
+    const response = await api.get("/api/eduai/ai-status/history", { signal });
+    return response.data;
   }
 
   /**
