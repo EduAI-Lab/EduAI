@@ -124,6 +124,21 @@ export interface UbcStatusRead {
 }
 
 export async function getUbcStatusFromSamples(): Promise<UbcStatusRead> {
+  // "Nothing is configured" and "nothing has been sampled yet" both reach this
+  // function with zero rows, but they are different answers: the first is a
+  // settled fact about the deployment, the second is a cold start that the next
+  // cron tick resolves. Reporting the unconfigured case as `unknown` under-read
+  // a plainly absent service, so ask the host list before the samples and let
+  // `aggregateUbcStatus` — the same function the populated path folds through —
+  // own the empty-fleet verdict, rather than restating its wording here.
+  if (resolveStatusHosts().length === 0) {
+    return {
+      status: aggregateUbcStatus([], resolveLoadThresholds()),
+      checkedAt: null,
+      stale: true,
+    };
+  }
+
   const samples = await loadLatestSamples();
 
   if (samples.length === 0) {

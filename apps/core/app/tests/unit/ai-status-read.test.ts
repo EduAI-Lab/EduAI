@@ -162,6 +162,31 @@ describe("getUbcStatusFromSamples", () => {
     expect(result.stale).toBe(true);
     expect(result.checkedAt).toBe(newest.observedAt.toISOString());
   });
+
+  it("reports an unconfigured fleet as an outage, not as unknown", async () => {
+    resolveStatusHostsMock.mockReturnValue([]);
+
+    const result = await getUbcStatusFromSamples();
+
+    expect(result.status).toEqual({
+      state: "outage",
+      detail: "No UBC-hosted inference configured.",
+    });
+    expect(result.checkedAt).toBeNull();
+    // Nothing is configured, so there is nothing to query for.
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
+
+  it("still reports a configured-but-unsampled fleet as unknown", async () => {
+    // Same zero rows, different cause: hosts exist and the next cron tick will
+    // fill them in. Collapsing this into the outage above would report a cold
+    // start as a dead service.
+    findManyMock.mockResolvedValue([]);
+
+    const result = await getUbcStatusFromSamples();
+
+    expect(result.status).toEqual({ state: "unknown", detail: "No status data yet." });
+  });
 });
 
 describe("loadLatestSamples", () => {

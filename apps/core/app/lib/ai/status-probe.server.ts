@@ -8,10 +8,12 @@
  * at read time from raw waiting/cacheUsage so one code path owns the thresholds
  * and a later retune can be re-applied to existing history.
  */
+import { ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
 import { getServerHealth } from "~/lib/ai/routing/fleet/health";
-import { probeVllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
+import { probeVllmLoad, type VllmLoad } from "~/lib/ai/service-status/vllm-metrics.server";
 import { minutesFromCron, pollMinutes, retentionDays } from "~/lib/ai/status/config.server";
 import { resolveStatusHosts, type StatusHost } from "~/lib/ai/status/hosts.server";
+import { asJsonArray, asJsonObject, asText, type JsonValue } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 
 type SampleState = "OPERATIONAL" | "OUTAGE" | "UNKNOWN";
@@ -44,8 +46,106 @@ export function isConfigurationFault(error: string | undefined): boolean {
   return /not configured|missing.*key/i.test(error);
 }
 
+/**
+ * What a reachability probe answers, whichever API the host speaks. Mirrors the
+ * fields of the fleet's `FleetHealthResult` that this module actually reads.
+ */
+interface HostHealth {
+  ok: boolean;
+  modelIds: string[] | null;
+  error?: string;
+}
+
+/** How long an Ollama `/api/tags` probe may take before it counts as unreachable. */
+const OLLAMA_PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Reachability for an Ollama host.
+ *
+ * `getServerHealth` cannot answer this one. It is the vLLM fleet's check: it
+ * requires `VLLM_API_KEY` and sends a bearer token to `/v1/models`. On an
+ * Ollama-only deployment that key is legitimately absent, so the check returns
+ * "VLLM_API_KEY not configured" — which `isConfigurationFault` then reads as a
+ * configuration fault, writing UNKNOWN for a host that answers perfectly well,
+ * on every tick, forever. Ollama needs no key and lists what it serves at
+ * `/api/tags`, which is the endpoint the legacy `probeUbcStatus` polled before
+ * this history existed; probing it here restores that signal.
+ */
+async function probeOllamaHost(baseUrl: string): Promise<HostHealth> {
+  try {
+    const res = await fetch(ollamaTagsUrl(baseUrl), {
+      signal: AbortSignal.timeout(OLLAMA_PROBE_TIMEOUT_MS),
+    });
+    if (!res.ok) return { ok: false, modelIds: null, error: `HTTP ${res.status}` };
+
+    // SAFETY: `Response#json` resolves to whatever the host sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees.
+    const body = (await res.json()) as JsonValue;
+    const entries = asJsonArray(asJsonObject(body)?.models);
+    // A 200 whose shape we cannot read is not a reachable fleet member, the
+    // same call `getServerHealth` makes on an unparseable /v1/models.
+    if (!entries) return { ok: false, modelIds: null, error: "invalid /api/tags response" };
+
+    const modelIds: string[] = [];
+    for (const entry of entries) {
+      const record = asJsonObject(entry);
+      const id = asText(record?.name) ?? asText(record?.model);
+      if (id !== null) modelIds.push(id);
+    }
+    return { ok: true, modelIds };
+  } catch (error) {
+    return {
+      ok: false,
+      modelIds: null,
+      error: error instanceof Error ? error.message : "ollama probe failed",
+    };
+  }
+}
+
+/**
+ * Probe one host with the check its API actually supports, and collect load
+ * where there is any to collect. Ollama exposes no vLLM `/metrics`, so its load
+ * stays null — "load unknown", which is what the legacy probe recorded for it
+ * too, and which `deriveRowState` already refuses to let degrade a host.
+ */
+async function probeHost(host: StatusHost): Promise<{ health: HostHealth; load: VllmLoad | null }> {
+  if (host.kind === "ollama") {
+    return { health: await probeOllamaHost(host.baseUrl), load: null };
+  }
+  const [health, load] = await Promise.all([
+    getServerHealth(host.baseUrl),
+    probeVllmLoad(host.baseUrl),
+  ]);
+  return { health, load };
+}
+
+/**
+ * Last-known model ids for a host that is currently down.
+ *
+ * While a host stays unreachable this answer cannot change: the only rows being
+ * written for it are the unreachable ones this lookup already filters out. So
+ * re-running the query on every tick asks the database a question it has
+ * already answered — indefinitely, for a decommissioned host still sitting in
+ * config. The entry is dropped the moment the host answers again, so a host
+ * that comes back serving something different is never handed a stale list.
+ */
+const lastKnownModelsWhileDown = new Map<string, string[]>();
+
+/** Forget a host's cached down-state models once it is reachable again. */
+function forgetDownHostModels(serverId: string): void {
+  lastKnownModelsWhileDown.delete(serverId);
+}
+
+/** Drops the per-host caches this module keeps. For tests. */
+export function resetStatusProbeCaches(): void {
+  lastKnownModelsWhileDown.clear();
+}
+
 /** Models to record for a host we could not reach: last observed, else configured. */
 async function modelsForUnreachableHost(host: StatusHost): Promise<string[]> {
+  const cached = lastKnownModelsWhileDown.get(host.serverId);
+  if (cached) return cached;
+
   const previous = await prisma.aiServiceSample.findMany({
     where: { serverId: host.serverId },
     distinct: ["modelId"],
@@ -56,23 +156,27 @@ async function modelsForUnreachableHost(host: StatusHost): Promise<string[]> {
   const realModelIds = previous
     .map((row) => row.modelId)
     .filter((modelId) => modelId !== UNKNOWN_MODEL_SENTINEL);
-  if (realModelIds.length > 0) return realModelIds;
-  if (host.configuredModels.length > 0) return host.configuredModels;
-  // Nothing real is known for this host — neither history nor config — so
-  // record the host as down rather than letting it vanish from the chart
-  // with zero rows. The sentinel is never mixed with real model ids.
-  return [UNKNOWN_MODEL_SENTINEL];
+  let resolved: string[];
+  if (realModelIds.length > 0) {
+    resolved = realModelIds;
+  } else if (host.configuredModels.length > 0) {
+    resolved = host.configuredModels;
+  } else {
+    // Nothing real is known for this host — neither history nor config — so
+    // record the host as down rather than letting it vanish from the chart
+    // with zero rows. The sentinel is never mixed with real model ids.
+    resolved = [UNKNOWN_MODEL_SENTINEL];
+  }
+  lastKnownModelsWhileDown.set(host.serverId, resolved);
+  return resolved;
 }
 
 async function sampleHost(host: StatusHost, intervalMinutes: number): Promise<SampleRow[]> {
-  let health: Awaited<ReturnType<typeof getServerHealth>>;
-  let load: Awaited<ReturnType<typeof probeVllmLoad>> = null;
+  let health: HostHealth;
+  let load: VllmLoad | null = null;
 
   try {
-    [health, load] = await Promise.all([
-      getServerHealth(host.baseUrl),
-      probeVllmLoad(host.baseUrl),
-    ]);
+    ({ health, load } = await probeHost(host));
   } catch (error) {
     // An unexpected throw is "we could not tell", not "it is down".
     const models = await modelsForUnreachableHost(host);
@@ -93,6 +197,7 @@ async function sampleHost(host: StatusHost, intervalMinutes: number): Promise<Sa
   const cacheUsage = load ? load.cacheUsage : null;
 
   if (health.ok) {
+    forgetDownHostModels(host.serverId);
     const models = health.modelIds ?? [];
     if (models.length === 0) {
       // A host that answers /v1/models with an empty list wrote no rows at all,

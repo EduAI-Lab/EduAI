@@ -16,9 +16,19 @@ import {
 } from "~/lib/ai/routing/fleet/registry";
 import { resolveUbcBaseUrls } from "~/lib/ai/service-status.server";
 
+/**
+ * Which API a host speaks, and therefore how it must be probed.
+ *
+ * Not cosmetic: the vLLM check demands `VLLM_API_KEY` and a bearer token on
+ * `/v1/models`, which an Ollama host neither needs nor accepts. Probing one as
+ * the other reports a reachable service as unmeasurable forever.
+ */
+export type StatusHostKind = "vllm" | "ollama";
+
 export interface StatusHost {
   serverId: string;
   baseUrl: string;
+  kind: StatusHostKind;
   /** Models the configuration claims this host serves. Only a cold-start hint —
    *  /v1/models is ground truth, and the global VLLM_FLEET_DEFAULT_MODELS list
    *  is applied to every host, so it is wrong for any host that differs. */
@@ -27,21 +37,27 @@ export interface StatusHost {
 
 export function resolveStatusHosts(): StatusHost[] {
   if (fleetRoutingEnabled()) {
+    // The fleet registry is vLLM-only by construction.
     return getAllFleetServers().map((server) => ({
       serverId: server.id,
       baseUrl: server.baseUrl,
+      kind: "vllm" as const,
       configuredModels: server.models ?? [],
     }));
   }
 
   const { vllm, ollama } = resolveUbcBaseUrls();
   const hosts: StatusHost[] = [];
-  for (const baseUrl of [vllm, ollama]) {
+  for (const [kind, baseUrl] of [
+    ["vllm", vllm],
+    ["ollama", ollama],
+  ] as const) {
     if (!baseUrl) continue;
     const normalized = baseUrl.replace(/\/$/, "");
     hosts.push({
       serverId: serverIdFromUrl(normalized),
       baseUrl: normalized,
+      kind,
       configuredModels: [],
     });
   }

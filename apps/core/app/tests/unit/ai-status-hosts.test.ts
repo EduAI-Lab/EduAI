@@ -32,6 +32,7 @@ describe("resolveStatusHosts", () => {
       {
         serverId: "cmps01",
         baseUrl: "http://cmps01.ok.ubc.ca:8001",
+        kind: "vllm",
         configuredModels: ["qwen3.5-2b-instruct"],
       },
     ]);
@@ -51,6 +52,9 @@ describe("resolveStatusHosts", () => {
       "http://localhost:8000",
       "http://localhost:11434",
     ]);
+    // The kind decides which probe the sampler runs; an Ollama host tagged
+    // `vllm` is checked with a key it does not use and reads as unmeasurable.
+    expect(hosts.map((h) => h.kind)).toEqual(["vllm", "ollama"]);
   });
 
   it("returns an empty list when nothing is configured", () => {

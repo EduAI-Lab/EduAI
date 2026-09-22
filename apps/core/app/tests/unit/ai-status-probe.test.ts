@@ -11,6 +11,9 @@ const findScheduleOverrideMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/ai/status/hosts.server", () => ({ resolveStatusHosts: resolveStatusHostsMock }));
 vi.mock("~/lib/ai/routing/fleet/health", () => ({ getServerHealth: getServerHealthMock }));
+vi.mock("~/lib/ai/ollama-url.server", () => ({
+  ollamaTagsUrl: (base: string) => `${base}/api/tags`,
+}));
 vi.mock("~/lib/ai/service-status/vllm-metrics.server", () => ({
   probeVllmLoad: probeVllmLoadMock,
 }));
@@ -25,10 +28,13 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
-const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");
+const { runAiStatusProbe, resetStatusProbeCaches } = await import("~/lib/ai/status-probe.server");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The down-host model list is memoised across ticks on purpose; without this
+  // one test's cached answer would be served to the next.
+  resetStatusProbeCaches();
   createManyMock.mockResolvedValue({ count: 0 });
   deleteManyMock.mockResolvedValue({ count: 0 });
   findManyMock.mockResolvedValue([]);
@@ -292,5 +298,138 @@ describe("runAiStatusProbe", () => {
     expect(rows.find((r: { serverId: string }) => r.serverId === "cmps01")).toMatchObject({
       state: "UNKNOWN",
     });
+  });
+});
+
+/** One legacy-mode Ollama host, the shape `resolveStatusHosts` returns for it. */
+function ollamaHost() {
+  return [
+    {
+      serverId: "localhost",
+      baseUrl: "http://localhost:11434",
+      kind: "ollama",
+      configuredModels: [],
+    },
+  ];
+}
+
+describe("runAiStatusProbe — Ollama hosts", () => {
+  it("probes an Ollama host at /api/tags rather than through the vLLM check", async () => {
+    resolveStatusHostsMock.mockReturnValue(ollamaHost());
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: "llama3:8b" }, { name: "qwen2.5:7b" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAiStatusProbe();
+
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:11434/api/tags");
+    // The vLLM check is what demands VLLM_API_KEY; an Ollama host must not go
+    // near it, or an Ollama-only deployment records UNKNOWN forever.
+    expect(getServerHealthMock).not.toHaveBeenCalled();
+
+    const rows = createManyMock.mock.calls[0][0].data;
+    expect(rows).toEqual([
+      expect.objectContaining({ modelId: "llama3:8b", state: "OPERATIONAL", reachable: true }),
+      expect.objectContaining({ modelId: "qwen2.5:7b", state: "OPERATIONAL", reachable: true }),
+    ]);
+  });
+
+  it("records an Ollama host's load as unknown — it serves no vLLM metrics", async () => {
+    resolveStatusHostsMock.mockReturnValue(ollamaHost());
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, json: async () => ({ models: [{ name: "llama3:8b" }] }) }),
+    );
+
+    await runAiStatusProbe();
+
+    expect(probeVllmLoadMock).not.toHaveBeenCalled();
+    expect(createManyMock.mock.calls[0][0].data[0]).toMatchObject({
+      waiting: null,
+      cacheUsage: null,
+    });
+  });
+
+  it("writes OUTAGE, not UNKNOWN, for an unreachable Ollama host", async () => {
+    resolveStatusHostsMock.mockReturnValue(ollamaHost());
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")));
+
+    await runAiStatusProbe();
+
+    expect(createManyMock.mock.calls[0][0].data[0]).toMatchObject({
+      state: "OUTAGE",
+      reachable: false,
+      detail: "connect ECONNREFUSED",
+    });
+  });
+
+  it("treats an unreadable /api/tags body as unreachable", async () => {
+    resolveStatusHostsMock.mockReturnValue(ollamaHost());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+
+    await runAiStatusProbe();
+
+    expect(createManyMock.mock.calls[0][0].data[0]).toMatchObject({
+      state: "OUTAGE",
+      detail: "invalid /api/tags response",
+    });
+  });
+});
+
+describe("runAiStatusProbe — down-host model lookup", () => {
+  const downHost = [
+    { serverId: "cmps01", baseUrl: "http://cmps01:8001", kind: "vllm", configuredModels: [] },
+  ];
+
+  beforeEach(() => {
+    getServerHealthMock.mockResolvedValue({
+      ok: false,
+      modelIds: null,
+      checkedAt: 0,
+      error: "connect ETIMEDOUT",
+    });
+    findManyMock.mockResolvedValue([{ serverId: "cmps01", modelId: "qwen3.5-9b-instruct" }]);
+  });
+
+  it("asks the database once while a host stays down", async () => {
+    resolveStatusHostsMock.mockReturnValue(downHost);
+
+    await runAiStatusProbe();
+    await runAiStatusProbe();
+    await runAiStatusProbe();
+
+    // The answer cannot change while the host is down, so the repeat ticks
+    // must not re-run the query.
+    expect(findManyMock).toHaveBeenCalledTimes(1);
+    expect(createManyMock.mock.calls[2][0].data).toEqual([
+      expect.objectContaining({ modelId: "qwen3.5-9b-instruct", state: "OUTAGE" }),
+    ]);
+  });
+
+  it("re-reads once the host comes back, so a changed model list is picked up", async () => {
+    resolveStatusHostsMock.mockReturnValue(downHost);
+
+    await runAiStatusProbe();
+
+    getServerHealthMock.mockResolvedValue({ ok: true, modelIds: ["new-model"], checkedAt: 0 });
+    await runAiStatusProbe();
+
+    getServerHealthMock.mockResolvedValue({
+      ok: false,
+      modelIds: null,
+      checkedAt: 0,
+      error: "connect ETIMEDOUT",
+    });
+    findManyMock.mockResolvedValue([{ serverId: "cmps01", modelId: "new-model" }]);
+    await runAiStatusProbe();
+
+    expect(findManyMock).toHaveBeenCalledTimes(2);
+    expect(createManyMock.mock.calls[2][0].data).toEqual([
+      expect.objectContaining({ modelId: "new-model", state: "OUTAGE" }),
+    ]);
   });
 });
