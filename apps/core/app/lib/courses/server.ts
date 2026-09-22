@@ -1,5 +1,5 @@
 import type { JsonValue } from "~/lib/json-value";
-import { UserRole, type Prisma } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
 import {
@@ -562,37 +562,64 @@ export async function createCourse(request: Request) {
     return apiError(422, "INVALID_INSTRUCTOR");
   }
 
-  const course = await prisma.$transaction(async (tx) => {
-    const created = await tx.course.create({
-      data: {
-        name: result.data.name,
+  let course;
+  try {
+    course = await prisma.$transaction(async (tx) => {
+      const created = await tx.course.create({
+        data: {
+          name: result.data.name,
+          code: result.data.code,
+          section: result.data.section,
+          term: result.data.term,
+          year: result.data.year,
+          startDate: result.data.startDate,
+          endDate: result.data.endDate,
+          department: result.data.department,
+          description: result.data.description,
+          isPublished: result.data.isPublished,
+          aiInstructions: result.data.aiInstructions,
+          instructorId: result.data.instructorUserIds[0],
+        },
+      });
+
+      await tx.enrollment.createMany({
+        data: result.data.instructorUserIds.map((userId) => ({
+          courseId: created.id,
+          userId,
+          role: "INSTRUCTOR" as const,
+          isActive: true,
+        })),
+      });
+
+      await ensureDefaultBank(created.id, tx);
+
+      return created;
+    });
+  } catch (error: unknown) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+    // #1842: the identity slot is now partial on `deletedAt`, so a collision
+    // here can only be a LIVE course — a tombstone no longer blocks
+    // re-creation. This used to escape as an unexplained 500. Name the row that
+    // is actually in the way rather than guessing from `error.meta`; if no live
+    // row matches, the P2002 belongs to another constraint (e.g. the external
+    // identity) and must stay visible.
+    const blocking = await prisma.course.findFirst({
+      where: {
         code: result.data.code,
-        section: result.data.section,
-        term: result.data.term,
-        year: result.data.year,
         startDate: result.data.startDate,
-        endDate: result.data.endDate,
-        department: result.data.department,
-        description: result.data.description,
-        isPublished: result.data.isPublished,
-        aiInstructions: result.data.aiInstructions,
-        instructorId: result.data.instructorUserIds[0],
+        section: result.data.section,
+        deletedAt: null,
       },
+      select: { name: true },
     });
-
-    await tx.enrollment.createMany({
-      data: result.data.instructorUserIds.map((userId) => ({
-        courseId: created.id,
-        userId,
-        role: "INSTRUCTOR" as const,
-        isActive: true,
-      })),
+    if (!blocking) throw error;
+    const startsOn = result.data.startDate.toISOString().slice(0, 10);
+    return apiError(409, "COURSE_IDENTITY_TAKEN", {
+      code: `${result.data.code} section ${result.data.section} starting ${startsOn} is already used by "${blocking.name}"`,
     });
-
-    await ensureDefaultBank(created.id, tx);
-
-    return created;
-  });
+  }
 
   // #1624: a course must never exist with zero topics — Question Maker requires
   // one to author against. Canvas-imported courses get this from the import
