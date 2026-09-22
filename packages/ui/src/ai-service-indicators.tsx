@@ -18,6 +18,7 @@
 import * as React from "react";
 import { IconCloud } from "@tabler/icons-react";
 
+import { SHARED_STATE_CLASS, SHARED_STATE_WORD } from "./lib/service-state-display";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { cn } from "./utils";
@@ -60,21 +61,16 @@ export interface AIServiceIndicatorsProps {
   className?: string;
 }
 
+// Shared with the history bars; only `loading`, which a history bucket can
+// never be, is added here. See `lib/service-state-display.ts`.
 const DOT_CLASS = {
-  operational: "bg-emerald-500",
-  // Steady amber, distinct from the pulsing amber `loading` dot below.
-  degraded: "bg-amber-500",
-  outage: "bg-red-500",
+  ...SHARED_STATE_CLASS,
   loading: "bg-amber-400 animate-pulse",
-  unknown: "bg-muted-foreground/40",
 } satisfies Record<ServiceState, string>;
 
 const STATE_WORD = {
-  operational: "Operational",
-  degraded: "Degraded",
-  outage: "Outage",
+  ...SHARED_STATE_WORD,
   loading: "Checking…",
-  unknown: "Unknown",
 } satisfies Record<ServiceState, string>;
 
 /**

@@ -13,10 +13,16 @@
  */
 import * as React from "react";
 
+import {
+  SHARED_STATE_CLASS,
+  SHARED_STATE_WORD,
+  type SharedServiceState,
+} from "./lib/service-state-display";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { cn } from "./utils";
 
-export type HistoryBucketState = "operational" | "degraded" | "outage" | "unknown";
+/** A recorded bucket is one of the shared states; `null` means "no samples". */
+export type HistoryBucketState = SharedServiceState;
 
 export interface HistoryBucket {
   t: string;
@@ -51,19 +57,16 @@ export interface HistoryPayload {
   servers: HistoryServer[];
 }
 
+// Shared with the header chips; only `none` — a bucket with no samples, which
+// a live chip has no equivalent of — is added here. The chips' `loading` has no
+// meaning for a recorded hour. See `lib/service-state-display.ts`.
 export const HISTORY_STATE_CLASS = {
-  operational: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  outage: "bg-red-500",
-  unknown: "bg-muted-foreground/40",
+  ...SHARED_STATE_CLASS,
   none: "bg-muted-foreground/15",
 } satisfies Record<HistoryBucketState | "none", string>;
 
 export const HISTORY_STATE_WORD = {
-  operational: "Operational",
-  degraded: "Degraded",
-  outage: "Outage",
-  unknown: "Unknown",
+  ...SHARED_STATE_WORD,
   none: "No data",
 } satisfies Record<HistoryBucketState | "none", string>;
 
