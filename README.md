@@ -371,6 +371,20 @@ Individual database commands:
 
 `docker compose up --wait` requires Docker Compose v2 with healthcheck support.
 
+**Not every database object is declared in `schema.prisma`.** Prisma cannot express
+generated columns, ivfflat indexes or a `WHERE` predicate on a unique index, so those
+live in hand-written files under `apps/core/prisma/migrations/` and are applied to
+deployed databases by `prisma migrate deploy`. Integration databases are provisioned
+with `prisma db push`, which reads only `schema.prisma` and therefore skips them —
+`apps/core/app/tests/globalSetup.ts` re-applies each one explicitly. **Add a raw-SQL
+migration to that file in the same change**, or the object is silently missing from
+every integration run and any test meant to prove it is enforced passes for the wrong
+reason. Current entries: the `material_chunks.content_tsv` generated column, the
+`material_embeddings` ivfflat index, and the partial unique index
+`courses_code_startDate_section_active_key` (`#1842`), which lets a soft-deleted
+course release its `(code, startDate, section)` identity so the same course can be
+created again.
+
 ### Inspecting the database
 
 **Recommended: use a GUI client** such as [DBeaver](https://dbeaver.io/) (free, cross-platform) or [pgAdmin](https://www.pgadmin.org/). Connect with the credentials from the table above and `localhost` as the host. The GUI lets you browse tables, run queries, and inspect data without memorising psql commands.
