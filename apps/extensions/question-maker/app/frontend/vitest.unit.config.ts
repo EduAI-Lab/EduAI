@@ -17,6 +17,10 @@ export default defineConfig({
       // Subpath exports must precede the barrel: vite's alias matcher treats
       // '@eduai/ui' as also matching '@eduai/ui/<anything>', so the barrel alias
       // would rewrite subpaths to `.../src/index.ts/<subpath>`.
+      "@eduai/ui/core-url": path.resolve(
+        frontendDir,
+        "../../../../../packages/ui/src/lib/core-url.ts",
+      ),
       "@eduai/ui/primitive-union": path.resolve(
         frontendDir,
         "../../../../../packages/ui/src/lib/primitive-union.ts",

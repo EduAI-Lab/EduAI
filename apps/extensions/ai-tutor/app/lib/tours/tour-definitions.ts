@@ -42,6 +42,7 @@ export const tourDefinitions = {
         description:
           "Each card opens a course. We will use the first one here to walk through the learning flow.",
         target: '[data-tour="student-course-card-first"]',
+        emptyTarget: '[data-tour="student-courses-empty"]',
         route: "/student",
         side: "right",
         storeRouteFromTarget: "selectedCourseRoute",
