@@ -136,7 +136,12 @@ export const aiStatusHistorySchema = z.object({
         z.object({
           key: z.string(),
           label: z.string(),
-          uptimePct: z.number(),
+          // Null when a model had no judgeable buckets — every sample was
+          // `unknown`, so there is no uptime to report and the panel renders
+          // "n/a". Core emits this (`history.server.ts`); declaring it
+          // non-nullable made one such model throw a ZodError in `decode()`
+          // and collapse the whole popover into a generic load error.
+          uptimePct: z.number().nullable(),
           buckets: z.array(
             z.object({
               t: z.string(),

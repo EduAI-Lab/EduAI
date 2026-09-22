@@ -114,10 +114,12 @@ export async function createApp(options = {}) {
   // /admin/settings/* or /admin/users* (system config / user management).
   app.use("/api", (req, res, next) => {
     if (req.path === "/health") return next();
-    // AI-service status (and its 72h history) is available to every
-    // authenticated role (incl. admins), so exempt both from the admin-only
-    // path isolation below.
-    if (req.path === "/ai-status" || req.path === "/ai-status/history") return next();
+    // AI-service status (and everything under it, e.g. the 72h history) is
+    // available to every authenticated role (incl. admins), so the whole
+    // subtree is exempt from the admin-only path isolation below. Matched by
+    // prefix, not by an exact list: a new status sub-route that someone forgot
+    // to add here would 403 admins silently rather than fail loudly.
+    if (req.path === "/ai-status" || req.path.startsWith("/ai-status/")) return next();
     if (!req.user) return next();
     if (req.user.role === "ADMIN") {
       if (isAllowedAdminPath(req.path)) return next();
