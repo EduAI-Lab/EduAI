@@ -224,4 +224,41 @@ describe("useAiServiceStatus", () => {
 
     setVisibility("visible");
   });
+
+  it("surfaces checkedAt and stale from the default fetcher", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          cloud: { state: "operational" },
+          ubc: { state: "degraded" },
+          checkedAt: "2026-09-18T20:15:00.000Z",
+          stale: false,
+        }),
+      }),
+    );
+
+    const { result } = renderHook(() => useAiServiceStatus({ intervalMs: 1_000 }));
+
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(result.current.ubc).toEqual({ state: "degraded" });
+    expect(result.current.checkedAt).toBe("2026-09-18T20:15:00.000Z");
+    expect(result.current.stale).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("reports checkedAt as null when a custom fetcher omits it", async () => {
+    const fetcher = vi
+      .fn<() => Promise<AiServiceStatusPair>>()
+      .mockResolvedValue(pair("operational", "operational"));
+
+    const { result } = renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 1_000 }));
+
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(result.current.ubc).toEqual({ state: "operational" });
+    expect(result.current.checkedAt).toBeNull();
+    expect(result.current.stale).toBe(false);
+  });
 });

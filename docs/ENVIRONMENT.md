@@ -159,6 +159,8 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `VLLM_FLEET_CHAT_URLS` / `VLLM_FLEET_HEAVY_URL` / `VLLM_FLEET_DEFAULT_MODELS` | — | Legacy fallback used only when no `fleet.config.json` is found |
 | `VLLM_TRUSTED_BASE_URLS` | — | SSRF allowlist for every vLLM base URL (chat **and** embeddings) |
 | `FLEET_HEALTH_CACHE_TTL_MS` / `FLEET_HEALTH_TIMEOUT_MS` / `FLEET_FAILURE_EJECTION_MS` | `30000` / `5000` / `30000` | Fleet health probing and failure ejection |
+| `AI_STATUS_POLL_MINUTES` | `15` | Cadence of the `ai-status-probe` cron job that persists vLLM fleet health into `ai_service_samples`. The admin UI can override the schedule per-environment via `CronJobScheduleOverride`; this is only the deploy-time default. Readers use each sample's own stored `intervalMinutes`, not this env var, to judge staleness. |
+| `AI_STATUS_SAMPLE_RETENTION_DAYS` | `7` | How long `ai_service_samples` rows are kept before the probe prunes them. Clamped up to at least 7 days (the 72h history panel's max window) so a short retention can't silently truncate or grey out the chart. |
 | `FLEET_STREAM_PROBE_MS` | `10000` | Soft deadline waiting for the first stream chunk before retrying another host |
 | `AI_MAX_INFLIGHT` / `AI_ADMISSION_WAIT_MS` | `8` / `15000` | Process-local FIFO admission gate for local-GPU inference (`0` disables) |
 | `AWS_BEARER_TOKEN_BEDROCK` / `BEDROCK_REGION` / `BEDROCK_MODEL_ID` | — / `us-east-1` / `meta.llama3-70b-instruct-v1:0` | Bedrock **overflow** target — server env only, never client-selectable |
