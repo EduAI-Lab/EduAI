@@ -160,12 +160,14 @@ function AppLayoutInner() {
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
-          <AIServiceIndicators
-            cloud={aiStatus.cloud}
-            cloudLabel="Managed cloud AI"
-            ubc={aiStatus.ubc}
-            onRefresh={aiStatus.refresh}
-          />
+          {user.role !== "STUDENT" ? (
+            <AIServiceIndicators
+              cloud={aiStatus.cloud}
+              cloudLabel="Managed cloud AI"
+              ubc={aiStatus.ubc}
+              onRefresh={aiStatus.refresh}
+            />
+          ) : null}
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>
             <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />

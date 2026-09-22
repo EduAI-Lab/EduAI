@@ -151,6 +151,19 @@ describe("_app layout — authenticated shell", () => {
     await waitFor(() => expect(screen.getByTestId("bug-report-dialog")).toBeInTheDocument());
   });
 
+  it("shows the UBC/Cloud AI-service chips for non-student roles", () => {
+    wrap();
+
+    expect(screen.getByTestId("ai-indicators")).toBeInTheDocument();
+  });
+
+  it("hides the UBC/Cloud AI-service chips for students", () => {
+    mockUser = { id: "u2", name: "Sam", role: "STUDENT", email: "sam@example.com" };
+    wrap();
+
+    expect(screen.queryByTestId("ai-indicators")).not.toBeInTheDocument();
+  });
+
   it("submits the bug report with context merged in", async () => {
     wrap();
 

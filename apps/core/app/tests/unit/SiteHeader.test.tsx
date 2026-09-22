@@ -89,4 +89,15 @@ describe("CoreHeaderActions", () => {
     );
     expect(screen.getByRole("button", { name: "Test Action" })).toBeInTheDocument();
   });
+
+  it("hides the UBC/Cloud AI-service chips when showAiServiceIndicators is false (student view)", () => {
+    const { container } = render(
+      <ThemeProvider>
+        <CoreHeaderActions showAiServiceIndicators={false} />
+      </ThemeProvider>,
+    );
+    expect(container.querySelector('[data-tour="ai-status"]')).not.toBeInTheDocument();
+    // The rest of the bundle still renders.
+    expect(screen.getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
+  });
 });
