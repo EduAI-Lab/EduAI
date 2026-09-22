@@ -154,6 +154,35 @@ export async function setup() {
     },
   );
 
+  // #1842: the course identity slot is a PARTIAL unique index, which Prisma
+  // cannot express, so it is absent from schema.prisma and `db push` never
+  // creates it. Apply the raw migration here — otherwise integration databases
+  // would carry NO uniqueness on (code, startDate, section) at all, and the
+  // duplicate-course guard would silently pass untested.
+  const partialCourseIdentityMigration = resolve(
+    appRoot,
+    "prisma",
+    "migrations",
+    "20260922000000_partial_unique_course_identity",
+    "migration.sql",
+  );
+  execBin(
+    prismaBin,
+    [
+      "db",
+      "execute",
+      "--file",
+      partialCourseIdentityMigration,
+      "--schema",
+      resolve(appRoot, "prisma", "schema.prisma"),
+    ],
+    {
+      cwd: appRoot,
+      env: { ...process.env, DATABASE_URL: dbUrl },
+      stdio: "pipe",
+    },
+  );
+
   // Prisma cannot represent an ivfflat index on Unsupported(vector), and
   // db push intentionally ignores the raw-SQL migration. Recreate it for the
   // integration database after every schema sync so ANN tests exercise the
