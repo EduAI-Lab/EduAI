@@ -10,6 +10,7 @@ export default defineConfig({
       // '@eduai/ui' as also matching '@eduai/ui/<anything>', so the barrel alias
       // would rewrite subpaths to `.../src/index.ts/<subpath>`. Insertion order
       // is what keeps that from happening.
+      "@eduai/ui/core-url": path.resolve(__dirname, "../../../packages/ui/src/lib/core-url.ts"),
       "@eduai/ui/primitive-union": path.resolve(
         __dirname,
         "../../../packages/ui/src/lib/primitive-union.ts",

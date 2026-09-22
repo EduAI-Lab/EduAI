@@ -33,6 +33,8 @@ const {
     getCourseTopics: vi.fn(),
     testApiKey: vi.fn(),
     listAIModels: vi.fn(),
+    getAiStatus: vi.fn(),
+    getAiStatusHistory: vi.fn(),
   },
 }));
 
@@ -407,6 +409,43 @@ describe("POST /api/eduai/generate-questions", () => {
     expect(res.body.code).toBe("EDUAI_GENERATION_FAILED");
     expect(res.body.aiErrorReason).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain("unsafe content");
+  });
+
+  // The browser caches a save-time verdict per provider and can only correct it
+  // when a live rejection reaches it. Every generation failure used to collapse
+  // to 500, so a revoked key stayed green in the cloud chip forever.
+  it("surfaces a rejected provider key as 400 + PROVIDER_API_KEY_REQUIRED, not 500", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    const rejected = new Error("EduAI question generation failed");
+    rejected.statusCode = 401;
+    rejected.reasonCode = "PROVIDER_API_KEY_REQUIRED";
+    eduaiService.generateQuestions.mockRejectedValue(rejected);
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseCode: "COSC 101" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("PROVIDER_API_KEY_REQUIRED");
+    expect(res.body.error).toBe("The AI provider rejected your API key");
+  });
+
+  it("still degrades a bare upstream 401 (the QM→Core session leg) to 500", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    const rejected = new Error("EduAI question generation failed");
+    rejected.statusCode = 401;
+    eduaiService.generateQuestions.mockRejectedValue(rejected);
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseCode: "COSC 101" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("EDUAI_GENERATION_FAILED");
   });
 
   it("returns the same stable error for internal wrapper failures", async () => {
@@ -875,5 +914,67 @@ describe("GET /api/eduai/ai-models", () => {
     expect(res.status).toBe(401);
     expect(res.body.error).toMatch(/Failed to retrieve AI models/);
     expect(res.body.details).toBeUndefined();
+  });
+});
+
+/**
+ * The status proxies sit OUTSIDE `requireQmAuthoringOrLiveTa` on purpose:
+ * status is not a privileged surface, and gating it would reintroduce a
+ * role-dependent header chip. That decision is only a comment in eduai.js
+ * unless something asserts it, so these lock it down from both directions —
+ * a student must get through, and the caller's own cookie (not the service
+ * key) must be what is forwarded.
+ */
+describe("GET /api/eduai/ai-status", () => {
+  beforeEach(() => {
+    eduaiService.getAiStatus.mockResolvedValue({
+      status: 200,
+      body: { cloud: { state: "operational" }, ubc: { state: "operational" } },
+    });
+    eduaiService.getAiStatusHistory.mockResolvedValue({
+      status: 200,
+      body: { windowHours: 72, bucketMinutes: 60, servers: [] },
+    });
+  });
+
+  it("is readable by a student, who has no authoring or TA rights", async () => {
+    authAs(STUDENT);
+
+    const res = await request().get("/api/eduai/ai-status").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(res.body.ubc.state).toBe("operational");
+  });
+
+  it("forwards the caller's own session cookie, matching Core's session-only auth", async () => {
+    authAs(STUDENT);
+
+    await request().get("/api/eduai/ai-status").set("Cookie", "session=abc123");
+
+    expect(eduaiService.getAiStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ cookie: expect.stringContaining("session=abc123") }),
+    );
+  });
+
+  it("passes an upstream failure's status through instead of masking it as 200", async () => {
+    authAs(STUDENT);
+    eduaiService.getAiStatus.mockResolvedValue({
+      status: 503,
+      body: { error: "EduAI service is not configured" },
+    });
+
+    const res = await request().get("/api/eduai/ai-status").set("Cookie", "session=v");
+
+    expect(res.status).toBe(503);
+  });
+
+  it("serves the 72h history to a student on the same terms", async () => {
+    authAs(STUDENT);
+
+    const res = await request().get("/api/eduai/ai-status/history").set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(res.body.windowHours).toBe(72);
+    expect(eduaiService.getAiStatusHistory).toHaveBeenCalled();
   });
 });

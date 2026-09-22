@@ -1,15 +1,19 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
+  AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
   Button,
   CommandSearchButton,
   ThemeToggle,
   useAiServiceStatus,
+  useHistoryOnOpen,
   type BugReportSubmitData,
+  type HistoryPayload,
 } from "@eduai/ui";
+import { getCoreStatusUrl } from "../lib/coreUrl";
 import {
   IconBooks,
   IconBug,
@@ -80,10 +84,29 @@ function AppLayoutInner() {
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
   const { captureScreenshot, getCapturedData, context } = useBugReport();
-  const aiStatus = useAiServiceStatus({ fetcher: (signal) => api.aiStatus(signal) });
+  // 300s, not the hook's 60s default: the underlying value only changes when
+  // the cron probe runs (roughly every 15 minutes), so polling every minute is
+  // pure waste — Core already sets this explicitly for the same reason.
+  const aiStatus = useAiServiceStatus({
+    fetcher: (signal) => api.aiStatus(signal),
+    intervalMs: 300_000,
+  });
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const routeCourseId = getRouteCourseId(matches);
   const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
+
+  const fetchAiHistory = useCallback(() => api.aiStatusHistory(), []);
+
+  // One request per deliberate open, even when every one of them fails. The
+  // shared hook replaced three near-identical copies of this block that
+  // re-requested in a loop on a persistent 401/500 — see `useHistoryOnOpen`.
+  const {
+    data: aiHistory,
+    loading: aiHistoryLoading,
+    error: aiHistoryError,
+    onOpenChange: onAiHistoryOpenChange,
+    refresh: refreshAiHistory,
+  } = useHistoryOnOpen<HistoryPayload>(fetchAiHistory);
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -164,7 +187,24 @@ function AppLayoutInner() {
             cloud={aiStatus.cloud}
             cloudLabel="Managed cloud AI"
             ubc={aiStatus.ubc}
+            ubcHistory={
+              <AIServiceHistoryPanel
+                data={aiHistory}
+                loading={aiHistoryLoading}
+                error={aiHistoryError}
+                stale={aiStatus.stale}
+                checkedAt={aiStatus.checkedAt}
+                current={aiStatus.ubc}
+                statusPageHref={getCoreStatusUrl()}
+                statusPageTarget="_blank"
+                onRefresh={() => {
+                  aiStatus.refresh();
+                  refreshAiHistory();
+                }}
+              />
+            }
             onRefresh={aiStatus.refresh}
+            onUbcOpenChange={onAiHistoryOpenChange}
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>

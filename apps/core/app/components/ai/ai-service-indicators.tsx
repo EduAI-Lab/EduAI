@@ -6,14 +6,61 @@
  * shared `useAiServiceStatus` hook, which pauses in a hidden tab and shares one
  * request per tick (#1454); the server caches probes, so polling is cheap. Each
  * chip reflects only its own service state.
+ *
+ * The UBC chip opens a 72-hour history popover backed by
+ * `/api/ai-status/history`, which reads the persisted sample table rather than
+ * probing live — see the ai-status-probe cron job. History is fetched only
+ * once the popover first opens: a panel nobody opens should cost nothing.
  */
-import { AIServiceIndicators as SharedAIServiceIndicators, useAiServiceStatus } from "@eduai/ui";
+import * as React from "react";
+import {
+  AIServiceIndicators as SharedAIServiceIndicators,
+  AIServiceHistoryPanel,
+  useAiServiceStatus,
+  useHistoryOnOpen,
+  type HistoryPayload,
+} from "@eduai/ui";
+
+/** Matches AI Tutor and Question Maker: the snapshot only changes when the cron probe runs. */
+const POLL_INTERVAL_MS = 300_000;
 
 export function AIServiceIndicators() {
-  const { cloud, ubc, refresh } = useAiServiceStatus({
+  const { cloud, ubc, checkedAt, stale, refresh } = useAiServiceStatus({
     endpoint: "/api/ai-status",
-    intervalMs: 60_000,
+    intervalMs: POLL_INTERVAL_MS,
   });
+
+  const fetchHistory = React.useCallback(async (): Promise<HistoryPayload> => {
+    const res = await fetch("/api/ai-status/history?hours=72");
+    if (!res.ok) throw new Error(`Status history request failed: ${res.status}`);
+    return (await res.json()) as HistoryPayload;
+  }, []);
+
+  // One request per deliberate open, even when every one of them fails — see
+  // `useHistoryOnOpen` for the loop this replaced.
+  const {
+    data: history,
+    loading,
+    error,
+    onOpenChange,
+    refresh: refreshHistory,
+  } = useHistoryOnOpen(fetchHistory);
+
+  const panel = (
+    <AIServiceHistoryPanel
+      data={history}
+      loading={loading}
+      error={error}
+      stale={stale}
+      checkedAt={checkedAt}
+      current={ubc}
+      statusPageHref="/status"
+      onRefresh={() => {
+        refresh();
+        refreshHistory();
+      }}
+    />
+  );
 
   return (
     <span data-tour="ai-status" className="hidden sm:inline-flex">
@@ -21,7 +68,9 @@ export function AIServiceIndicators() {
         cloud={cloud}
         cloudLabel="Managed cloud AI"
         ubc={ubc}
+        ubcHistory={panel}
         onRefresh={refresh}
+        onUbcOpenChange={onOpenChange}
       />
     </span>
   );
