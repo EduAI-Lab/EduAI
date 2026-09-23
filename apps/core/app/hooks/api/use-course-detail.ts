@@ -20,7 +20,8 @@ export interface CourseDetail extends Omit<Course, "aiInstructions"> {
   courseScopeGuardrailEnabled?: boolean;
   /** Set by the course detail loader for students — raw aiInstructions are staff-only. */
   hasAiConfig?: boolean;
-  instructor?: { id?: string; name: string; email: string } | null;
+  /** #1841: `email` is null for students, like every entry in `instructors`. */
+  instructor?: { id?: string; name: string; email: string | null } | null;
   /**
    * #1841: every active instructor on the course. `instructor` above remains
    * the single course head for the consumers that already read it. Optional

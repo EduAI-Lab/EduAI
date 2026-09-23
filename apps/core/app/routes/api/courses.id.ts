@@ -10,6 +10,7 @@ import { serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import prisma from "~/lib/prisma.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withErrorResponse } from "~/lib/errors.server";
@@ -114,15 +115,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
       // `resolveCourseAccessWithCourse` returns scalar columns only, so no
       // caller of this route ever received a populated `instructor` — students
-      // got one from the extra lookup below, staff got nothing at all. Derive
-      // it from the course head we just resolved, for every audience, instead
-      // of issuing a second query for a row we already hold.
+      // got one from an extra lookup, staff got nothing at all. Derive it from
+      // the course head we just resolved, for every audience, so the common
+      // case costs no second query.
       let responseCourse: CourseWithInstructor = course;
       if (!("instructor" in responseCourse)) {
         const primary = instructors.find((row) => row.isPrimary) ?? null;
+        // `Course.instructorId` can point at someone with no active INSTRUCTOR
+        // enrollment — a legacy row, or a head demoted through
+        // PATCH /courses/enrollments/:id, which does not move the column. The
+        // batch above only returns active enrollments, so read the column
+        // directly in that case: the page loader renders that person from the
+        // `instructor` relation, and answering `null` here would leave the page
+        // and this route disagreeing about the same course.
+        const fromColumn =
+          primary || !course.instructorId
+            ? null
+            : await prisma.user.findUnique({
+                where: { id: course.instructorId },
+                select: { name: true, email: true },
+              });
         responseCourse = {
           ...responseCourse,
-          instructor: primary ? { name: primary.name, email: primary.email } : null,
+          instructor: primary ? { name: primary.name, email: primary.email } : fromColumn,
         };
       }
       return new Response(

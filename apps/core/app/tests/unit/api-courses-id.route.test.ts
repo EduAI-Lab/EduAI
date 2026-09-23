@@ -36,7 +36,14 @@ vi.mock("~/lib/logging.server", () => ({
   logAuditAction: vi.fn().mockResolvedValue(undefined),
 }));
 
+// #1841: when no enrolled row is the course head, the loader falls back to
+// `Course.instructorId` and reads that user directly.
+vi.mock("~/lib/prisma.server", () => ({
+  default: { user: { findUnique: vi.fn() } },
+}));
+
 import { loader, action } from "~/routes/api/courses.id";
+import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
@@ -44,6 +51,7 @@ import {
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
+import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { logAuditAction } from "~/lib/logging.server";
 
 function makeLoaderArgs(id?: string, headers: Record<string, string> = {}) {
@@ -69,6 +77,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "INSTRUCTOR" },
   } as never);
+  vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
 });
 
 describe("GET /api/courses/:id", () => {
@@ -170,7 +179,10 @@ describe("GET /api/courses/:id", () => {
       code: "COSC 101",
       hasAiConfig: true,
       responseStyleTags: ["socratic"],
-      instructor: { name: "Prof", email: "prof@example.edu" },
+      // #1841: students see who teaches the course, never how to reach them —
+      // the same rule the `instructors` set follows, applied to both fields so
+      // the redaction is not just a detour around this one.
+      instructor: { name: "Prof", email: null },
     });
     for (const key of [
       "aiInstructions",
@@ -227,6 +239,53 @@ describe("GET /api/courses/:id", () => {
     expect(body).not.toHaveProperty("embeddingModel");
     expect(body).not.toHaveProperty("createdAt");
     expect(body).not.toHaveProperty("updatedAt");
+  });
+
+  it("falls back to Course.instructorId when no enrolled row is the head", async () => {
+    // A legacy row, or a head demoted to TA — the column is set, but
+    // `getCourseInstructors` returns nobody, since it reads active INSTRUCTOR
+    // enrollments only. The page loader still renders that person, so the route
+    // must not answer `instructor: null` for the same course.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      name: "Departed Instructor",
+      email: "departed@example.edu",
+    } as never);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "course-1", isPublished: true, instructorId: "instructor-9" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+
+    const body = await (await loader(makeLoaderArgs())).json();
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "instructor-9" },
+      select: { name: true, email: true },
+    });
+    expect(body.instructors).toEqual([]);
+    expect(body.instructor).toEqual({
+      name: "Departed Instructor",
+      email: "departed@example.edu",
+    });
+  });
+
+  it("does not spend a query on the fallback when the head is enrolled", async () => {
+    vi.mocked(getCourseInstructors).mockResolvedValueOnce(
+      new Map([
+        [
+          "course-1",
+          [{ id: "instructor-1", name: "Prof", email: "prof@example.edu", isPrimary: true }],
+        ],
+      ]),
+    );
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "course-1", isPublished: true, instructorId: "instructor-1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+
+    const body = await (await loader(makeLoaderArgs())).json();
+
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(body.instructor).toEqual({ name: "Prof", email: "prof@example.edu" });
   });
 });
 

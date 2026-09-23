@@ -27,7 +27,8 @@ export function resolveDisplayInstructors(
   if (course.instructor) {
     return [
       {
-        id: course.instructor.id ?? course.instructor.email,
+        // Redacted for students, so the email is no longer a usable key.
+        id: course.instructor.id ?? course.instructor.email ?? course.instructor.name,
         name: course.instructor.name,
         email: course.instructor.email,
         isPrimary: true,

@@ -213,7 +213,13 @@ export function serializeCourseForApi(
       if (row.instructor) {
         dto.instructor = {
           name: row.instructor.name ?? null,
-          email: row.instructor.email ?? null,
+          // #1841: one rule for both instructor fields. The page loader selects
+          // `COURSE_STAFF_SELECT`, whose `instructor` relation carries the
+          // address, so redacting only `instructors` below left the course
+          // head's email in the student hydration payload — the one address
+          // this boundary exists to protect. Nulled here rather than at each
+          // caller, for the same reason the set is.
+          email: null,
         };
       } else if (hasOwn(row, "instructor")) {
         dto.instructor = null;
