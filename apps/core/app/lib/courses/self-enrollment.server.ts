@@ -237,10 +237,18 @@ type ResolvedLink = {
  *
  * `expectedCourseId` is the course the caller believes it is joining. Supplying
  * it is what makes a token for course A unusable against course B.
+ *
+ * `deferUsability` hands the revoked/expired/exhausted verdict back to the
+ * caller instead of returning it here. Only the redeem path asks for it, and
+ * only because its idempotency check has to run first: a student who is already
+ * enrolled must get their course back even from a link that has since filled
+ * up. Everything else — identity of the token, the course, its publication —
+ * is still decided here, so the two callers cannot drift on those.
  */
 async function resolveSelfEnrollmentLink(
   token: string,
   expectedCourseId?: string,
+  options?: { deferUsability?: boolean },
 ): Promise<ResolvedLink | { ok: false; failure: SelfEnrollmentRejection }> {
   const invalid = {
     ok: false as const,
@@ -260,9 +268,11 @@ async function resolveSelfEnrollmentLink(
   // Includes exhaustion, so a capped link that is already full refuses at the
   // preview instead of showing an enabled "Join course" button that can only
   // fail. `linkStatus` has always surfaced EXHAUSTED to staff; this is the same
-  // condition, asked on the student's behalf.
+  // condition, asked on the student's behalf. The redeem path defers it (see
+  // above) but asks the very same helper, so the verdict still cannot differ —
+  // only when it is applied.
   const unusable = linkUsabilityFailure(link, new Date());
-  if (unusable) {
+  if (unusable && !options?.deferUsability) {
     return { ok: false, failure: unusable };
   }
 
@@ -380,9 +390,16 @@ export type RedeemSelfEnrollmentInput = {
  * Idempotent: a user who is already actively enrolled gets a 200 and no second
  * enrollment, and no redemption slot is consumed — re-opening the link from
  * a browser history entry must not silently use up a capped link.
+ *
+ * That check runs BEFORE the link's revoked/expired/exhausted verdict, which is
+ * why the resolve above defers it. These URLs are posted in syllabus pages and
+ * Canvas announcements and get re-clicked all term, so the state of the link is
+ * the wrong thing to answer someone who is already in the course.
  */
 export async function redeemSelfEnrollmentLink(input: RedeemSelfEnrollmentInput) {
-  const resolved = await resolveSelfEnrollmentLink(input.token, input.courseId);
+  const resolved = await resolveSelfEnrollmentLink(input.token, input.courseId, {
+    deferUsability: true,
+  });
   if (!resolved.ok) return resolved.failure;
   const { course } = resolved;
 
@@ -399,6 +416,13 @@ export async function redeemSelfEnrollmentLink(input: RedeemSelfEnrollmentInput)
       alreadyEnrolled: true,
     } as const;
   }
+
+  // Now that the already-enrolled case is settled, the link's own state decides
+  // — before any slot is spent, so a refusal here costs nothing to undo. The
+  // lock inside `claimRedemptionSlot` re-asks the same question against the
+  // locked row; this is the cheap answer for the overwhelmingly common case.
+  const unusable = linkUsabilityFailure(resolved.link, new Date());
+  if (unusable) return unusable;
 
   const claim = await claimRedemptionSlot(resolved.link.id);
   if (!claim.ok) return claim.failure;

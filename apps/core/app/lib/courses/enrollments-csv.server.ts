@@ -102,6 +102,12 @@ export type EnrollmentCsvParseResult =
  * still looks well-formed, so the import reports USER_NOT_FOUND instead of
  * pointing at the malformed cell. Kept in place, the quote fails
  * `EMAIL_PATTERN` and the row is reported as INVALID_EMAIL by line number.
+ *
+ * "Leads the field" means leading its CONTENT, not sitting at offset zero:
+ * `a@ubc.ca, "TA"` is ordinary hand-edited CSV, and treating the space after
+ * the comma as content would leave the quotes in the cell and reject a valid
+ * row. Fields are trimmed on the way out, so the skipped whitespace is dropped
+ * either way.
  */
 function splitCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -123,7 +129,7 @@ function splitCsvLine(line: string): string[] {
       }
       continue;
     }
-    if (char === '"' && current === "") {
+    if (char === '"' && current.trim() === "") {
       inQuotes = true;
     } else if (char === ",") {
       fields.push(current);

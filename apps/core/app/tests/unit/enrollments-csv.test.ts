@@ -95,6 +95,33 @@ describe("parseEnrollmentCsv — line endings and blank lines", () => {
     const parsed = expectParsed(parseEnrollmentCsv('email,name\n"alice@test.edu","Doe" Jr\n'));
     expect(parsed.rows).toEqual([{ line: 2, email: "alice@test.edu", role: "STUDENT" }]);
   });
+
+  it("opens a quoted run after `, ` spacing, not only on the first field", () => {
+    // "Leads the field" has to mean leading the *content*, not sitting at
+    // offset zero. Hand-edited CSVs routinely put a space after the comma, and
+    // reading that space as content would leave the quotes in the cell: the
+    // role would arrive as `"TA"` and be rejected as INVALID_ROLE, and a quoted
+    // address as `"…"` and be rejected as INVALID_EMAIL — both well-formed.
+    const parsed = expectParsed(
+      parseEnrollmentCsv('email,role\nalice@test.edu, "TA"\n "bob@test.edu", STUDENT\n'),
+    );
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows).toEqual([
+      { line: 2, email: "alice@test.edu", role: "TA" },
+      { line: 3, email: "bob@test.edu", role: "STUDENT" },
+    ]);
+  });
+
+  it("keeps a comma inside a quoted field that follows `, ` spacing", () => {
+    // The consequence that makes the case above matter: if the quote never
+    // opens, this line splits into four fields and the columns shift.
+    const parsed = expectParsed(
+      parseEnrollmentCsv('email,name,role\nalice@test.edu, "Doe, Alice", TA\n'),
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows).toEqual([{ line: 2, email: "alice@test.edu", role: "TA" }]);
+  });
 });
 
 describe("parseEnrollmentCsv — per-row errors", () => {

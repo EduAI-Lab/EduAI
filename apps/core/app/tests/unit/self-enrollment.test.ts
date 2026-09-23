@@ -441,6 +441,60 @@ describe("redeemSelfEnrollmentLink — a spent slot follows the enrollment", () 
   });
 });
 
+describe("redeemSelfEnrollmentLink — an already-enrolled student re-opening the link", () => {
+  // A self-enrollment URL lives in a syllabus page or a Canvas announcement, so
+  // students who joined on day one re-click it for the rest of the term. The
+  // link's own state must not turn that into an error page: they are enrolled,
+  // the answer is the course. Usability is still enforced for everyone the
+  // idempotency check does not cover — see the redeem-rejection suite above.
+  it.each([
+    ["exhausted", { maxRedemptions: 30, redemptionCount: 30 }],
+    ["revoked", { revokedAt: PAST }],
+    ["expired", { expiresAt: PAST }],
+  ])("answers 200 rather than an error when the link is %s", async (_label, overrides) => {
+    mockLiveLink(overrides);
+    prismaMock.enrollment.findUnique.mockResolvedValue({ id: "enr-9", isActive: true });
+
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+
+    expect(result).toMatchObject({
+      status: "200",
+      courseId: "course-1",
+      enrollmentId: "enr-9",
+      alreadyEnrolled: true,
+    });
+    // Nothing written: no slot spent on a link that is out of them anyway, and
+    // no release to undo.
+    expect(tx.selfEnrollmentLink.update).not.toHaveBeenCalled();
+    expect(prismaMock.selfEnrollmentLink.updateMany).not.toHaveBeenCalled();
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a course that went back to draft, enrolled or not", async () => {
+    // Deferring the *link's* usability does not defer the course's. A student
+    // cannot see an unpublished course at all, so there is nowhere to send them.
+    mockLiveLink({ maxRedemptions: 30, redemptionCount: 30 });
+    prismaMock.course.findFirst.mockResolvedValue({ ...PUBLISHED_COURSE, isPublished: false });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ id: "enr-9", isActive: true });
+
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+
+    expect(result).toEqual({ status: "403", error: "COURSE_NOT_PUBLISHED" });
+  });
+
+  it("does not extend the same grace to a student who is not enrolled yet", async () => {
+    // The guard is idempotency, not a weakening of the cap: a lapsed (inactive)
+    // enrollment still has to pass through a usable link to come back.
+    mockLiveLink({ maxRedemptions: 30, redemptionCount: 30 });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ id: "enr-9", isActive: false });
+
+    const result = await redeemSelfEnrollmentLink({ token: "raw-token", userId: "student-1" });
+
+    expect(result).toEqual({ status: "409", error: "LINK_EXHAUSTED" });
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("redeemSelfEnrollmentLink — success", () => {
   it("enrolls the redeemer as a STUDENT and never as staff", async () => {
     mockLiveLink();

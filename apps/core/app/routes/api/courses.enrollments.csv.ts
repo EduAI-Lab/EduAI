@@ -189,9 +189,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // whole HTTP body, which for a multipart upload is the CSV plus its
       // framing — the parser still holds the extracted CSV to MAX_CSV_BYTES.
       const maxBodyBytes = MAX_CSV_BYTES + (isMultipart(request) ? MULTIPART_FRAMING_ALLOWANCE : 0);
+      // Quote the budget actually applied, not `MAX_CSV_BYTES`: on a multipart
+      // request those differ by the framing allowance, and a borderline upload
+      // refused at 262,200 bytes should not be told the limit was 262,144.
       const tooLarge = () =>
         jsonResponse(
-          { error: "FILE_TOO_LARGE", message: `The maximum upload is ${MAX_CSV_BYTES} bytes.` },
+          { error: "FILE_TOO_LARGE", message: `The maximum upload is ${maxBodyBytes} bytes.` },
           413,
         );
 
