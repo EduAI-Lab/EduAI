@@ -39,7 +39,7 @@ EduAI/
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, embeddings, model/fleet routing, and performance
 │   ├── implementations/             # schema-design, planned-core-tests, …
-│   ├── operations/                  # Dev-server Discord bot, production deployment plan
+│   ├── operations/                  # Dev-server Discord bot, production deployment plan, course-staff runbooks
 │   ├── perf/                        # Pinned before/after API, page-vitals, and code-quality baselines
 │   └── use-cases/                   # Per-role actor scenarios for each app
 ├── turbo.json                       # Turborepo task pipeline configuration
@@ -105,6 +105,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`perf/README.md`](docs/perf/README.md) | Pinned before/after baselines — endpoint response times, per-page browser vitals, code-quality reports |
 | [`operations/PRODUCTION_DEPLOYMENT_PLAN.md`](docs/operations/PRODUCTION_DEPLOYMENT_PLAN.md) | Production scope, host inventory, phased rollout, and the running deployment change log |
 | [`operations/DISCORD_DEV_BOT.md`](docs/operations/DISCORD_DEV_BOT.md) | `/dev-status` and `/dev-branch` bot for the shared dev server — setup, allowlisting, safety behaviour |
+| [`operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) | Adding a second or third instructor to an existing course without demoting the current one — why the UI's Replace control cannot do it, and what an `INSTRUCTOR` enrollment does *not* buy an ADMIN account |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
 | [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |

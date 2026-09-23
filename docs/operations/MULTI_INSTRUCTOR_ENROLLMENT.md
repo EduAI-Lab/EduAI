@@ -1,0 +1,218 @@
+# Adding an instructor to an existing course
+
+**Status:** interim procedure. Tracked by [#1839](https://github.com/EduAI-Lab/EduAI/issues/1839);
+superseded for the common case once [#1840](https://github.com/EduAI-Lab/EduAI/issues/1840)
+ships an "Add instructor" control. Keep this document for the cases the UI still
+does not cover, and for the audit trail of how the first ones were done.
+
+---
+
+## When you need this
+
+Use this procedure to add a **second or third instructor** to a course that already
+exists, without removing the current one.
+
+You cannot do this from the UI today. The only instructor control on the course
+detail page is a **replace**: `updateCourse` deactivates the current instructor's
+enrollment before upserting the new one
+([`app/lib/courses/server.ts`](../../apps/core/app/lib/courses/server.ts), the
+`instructorChanging` branch), and the UI says so — the helper text reads "Selecting a
+new instructor will replace the current one" and the button is labelled **Replace**.
+Using it would silently demote the sitting instructor.
+
+The data model is not the obstacle. `Enrollment` supports any number of active
+`INSTRUCTOR` rows per course, `resolveCourseAccess` resolves off enrollments rather
+than the single-valued `Course.instructorId` column, and `addEnrollment` does not
+inspect the target's platform role at all. Only the UI is missing.
+
+## Read this before you start: what an enrollment does and does not buy
+
+Adding an `INSTRUCTOR` enrollment makes someone **instructor of record**. It grants
+course access through `resolveCourseAccess`, includes them in the roster, and flows to
+AI Tutor via `enrollmentSync`.
+
+**It does not give an ADMIN account the instructor surface.** `resolveCourseAccess`
+decides by platform role *first*:
+
+```ts
+if (user.role === "ADMIN") return { course, access: LEVELS.admin };
+```
+
+The enrollment row is never read for an ADMIN. `/instructor/chat` then excludes them
+outright — `listMyPublishedInstructorCourses` opens with `if (user.role === "ADMIN") return []`,
+and a caller with no courses is redirected to `/dashboard`. That exclusion is
+deliberate, not an oversight: `/api/chat`'s instructor-mode guard resolves the same
+`admin` level and would 403 on every turn, so listing the course would hand them a
+chat that cannot answer.
+
+So, concretely:
+
+| Their platform role | After you add the enrollment |
+| --- | --- |
+| `INSTRUCTOR` | Full instructor surface, including `/instructor/chat` for that course. |
+| `ADMIN` | Instructor of record everywhere a roster is read, and full `admin` access to the course — but `/instructor/chat` still redirects to `/dashboard`. They use `/admin/chat` instead. |
+| `UNIT_ADMIN`, course in their units | Same as ADMIN: resolves to `unit`, not `instructor`. |
+| `UNIT_ADMIN`, course outside their units | Falls through to the enrollment, so it behaves as `instructor`. |
+
+**If the person specifically needs the instructor surface, their platform role must be
+`INSTRUCTOR`.** Giving one account both surfaces is
+[#1843](https://github.com/EduAI-Lab/EduAI/issues/1843), and the branch above is why
+that issue is not purely a presentation change. Decide this before you enroll anyone,
+and say which you chose in the ticket.
+
+## Prerequisites
+
+- A real **ADMIN browser session** on the target environment. `x-api-key` does not
+  work: `enableSessionForAPIKeys` is `false`
+  ([`app/lib/auth/server.ts`](../../apps/core/app/lib/auth/server.ts)) and the
+  enrollments route never calls `enforceAdminIfApiKey`, so the POST half has no
+  service-key path at all. The `EDUAI_API_KEY` service key is accepted on the **GET**
+  half only, via `Authorization: Bearer`.
+- The commands below are run **from the browser console on the app's own origin**, so
+  the root `CROSS_ORIGIN_MUTATION` middleware sees a same-site `Origin`. A `fetch`
+  typed into the console of a different tab will be rejected with `403 CROSS_ORIGIN_MUTATION`.
+- Rank ≥ 3 (ADMIN or UNIT_ADMIN) — `requiredRankForEnrollmentRole` returns `3` for
+  `INSTRUCTOR`. An INSTRUCTOR-ranked caller gets `403`.
+- Everyone you are adding already has an account. `addEnrollment` answers
+  `422 USER_NOT_FOUND` otherwise; invite them at `/admin/invitations` first and wait
+  for them to accept.
+
+### Do not use raw SQL
+
+An `INSERT` into `enrollments` reaches the same end state while skipping the
+`ENROLLMENT_ADDED` audit row, the instructor-floor invariant and the idempotency
+record. There is no time saved that is worth losing the audit trail of who changed a
+course's teaching staff.
+
+---
+
+## Procedure
+
+### 1. Identify the right course
+
+Course codes are not unique on their own — a duplicate offering is exactly what
+prompted this runbook. From `apps/core`:
+
+```bash
+EDUAI_BASE_URL=https://<host> EDUAI_API_KEY=<service key> \
+  npx tsx scripts/verify-course-instructors.ts --code "DATA 301"
+```
+
+This is read-only. It prints every **live** course with that code, each one's id, its
+active instructors, TAs and student count, and any *deactivated* staff rows — a
+deactivated instructor is the fingerprint of someone having used the Replace button.
+If more than one course matches, it says so; settle which is the real offering before
+touching anything.
+
+Soft-deleted courses are not returned. To see those you need `?includeDeleted=true` on
+`GET /api/courses` as an ADMIN session.
+
+### 2. Collect the user ids
+
+In the browser console, on the app's origin, signed in as ADMIN:
+
+```js
+const findUser = async (q) => {
+  const res = await fetch(`/api/users?search=${encodeURIComponent(q)}&page=1&pageSize=10`);
+  const body = await res.json();
+  return body.data.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role }));
+};
+
+console.table(await findUser("mostafa"));
+```
+
+Note each person's `role` as well as their `id` — that is the column the table in
+"what an enrollment does and does not buy" turns on.
+
+### 3. Add each instructor
+
+Still in the console. One call per person; the course keeps every instructor it
+already had.
+
+```js
+const addInstructor = async (courseId, userId) => {
+  const res = await fetch(`/api/courses/${courseId}/enrollments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // Optional but recommended: makes a retry after a flaky response a no-op
+      // rather than a second attempt (the route wraps this in withIdempotency).
+      "Idempotency-Key": `add-instructor-${courseId}-${userId}`,
+    },
+    body: JSON.stringify({ userId, role: "INSTRUCTOR" }),
+  });
+  console.log(res.status, await res.json());
+};
+
+await addInstructor("<courseId>", "<userId>");
+```
+
+`201` is success. It creates an **additional** active `INSTRUCTOR` enrollment, leaves
+`Course.instructorId` and every other enrollment untouched, and writes an
+`ENROLLMENT_ADDED` audit row.
+
+### 4. Verify
+
+```bash
+EDUAI_BASE_URL=https://<host> EDUAI_API_KEY=<service key> \
+  npx tsx scripts/verify-course-instructors.ts --course <courseId> \
+    --expect-instructors first@ubc.ca,second@ubc.ca,third@ubc.ca \
+    --expect-tas ta@ubc.ca
+```
+
+The script exits non-zero if any expected enrollment is missing or inactive, so it can
+gate the rest of the change. Check that the instructor count went **up** and that
+nobody moved into the deactivated list.
+
+### 5. Confirm the surface they actually need
+
+- Platform-role `INSTRUCTOR`: have them open `/instructor/chat` and confirm the course
+  is in the picker. It requires the course to be **published** as well as the
+  enrollment to be active.
+- Platform-role `ADMIN`: `/instructor/chat` will redirect them to `/dashboard`. This is
+  expected — see the table above. Confirm instead that the course appears under
+  `/courses` and that they can open its detail page.
+
+### 6. Remove a duplicate course, if there is one
+
+Only after step 1 has established which offering is real, and after confirming with
+whoever owns the course. Deletion is a soft delete, and the course keeps its
+enrollments, materials, chunks and embeddings.
+
+Since [#1842](https://github.com/EduAI-Lab/EduAI/issues/1842), the course identity slot
+is a partial unique index predicated on `deletedAt IS NULL`, so deleting a duplicate
+**no longer burns** its code + section + start date — the same course can be created
+again afterwards. Before that change, deleting was irreversible in that sense; if you
+are working against an environment that has not yet deployed #1842, do not delete
+anything you may need to re-create.
+
+---
+
+## Errors you may hit
+
+| Response | Meaning | What to do |
+| --- | --- | --- |
+| `403 CROSS_ORIGIN_MUTATION` | The `fetch` did not come from the app's own origin. | Run it from the console of a tab open on that origin. |
+| `401 Unauthorized` | No session cookie. A service key cannot substitute here. | Sign in as ADMIN in the browser. |
+| `403 Forbidden` | Caller rank < 3, or a UNIT_ADMIN acting outside their `authorizedUnits`. | Use an ADMIN account, or an in-unit UNIT_ADMIN. |
+| `422 USER_NOT_FOUND` | No account for that user id. | Invite them at `/admin/invitations` and wait for acceptance. |
+| `422 VALIDATION_ERROR` | `userId` or `role` missing/invalid in the body. | `role` must be exactly `"INSTRUCTOR"`. |
+| `409 ALREADY_ENROLLED` | An **active** enrollment already exists for that user on that course. | Nothing to do — check the role is the one you wanted. |
+| `409 INSTRUCTOR_FLOOR_VIOLATION` | You tried to remove or demote the last active instructor. | Add the replacement first, then remove. Enforced for every caller including ADMIN, with no override. |
+
+A user who was previously **removed** (an inactive row) is reactivated rather than
+409'd — `addEnrollment` catches the `P2002` and flips `isActive` back on with the
+requested role. A user who already holds a `TA` or `STUDENT` enrollment on the course
+is **promoted** in place, because `@@unique([courseId, userId])` allows one role per
+course per user.
+
+---
+
+## Related
+
+- [#1838](https://github.com/EduAI-Lab/EduAI/issues/1838) — parent: one login, many roles
+- [#1840](https://github.com/EduAI-Lab/EduAI/issues/1840) — the UI that replaces this procedure
+- [#1841](https://github.com/EduAI-Lab/EduAI/issues/1841) — showing every instructor, not just `Course.instructorId`
+- [#1842](https://github.com/EduAI-Lab/EduAI/issues/1842) — soft-deleted courses and the identity slot
+- [#1843](https://github.com/EduAI-Lab/EduAI/issues/1843) — the admin/instructor view switch
+- [#1782](https://github.com/EduAI-Lab/EduAI/issues/1782) — ADMIN accounts in the create-course instructor picker
