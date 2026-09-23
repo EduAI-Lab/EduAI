@@ -294,18 +294,53 @@ async function resolveSelfEnrollmentLink(
 }
 
 /**
+ * The one definition of "this person is already in this course", shared by the
+ * preview and the redeem. Both have to answer it the same way or the page and
+ * the button behind it disagree — which is the whole failure mode this module
+ * keeps having. Returns the row (the redeem reports its id) or null.
+ */
+async function activeEnrollment(courseId: string, userId: string) {
+  const existing = await prisma.enrollment.findUnique({
+    where: { courseId_userId: { courseId, userId } },
+    select: { id: true, isActive: true },
+  });
+  return existing?.isActive ? existing : null;
+}
+
+/**
  * Read-only "is this link usable, and for what course" — for the landing page a
  * student sees before they click Join. Redeems nothing and burns no slot.
+ *
+ * `viewerId` is REQUIRED, and deliberately not optional. The Join button only
+ * renders when this says yes, so the redeem's idempotency guard is unreachable
+ * unless this function makes the same allowance: an already-enrolled student
+ * opening a link that has since filled up, been revoked or expired would read
+ * an error page and never reach the code that was written for them. An optional
+ * "who is asking" would let a future caller silently opt back into that.
  */
-export async function previewSelfEnrollmentLink(token: string) {
-  const resolved = await resolveSelfEnrollmentLink(token);
+export async function previewSelfEnrollmentLink(token: string, viewerId: string) {
+  // Deferred for the same reason the redeem defers it — the verdict is applied
+  // below, after idempotency, by the same `linkUsabilityFailure`.
+  const resolved = await resolveSelfEnrollmentLink(token, undefined, { deferUsability: true });
   if (!resolved.ok) return { ok: false as const, error: resolved.failure.error };
-  return {
-    ok: true as const,
+
+  const course = {
     courseId: resolved.course.id,
     courseCode: resolved.course.code,
     courseName: resolved.course.name,
   };
+
+  // Already in the course: answer with the course, whatever state the link is
+  // in. The caller sends them there rather than offering a Join they don't need.
+  if (await activeEnrollment(resolved.course.id, viewerId)) {
+    return { ok: true as const, alreadyEnrolled: true, ...course };
+  }
+
+  // Everyone else meets the closed door up front rather than at the Join click.
+  const unusable = linkUsabilityFailure(resolved.link, new Date());
+  if (unusable) return { ok: false as const, error: unusable.error };
+
+  return { ok: true as const, alreadyEnrolled: false, ...course };
 }
 
 /**
@@ -403,11 +438,8 @@ export async function redeemSelfEnrollmentLink(input: RedeemSelfEnrollmentInput)
   if (!resolved.ok) return resolved.failure;
   const { course } = resolved;
 
-  const existing = await prisma.enrollment.findUnique({
-    where: { courseId_userId: { courseId: course.id, userId: input.userId } },
-    select: { id: true, isActive: true },
-  });
-  if (existing?.isActive) {
+  const existing = await activeEnrollment(course.id, input.userId);
+  if (existing) {
     return {
       status: "200",
       courseId: course.id,

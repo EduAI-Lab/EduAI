@@ -275,6 +275,7 @@ describe("/courses/self-enroll — redemption page", () => {
     } as never);
     vi.mocked(previewSelfEnrollmentLink).mockResolvedValue({
       ok: true,
+      alreadyEnrolled: false,
       courseId: "course-1",
       courseCode: "COSC 111",
       courseName: "Intro to CS",
@@ -317,6 +318,37 @@ describe("/courses/self-enroll — redemption page", () => {
       courseCode: "COSC 111",
       courseName: "Intro to CS",
     });
+    expect(redeemSelfEnrollmentLink).not.toHaveBeenCalled();
+  });
+
+  it("asks the preview on behalf of the signed-in student, not anonymously", async () => {
+    // The viewer is what lets the preview apply the already-enrolled allowance;
+    // dropping it silently restores the error page this test guards against.
+    await pageLoader(pageArgs(new Request(`${PAGE_URL}?token=abc`)) as LoaderFunctionArgs);
+    expect(previewSelfEnrollmentLink).toHaveBeenCalledWith("abc", "student-1");
+  });
+
+  it("sends an already-enrolled student straight into the course", async () => {
+    // The redeem path answers 200 for this student, but they only reach it by
+    // pressing Join — and Join is not rendered on an error page. A link that has
+    // filled up, been revoked or expired must not turn a returning student away
+    // from a course they are already in.
+    vi.mocked(previewSelfEnrollmentLink).mockResolvedValue({
+      ok: true,
+      alreadyEnrolled: true,
+      courseId: "course-1",
+      courseCode: "COSC 111",
+      courseName: "Intro to CS",
+    });
+
+    const res = await pageLoader(
+      pageArgs(new Request(`${PAGE_URL}?token=abc`)) as LoaderFunctionArgs,
+    );
+
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(302);
+    expect((res as Response).headers.get("Location")).toBe("/courses/course-1");
+    // A loader must stay read-only: nothing was redeemed on a GET.
     expect(redeemSelfEnrollmentLink).not.toHaveBeenCalled();
   });
 

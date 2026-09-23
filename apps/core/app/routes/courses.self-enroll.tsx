@@ -6,6 +6,11 @@
  * whether it is still usable, and writes nothing. Enrolling happens on the
  * POST, so simply opening the URL — or having a link-preview bot fetch it —
  * never joins anyone to a course and never burns a capped redemption.
+ *
+ * Its one other job is to redirect a student who is already in the course. That
+ * is still read-only, and it is what makes the redeem path's idempotency
+ * reachable: the 200 it answers for a returning student is only ever issued by
+ * the Join button, which an error page does not render.
  */
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
@@ -72,9 +77,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return { ok: false as const, error: "MISSING_TOKEN", message: friendlyError("MISSING_TOKEN") };
   }
 
-  const preview = await previewSelfEnrollmentLink(token);
+  const preview = await previewSelfEnrollmentLink(token, session.user.id);
   if (!preview.ok) {
     return { ok: false as const, error: preview.error, message: friendlyError(preview.error) };
+  }
+  // Already in the course — send them there instead of offering a Join they do
+  // not need. This is also what keeps a student who joined in week one from
+  // reading "this link has reached its limit" when they re-open the link from
+  // the syllabus in week ten: the POST handles that case, but they would never
+  // get to press the button that issues it. Read-only, as a loader must be.
+  if (preview.alreadyEnrolled) {
+    return redirect(`/courses/${preview.courseId}`);
   }
   return {
     ok: true as const,

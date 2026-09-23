@@ -563,10 +563,11 @@ describe("redeemSelfEnrollmentLink — success", () => {
 describe("previewSelfEnrollmentLink", () => {
   it("describes the course without redeeming anything", async () => {
     mockLiveLink();
-    const result = await previewSelfEnrollmentLink("raw-token");
+    const result = await previewSelfEnrollmentLink("raw-token", "student-1");
 
     expect(result).toEqual({
       ok: true,
+      alreadyEnrolled: false,
       courseId: "course-1",
       courseCode: "COSC 111",
       courseName: "Intro to CS",
@@ -577,19 +578,19 @@ describe("previewSelfEnrollmentLink", () => {
 
   it("reports the same rejection codes the redeem path uses", async () => {
     mockLiveLink({ revokedAt: PAST });
-    expect(await previewSelfEnrollmentLink("raw-token")).toEqual({
+    expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toEqual({
       ok: false,
       error: "LINK_REVOKED",
     });
 
     mockLiveLink({ expiresAt: PAST });
-    expect(await previewSelfEnrollmentLink("raw-token")).toEqual({
+    expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toEqual({
       ok: false,
       error: "LINK_EXPIRED",
     });
 
     prismaMock.selfEnrollmentLink.findUnique.mockResolvedValue(null);
-    expect(await previewSelfEnrollmentLink("raw-token")).toEqual({
+    expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toEqual({
       ok: false,
       error: "INVALID_TOKEN",
     });
@@ -601,11 +602,56 @@ describe("previewSelfEnrollmentLink", () => {
     // redeem run the same usability check precisely so they cannot disagree.
     mockLiveLink({ maxRedemptions: 50, redemptionCount: 50 });
 
-    expect(await previewSelfEnrollmentLink("raw-token")).toEqual({
+    expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toEqual({
       ok: false,
       error: "LINK_EXHAUSTED",
     });
     expect(tx.selfEnrollmentLink.update).not.toHaveBeenCalled();
     expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  // The redeem path's idempotency guard is only reachable through the Join
+  // button, and the Join button is only rendered when the preview says yes. So
+  // the preview has to make the same allowance, or the already-enrolled student
+  // never reaches the code that was fixed for them — they just read an error.
+  describe("with a viewer, for an already-enrolled student", () => {
+    it.each([
+      ["exhausted", { maxRedemptions: 30, redemptionCount: 30 }],
+      ["revoked", { revokedAt: PAST }],
+      ["expired", { expiresAt: PAST }],
+    ])("reports the course rather than refusing when the link is %s", async (_l, overrides) => {
+      mockLiveLink(overrides);
+      prismaMock.enrollment.findUnique.mockResolvedValue({ id: "enr-9", isActive: true });
+
+      expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toEqual({
+        ok: true,
+        alreadyEnrolled: true,
+        courseId: "course-1",
+        courseCode: "COSC 111",
+        courseName: "Intro to CS",
+      });
+      expect(tx.selfEnrollmentLink.update).not.toHaveBeenCalled();
+    });
+
+    it("still refuses a student who is not enrolled yet", async () => {
+      mockLiveLink({ maxRedemptions: 30, redemptionCount: 30 });
+      prismaMock.enrollment.findUnique.mockResolvedValue(null);
+
+      expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toEqual({
+        ok: false,
+        error: "LINK_EXHAUSTED",
+      });
+    });
+
+    it("reports a usable link as not-already-enrolled so the Join button still shows", async () => {
+      mockLiveLink();
+      prismaMock.enrollment.findUnique.mockResolvedValue(null);
+
+      expect(await previewSelfEnrollmentLink("raw-token", "student-1")).toMatchObject({
+        ok: true,
+        alreadyEnrolled: false,
+        courseId: "course-1",
+      });
+    });
   });
 });
