@@ -188,6 +188,113 @@ anything you may need to re-create.
 
 ---
 
+## Appendix: the whole procedure as one paste
+
+Steps 1–4 above, as three console functions. Paste the block into the browser console on
+the target origin while signed in as an **ADMIN**. Steps 1 and 2 are read-only; step 3 is
+the only one that writes, and it adds — it can never remove anyone.
+
+This does **not** delete anything. Removing a duplicate course is a separate, deliberate
+decision (see step 6), and irreversible in the sense that matters until
+[#1842](https://github.com/EduAI-Lab/EduAI/issues/1842) is deployed.
+
+```js
+// ── EduAI course-staff helpers (#1839) ───────────────────────────────────────
+const api = async (path, init) => {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  return { status: res.status, ok: res.ok, body: await res.json().catch(() => null) };
+};
+
+// Course codes are written inconsistently ("DATA301" vs "DATA 301").
+const sameCode = (a, b) => a.replace(/\s+/g, "").toUpperCase() === b.replace(/\s+/g, "").toUpperCase();
+
+// STEP 1 (read-only) — which offering is the real one?
+async function auditCourses(code = "DATA 301") {
+  const { body } = await api(`/api/courses?search=${encodeURIComponent(code.split(/\s+/)[0])}&page=1&pageSize=200`);
+  const matches = (body?.data ?? []).filter((c) => sameCode(c.code, code));
+  if (matches.length === 0) return console.warn(`No live course matched ${code}.`);
+
+  const rows = [];
+  for (const course of matches) {
+    const [detail, tas] = await Promise.all([
+      api(`/api/courses/${course.id}`),
+      api(`/api/courses/${course.id}/tas`),
+    ]);
+    // `instructor` is populated only after #1841; fall back to resolving the id.
+    let instructor = detail.body?.instructor ?? null;
+    const instructorId = detail.body?.instructorId ?? null;
+    if (!instructor && instructorId) {
+      const u = await api(`/api/users?ids=${encodeURIComponent(instructorId)}`);
+      instructor = u.body?.data?.[0] ?? null;
+    }
+    rows.push({
+      id: course.id,
+      code: course.code,
+      section: course.section ?? "—",
+      offering: `${course.term ?? "?"} ${course.year ?? "?"}`,
+      published: course.isPublished,
+      instructorOfRecord: instructor ? `${instructor.name} <${instructor.email ?? "?"}>` : "(none)",
+      TAs: (tas.body?.tas ?? []).map((t) => t.user?.name).join(", ") || "(none)",
+    });
+  }
+  console.table(rows);
+  console.log(
+    matches.length > 1
+      ? `⚠ ${matches.length} live offerings share this code. Pick the one whose instructor and TAs match, and confirm before touching the other.`
+      : "One live offering — nothing to disambiguate.",
+  );
+  console.log("Soft-deleted offerings are not listed. As ADMIN, add &includeDeleted=true to GET /api/courses to see tombstones.");
+  return rows;
+}
+
+// STEP 2 (read-only) — find the accounts, and note their PLATFORM role.
+async function findPeople(...queries) {
+  const rows = [];
+  for (const q of queries) {
+    const { body } = await api(`/api/users?search=${encodeURIComponent(q)}&page=1&pageSize=10`);
+    for (const u of body?.data ?? []) {
+      rows.push({ searchedFor: q, id: u.id, name: u.name, email: u.email, platformRole: u.role });
+    }
+  }
+  console.table(rows);
+  console.log("Platform role matters: see the table in this runbook for which surface each one gets.");
+  return rows;
+}
+
+// STEP 3 (WRITES) — adds instructors. Removes nobody, demotes nobody.
+async function addInstructors(courseId, ...userIds) {
+  for (const userId of userIds) {
+    const r = await api(`/api/courses/${courseId}/enrollments`, {
+      method: "POST",
+      // Makes a retry after a flaky response a no-op rather than a second attempt.
+      headers: { "Idempotency-Key": `add-instructor-${courseId}-${userId}` },
+      body: JSON.stringify({ userId, role: "INSTRUCTOR" }),
+    });
+    if (r.status === 201) console.log(`✓ ${userId} is now an INSTRUCTOR on ${courseId}`);
+    else console.error(`✗ ${userId}: ${r.status}`, r.body);
+  }
+}
+```
+
+Then, in order:
+
+```js
+await auditCourses("DATA 301");        // note the id of the real offering
+await findPeople("mostafa", "fahd");   // note their user ids and platform roles
+await addInstructors("<courseId>", "<mostafaUserId>", "<fahdUserId>");
+```
+
+Re-run `auditCourses("DATA 301")` afterwards. Note that until
+[#1841](https://github.com/EduAI-Lab/EduAI/issues/1841) is deployed the course endpoints
+expose only the single instructor of record, so the added instructors confirm through the
+`201` responses rather than through a list; after it deploys, `instructors` on
+`GET /api/courses/:id` shows all of them. The
+`scripts/verify-course-instructors.ts` check in this repo reads the full set today via
+the service key, from outside the browser.
+
 ## Errors you may hit
 
 | Response | Meaning | What to do |
