@@ -33,7 +33,7 @@ import type { Session } from "~/lib/auth/server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { RequestContext } from "~/lib/request-context.server";
-import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
+import { MAX_LIST_LIMIT, parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
@@ -627,7 +627,9 @@ async function reprocessMaterial(
     return json(409, { error: "MATERIAL_NOT_FAILED" });
   }
 
-  startMaterialReembed(materialId, material.rawText, requestContext);
+  // The caller is the actor for topic analysis, not the original uploader: this
+  // is the person who asked for the retry (#1795 review round 3).
+  startMaterialReembed(materialId, material.rawText, courseId, userId, requestContext);
 
   return json(202, { materialId, status: "PROCESSING" });
 }
@@ -809,6 +811,61 @@ async function resolveRetryableMaterialIds(
   return selectMaterialIdsWithIndexableText(failedIds);
 }
 
+/**
+ * The ids of a targeted `?ids=` re-read (#1795 review round 3).
+ *
+ * A retried material is the first PROCESSING row that can sit past page 1 —
+ * uploads are newest-first, so they are always on page 1 — and the client's
+ * poll only ever re-read page 1, leaving such a row on "Processing" until a
+ * full page reload. It now re-reads those rows by id instead.
+ *
+ * Returns null when the caller asked for no ids at all, which is the ordinary
+ * paged list rather than an empty re-read. Bounded by the same ceiling as a
+ * page: this is a re-read of rows the client already holds, and that list
+ * cannot outgrow the pages it came from.
+ */
+function parseMaterialIdsParam(searchParams: URLSearchParams): string[] | null {
+  const raw = searchParams.get("ids");
+  if (raw === null) return null;
+  const ids = [
+    ...new Set(
+      raw
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  return ids.slice(0, MAX_LIST_LIMIT);
+}
+
+/**
+ * The one shaping of a list row for a non-admin caller, shared by the paged
+ * read and the `?ids=` re-read.
+ *
+ * Shared rather than written twice on purpose: `hasExtractedText` is what
+ * decides whether the UI offers "Try again", and two copies of this mapping is
+ * exactly how the list and the route came to disagree about retryability in the
+ * first place (#1795 review rounds 1 and 2).
+ */
+async function toMaterialListRows(
+  rows: Array<Prisma.CourseMaterialGetPayload<{ select: typeof MATERIAL_LIST_SELECT }>>,
+  staff: boolean,
+) {
+  const retryableIds = await resolveRetryableMaterialIds(rows);
+  return rows.map(({ _count, visibleToStudents, availableAt, ...material }) => {
+    const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    };
+    // See the includeDeleted path above: failed rows only (#1749).
+    if (material.status === "FAILED") {
+      row.hasExtractedText = retryableIds.has(material.id);
+    }
+    if (!staff) return row;
+    return { ...row, visibleToStudents, availableAt };
+  });
+}
+
 const MATERIAL_LIST_SELECT = {
   id: true,
   courseId: true,
@@ -985,6 +1042,31 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         });
       }
 
+      // Staff receive the scheduling fields so the management UI can render and edit
+      // them; students never do (they only ever see already-visible materials).
+      const staff = isStaffAccess(access);
+
+      // A targeted re-read of rows the client already holds (#1795 review round
+      // 3), not a page: no cursor in, no cursor out, so merging the answer
+      // cannot disturb the pages the user loaded with "load more". Every gate
+      // above still applies — `studentGate` in particular, so asking by id is
+      // not a way past #839 scheduling.
+      const requestedIds = parseMaterialIdsParam(new URL(request.url).searchParams);
+      if (requestedIds !== null) {
+        if (requestedIds.length === 0) {
+          return json(200, { materials: [], nextCursor: null });
+        }
+        const rows = await prisma.courseMaterial.findMany({
+          where: { courseId, deletedAt: null, ...studentGate, id: { in: requestedIds } },
+          select: MATERIAL_LIST_SELECT,
+          orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+        });
+        return json(200, {
+          materials: await toMaterialListRows(rows, staff),
+          nextCursor: null,
+        });
+      }
+
       const { cursor, limit } = cursorParams;
       const pageArgs = {
         where: { courseId, deletedAt: null, ...studentGate },
@@ -999,23 +1081,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : await prisma.courseMaterial.findMany(pageArgs);
       const { page, nextCursor } = splitPage(rows, limit);
 
-      // Staff receive the scheduling fields so the management UI can render and edit
-      // them; students never do (they only ever see already-visible materials).
-      const staff = isStaffAccess(access);
-      const retryableIds = await resolveRetryableMaterialIds(page);
       return json(200, {
-        materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => {
-          const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
-            ...material,
-            chunkCount: _count?.chunks ?? 0,
-          };
-          // See the includeDeleted path above: failed rows only (#1749).
-          if (material.status === "FAILED") {
-            row.hasExtractedText = retryableIds.has(material.id);
-          }
-          if (!staff) return row;
-          return { ...row, visibleToStudents, availableAt };
-        }),
+        materials: await toMaterialListRows(page, staff),
         nextCursor,
       });
     },

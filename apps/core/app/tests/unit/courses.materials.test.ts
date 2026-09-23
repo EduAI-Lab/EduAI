@@ -48,6 +48,12 @@ vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn().mockResolvedValue(undefined),
 }));
 
+// #1624: every material that reaches READY gets topic analysis, including one
+// recovered by the #1749 retry (#1795 review round 3).
+vi.mock("~/lib/topics/job.server", () => ({
+  startTopicAnalysis: vi.fn(),
+}));
+
 vi.mock("~/lib/ai/file-processing", () => ({
   processUploadedFile: vi.fn(),
   validateUploadedFile: vi.fn(),
@@ -72,6 +78,7 @@ import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
+import { startTopicAnalysis } from "~/lib/topics/job.server";
 import {
   extractUploadedFileContent,
   processUploadedFile,
@@ -1965,6 +1972,34 @@ describe("POST /api/courses/:courseId/materials/:materialId/reprocess (#1749)", 
     );
   });
 
+  // #1795 review round 3. A retried material is indexed and readable exactly as
+  // an uploaded one is, so #1624 applies to it identically — without this, every
+  // material rescued by "Try again" is absent from the course's topics.
+  it("starts topic analysis once the retried material is READY (#1624)", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // The course from the route and the instructor who asked for the retry —
+    // not the original uploader, who is not the actor here.
+    expect(startTopicAnalysis).toHaveBeenCalledWith({
+      courseId: COURSE_ID,
+      userId: "user-1",
+      materialIds: ["mat-1"],
+    });
+  });
+
+  it("starts no topic analysis when the retried embedding fails again (#1624)", async () => {
+    mockRetryableMaterial();
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("provider down"));
+
+    await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(startTopicAnalysis).not.toHaveBeenCalled();
+  });
+
   it("refuses a material that is not in a failed state", async () => {
     mockRetryableMaterial({ status: "READY" });
 
@@ -2259,5 +2294,108 @@ describe("GET materials — hasExtractedText on failed rows (#1749)", () => {
 
     const [strings] = vi.mocked(prisma.$queryRaw).mock.calls[0] as [TemplateStringsArray];
     expect(strings.join(" ? ")).toMatch(/"rawText"\s+~\s+\?/);
+  });
+});
+
+/**
+ * #1795 review round 3. A retried material is the first PROCESSING row that can
+ * live past page 1, and the 30s poll only ever re-read page 1 — so the row sat
+ * on "Processing" until a full page reload. The client settles those rows by
+ * asking for them by id, which needs the list to answer that question.
+ */
+describe("GET materials — ?ids= re-read (#1795 review round 3)", () => {
+  function makeIdsArgs(ids: string) {
+    return {
+      request: new Request(
+        `http://localhost/api/courses/${COURSE_ID}/materials?ids=${encodeURIComponent(ids)}`,
+        { method: "GET" },
+      ),
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any;
+  }
+
+  beforeEach(() => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockReset();
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.$queryRaw).mockReset();
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
+  });
+
+  it("returns only the requested rows, scoped to the course", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-old", status: "READY", _count: { chunks: 4 } },
+    ] as never);
+
+    const body = await (await loader(makeIdsArgs("mat-old"))).json();
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where).toEqual(
+      expect.objectContaining({ courseId: COURSE_ID, deletedAt: null, id: { in: ["mat-old"] } }),
+    );
+    expect(body.materials.map((m: any) => m.id)).toEqual(["mat-old"]);
+  });
+
+  it("is not a page, so it never hands back a cursor to walk", async () => {
+    // A targeted re-read must not look like page 1 to the caller, or merging it
+    // would discard the pages the user actually loaded.
+    const body = await (await loader(makeIdsArgs("mat-old"))).json();
+
+    expect(body.nextCursor).toBeNull();
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.cursor).toBeUndefined();
+    expect(args.skip).toBeUndefined();
+  });
+
+  it("carries the same hasExtractedText answer the paged list gives", async () => {
+    // The retry affordance is decided by this flag, so a row re-read by id must
+    // not answer differently from the same row on a page.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-failed", status: "FAILED", _count: { chunks: 0 } },
+    ] as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ id: "mat-failed" }] as never);
+
+    const body = await (await loader(makeIdsArgs("mat-failed"))).json();
+
+    expect(body.materials[0].hasExtractedText).toBe(true);
+  });
+
+  it("bounds the number of ids it will look up in one request", async () => {
+    const ids = Array.from({ length: 200 }, (_, i) => `mat-${i}`);
+
+    await loader(makeIdsArgs(ids.join(",")));
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where.id.in.length).toBeLessThanOrEqual(100);
+  });
+
+  it("ignores blank entries rather than querying for empty ids", async () => {
+    await loader(makeIdsArgs("mat-a,,  ,mat-b"));
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where.id.in).toEqual(["mat-a", "mat-b"]);
+  });
+
+  it("answers an all-blank ids param with an empty list and no query", async () => {
+    const body = await (await loader(makeIdsArgs(" , "))).json();
+
+    expect(body).toEqual({ materials: [], nextCursor: null });
+    expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
+  });
+
+  it("still applies the student visibility gate to a re-read", async () => {
+    // Asking by id must not become a way around #839 scheduling.
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+
+    await loader(makeIdsArgs("mat-hidden"));
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where).toEqual(
+      expect.objectContaining({ id: { in: ["mat-hidden"] }, deletedAt: null }),
+    );
+    expect(Object.keys(args.where).length).toBeGreaterThan(3);
   });
 });

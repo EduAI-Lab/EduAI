@@ -441,6 +441,45 @@ describe("sweepStrandedMaterialExtractions", () => {
       expect(processMaterialEmbeddings).not.toHaveBeenCalled();
     });
 
+    // #1795 review round 3: a resumed re-embed reaches READY by a different
+    // path than an upload, but it lands in exactly the same state — indexed and
+    // readable. #1624 requires topic analysis on every material that gets
+    // there, so the recovery path owes it too, or a material recovered by the
+    // sweep is silently missing from the course's topics forever.
+    it("starts topic analysis for a resumed re-embed that lands READY (#1624)", async () => {
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+        rawText: "extracted lecture text",
+        courseId: "course-1",
+        uploadedBy: "user-1",
+      } as never);
+
+      await sweepStrandedMaterialExtractions(CTX);
+
+      // The sweep has no caller to attribute this to, so the row's own owner is
+      // the actor — the same substitution the blob sweep above already makes.
+      expect(startTopicAnalysis).toHaveBeenCalledWith({
+        courseId: "course-1",
+        userId: "user-1",
+        materialIds: ["mat-1"],
+      });
+    });
+
+    it("does not start topic analysis when the resumed re-embed fails (#1624)", async () => {
+      mockStrandedReembed();
+      vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+        rawText: "extracted lecture text",
+        courseId: "course-1",
+        uploadedBy: "user-1",
+      } as never);
+      vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("provider down"));
+
+      await sweepStrandedMaterialExtractions(CTX);
+
+      // The row is back in FAILED with no chunks to analyse.
+      expect(startTopicAnalysis).not.toHaveBeenCalled();
+    });
+
     it("skips a row whose text is gone by the time the sweep reaches it", async () => {
       // Settled between the scan and the read: a completed retry is READY and
       // has nothing left for this to resume.

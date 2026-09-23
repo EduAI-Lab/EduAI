@@ -576,6 +576,8 @@ async function withLeaseHeartbeat<T>(materialId: string, run: () => Promise<T>):
 async function runMaterialReembed(
   materialId: string,
   rawText: string,
+  courseId: string,
+  userId: string,
   requestContext: RequestContext,
 ): Promise<void> {
   try {
@@ -586,6 +588,13 @@ async function runMaterialReembed(
       where: { id: materialId },
       data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
     });
+    // #1624, via #1795 review round 3. A row that gets here is indexed and
+    // readable, which is the only condition topic analysis cares about — how it
+    // arrived is irrelevant. Omitting it left every material rescued by "Try
+    // again", or by the sweep below, permanently absent from the course's
+    // topics with nothing to signal it. Started after READY for the same reason
+    // the upload path does: `recordTopicAnalysisJobs` only picks up READY rows.
+    startTopicAnalysis({ courseId, userId, materialIds: [materialId] });
   } catch (embeddingError) {
     // Straight back to the same terminal state the first attempt reached, so a
     // retry that fails again is indistinguishable from never having retried —
@@ -604,11 +613,15 @@ async function runMaterialReembed(
 export function startMaterialReembed(
   materialId: string,
   rawText: string,
+  courseId: string,
+  userId: string,
   requestContext: RequestContext,
 ): void {
-  void runMaterialReembed(materialId, rawText, requestContext).catch((cause: unknown) => {
-    console.error("Material re-embed job crashed:", cause);
-  });
+  void runMaterialReembed(materialId, rawText, courseId, userId, requestContext).catch(
+    (cause: unknown) => {
+      console.error("Material re-embed job crashed:", cause);
+    },
+  );
 }
 
 /**
@@ -765,9 +778,13 @@ async function resumeStrandedReembeds(now: Date, requestContext: RequestContext)
 
     // Re-read after the claim: a row finalized in between has already been
     // handled, and there is nothing here to resume.
+    // `courseId` and `uploadedBy` come from this read rather than the scan so
+    // they reflect the row as it is *after* the claim: `claimRestoreTarget`
+    // rewrites `uploadedBy`, and a restore target is a shape this scan matches
+    // on purpose (#1795 review round 3).
     const fresh = await prisma.courseMaterial.findUnique({
       where: { id: row.id },
-      select: { rawText: true },
+      select: { rawText: true, courseId: true, uploadedBy: true },
     });
 
     // A row that vanished or settled between the scan and here is genuinely
@@ -798,7 +815,15 @@ async function resumeStrandedReembeds(now: Date, requestContext: RequestContext)
     // Awaited, not fire-and-forget: it bounds the sweep to one embed at a time
     // and keeps the returned summary honest. Failure is terminal inside
     // `runMaterialReembed`, so the row never comes back to this sweep.
-    await runMaterialReembed(row.id, fresh.rawText, requestContext);
+    // No request behind a sweep, so the row's own owner stands in as the actor
+    // for topic analysis — the same substitution the blob sweep above makes.
+    await runMaterialReembed(
+      row.id,
+      fresh.rawText,
+      fresh.courseId,
+      fresh.uploadedBy ?? "",
+      requestContext,
+    );
     resumed += 1;
   }
 
