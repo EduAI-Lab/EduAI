@@ -123,6 +123,13 @@ check_service eduai-core.service
 check_service eduai-aitutor-server.service
 check_service eduai-qm-backend.service
 check_service eduai-cron-worker.service
+# The cron worker runs as eduai-cron, not eduai, and fleet.config.json is
+# gitignored and deployed out of band — a worker that cannot read it samples
+# nothing and the status panel silently stays empty.
+sudo -u eduai-cron test -r /srv/www/eduai-production/current/apps/core/fleet.config.json \
+  || warn "fleet.config.json not readable by eduai-cron"
+grep -q '^VLLM_API_KEY=' /etc/eduai/eduai-core.env \
+  || warn "VLLM_API_KEY missing; the status probe will record UNKNOWN for every host"
 ss -ltn 2>/dev/null | grep -E ':(80|443|3000|4000|5432|6379|8000|8001)\b' || true
 
 echo

@@ -23,7 +23,7 @@ Report a brief summary (branch name, commits ahead, files changed, any blocking 
 
 Work through each item in order. For each item:
 1. Check the current repo state relevant to that item (read files, run git commands)
-2. Report what you found (e.g. "I see 3 test files were modified", "CHANGELOG.md has no entry for today's date")
+2. Report what you found (e.g. "I see 3 test files were modified")
 3. If something is missing or wrong, help the user fix it before marking it done
 4. Ask: "Ready to move on?" before proceeding to the next item
 
@@ -59,25 +59,17 @@ Work through each item in order. For each item:
 - If TESTS.md is missing entries, identify exactly which rows need to be added (filename linked to path, plain-English description of what it tests)
 - Help the user add the missing rows if needed
 
-### Item 4 — CHANGELOG.md
-- Read the top of `CHANGELOG.md`
-- Determine the current week number and date range (Week 1 = May 4–8, 2026; add 7 days per week)
-- Check if the current week's section (`## [Week N — ...]`) exists:
-  - If the section **does not exist**, draft the full new week section and insert it at the top (below the file header), then add the entry inside it
-  - If the section **exists**, check if there is already an entry for this PR; if not, draft one and add it under the correct `### Added / ### Changed / ### Removed / ### Fixed` heading
-- The entry must include a PR link (use `#PR` as placeholder if the PR hasn't been created yet — remind the user to update it after)
-- Draft the entry based on commits and changed files, ask the user to confirm before writing
 
-### Item 5 — README.md
+### Item 4 — README.md
 - Read `README.md`
 - Check if any changes in this PR require README updates (new features, changed setup steps, new env vars, new commands, etc.)
 - Report what you find and ask the user to confirm the README is up to date
 
-### Item 6 — MEMORY.md
+### Item 5 — MEMORY.md
 - Remind the user: MEMORY.md is not git-tracked — it lives in `.claude/memory/MEMORY.md`
 - Ask: "Have you updated MEMORY.md with anything non-obvious about this implementation that would help AI agents in future sessions?"
 
-### Item 7 — Code quality
+### Item 6 — Code quality
 - Ask the user to confirm:
   - Code comments are added only where the WHY is non-obvious (not every line)
   - New files are grouped with related files, not dumped in the root
@@ -87,7 +79,7 @@ Work through each item in order. For each item:
 
 ## Create the PR
 
-Once all 7 items are confirmed, do the following:
+Once all 6 items are confirmed, do the following:
 
 1. **Draft PR** — ask the user: "Is this PR ready for review, or should it be created as a draft (work still in progress)?"
 
@@ -108,7 +100,6 @@ Once all 7 items are confirmed, do the following:
    - [ ] Linked to issue (issue linked to epic on project board)
    - [ ] Tests written and all tests pass
    - [ ] TESTS.md updated
-   - [ ] CHANGELOG.md updated
    - [ ] README.md updated
    - [ ] MEMORY.md updated
    - [ ] 2 reviewers assigned (1 dev team + 1 project lead)
@@ -127,4 +118,3 @@ Once all 7 items are confirmed, do the following:
 7. After creation, remind the user:
    - **Assign yourself (and anyone else working on it) as the PR assignee** — everyone contributing to the PR should be assigned to it.
    - **Assign two reviewers** — one from the dev team, one from the project leads. They must be from different groups (two dev team members does not count). The PR cannot be merged until both approve.
-   - **Update the CHANGELOG** `#PR` placeholder with the real PR number/URL if it was left as a placeholder.
