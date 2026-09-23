@@ -25,6 +25,65 @@ export function normalizeRosterEmail(value: string | null | undefined): string |
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** The identity fields that decide whether a roster row may enroll a user. */
+type RosterIdentityUser = {
+  email: string | null;
+  emailVerified: boolean;
+  studentIdVerifiedAt: Date | null;
+};
+
+/**
+ * A student number that no roster has corroborated yet is a *claim* — the
+ * account holder typed it during onboarding and nothing has confirmed it is
+ * theirs. A claim only earns enrollments from a roster row carrying the same
+ * address as the account's verified email, which is exactly the pairing the
+ * self-service link check used to demand up front (and used to reject the
+ * student's whole registration over). Once corroborated, the number matches on
+ * its own again, so an instructor adding the student to a second course still
+ * works even though that roster row may carry a different address.
+ *
+ * A roster row with no `email` can never corroborate a claim. That was equally
+ * true of the old up-front check, and the administrative link path
+ * (`linkCanvasRoster` without `requireVerifiedRoster`) remains the way to
+ * resolve such a student.
+ */
+function rosterRowCorroboratesUser(
+  user: RosterIdentityUser,
+  rosterEmail: string | null | undefined,
+): boolean {
+  if (user.studentIdVerifiedAt != null) {
+    return true;
+  }
+  if (!user.emailVerified) {
+    return false;
+  }
+  const accountEmail = normalizeRosterEmail(user.email);
+  return accountEmail != null && accountEmail === normalizeRosterEmail(rosterEmail);
+}
+
+type UncorroboratedSkipReason = "no_roster_email" | "email_mismatch";
+
+export type StagingLinkResult = {
+  linked: number;
+  skippedUncorroborated: number;
+};
+
+function auditUncorroboratedSkip(
+  courseId: string,
+  userId: string,
+  reason: UncorroboratedSkipReason,
+) {
+  console.info(
+    JSON.stringify({
+      event: "canvas_enrollment_skipped_uncorroborated",
+      courseId,
+      userId,
+      reason,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
 type CanvasEnrollmentUpdate = {
   role?: EnrollmentRole;
   isActive?: boolean;
@@ -205,11 +264,25 @@ async function writeCanvasEnrollments(
 
 /**
  * Links active staging rows to Users with a matching studentId and upserts Enrollments.
+ *
+ * A user whose student number is still an uncorroborated claim is only
+ * linked by a roster row that also carries their verified account email — see
+ * `rosterRowCorroboratesUser`. This sync is where such a claim is settled: the
+ * instructor adding the student to their Canvas course is precisely the event
+ * the student was told to wait for, so a row that corroborates the claim also
+ * stamps `studentIdVerifiedAt`.
+ *
+ * Skips are counted and logged rather than dropped silently. A token without
+ * permission to read user emails makes Canvas omit `include[]=email` entirely,
+ * so every roster row lands emailless and *every* uncorroborated claim in the
+ * course is skipped — the check is effectively off, and without the count
+ * nothing anywhere says so while the student waits on a dashboard that tells
+ * them to contact an instructor who can see them on the roster.
  */
 export async function linkEnrollmentsFromStagingForCourse(
   courseId: string,
   db: EnrollmentLinkDb = prisma,
-): Promise<number> {
+): Promise<StagingLinkResult> {
   const stagingRows = await db.canvasRosterMember.findMany({
     where: {
       courseId,
@@ -221,11 +294,12 @@ export async function linkEnrollmentsFromStagingForCourse(
       role: true,
       sisUserId: true,
       canvasUserId: true,
+      email: true,
     },
   });
 
   if (stagingRows.length === 0) {
-    return 0;
+    return { linked: 0, skippedUncorroborated: 0 };
   }
 
   const sisIds = [
@@ -238,16 +312,24 @@ export async function linkEnrollmentsFromStagingForCourse(
 
   const users = await db.user.findMany({
     where: studentIdsMatchFilter(sisIds),
-    select: { id: true, studentId: true },
+    select: {
+      id: true,
+      studentId: true,
+      email: true,
+      emailVerified: true,
+      studentIdVerifiedAt: true,
+    },
   });
 
   const userByStudentId = new Map(
     users
-      .map((user) => [readStoredStudentId(user.studentId), user.id] as const)
-      .filter((entry): entry is [string, string] => entry[0] != null),
+      .map((user) => [readStoredStudentId(user.studentId), user] as const)
+      .filter((entry): entry is [string, (typeof users)[number]] => entry[0] != null),
   );
 
   const targets: CanvasEnrollmentTarget[] = [];
+  const corroboratedUserIds = new Set<string>();
+  const skipped: { userId: string; reason: UncorroboratedSkipReason }[] = [];
 
   for (const row of stagingRows) {
     const sisUserId = readStoredStudentId(row.sisUserId);
@@ -255,20 +337,50 @@ export async function linkEnrollmentsFromStagingForCourse(
       continue;
     }
 
-    const userId = userByStudentId.get(sisUserId);
-    if (!userId) {
+    const user = userByStudentId.get(sisUserId);
+    if (!user) {
       continue;
+    }
+
+    if (!rosterRowCorroboratesUser(user, row.email)) {
+      // `no_roster_email` means the Canvas token cannot read emails and no claim
+      // in this course can ever settle; `email_mismatch` means this one student's
+      // account address differs from the one on the roster. The two need very
+      // different responses, so they are logged apart.
+      skipped.push({
+        userId: user.id,
+        reason: normalizeRosterEmail(row.email) == null ? "no_roster_email" : "email_mismatch",
+      });
+      continue;
+    }
+
+    if (user.studentIdVerifiedAt == null) {
+      corroboratedUserIds.add(user.id);
     }
 
     targets.push({
       courseId,
-      userId,
+      userId: user.id,
       role: row.role,
       externalId: row.canvasUserId,
     });
   }
 
-  return writeCanvasEnrollments(db, targets);
+  if (corroboratedUserIds.size > 0) {
+    await db.user.updateMany({
+      where: { id: { in: [...corroboratedUserIds] } },
+      data: { studentIdVerifiedAt: new Date() },
+    });
+  }
+
+  for (const skip of skipped) {
+    auditUncorroboratedSkip(courseId, skip.userId, skip.reason);
+  }
+
+  return {
+    linked: await writeCanvasEnrollments(db, targets),
+    skippedUncorroborated: skipped.length,
+  };
 }
 
 /**
@@ -277,7 +389,13 @@ export async function linkEnrollmentsFromStagingForCourse(
 async function ensureUserStudentIdLookup(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { studentId: true, studentIdLookup: true },
+    select: {
+      studentId: true,
+      studentIdLookup: true,
+      email: true,
+      emailVerified: true,
+      studentIdVerifiedAt: true,
+    },
   });
 
   if (!user?.studentId || user.studentIdLookup) {
@@ -295,7 +413,7 @@ async function ensureUserStudentIdLookup(userId: string) {
     data: prepared,
   });
 
-  return prepared;
+  return { ...user, ...prepared };
 }
 
 export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<number> {
@@ -314,18 +432,34 @@ export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<n
       courseId: true,
       role: true,
       canvasUserId: true,
+      email: true,
     },
   });
 
-  return writeCanvasEnrollments(
-    prisma,
-    stagingRows.map((row) => ({
-      courseId: row.courseId,
-      userId,
-      role: row.role,
-      externalId: row.canvasUserId,
-    })),
-  );
+  const corroborated = stagingRows.filter((row) => rosterRowCorroboratesUser(user, row.email));
+
+  if (corroborated.length === 0) {
+    return 0;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    if (user.studentIdVerifiedAt == null) {
+      await tx.user.update({
+        where: { id: userId },
+        data: { studentIdVerifiedAt: new Date() },
+      });
+    }
+
+    return writeCanvasEnrollments(
+      tx,
+      corroborated.map((row) => ({
+        courseId: row.courseId,
+        userId,
+        role: row.role,
+        externalId: row.canvasUserId,
+      })),
+    );
+  });
 }
 
 /** Deactivates canvas-sourced enrollments for users no longer on the active roster. */

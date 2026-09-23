@@ -20,6 +20,11 @@ model User {
   role                      UserRole
   studentId                 String?
   studentIdLookup           String?                @unique
+  // Non-null once this student number was confirmed against an active
+  // Canvas roster row carrying the same verified email. A claimed-but-unconfirmed
+  // number stays null and grants no Canvas-sourced enrollments until a roster
+  // sync corroborates it.
+  studentIdVerifiedAt       DateTime?
   isActive                  Boolean                @default(true)
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt

@@ -61,13 +61,17 @@ export function prepareStudentIdStorage(normalizedStudentId: string): StoredStud
   };
 }
 
-/** The same pair, cleared — what an update writes to drop a stored student id. */
-export type ClearedStudentId = { studentId: null; studentIdLookup: null };
+export type ClearedStudentId = {
+  studentId: null;
+  studentIdLookup: null;
+  studentIdVerifiedAt: null;
+};
 
 export function clearStudentIdStorage(): ClearedStudentId {
   return {
     studentId: null,
     studentIdLookup: null,
+    studentIdVerifiedAt: null,
   };
 }
 

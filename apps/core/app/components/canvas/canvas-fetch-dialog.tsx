@@ -209,14 +209,24 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
           </p>
         )}
         {result?.synced.map((entry) => (
-          <p key={entry.canvasId} className="text-sm text-muted-foreground">
-            Course {entry.canvasId}: {entry.rosterMembersSynced} roster member
-            {entry.rosterMembersSynced === 1 ? "" : "s"} staged
-            {entry.enrollmentsLinked > 0
-              ? `, ${entry.enrollmentsLinked} enrollment${entry.enrollmentsLinked === 1 ? "" : "s"} linked`
-              : ""}
-            .
-          </p>
+          <div key={entry.canvasId}>
+            <p className="text-sm text-muted-foreground">
+              Course {entry.canvasId}: {entry.rosterMembersSynced} roster member
+              {entry.rosterMembersSynced === 1 ? "" : "s"} staged
+              {entry.enrollmentsLinked > 0
+                ? `, ${entry.enrollmentsLinked} enrollment${entry.enrollmentsLinked === 1 ? "" : "s"} linked`
+                : ""}
+              .
+            </p>
+            {entry.enrollmentsSkipped > 0 && (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                {entry.enrollmentsSkipped} student
+                {entry.enrollmentsSkipped === 1 ? "" : "s"} matched a student number but could not
+                be enrolled: the roster row does not carry the address their account is verified
+                under. If this covers the whole roster, the Canvas token cannot read user emails.
+              </p>
+            )}
+          </div>
         ))}
         {syncErrors.map((entry) => (
           <p key={entry.canvasId} className="text-sm text-destructive">
