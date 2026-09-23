@@ -57,8 +57,15 @@ let candidatesReturn = {
   loading: false,
   search: searchCandidates,
 };
+// Records every (courseId, exclude) pair the view asks for, so a test can
+// assert the instructor picker is not wired up for callers who may not use it
+// (#1840 review — an unconditional fetch logged a security event per load).
+const candidatesCalls = vi.hoisted(() => vi.fn());
 vi.mock("~/hooks/api/use-student-candidates", () => ({
-  useStudentCandidates: (...args: unknown[]) => candidatesReturnFn(...args),
+  useStudentCandidates: (...args: unknown[]) => {
+    candidatesCalls(...args);
+    return candidatesReturnFn(...args);
+  },
 }));
 // Indirection so each test can swap the return value without re-mocking the module.
 function candidatesReturnFn(..._args: unknown[]) {
@@ -183,6 +190,7 @@ let mockFetch: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   candidatesReturn = { candidates: [], loading: false, search: searchCandidates };
+  candidatesCalls.mockClear();
   mockFetch = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -868,6 +876,40 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
     clickTab(/settings/i);
     fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
     await waitFor(() => expect(screen.getByText("Network error.")).toBeInTheDocument());
+  });
+});
+
+// #1840 review: the instructor candidate picker is ADMIN/UNIT_ADMIN only, but
+// this view also renders for a course INSTRUCTOR. The candidate endpoint is
+// gated at rank 3 and logs an ADMIN_ACCESS_DENIED security event on refusal,
+// so asking for candidates unconditionally wrote a spurious denied-access
+// record on every page load and revalidation by every course instructor.
+describe("CourseDetailManagerView — instructor candidate fetch gating (#1840 review)", () => {
+  /** The `courseId` the view passed for a given picker, or `undefined`. */
+  const courseIdFor = (exclude: string) =>
+    candidatesCalls.mock.calls.find((call) => call[1] === exclude)?.[0];
+
+  it("does not request instructor candidates for a course instructor", () => {
+    renderView({ access: "instructor" });
+
+    expect(courseIdFor("instructor")).toBeUndefined();
+    // The student/TA pickers are rank 2 and must keep working for them.
+    expect(courseIdFor("enrolled")).toBe("c1");
+    expect(courseIdFor("ta")).toBe("c1");
+  });
+
+  it("does not request instructor candidates for a TA", () => {
+    renderView({ access: "ta" });
+    expect(courseIdFor("instructor")).toBeUndefined();
+  });
+
+  it("requests instructor candidates for admin and unit-admin access", () => {
+    renderView({ access: "admin" });
+    expect(courseIdFor("instructor")).toBe("c1");
+
+    candidatesCalls.mockClear();
+    renderView({ access: "unit" });
+    expect(courseIdFor("instructor")).toBe("c1");
   });
 });
 

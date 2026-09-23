@@ -14,7 +14,11 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-import { addEnrollment, deactivateEnrollment } from "~/lib/courses/enrollments.server";
+import {
+  addEnrollment,
+  deactivateEnrollment,
+  updateEnrollmentRole,
+} from "~/lib/courses/enrollments.server";
 import { updateCourse } from "~/lib/courses/server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 import { auth } from "~/lib/auth/server";
@@ -52,6 +56,30 @@ async function seedCourseWithInstructor(instructorId: string, department: string
   await prisma.enrollment.create({
     data: { courseId: course.id, userId: instructorId, role: "INSTRUCTOR", isActive: true },
   });
+  return course;
+}
+
+/**
+ * A course with no head at all. `instructorUserIds: []` is allowed at
+ * creation, and the "Assign" control that used to PATCH `instructorId` is gone
+ * — so this is the state an admin lands in before adding the first instructor
+ * from the Staff tab (#1840 review).
+ */
+async function seedHeadlessCourse() {
+  const suffix = randomUUID().slice(0, 8);
+  const course = await prisma.course.create({
+    data: {
+      name: `Headless ${suffix}`,
+      code: `HL ${suffix}`,
+      section: "001",
+      term: "W1",
+      year: 2026,
+      startDate: new Date("2026-09-01"),
+      department: "COSC",
+      isPublished: true,
+    },
+  });
+  courseIds.push(course.id);
   return course;
 }
 
@@ -267,6 +295,63 @@ describe("#1840 — Course.instructorId stays consistent", () => {
     });
 
     await deactivateEnrollment(course.id, extra.id);
+
+    const updated = await prisma.course.findUnique({ where: { id: course.id } });
+    expect(updated?.instructorId).toBe(abdallah.id);
+  });
+
+  // #1840 review: "Add instructors" is a plain enrollments POST and used to
+  // leave a headless course headless — an active instructor on the Staff tab
+  // while `course.instructor` stayed null everywhere it is read.
+  it("claims the vacant primary column for the first instructor added", async () => {
+    const course = await seedHeadlessCourse();
+    expect(course.instructorId).toBeNull();
+
+    const result = await addEnrollment(
+      course.id,
+      { userId: abdallah.id, role: "INSTRUCTOR" },
+      ADMIN_RANK,
+    );
+    expect(result.status).toBe("201");
+
+    const updated = await prisma.course.findUnique({ where: { id: course.id } });
+    expect(updated?.instructorId).toBe(abdallah.id);
+  });
+
+  it("does not move the primary column when a second instructor joins a headed course", async () => {
+    const course = await seedCourseWithInstructor(abdallah.id);
+
+    await addEnrollment(course.id, { userId: mostafa.id, role: "INSTRUCTOR" }, ADMIN_RANK);
+
+    const updated = await prisma.course.findUnique({ where: { id: course.id } });
+    expect(updated?.instructorId).toBe(abdallah.id);
+  });
+
+  // #1840 review: removal is not the only way to stop being an instructor.
+  it("hands the primary column over when the primary is demoted to TA", async () => {
+    const course = await seedCourseWithInstructor(abdallah.id);
+    await addEnrollment(course.id, { userId: mostafa.id, role: "INSTRUCTOR" }, ADMIN_RANK);
+    const primaryRow = await prisma.enrollment.findFirstOrThrow({
+      where: { courseId: course.id, userId: abdallah.id },
+    });
+
+    const result = await updateEnrollmentRole(course.id, primaryRow.id, { role: "TA" });
+    expect(result.status).toBe("200");
+
+    const updated = await prisma.course.findUnique({ where: { id: course.id } });
+    // Must not be left naming someone who is now a TA.
+    expect(updated?.instructorId).toBe(mostafa.id);
+    expect(await activeInstructorIds(course.id)).toEqual([mostafa.id]);
+  });
+
+  it("leaves the primary column alone when a non-primary instructor is demoted", async () => {
+    const course = await seedCourseWithInstructor(abdallah.id);
+    await addEnrollment(course.id, { userId: mostafa.id, role: "INSTRUCTOR" }, ADMIN_RANK);
+    const extra = await prisma.enrollment.findFirstOrThrow({
+      where: { courseId: course.id, userId: mostafa.id },
+    });
+
+    await updateEnrollmentRole(course.id, extra.id, { role: "TA" });
 
     const updated = await prisma.course.findUnique({ where: { id: course.id } });
     expect(updated?.instructorId).toBe(abdallah.id);

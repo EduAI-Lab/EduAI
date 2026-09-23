@@ -444,7 +444,14 @@ export function CourseDetailManagerView({
   const studentCandidates = useStudentCandidates(courseId, "enrolled");
   const taCandidates = useStudentCandidates(courseId, "ta");
   // #1840: staff candidates (ADMIN/UNIT_ADMIN/INSTRUCTOR), server-gated at rank 3.
-  const instructorCandidates = useStudentCandidates(courseId, "instructor");
+  // Passing `undefined` when the caller can't assign skips the fetch entirely:
+  // a course INSTRUCTOR (rank 2) also renders this view, and the rank-3 gate
+  // logs an ADMIN_ACCESS_DENIED security event on every rejected request. An
+  // unconditional fetch here wrote one on each page load and revalidation.
+  const instructorCandidates = useStudentCandidates(
+    canAssignInstructor ? courseId : undefined,
+    "instructor",
+  );
 
   const canDeleteMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
