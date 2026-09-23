@@ -48,7 +48,13 @@ describe("agent-readiness integration (#672)", () => {
     expect(CORE_API_ENDPOINTS.length).toBeGreaterThanOrEqual(80);
     const summary = readinessSummary();
     expect(summary.ready).toBeGreaterThan(0);
-    expect(summary.partial).toBe(0);
+    // Pinned, not open-ended: a `partial` endpoint is callable but ships with a
+    // documented gap, so one appearing should be a deliberate decision rather
+    // than something that drifts in. Bump this only alongside the entry that
+    // needs it. Today the sole entry is `POST /api/courses/:id/enrollments/csv`
+    // (#1756), whose body is CSV rather than JSON. That each partial entry
+    // carries a reason and gaps is enforced in agent-readiness.manifest.test.ts.
+    expect(summary.partial).toBe(1);
     expect(summary.excluded).toBeGreaterThan(0);
     for (const entry of CORE_API_ENDPOINTS) {
       expect(entry.readiness).toMatch(/^(ready|partial|excluded)$/);

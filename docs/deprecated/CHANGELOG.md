@@ -4,6 +4,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.17
+
+- Add two bulk enrollment paths to a course's Enrollments tab. **Roster CSV upload:** a header row plus a required `email` column and optional `role` (`STUDENT`/`TA`/`INSTRUCTOR`, default `STUDENT`), tolerating BOMs, CRLF, blank lines and quoted fields; capped at 500 rows / 256 KiB inside the pure parser so no caller can bypass it. The import is per-row rather than transactional and answers a summary naming the line number of every failure, so a partly-bad file still enrolls the good rows; an already-active enrollment counts as already-enrolled rather than a failure. Every row goes through the existing `addEnrollment` with the caller's own rank, so a bulk import cannot grant a role the actor could not grant individually, and the route writes one `ENROLLMENT_ADDED` audit entry per created row. **Revocable self-enrollment links:** a new `SelfEnrollmentLink` model scoped to one course, with expiry, explicit revocation and an optional redemption cap, storing only a sha256 of the token. The model carries no role column at all, so a forwarded link structurally cannot mint staff — redemption always enrols a STUDENT. The redemption slot is claimed under `SELECT … FOR UPDATE`, re-checking revocation and expiry inside the lock, and the preview page never enrols on load so a link-preview fetch cannot burn a slot. Closes #1756.
+
 ## 2026.09.20
 
 - PR Link: https://github.com/EduAI-Lab/EduAICore/pull/1827
