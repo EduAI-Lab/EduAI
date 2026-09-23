@@ -23,6 +23,14 @@ vi.mock("~/lib/courses/server", () => ({
   deleteCourse: vi.fn(),
 }));
 
+// #1841: the loader now resolves the full instructor set through this module,
+// which reads Prisma. Keep the pure helpers (the serializer calls
+// `redactInstructorEmails`); only the database read is replaced.
+vi.mock("~/lib/courses/instructors.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/courses/instructors.server")>()),
+  getCourseInstructors: vi.fn(async () => new Map()),
+}));
+
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn((p: Promise<unknown>) => p),
   logAuditAction: vi.fn().mockResolvedValue(undefined),
