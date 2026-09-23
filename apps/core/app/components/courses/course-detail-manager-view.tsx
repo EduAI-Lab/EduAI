@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { z } from "zod";
 import {
   IconTrash,
@@ -24,6 +24,16 @@ import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
 import { MaterialList, type MaterialListItem } from "@eduai/ui";
+
+/**
+ * The manager list carries two extra fields beyond what the shared list draws,
+ * purely so the failure popover can decide what to say and whether a retry is
+ * possible (#1749).
+ */
+type ManagerMaterialListItem = MaterialListItem & {
+  duplicateOfId: string | null;
+  hasExtractedText: boolean;
+};
 import {
   Dialog,
   DialogContent,
@@ -56,6 +66,11 @@ import {
   CourseInstructorsPanel,
   resolveDisplayInstructors,
 } from "~/components/courses/course-instructors-panel";
+import { MaterialFailureDetail } from "~/components/courses/material-failure-detail";
+import {
+  describeMaterialFailure,
+  describeMaterialRetryFailure,
+} from "~/lib/material-failure-notice";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
 import {
@@ -173,6 +188,12 @@ interface Props {
   enrollmentsLoadingMore?: boolean;
   onLoadMoreEnrollments?: () => void;
   materials: CourseMaterial[];
+  /**
+   * #1749: retry a failed material's indexing from the text already stored
+   * server-side. Optional — a caller that supplies none simply gets no retry
+   * affordance on the failure popover, rather than a button that cannot work.
+   */
+  onReprocessMaterial?: (materialId: string) => Promise<void>;
   hasMoreMaterials?: boolean;
   materialsLoadingMore?: boolean;
   onLoadMoreMaterials?: () => void;
@@ -285,6 +306,7 @@ export function CourseDetailManagerView({
   enrollmentsLoadingMore = false,
   onLoadMoreEnrollments,
   materials,
+  onReprocessMaterial,
   hasMoreMaterials = false,
   materialsLoadingMore = false,
   onLoadMoreMaterials,
@@ -797,6 +819,46 @@ export function CourseDetailManagerView({
     }
   };
 
+  // #1749: which material has a retry in flight, so its popover button can
+  // show progress instead of accepting a second click.
+  const [retryingMaterialId, setRetryingMaterialId] = useState<string | null>(null);
+
+  // #1795 review: why the last retry was refused, keyed by material. The
+  // handler below had no `catch`, so every non-2xx — a 409 from a row that
+  // settled between the list read and the click, a 403 from the policy gate, a
+  // 500, a dropped connection — became an unhandled rejection and the
+  // instructor saw only "Retrying…" flash. It is scoped to the row because the
+  // page's other error slot (`materialsError`) lives inside the upload dialog,
+  // which is closed while a row is being retried.
+  const [retryErrorByMaterialId, setRetryErrorByMaterialId] = useState<Record<string, string>>({});
+
+  const handleReprocessMaterial = useCallback(
+    async (materialId: string) => {
+      if (!onReprocessMaterial) return;
+      setRetryingMaterialId(materialId);
+      // A fresh attempt starts from a clean slate: leaving the last refusal up
+      // while this one runs would say nothing true about either.
+      setRetryErrorByMaterialId((prev) => {
+        if (!(materialId in prev)) return prev;
+        const { [materialId]: _cleared, ...rest } = prev;
+        return rest;
+      });
+      try {
+        await onReprocessMaterial(materialId);
+      } catch (error) {
+        setRetryErrorByMaterialId((prev) => ({
+          ...prev,
+          [materialId]: describeMaterialRetryFailure(
+            error instanceof Error ? error.message : String(error),
+          ),
+        }));
+      } finally {
+        setRetryingMaterialId(null);
+      }
+    },
+    [onReprocessMaterial],
+  );
+
   // B2: top-right hero badges
   const topRightBadges: string[] = course.isActive ? ["Active"] : [];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
@@ -1226,11 +1288,13 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
-            items={materials.map((m): MaterialListItem => ({
+            items={materials.map((m): ManagerMaterialListItem => ({
               id: m.id,
               name: m.title,
               status: m.status,
               mimeType: m.mimeType,
+              duplicateOfId: m.duplicateOfId ?? null,
+              hasExtractedText: m.hasExtractedText ?? false,
               meta: (
                 <>
                   {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
@@ -1238,6 +1302,26 @@ export function CourseDetailManagerView({
               ),
             }))}
             fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
+            renderStatusDetail={(item) => {
+              // #1749: only a failed row has anything to explain; every other
+              // status is either self-evident or still in progress.
+              const notice = describeMaterialFailure({
+                status: item.status,
+                duplicateOfId: item.duplicateOfId ?? null,
+                hasExtractedText: item.hasExtractedText ?? false,
+              });
+              if (!notice) return null;
+              return (
+                <MaterialFailureDetail
+                  notice={notice}
+                  onRetry={
+                    onReprocessMaterial ? () => void handleReprocessMaterial(item.id) : undefined
+                  }
+                  retrying={retryingMaterialId === item.id}
+                  retryError={retryErrorByMaterialId[item.id] ?? null}
+                />
+              );
+            }}
             headerActions={
               <>
                 {showCanvasMaterialSync && courseId && (
