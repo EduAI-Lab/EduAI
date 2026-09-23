@@ -11,6 +11,12 @@ const prismaMock = vi.hoisted(() => {
       count: vi.fn(),
       update: vi.fn(),
     },
+    // #1840: removing an instructor may hand `Course.instructorId` to a
+    // remaining one, so the transaction client now touches `course` too.
+    course: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
   };
   return {
     user: { findUnique: vi.fn() },
@@ -219,17 +225,66 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
     tx.enrollment.findFirst.mockResolvedValue({
       id: "e1",
       courseId: "c1",
+      userId: "u1",
       role: "INSTRUCTOR",
       isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(2);
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
+    // Someone else is the course head, so the column is not touched.
+    tx.course.findUnique.mockResolvedValue({ instructorId: "someone-else" });
     const result = await deactivateEnrollment("c1", "e1");
     expect(result.status).toBe("204");
     expect(tx.enrollment.update).toHaveBeenCalledWith({
       where: { id: "e1" },
       data: { isActive: false },
     });
+    expect(tx.course.update).not.toHaveBeenCalled();
+  });
+
+  // #1840: `Course.instructorId` must never point at someone who no longer
+  // teaches the course — every surface reading `course.instructor` would still
+  // render them.
+  it("hands the primary-instructor column to the longest-standing remaining instructor", async () => {
+    tx.enrollment.findFirst
+      // the row being removed
+      .mockResolvedValueOnce({
+        id: "e1",
+        courseId: "c1",
+        userId: "primary",
+        role: "INSTRUCTOR",
+        isActive: true,
+      })
+      // the successor lookup
+      .mockResolvedValueOnce({ userId: "successor" });
+    tx.enrollment.count.mockResolvedValue(2);
+    tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
+    tx.course.findUnique.mockResolvedValue({ instructorId: "primary" });
+
+    const result = await deactivateEnrollment("c1", "e1");
+
+    expect(result.status).toBe("204");
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { instructorId: "successor" },
+    });
+  });
+
+  it("does not touch the primary column when a TA is removed", async () => {
+    tx.enrollment.findFirst.mockResolvedValue({
+      id: "e1",
+      courseId: "c1",
+      userId: "u1",
+      role: "TA",
+      isActive: true,
+    });
+    tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
+
+    const result = await deactivateEnrollment("c1", "e1");
+
+    expect(result.status).toBe("204");
+    expect(tx.course.findUnique).not.toHaveBeenCalled();
+    expect(tx.course.update).not.toHaveBeenCalled();
   });
 
   it("deactivates a STUDENT without a floor check", async () => {
