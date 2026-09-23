@@ -32,6 +32,10 @@ import { resolvePaletteAccent } from "@eduai/ui";
 import { StatusBadge } from "@eduai/ui";
 import { Avatar } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
+import {
+  CourseInstructorsPanel,
+  resolveDisplayInstructors,
+} from "~/components/courses/course-instructors-panel";
 import type { CourseMaterial } from "~/components/course-materials-upload";
 import {
   CourseResponseStyleSettings,
@@ -97,6 +101,9 @@ export function CourseDetailTaView({
   onCreateTopic,
   onDeleteTopic,
 }: Props) {
+  // #1841: every instructor of record, falling back to the single legacy field.
+  const displayInstructors = resolveDisplayInstructors(course);
+
   const { isEnabled } = usePolicyGate();
   // §2 / issue #807: controls an admin turned off stay visible but greyed-out
   // with a tooltip rather than vanishing.
@@ -388,19 +395,10 @@ export function CourseDetailTaView({
             </Card>
 
             {/* Instructor + TAs — visible to TAs so they know their teaching team */}
-            {course.instructor ? (
+            {displayInstructors.length > 0 ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-sm font-semibold text-foreground">Instructor</p>
-                  <div className="flex items-center gap-3">
-                    <Avatar name={course.instructor.name} size={40} radius={9} />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">
-                        {course.instructor.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
-                    </div>
-                  </div>
+                  <CourseInstructorsPanel instructors={displayInstructors} />
                   <div>
                     <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
                       Teaching assistants
