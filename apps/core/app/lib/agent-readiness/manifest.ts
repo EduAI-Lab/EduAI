@@ -515,6 +515,15 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "deleteCourseMaterial",
     routeFile: "routes/api/courses.materials.$.ts",
   }),
+  // #1749: retries a failed material's indexing from the text already stored
+  // on the row. No admin chat tool — it is an instructor recovery action on
+  // the course page, not a platform-ops operation.
+  entry({
+    method: "POST",
+    path: "/api/courses/:courseId/materials/:materialId/reprocess",
+    readiness: "ready",
+    routeFile: "routes/api/courses.materials.$.ts",
+  }),
 
   // ── Canvas materials & embedding infra ──────────────────────────────────────
   entry({
