@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { z } from "zod";
 import {
   IconTrash,
   IconPencil,
@@ -14,6 +15,8 @@ import {
   IconEyeOff,
   IconClock,
   IconDownload,
+  IconLink,
+  IconCopy,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
@@ -81,6 +84,74 @@ interface StaffUser {
   email: string;
 }
 
+/**
+ * #1756 — the response body of `POST /api/courses/:id/enrollments/csv`.
+ *
+ * Restated here rather than imported: the server module that owns these caps
+ * and shapes is `enrollments-csv.server.ts`, which must not reach the client
+ * bundle. Keep these in sync with that route's JSON response.
+ *
+ * Both bodies are parsed rather than asserted — the import result drives what
+ * the instructor is told about their roster file, so a response that does not
+ * match becomes a visible failure instead of an `undefined` in the summary.
+ */
+const enrollmentCsvImportSummarySchema = z.object({
+  totalRows: z.number(),
+  imported: z.number(),
+  alreadyEnrolled: z.number(),
+  failed: z.number(),
+  errors: z.array(
+    z.object({
+      line: z.number(),
+      email: z.string().nullable(),
+      code: z.string(),
+      message: z.string(),
+    }),
+  ),
+});
+
+export type EnrollmentCsvImportSummary = z.infer<typeof enrollmentCsvImportSummarySchema>;
+
+const enrollmentCsvErrorSchema = z.object({
+  error: z.string(),
+  message: z.string().optional(),
+});
+
+/** Mirrors MAX_CSV_ROWS / MAX_CSV_BYTES in `~/lib/courses/enrollments-csv.server`. */
+const CSV_MAX_ROWS = 500;
+const CSV_MAX_KB = 256;
+
+/**
+ * #1756 — self-enrollment link payloads from `/api/courses/:id/self-enroll`.
+ * Dates arrive as ISO strings because the route serialises them with
+ * `JSON.stringify`. The `url` on a freshly minted link is the ONLY time the raw
+ * token is ever available, so a response that fails to parse has to surface as
+ * an error rather than be silently dropped.
+ */
+const selfEnrollmentLinkSchema = z.object({
+  id: z.string(),
+  status: z.enum(["ACTIVE", "REVOKED", "EXPIRED", "EXHAUSTED"]),
+  expiresAt: z.string(),
+  revokedAt: z.string().nullable(),
+  maxRedemptions: z.number().nullable(),
+  redemptionCount: z.number(),
+  createdAt: z.string(),
+});
+const selfEnrollmentListSchema = z.object({ links: z.array(selfEnrollmentLinkSchema) });
+const selfEnrollmentCreatedSchema = z.object({
+  url: z.string(),
+  link: selfEnrollmentLinkSchema,
+});
+
+type SelfEnrollmentLinkSummary = z.infer<typeof selfEnrollmentLinkSchema>;
+
+const SELF_ENROLLMENT_STATUS_LABELS = {
+  ACTIVE: "Active",
+  REVOKED: "Turned off",
+  EXPIRED: "Expired",
+  EXHAUSTED: "Limit reached",
+} satisfies Record<SelfEnrollmentLinkSummary["status"], string>;
+
 export type CourseDetailManagerCourse = CourseDetail & {
   /** Staff course loaders always include the persisted, non-null toggle. */
   courseScopeGuardrailEnabled: boolean;
@@ -122,6 +193,13 @@ interface Props {
   onRemoveTA: (userId: string) => Promise<void>;
   onEnrollStudent: (userId: string) => Promise<void>;
   onRemoveEnrollment: (enrollmentId: string) => Promise<void>;
+  /**
+   * #1756: re-read the roster after a CSV import, which enrolls users this
+   * component never learns about individually. Optional like `onRefreshTopics`
+   * — a caller that supplies none simply keeps the list it already rendered
+   * until the next navigation; the import itself still succeeds.
+   */
+  onRefreshEnrollments?: () => Promise<void> | void;
   onRefreshMaterials?: () => Promise<void>;
   /** Wired to `useCourseMaterials.deleteMaterial` — refetches the list itself. */
   onDeleteMaterial?: (materialId: string) => Promise<void>;
@@ -221,6 +299,7 @@ export function CourseDetailManagerView({
   onRemoveTA,
   onEnrollStudent,
   onRemoveEnrollment,
+  onRefreshEnrollments,
   onRefreshMaterials,
   onDeleteMaterial,
   courseId,
@@ -277,6 +356,25 @@ export function CourseDetailManagerView({
   const [enrollmentActionSuccess, setEnrollmentActionSuccess] = useState<string | null>(null);
   const [enrollmentToRemove, setEnrollmentToRemove] = useState<CourseEnrollment | null>(null);
   const [removingEnrollmentId, setRemovingEnrollmentId] = useState<string | null>(null);
+  // #1756 — CSV roster import.
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [csvSummary, setCsvSummary] = useState<EnrollmentCsvImportSummary | null>(null);
+  // #1756 — self-enrollment links.
+  const [selfEnrollLinks, setSelfEnrollLinks] = useState<SelfEnrollmentLinkSummary[]>([]);
+  /**
+   * The link just minted, carried as `{ linkId, url }` rather than a bare URL.
+   * The id is what lets a revocation tell "the link on screen" from "some other
+   * link in the list" — clearing the wrong one destroys a URL that is shown
+   * once and cannot be re-read.
+   */
+  const [mintedLink, setMintedLink] = useState<{ linkId: string; url: string } | null>(null);
+  const [selfEnrollBusy, setSelfEnrollBusy] = useState(false);
+  const [selfEnrollError, setSelfEnrollError] = useState<string | null>(null);
+  const [selfEnrollCopied, setSelfEnrollCopied] = useState(false);
+  /** Set when the list read comes back 401/403 — see `refreshSelfEnrollLinks`. */
+  const [selfEnrollForbidden, setSelfEnrollForbidden] = useState(false);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess);
@@ -396,6 +494,159 @@ export function CourseDetailManagerView({
       setEnrollmentActionError(`${failed.length} of ${ids.length} students failed to enroll`);
     }
   };
+
+  /**
+   * #1756 — POST the chosen file to the bulk-import endpoint and render the
+   * per-row summary it returns. A partial import is the normal outcome, not an
+   * error: the endpoint reports which lines failed and enrolls the rest.
+   */
+  const handleImportCsv = async () => {
+    if (!csvFile || !courseId) return;
+    setImportingCsv(true);
+    setCsvSummary(null);
+    setEnrollmentActionError(null);
+    setEnrollmentActionSuccess(null);
+    try {
+      const body = new FormData();
+      body.set("file", csvFile);
+      const res = await fetch(`/api/courses/${courseId}/enrollments/csv`, { method: "POST", body });
+      const payload: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const failure = enrollmentCsvErrorSchema.safeParse(payload);
+        setEnrollmentActionError(
+          failure.success
+            ? (failure.data.message ?? failure.data.error)
+            : "Could not import this CSV file.",
+        );
+        return;
+      }
+      const summary = enrollmentCsvImportSummarySchema.safeParse(payload);
+      if (!summary.success) {
+        setEnrollmentActionError("The import finished but returned an unexpected result.");
+        return;
+      }
+      setCsvSummary(summary.data);
+      if (summary.data.imported > 0) await onRefreshEnrollments?.();
+    } catch {
+      setEnrollmentActionError("Could not import this CSV file. Please try again.");
+    } finally {
+      setImportingCsv(false);
+      setCsvFile(null);
+      // Clear the native input too, so re-picking the same corrected file fires
+      // another change event.
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  };
+
+  /**
+   * #1756 — self-enrollment link management. All three calls share one error
+   * slot and one busy flag: the section only ever runs one of them at a time.
+   */
+  const refreshSelfEnrollLinks = async (signal?: AbortSignal) => {
+    if (!courseId) return;
+    try {
+      const res = await fetch(`/api/courses/${courseId}/self-enroll`, { signal });
+      if (!res.ok) {
+        // A refused read is not the same as a flaky one. The gate guarding this
+        // GET guards the POST and DELETE too, so an instructor whose
+        // `manageEnrollments` policy was switched off while this page stayed
+        // open would otherwise see an empty section that looks merely unused,
+        // click Create link, and get a generic "please try again" for something
+        // retrying cannot fix. Say so instead.
+        if (res.status === 401 || res.status === 403) {
+          setSelfEnrollLinks([]);
+          setSelfEnrollForbidden(true);
+        }
+        return;
+      }
+      const parsed = selfEnrollmentListSchema.safeParse(await res.json());
+      if (parsed.success) {
+        setSelfEnrollForbidden(false);
+        setSelfEnrollLinks(parsed.data.links);
+      }
+    } catch (error: unknown) {
+      // An abort is this component unmounting or the course changing — not a
+      // failure, and nothing to tell the instructor about.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      // Anything else is transient: the list stays as it was and the next
+      // refresh picks it up, which is not worth an error banner.
+    }
+  };
+
+  const handleCreateSelfEnrollLink = async () => {
+    if (!courseId) return;
+    setSelfEnrollBusy(true);
+    setSelfEnrollError(null);
+    setSelfEnrollCopied(false);
+    try {
+      const res = await fetch(`/api/courses/${courseId}/self-enroll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const parsed = selfEnrollmentCreatedSchema.safeParse(await res.json().catch(() => null));
+      if (!res.ok || !parsed.success) {
+        setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
+        return;
+      }
+      // Shown once and only once: the server cannot re-issue this URL.
+      setMintedLink({ linkId: parsed.data.link.id, url: parsed.data.url });
+      await refreshSelfEnrollLinks();
+    } catch {
+      setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
+    } finally {
+      setSelfEnrollBusy(false);
+    }
+  };
+
+  const handleRevokeSelfEnrollLink = async (linkId: string) => {
+    if (!courseId) return;
+    setSelfEnrollBusy(true);
+    setSelfEnrollError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/self-enroll?linkId=${encodeURIComponent(linkId)}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        setSelfEnrollError("Could not turn off that link. Please try again.");
+        return;
+      }
+      // The revoked link's URL must stop being offered for copying — but only
+      // if it is the one on screen. Tidying up last term's link must not wipe a
+      // URL minted seconds ago and not yet copied, because nothing can bring
+      // that one back.
+      setMintedLink((current) => (current?.linkId === linkId ? null : current));
+      await refreshSelfEnrollLinks();
+    } catch {
+      setSelfEnrollError("Could not turn off that link. Please try again.");
+    } finally {
+      setSelfEnrollBusy(false);
+    }
+  };
+
+  const handleCopySelfEnrollUrl = async () => {
+    if (!mintedLink) return;
+    try {
+      await navigator.clipboard.writeText(mintedLink.url);
+      setSelfEnrollCopied(true);
+    } catch {
+      // Clipboard access can be denied; the URL is selectable in the field.
+      setSelfEnrollError("Copying failed — select the link and copy it manually.");
+    }
+  };
+
+  // Staff-only, so it is fetched here rather than in the shared course loader —
+  // a student's course page must not issue this request at all.
+  useEffect(() => {
+    if (!courseId || !canManageStudentEnrollments) return;
+    const controller = new AbortController();
+    void refreshSelfEnrollLinks(controller.signal);
+    return () => controller.abort();
+    // Deliberately keyed on the course and the gate only. The refresher is
+    // redeclared every render and reads nothing else, so depending on its
+    // identity would refetch the list on every unrelated state change.
+  }, [courseId, canManageStudentEnrollments]);
 
   const handleRemoveEnrollment = async () => {
     if (!enrollmentToRemove) return;
@@ -1329,6 +1580,155 @@ export function CourseDetailManagerView({
                               selectedStudentIds.length > 0 ? ` ${selectedStudentIds.length}` : ""
                             } student${selectedStudentIds.length !== 1 ? "s" : ""}`}
                       </Button>
+                    </div>
+                  )}
+
+                  {/* #1756 — bulk enrollment from a roster CSV. */}
+                  {canManageStudentEnrollments && courseId && (
+                    <div className="flex flex-col gap-2 border-t pt-4">
+                      <Label htmlFor="enrollment-csv">Import a roster CSV</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Needs a header row with an <code>email</code> column. An optional{" "}
+                        <code>role</code> column accepts STUDENT or TA — and INSTRUCTOR for
+                        administrators. Up to {CSV_MAX_ROWS} rows and {CSV_MAX_KB} KB per upload.
+                        Rows that fail are reported by line number; the rest are still enrolled.
+                      </p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          ref={csvInputRef}
+                          id="enrollment-csv"
+                          type="file"
+                          accept=".csv,text/csv"
+                          disabled={importingCsv}
+                          onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)}
+                          className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleImportCsv()}
+                          disabled={!csvFile || importingCsv}
+                        >
+                          <IconUpload className="w-4 h-4 mr-1" />
+                          {importingCsv ? "Importing…" : "Import CSV"}
+                        </Button>
+                      </div>
+
+                      {csvSummary && (
+                        <Card>
+                          <CardContent className="py-3 text-sm space-y-2">
+                            <p>
+                              Imported {csvSummary.imported} of {csvSummary.totalRows} row
+                              {csvSummary.totalRows === 1 ? "" : "s"}
+                              {csvSummary.alreadyEnrolled > 0
+                                ? ` · ${csvSummary.alreadyEnrolled} already enrolled`
+                                : ""}
+                              {csvSummary.failed > 0 ? ` · ${csvSummary.failed} failed` : ""}.
+                            </p>
+                            {csvSummary.errors.length > 0 && (
+                              <ul className="space-y-1 text-xs text-destructive">
+                                {csvSummary.errors.map((rowError) => (
+                                  <li key={`${rowError.line}-${rowError.code}`}>
+                                    Line {rowError.line}: {rowError.message}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {/* #1756 — revocable self-enrollment link. */}
+                  {canManageStudentEnrollments && courseId && (
+                    <div className="flex flex-col gap-2 border-t pt-4">
+                      <Label>Self-enrollment link</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Anyone with an EduAI account who opens this link joins as a student. Treat
+                        it like a password: turn it off if it ends up somewhere public. Links expire
+                        after 30 days.
+                      </p>
+
+                      {selfEnrollError && (
+                        <p className="text-sm text-destructive">{selfEnrollError}</p>
+                      )}
+
+                      {selfEnrollForbidden && (
+                        <p className="text-sm text-muted-foreground">
+                          You no longer have permission to manage self-enrollment links for this
+                          course. Reload the page, or ask an administrator if you think this is
+                          wrong.
+                        </p>
+                      )}
+
+                      <Button
+                        variant="outline"
+                        className="self-start"
+                        disabled={selfEnrollBusy || selfEnrollForbidden}
+                        onClick={() => void handleCreateSelfEnrollLink()}
+                      >
+                        <IconLink className="w-4 h-4 mr-1" />
+                        {selfEnrollBusy ? "Working…" : "Create link"}
+                      </Button>
+
+                      {mintedLink && (
+                        <Card>
+                          <CardContent className="py-3 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              Copy this now — it is shown once and cannot be retrieved again.
+                            </p>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <Input
+                                readOnly
+                                value={mintedLink.url}
+                                aria-label="Self-enrollment link"
+                              />
+                              <Button
+                                variant="outline"
+                                onClick={() => void handleCopySelfEnrollUrl()}
+                              >
+                                <IconCopy className="w-4 h-4 mr-1" />
+                                {selfEnrollCopied ? "Copied" : "Copy"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {selfEnrollLinks.length > 0 && (
+                        <div className="grid gap-2">
+                          {selfEnrollLinks.map((link) => (
+                            <Card key={link.id}>
+                              <CardContent className="flex items-center justify-between py-3 text-sm">
+                                <div>
+                                  <span className="font-medium">
+                                    {SELF_ENROLLMENT_STATUS_LABELS[link.status]}
+                                  </span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    Expires {new Date(link.expiresAt).toLocaleDateString()} ·{" "}
+                                    {link.redemptionCount} use
+                                    {link.redemptionCount === 1 ? "" : "s"}
+                                    {link.maxRedemptions === null
+                                      ? ""
+                                      : ` of ${link.maxRedemptions}`}
+                                  </span>
+                                </div>
+                                {link.status === "ACTIVE" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    disabled={selfEnrollBusy}
+                                    onClick={() => void handleRevokeSelfEnrollLink(link.id)}
+                                  >
+                                    Turn off
+                                  </Button>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
