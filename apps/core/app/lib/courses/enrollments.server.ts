@@ -278,6 +278,31 @@ export async function deactivateEnrollment(courseId: string, enrollmentId: strin
       where: { id: enrollmentId },
       data: { isActive: false },
     });
+
+    // #1840: `Course.instructorId` names the course head. Removing that person
+    // would leave the column pointing at someone who no longer teaches the
+    // course, which every surface reading `course.instructor` would still
+    // render. Hand it to the longest-standing remaining instructor instead —
+    // the floor check above guarantees at least one exists, so this never
+    // nulls the column.
+    if (existing.role === "INSTRUCTOR" && existing.isActive) {
+      const course = await tx.course.findUnique({
+        where: { id: courseId },
+        select: { instructorId: true },
+      });
+      if (course?.instructorId === existing.userId) {
+        const successor = await tx.enrollment.findFirst({
+          where: { courseId, role: "INSTRUCTOR", isActive: true },
+          orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
+          select: { userId: true },
+        });
+        await tx.course.update({
+          where: { id: courseId },
+          data: { instructorId: successor?.userId ?? null },
+        });
+      }
+    }
+
     return { status: "204", role: existing.role } as const;
   });
 }
