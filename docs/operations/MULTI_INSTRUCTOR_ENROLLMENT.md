@@ -31,34 +31,40 @@ Adding an `INSTRUCTOR` enrollment makes someone **instructor of record**. It gra
 course access through `resolveCourseAccess`, includes them in the roster, and flows to
 AI Tutor via `enrollmentSync`.
 
-**It does not give an ADMIN account the instructor surface.** `resolveCourseAccess`
-decides by platform role *first*:
+**It does not change what the account may do.** `resolveCourseAccess` still decides by
+platform role *first*:
 
 ```ts
 if (user.role === "ADMIN") return { course, access: LEVELS.admin };
 ```
 
-The enrollment row is never read for an ADMIN. `/instructor/chat` then excludes them
-outright — `listMyPublishedInstructorCourses` opens with `if (user.role === "ADMIN") return []`,
-and a caller with no courses is redirected to `/dashboard`. That exclusion is
-deliberate, not an oversight: `/api/chat`'s instructor-mode guard resolves the same
-`admin` level and would 403 on every turn, so listing the course would hand them a
-chat that cannot answer.
+The enrollment row is never read for an ADMIN, and an in-unit `UNIT_ADMIN`
+short-circuits to `unit` the same way. Both outrank `instructor`, so the enrollment
+adds no authority they did not already have.
+
+**What it does now buy is the instructor surface.**
+[#1843](https://github.com/EduAI-Lab/EduAI/issues/1843) removed the blanket ADMIN
+exclusion that used to sit in `listMyPublishedInstructorCourses`. `/instructor/chat`
+and `/api/chat`'s instructor-mode guard now share one decision —
+`canUseInstructorChatMode` in
+[`app/lib/rbac/instructor-view.server.ts`](../../apps/core/app/lib/rbac/instructor-view.server.ts) —
+which admits an ADMIN or `UNIT_ADMIN` holding a **real active `INSTRUCTOR`
+enrollment** on a **published** course. An account without that enrollment still gets
+an empty course list and a 403, exactly as before.
 
 So, concretely:
 
 | Their platform role | After you add the enrollment |
 | --- | --- |
 | `INSTRUCTOR` | Full instructor surface, including `/instructor/chat` for that course. |
-| `ADMIN` | Instructor of record everywhere a roster is read, and full `admin` access to the course — but `/instructor/chat` still redirects to `/dashboard`. They use `/admin/chat` instead. |
-| `UNIT_ADMIN`, course in their units | Same as ADMIN: resolves to `unit`, not `instructor`. |
-| `UNIT_ADMIN`, course outside their units | Falls through to the enrollment, so it behaves as `instructor`. |
+| `ADMIN` | Instructor of record everywhere a roster is read, full `admin` access to the course, **and** `/instructor/chat` for that course, marked with the instructor-view banner. |
+| `UNIT_ADMIN`, course in their units | Same as ADMIN: resolves to `unit` for authorization, and reaches the instructor surface through the enrollment. |
+| `UNIT_ADMIN`, course outside their units | Falls through to the enrollment, so it behaves as `instructor` throughout. |
 
-**If the person specifically needs the instructor surface, their platform role must be
-`INSTRUCTOR`.** Giving one account both surfaces is
-[#1843](https://github.com/EduAI-Lab/EduAI/issues/1843), and the branch above is why
-that issue is not purely a presentation change. Decide this before you enroll anyone,
-and say which you chose in the ticket.
+One login is now enough: the enrollment is what carries the instructor surface, so
+there is no longer a reason to issue a second `INSTRUCTOR` account to someone who
+already has an admin one. Note that the course must be **published** before
+`/instructor/chat` will list it, whatever the platform role.
 
 ## Prerequisites
 
@@ -169,9 +175,12 @@ nobody moved into the deactivated list.
 - Platform-role `INSTRUCTOR`: have them open `/instructor/chat` and confirm the course
   is in the picker. It requires the course to be **published** as well as the
   enrollment to be active.
-- Platform-role `ADMIN`: `/instructor/chat` will redirect them to `/dashboard`. This is
-  expected — see the table above. Confirm instead that the course appears under
-  `/courses` and that they can open its detail page.
+- Platform-role `ADMIN` or `UNIT_ADMIN`: since
+  [#1843](https://github.com/EduAI-Lab/EduAI/issues/1843) they use the same check —
+  have them open `/instructor/chat` and confirm the course is in the picker and that
+  the instructor-view banner is shown. If the picker is empty, the enrollment is
+  inactive or the course is unpublished; a redirect to `/dashboard` means they teach
+  nothing published at all. Also confirm the course appears under `/courses`.
 
 ### 6. Remove a duplicate course, if there is one
 
