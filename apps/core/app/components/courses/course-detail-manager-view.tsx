@@ -5,7 +5,6 @@ import {
   IconPlus,
   IconUsers,
   IconUserCheck,
-  IconArrowsExchange,
   IconUserPlus,
   IconUpload,
   IconSettings,
@@ -45,7 +44,7 @@ import { StatusBadge } from "@eduai/ui";
 import { Avatar } from "@eduai/ui";
 import { StatCard } from "@eduai/ui";
 import { Input } from "@eduai/ui";
-import { MultiSelect, Combobox } from "@eduai/ui";
+import { MultiSelect } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
@@ -75,10 +74,18 @@ import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 
-interface StaffUser {
+/**
+ * One active INSTRUCTOR enrollment, as the course loader projects it (#1840).
+ * `enrollmentId` is what the remove endpoint takes; `isPrimary` marks the row
+ * `Course.instructorId` points at.
+ */
+export interface CourseInstructor {
+  enrollmentId: string;
   id: string;
   name: string;
   email: string;
+  platformRole: string;
+  isPrimary: boolean;
 }
 
 export type CourseDetailManagerCourse = CourseDetail & {
@@ -102,7 +109,8 @@ interface Props {
   materialsLoadingMore?: boolean;
   onLoadMoreMaterials?: () => void;
   tas: CourseTA[];
-  instructors: StaffUser[];
+  /** Every active INSTRUCTOR enrollment on this course (#1840), not one column. */
+  courseInstructors: CourseInstructor[];
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
@@ -117,7 +125,12 @@ interface Props {
   onRenameTopic?: (id: string, name: string) => Promise<void>;
   /** Re-reads the topic list after a suggestion is approved, merged, or dismissed (#1624). */
   onRefreshTopics?: () => Promise<void> | void;
-  onAssignInstructor: (instructorId: string) => Promise<void>;
+  /** Adds an INSTRUCTOR enrollment; must not deactivate anyone (#1840). */
+  onAddInstructor: (userId: string) => Promise<void>;
+  /** Removes one instructor by enrollment id; rejects with the server error code. */
+  onRemoveInstructor: (enrollmentId: string) => Promise<void>;
+  /** Moves `Course.instructorId` only — no enrollment is touched. */
+  onSetPrimaryInstructor: (userId: string) => Promise<void>;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
   onEnrollStudent: (userId: string) => Promise<void>;
@@ -182,6 +195,26 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
   return null;
 }
 
+/**
+ * #1840: the server answers a few specific failures that an operator can act
+ * on. Rendering "Please try again" over an instructor-floor 409 would tell them
+ * to retry something that can never succeed, so those are named.
+ */
+function instructorErrorMessage(code: string, fallback: string): string {
+  switch (code) {
+    case "INSTRUCTOR_FLOOR_VIOLATION":
+      return "A course must keep at least one instructor. Add another instructor before removing this one.";
+    case "ALREADY_ENROLLED":
+      return "That person already has a role on this course.";
+    case "USER_NOT_FOUND":
+      return "That account no longer exists.";
+    case "Forbidden":
+      return "You do not have permission to change instructors on this course.";
+    default:
+      return fallback;
+  }
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 /** The body of `PATCH /api/courses/:id/rag-settings`. */
@@ -207,7 +240,7 @@ export function CourseDetailManagerView({
   materialsLoadingMore = false,
   onLoadMoreMaterials,
   tas,
-  instructors,
+  courseInstructors,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -216,7 +249,9 @@ export function CourseDetailManagerView({
   onDeleteTopic,
   onRenameTopic,
   onRefreshTopics,
-  onAssignInstructor,
+  onAddInstructor,
+  onRemoveInstructor,
+  onSetPrimaryInstructor,
   onAddTA,
   onRemoveTA,
   onEnrollStudent,
@@ -245,7 +280,10 @@ export function CourseDetailManagerView({
   const [retryingAnalysis, setRetryingAnalysis] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
-  const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
+  const [selectedInstructorIds, setSelectedInstructorIds] = useState<string[]>([]);
+  const [addingInstructors, setAddingInstructors] = useState(false);
+  const [removingInstructorId, setRemovingInstructorId] = useState<string | null>(null);
+  const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
   const [selectedTAIds, setSelectedTAIds] = useState<string[]>([]);
   const [addingTAs, setAddingTAs] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -307,6 +345,8 @@ export function CourseDetailManagerView({
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
   const studentCandidates = useStudentCandidates(courseId, "enrolled");
   const taCandidates = useStudentCandidates(courseId, "ta");
+  // #1840: staff candidates (ADMIN/UNIT_ADMIN/INSTRUCTOR), server-gated at rank 3.
+  const instructorCandidates = useStudentCandidates(courseId, "instructor");
 
   const canDeleteMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
@@ -315,8 +355,6 @@ export function CourseDetailManagerView({
   const canRenameMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
 
-  const availableInstructors = instructors.filter((p) => p.id !== course.instructorId);
-
   const handleTopicCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTopic.trim()) return;
@@ -324,18 +362,61 @@ export function CourseDetailManagerView({
     setNewTopic("");
   };
 
-  const handleAssignInstructor = async () => {
-    if (!selectedInstructorId) return;
+  const handleAddInstructors = async () => {
+    if (selectedInstructorIds.length === 0) return;
+    setAddingInstructors(true);
+    setStaffError(null);
+    setStaffSuccess(null);
+    const ids = selectedInstructorIds;
+    const failures: string[] = [];
+    for (const id of ids) {
+      try {
+        await onAddInstructor(id);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        failures.push(instructorErrorMessage(code, "Could not add instructor."));
+      }
+    }
+    setAddingInstructors(false);
+    setSelectedInstructorIds([]);
+    if (failures.length === 0) {
+      setStaffSuccess(
+        `${ids.length} instructor${ids.length > 1 ? "s" : ""} added. No existing instructor was removed.`,
+      );
+    } else {
+      setStaffError(failures[0]);
+    }
+  };
+
+  const handleRemoveInstructor = async (enrollmentId: string) => {
+    setRemovingInstructorId(enrollmentId);
     setStaffError(null);
     setStaffSuccess(null);
     try {
-      await onAssignInstructor(selectedInstructorId);
-      setStaffSuccess(
-        course.instructor ? "Instructor replaced successfully" : "Instructor assigned successfully",
+      await onRemoveInstructor(enrollmentId);
+      setStaffSuccess("Instructor removed successfully");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setStaffError(instructorErrorMessage(code, "Could not remove instructor. Please try again."));
+    } finally {
+      setRemovingInstructorId(null);
+    }
+  };
+
+  const handleSetPrimaryInstructor = async (userId: string) => {
+    setSettingPrimaryId(userId);
+    setStaffError(null);
+    setStaffSuccess(null);
+    try {
+      await onSetPrimaryInstructor(userId);
+      setStaffSuccess("Primary instructor updated. Every instructor keeps their access.");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setStaffError(
+        instructorErrorMessage(code, "Could not set the primary instructor. Please try again."),
       );
-      setSelectedInstructorId("");
-    } catch {
-      setStaffError("Could not assign instructor. Please try again.");
+    } finally {
+      setSettingPrimaryId(null);
     }
   };
 
@@ -1355,87 +1436,91 @@ export function CourseDetailManagerView({
               {staffError && <p className="text-sm text-destructive">{staffError}</p>}
               {staffSuccess && <p className="text-sm text-green-600">{staffSuccess}</p>}
 
-              {/* Instructor assignment — ADMIN/UNIT_ADMIN only */}
+              {/* Instructors — ADMIN/UNIT_ADMIN only (#1840) */}
               {canAssignInstructor && (
                 <div className="flex flex-col gap-3">
-                  <p className="text-sm font-medium">Instructor</p>
-                  {course.instructor ? (
-                    <>
-                      <Card>
-                        <CardContent className="flex items-center justify-between py-3">
-                          <div>
-                            <span className="text-sm font-medium">{course.instructor.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">
-                              {course.instructor.email}
-                            </span>
-                          </div>
-                          <Badge>Current</Badge>
-                        </CardContent>
-                      </Card>
-                      {availableInstructors.length > 0 ? (
-                        <div className="flex flex-col gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            Selecting a new instructor will replace the current one.
-                          </p>
-                          <div className="flex gap-2">
-                            <Combobox
-                              className="flex-1"
-                              options={availableInstructors.map((p) => ({
-                                value: p.id,
-                                label: p.name,
-                                description: p.email,
-                              }))}
-                              value={selectedInstructorId || null}
-                              onValueChange={(v) => setSelectedInstructorId(v ?? "")}
-                              placeholder="Select replacement instructor"
-                              searchPlaceholder="Search by name or email"
-                              emptyText="No instructors found"
-                            />
-                            <Button
-                              variant="outline"
-                              onClick={handleAssignInstructor}
-                              disabled={!selectedInstructorId}
-                            >
-                              <IconArrowsExchange className="w-4 h-4 mr-1" />
-                              Replace
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No other instructors available.
-                        </p>
-                      )}
-                    </>
+                  <p className="text-sm font-medium">Instructors</p>
+                  {courseInstructors.length === 0 ? (
+                    <Card>
+                      <CardContent className="flex items-center justify-center py-6 text-muted-foreground text-sm">
+                        No instructor assigned yet.
+                      </CardContent>
+                    </Card>
                   ) : (
-                    <>
-                      <p className="text-xs text-muted-foreground">No instructor assigned yet.</p>
-                      {availableInstructors.length > 0 ? (
-                        <div className="flex gap-2">
-                          <Combobox
-                            className="flex-1"
-                            options={availableInstructors.map((p) => ({
-                              value: p.id,
-                              label: p.name,
-                              description: p.email,
-                            }))}
-                            value={selectedInstructorId || null}
-                            onValueChange={(v) => setSelectedInstructorId(v ?? "")}
-                            placeholder="Select an instructor to assign"
-                            searchPlaceholder="Search by name or email"
-                            emptyText="No instructors found"
-                          />
-                          <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
-                            Assign
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No instructors available to assign.
-                        </p>
-                      )}
-                    </>
+                    <div className="grid gap-2">
+                      {courseInstructors.map((instructor) => (
+                        <Card key={instructor.enrollmentId}>
+                          <CardContent className="flex items-center justify-between gap-2 py-3">
+                            <div className="min-w-0">
+                              <span className="text-sm font-medium">{instructor.name}</span>
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {instructor.email}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {instructor.isPrimary ? (
+                                <Badge>Primary</Badge>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSetPrimaryInstructor(instructor.id)}
+                                  disabled={settingPrimaryId === instructor.id}
+                                >
+                                  {settingPrimaryId === instructor.id ? "Saving…" : "Make primary"}
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Remove instructor ${instructor.name}`}
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleRemoveInstructor(instructor.enrollmentId)}
+                                disabled={removingInstructorId === instructor.enrollmentId}
+                              >
+                                <IconTrash className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
                   )}
+
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Adding an instructor does not remove anyone. Every instructor keeps full
+                      access to the course; the primary is only who is listed as the course head.
+                    </p>
+                    <MultiSelect
+                      options={instructorCandidates.candidates.map((u) => ({
+                        value: u.id,
+                        label: u.name,
+                        description: u.email,
+                      }))}
+                      value={selectedInstructorIds}
+                      onValueChange={setSelectedInstructorIds}
+                      onSearchChange={instructorCandidates.search}
+                      loading={instructorCandidates.loading}
+                      placeholder="Search and select instructors to add"
+                      searchPlaceholder="Search by name or email"
+                      emptyText="No instructors found"
+                    />
+                    <Button
+                      onClick={handleAddInstructors}
+                      disabled={selectedInstructorIds.length === 0 || addingInstructors}
+                      className="self-end"
+                    >
+                      <IconUserPlus className="w-4 h-4 mr-1" />
+                      {addingInstructors
+                        ? "Adding…"
+                        : `Add ${
+                            selectedInstructorIds.length > 0
+                              ? `${selectedInstructorIds.length} `
+                              : ""
+                          }instructor${selectedInstructorIds.length !== 1 ? "s" : ""}`}
+                    </Button>
+                  </div>
                 </div>
               )}
 

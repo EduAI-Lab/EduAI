@@ -12,6 +12,9 @@ vi.mock("~/lib/prisma.server", () => ({
   default: {
     course: { findUnique: vi.fn() },
     user: { findUnique: vi.fn(), findMany: vi.fn() },
+    // #1840: the staff branch loads every active INSTRUCTOR enrollment rather
+    // than a platform-wide INSTRUCTOR user list.
+    enrollment: { findMany: vi.fn() },
   },
 }));
 
@@ -127,34 +130,48 @@ describe("courses.$courseId loader", () => {
     const result = (await loader(makeArgs())) as {
       course: JsonObject;
       access: string;
-      instructors: unknown[];
+      courseInstructors: unknown[];
     };
     expect(result.access).toBe("student");
     expect(result.course).not.toHaveProperty("aiInstructions");
     expect(result.course).toHaveProperty("hasAiConfig");
     expect(result.course).not.toHaveProperty("courseScopeGuardrailEnabled");
-    expect(result.instructors).toEqual([]);
-    expect(prisma.user.findMany).not.toHaveBeenCalled();
+    expect(result.courseInstructors).toEqual([]);
+    expect(prisma.enrollment.findMany).not.toHaveBeenCalled();
   });
 
-  it("returns aiInstructions (not hasAiConfig) and the instructor list for an admin", async () => {
+  it("returns aiInstructions (not hasAiConfig) and every course instructor for an admin", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
     vi.mocked(prisma.course.findUnique).mockResolvedValue(BASE_COURSE as never);
     vi.mocked(resolveCourseAccess).mockResolvedValue("admin");
-    vi.mocked(prisma.user.findMany).mockResolvedValue([
-      { id: "instructor-1", name: "Prof", email: "prof@ubc.ca" },
+    // #1840: two active instructors, only one of whom is Course.instructorId.
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
+      {
+        id: "enr-1",
+        userId: "instructor-1",
+        user: { name: "Prof", email: "prof@ubc.ca", role: "INSTRUCTOR" },
+      },
+      {
+        id: "enr-2",
+        userId: "admin-2",
+        user: { name: "Dr Admin", email: "admin@ubc.ca", role: "ADMIN" },
+      },
     ] as never);
 
     const result = (await loader(makeArgs())) as {
       course: JsonObject;
-      instructors: unknown[];
+      courseInstructors: { id: string; isPrimary: boolean; platformRole: string }[];
     };
     expect(result.course).toHaveProperty("aiInstructions", null);
     expect(result.course).not.toHaveProperty("hasAiConfig");
     expect(result.course).toHaveProperty("courseScopeGuardrailEnabled", false);
-    expect(result.instructors).toHaveLength(1);
+    expect(result.courseInstructors).toHaveLength(2);
+    // Only the row matching Course.instructorId is the primary.
+    expect(result.courseInstructors.map((row) => row.isPrimary)).toEqual([true, false]);
+    // An ADMIN account holding an instructor enrollment is surfaced as such.
+    expect(result.courseInstructors[1].platformRole).toBe("ADMIN");
   });
 
   it("looks up authorizedUnits from the DB for a UNIT_ADMIN", async () => {
