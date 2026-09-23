@@ -89,10 +89,12 @@ describe("indexable-text predicates agree against a real database", () => {
 
     // Compared by label so a failure names the shape that drifted rather than
     // printing two sets of cuids.
+    // Both sides are derived by filtering CASES, so they come out in CASES
+    // order already — no sort, and a mismatch reports in a stable order.
     const labelsOf = (ids: Set<string>) =>
-      CASES.filter((testCase) => ids.has(idByLabel.get(testCase.label)!))
-        .map((testCase) => testCase.label)
-        .toSorted();
+      CASES.filter((testCase) => ids.has(idByLabel.get(testCase.label)!)).map(
+        (testCase) => testCase.label,
+      );
 
     expect(labelsOf(fromSql)).toEqual(labelsOf(fromJs));
   });
@@ -105,9 +107,10 @@ describe("indexable-text predicates agree against a real database", () => {
     // Pinned independently of `hasIndexableText`, so a regression that breaks
     // both halves the same way still fails here.
     expect(
-      CASES.filter((testCase) => fromSql.has(idByLabel.get(testCase.label)!))
-        .map((testCase) => testCase.label)
-        .toSorted(),
-    ).toEqual(["real-text", "single-zero", "text-after-newlines", "text-with-padding"]);
+      CASES.filter((testCase) => fromSql.has(idByLabel.get(testCase.label)!)).map(
+        (testCase) => testCase.label,
+      ),
+      // In CASES order, not alphabetical.
+    ).toEqual(["real-text", "text-with-padding", "single-zero", "text-after-newlines"]);
   });
 });
