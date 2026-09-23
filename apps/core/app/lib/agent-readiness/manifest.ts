@@ -359,6 +359,65 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "deactivateCourseEnrollment",
     routeFile: "routes/api/courses.enrollments.$enrollmentId.ts",
   }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:id/enrollments/csv",
+    // The only `partial` entry in this manifest: the request body is CSV text,
+    // not JSON, so an MCP client has to set a non-JSON content type. Everything
+    // downstream of that — authorization, the response, the error envelope — is
+    // the same as the single-add path.
+    readiness: "partial",
+    reason:
+      "Body is a CSV document (raw text/csv, or multipart with a `file` field) rather than JSON",
+    gaps: ["json-body"],
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.enrollments.csv.ts",
+    note:
+      "Agent-callable today via a raw text/csv body. Header row required with an `email` column; " +
+      "optional `role` column (STUDENT|TA|INSTRUCTOR, default STUDENT). Caps: 256 KiB and 500 rows " +
+      "(413 over either, 422 on a malformed header). Not transactional — 200 carries a per-row " +
+      "summary `{ totalRows, imported, alreadyEnrolled, failed, errors[] }` with file line numbers, " +
+      "so a partial import reports which rows failed instead of rolling the batch back. Rank >= 2 " +
+      "plus the same per-row role rules as POST /api/courses/:id/enrollments.",
+  }),
+
+  // ── Self-enrollment links ───────────────────────────────────────────────────
+  entry({
+    method: "GET",
+    path: "/api/courses/:id/self-enroll",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.self-enroll.ts",
+    note:
+      "Lists every self-enrollment link for the course with a derived status " +
+      "(ACTIVE|REVOKED|EXPIRED|EXHAUSTED). Never returns a token or its hash — a minted token is " +
+      "unrecoverable by design, so there is nothing here to read back.",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:id/self-enroll",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.self-enroll.ts",
+    note:
+      "Mints a revocable self-enrollment link. Optional JSON body `{ ttlDays?, maxRedemptions? }` " +
+      "(defaults: 30 days, unlimited redemptions). The 201 response carries the raw token and share " +
+      "URL EXACTLY ONCE — only its sha256 is stored, so a lost token cannot be re-read and must be " +
+      "replaced by minting a new link. Deliberately NOT idempotent: each call mints a distinct " +
+      "credential, so a blind retry leaves an extra live link that should be revoked.",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/courses/:id/self-enroll",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.self-enroll.ts",
+    note:
+      "Revokes one link via the `linkId` query param; 204 with an empty body, 400 without a " +
+      "`linkId`, 404 for a link the course does not own. Idempotent — re-revoking keeps the " +
+      "original timestamp. Redemption itself is not a REST endpoint: it lives on the " +
+      "/courses/self-enroll page a student opens, so no agent-facing surface consumes a token.",
+  }),
 
   // ── Topics ──────────────────────────────────────────────────────────────────
   entry({
