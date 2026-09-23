@@ -28,6 +28,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
+import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -91,6 +92,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const audience = isStudent ? "student" : "staff";
 
+  // #1841: every active instructor, so the detail header stops rendering one of
+  // three. The serializer redacts their emails for the student audience.
+  const instructorSummaries = (await getCourseInstructors([course.id])).get(course.id) ?? [];
+
   return {
     // SAFETY: the serializer adds audience-specific fields on top of the
     // detail shape; `JsonObject` names those extras as what they are — JSON
@@ -98,6 +103,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     course: serializeCourseForApi(course, {
       audience,
       detail: true,
+      instructors: instructorSummaries,
     }) as CourseDetail & JsonObject,
     // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
     // role=TA); the course query no longer includes a CourseTA relation.
