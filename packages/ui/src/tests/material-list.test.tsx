@@ -121,3 +121,44 @@ describe("MaterialList", () => {
     });
   });
 });
+
+// #1749: a failed row needs somewhere to hang its "why did this fail?"
+// disclosure. The slot is generic on purpose — the design system stays
+// ignorant of upload-failure semantics, which live in the consuming app.
+describe("MaterialList — per-row status detail slot (#1749)", () => {
+  it("renders nothing extra when no caller supplies a status detail", () => {
+    render(<MaterialList items={items} />);
+    expect(screen.queryByTestId("status-detail-3")).not.toBeInTheDocument();
+  });
+
+  it("renders the caller's status detail alongside that row's status", () => {
+    render(
+      <MaterialList
+        items={items}
+        renderStatusDetail={(item) =>
+          item.status === "FAILED" ? (
+            <span data-testid={`status-detail-${item.id}`}>why?</span>
+          ) : null
+        }
+      />,
+    );
+
+    expect(screen.getByTestId("status-detail-3")).toBeInTheDocument();
+  });
+
+  it("lets the caller decide which rows get one, rather than rendering it on every row", () => {
+    render(
+      <MaterialList
+        items={items}
+        renderStatusDetail={(item) =>
+          item.status === "FAILED" ? (
+            <span data-testid={`status-detail-${item.id}`}>why?</span>
+          ) : null
+        }
+      />,
+    );
+
+    expect(screen.queryByTestId("status-detail-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("status-detail-2")).not.toBeInTheDocument();
+  });
+});
