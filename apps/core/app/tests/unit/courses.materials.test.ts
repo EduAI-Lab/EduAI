@@ -2044,6 +2044,73 @@ describe("POST /api/courses/:courseId/materials/:materialId/reprocess (#1749)", 
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
+  // #1795 review round 2: reprocess was dispatched under the *upload* gate, so
+  // anything that may upload could retry anything. But a retry re-embeds an
+  // existing row with `replace: true` — that is the delete/edit blast radius,
+  // not the upload one, and every sibling mutation on this resource checks
+  // `uploadedBy`. PATCH uses `rank < 2 && !isOwnTaEdit`; DELETE uses
+  // `rank < 2 && !isOwnTa && !isOwnDuplicateReceipt`. Reprocess checked nothing.
+  describe("ownership, not just the upload gate (#1795 review round 2)", () => {
+    it("denies a student who may upload, retrying someone else's material", async () => {
+      // The `students.canUploadMaterials` grant is what makes this reachable:
+      // it clears the upload gate, and nothing afterwards looked at uploadedBy.
+      vi.mocked(getPolicy).mockResolvedValue(true);
+      mockAccess({ level: "student", rank: 0 });
+      mockRetryableMaterial({ uploadedBy: "instructor-9" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(403);
+      expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("denies a TA retrying a material it did not upload", async () => {
+      // A TA may rename or delete only its own material; re-embedding someone
+      // else's is strictly larger than either.
+      vi.mocked(getPolicy).mockResolvedValue(true);
+      mockAccess({ level: "ta", rank: 1 });
+      mockRetryableMaterial({ uploadedBy: "instructor-9" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(403);
+      expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("allows a TA retrying its own material, mirroring the DELETE carve-out", async () => {
+      vi.mocked(getPolicy).mockResolvedValue(true);
+      mockAccess({ level: "ta", rank: 1 });
+      mockRetryableMaterial({ uploadedBy: "user-1" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(202);
+    });
+
+    it("allows an instructor regardless of who uploaded the material", async () => {
+      mockAccess({ level: "instructor", rank: 2 });
+      mockRetryableMaterial({ uploadedBy: "someone-else" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(202);
+    });
+
+    it("reads uploadedBy off the row so the gate has something to check", async () => {
+      mockRetryableMaterial();
+
+      await action(makeReprocessArgs("mat-1"));
+
+      expect(prisma.courseMaterial.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ uploadedBy: true }),
+        }),
+      );
+    });
+  });
+
   // #1795 review: reprocess was dispatched on `params.materialId` being
   // present, but `/api/courses/:courseId/materials/:materialId` maps to this
   // same module and supplies that param too. The matched path is the real
@@ -2180,12 +2247,17 @@ describe("GET materials — hasExtractedText on failed rows (#1749)", () => {
     // #1795 review: `{ not: null }` here against `!material.rawText` there let
     // a `rawText: ""` row be offered a retry the route answered 409 to. Both
     // sides now go through `hasIndexableText` / its SQL twin.
+    //
+    // Round 2: that twin was `btrim("rawText") <> ''`, which trims U+0020 and
+    // nothing else, so `"\n\n\n"` drifted back the same way. Asserted as shape
+    // here; the two predicates are actually run against each other in
+    // `material-indexable-text.integration.test.ts`.
     mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
     mockProbeResult([]);
 
     await loader(makeArgs("GET"));
 
     const [strings] = vi.mocked(prisma.$queryRaw).mock.calls[0] as [TemplateStringsArray];
-    expect(strings.join(" ? ")).toContain(`btrim("rawText") <> ''`);
+    expect(strings.join(" ? ")).toMatch(/"rawText"\s+~\s+\?/);
   });
 });

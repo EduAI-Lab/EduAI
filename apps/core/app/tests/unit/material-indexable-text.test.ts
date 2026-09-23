@@ -16,6 +16,11 @@ function probeSql(): string {
   return strings.join(" ? ");
 }
 
+/** The values bound into the probe's tagged template, in order. */
+function probeValues(): unknown[] {
+  return vi.mocked(prisma.$queryRaw).mock.calls[0].slice(1);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
@@ -70,11 +75,19 @@ describe("selectMaterialIdsWithIndexableText", () => {
   it("applies the same trimming rule the route applies, in SQL", async () => {
     // Prisma has no trimming filter, so the predicate is written out rather
     // than approximated with `{ not: null }` — approximating is how the two
-    // sides drifted apart. `btrim` is NULL-propagating, so a null `rawText`
-    // drops out of the result without a second clause.
+    // sides drifted apart. A NULL `rawText` makes the match NULL rather than
+    // true, so it drops out of the result without a second clause.
+    //
+    // This asserts the shape only. Whether the class actually agrees with JS
+    // `.trim()` cannot be settled here — `$queryRaw` is mocked, so no predicate
+    // is ever evaluated — and that blind spot is how `btrim/1`, which strips
+    // U+0020 and nothing else, passed CI for a round. The real comparison lives
+    // in `material-indexable-text.integration.test.ts`.
     await selectMaterialIdsWithIndexableText(["mat-1"]);
 
-    expect(probeSql()).toContain(`btrim("rawText") <> ''`);
+    expect(probeSql()).toMatch(/"rawText"\s+~\s+\?/);
+    // The class is bound, not inlined, and covers the shapes `btrim` missed.
+    expect(probeValues().at(-1)).toContain("\\u00a0");
   });
 
   it("selects ids only, never the document text (#948)", async () => {

@@ -192,12 +192,20 @@ export async function claimExtraction(materialId: string): Promise<boolean> {
  * Take the restore lease for a soft-deleted duplicate that is coming back
  * (#685), in the same statement that un-deletes it.
  *
- * The restore target keeps its *content* checksum, so the sweeper — which scans
- * `pending:` rows — can never see it directly; recovery reaches it through the
- * receipt instead (see `classifyRestoreTarget`). That only works if a restore in
- * progress is distinguishable from one whose worker died, which is what the
- * lease taken here provides: un-delete and lease are one write, so there is no
- * window in which the target is PROCESSING with nothing claiming it.
+ * The restore target keeps its *content* checksum, so the blob sweeper — which
+ * scans `pending:` rows — can never see it directly; recovery reaches it through
+ * the receipt instead (see `classifyRestoreTarget`). That only works if a
+ * restore in progress is distinguishable from one whose worker died, which is
+ * what the lease taken here provides: un-delete and lease are one write, so
+ * there is no window in which the target is PROCESSING with nothing claiming it.
+ *
+ * `resumeStrandedReembeds` *does* see this row — it scans on the lease rather
+ * than on a `pending:` checksum, and a restore target is PROCESSING with a
+ * non-null lease, surviving `rawText` and no blob, which is its shape exactly
+ * (#1795 review round 2). That is deliberate and safe rather than an oversight
+ * to exclude: resuming a restore target whose worker really did die is the
+ * correct outcome, and the embed below holds the lease open with
+ * `withLeaseHeartbeat`, so a *live* restore never looks abandoned to it.
  *
  * Reclaiming an already-PROCESSING target requires an *expired* lease, never a
  * null one. `extractionLeaseUntil` is only ever written by this module, so a
@@ -358,9 +366,17 @@ export async function runMaterialExtraction(
         try {
           // Replace any stale chunks/embeddings from before the soft-delete so
           // restoring a material doesn't append duplicate RAG content (#685 review).
-          await processMaterialEmbeddings(duplicate.id, fileInfo.content, {
-            replace: true,
-          });
+          //
+          // Heartbeated: the restore lease taken just above is what tells every
+          // other claimant this row is owned, and a restore slower than the
+          // lease used to look abandoned to anything scanning on it — including
+          // `resumeStrandedReembeds`, which a restore target matches exactly
+          // (#1795 review round 2).
+          await withLeaseHeartbeat(duplicate.id, () =>
+            processMaterialEmbeddings(duplicate.id, fileInfo.content, {
+              replace: true,
+            }),
+          );
           await prisma.courseMaterial.update({
             where: { id: duplicate.id },
             data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
@@ -507,13 +523,65 @@ export function startMaterialExtraction(
  * than appending a second copy — the same reasoning that makes the sweeper's
  * resumed extractions idempotent.
  */
+/**
+ * How often a running embed pushes its lease out. A third of the lease, so two
+ * renewals may be missed before anything else considers the row abandoned.
+ */
+const LEASE_RENEW_MS = Math.floor(EXTRACTION_LEASE_MS / 3);
+
+/**
+ * Hold the extraction lease for as long as `run` is actually running.
+ *
+ * The lease was taken once and never renewed, so "expired lease" did not mean
+ * "the worker died" — it meant "the worker died *or* is slower than 15 minutes"
+ * (#1795 review round 2). Any sweeper that reclaims on an expired lease would
+ * therefore start a second `replace: true` embed over a live one, and whichever
+ * finished last would settle the row over a half-replaced chunk set. A large
+ * document or a slow embedding provider is all it took.
+ *
+ * This is what makes the lease an honest liveness signal for every protocol
+ * that takes one — the #1749 retry and the #685 restore alike, which is why a
+ * restore target being visible to `resumeStrandedReembeds` is safe rather than
+ * something to exclude by row shape. The two are indistinguishable by column
+ * anyway: `claimRestoreTarget` writes exactly PROCESSING + rawText + lease with
+ * no blob.
+ *
+ * The renewal is conditional on the row still being PROCESSING, so it cannot
+ * resurrect a lease on a row something else has already settled, and a failed
+ * renewal is swallowed: losing one is recoverable, and throwing here would fail
+ * an embed that is otherwise fine.
+ */
+async function withLeaseHeartbeat<T>(materialId: string, run: () => Promise<T>): Promise<T> {
+  const timer = setInterval(() => {
+    void prisma.courseMaterial
+      .updateMany({
+        where: { id: materialId, status: "PROCESSING" },
+        data: { extractionLeaseUntil: new Date(Date.now() + EXTRACTION_LEASE_MS) },
+      })
+      .catch(() => {
+        // A dropped renewal only costs this row its claim; the sweeper that
+        // takes over is the recovery path, not a failure.
+      });
+  }, LEASE_RENEW_MS);
+  // Never hold the process open for a heartbeat.
+  timer.unref?.();
+
+  try {
+    return await run();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 async function runMaterialReembed(
   materialId: string,
   rawText: string,
   requestContext: RequestContext,
 ): Promise<void> {
   try {
-    await processMaterialEmbeddings(materialId, rawText, { replace: true });
+    await withLeaseHeartbeat(materialId, () =>
+      processMaterialEmbeddings(materialId, rawText, { replace: true }),
+    );
     await prisma.courseMaterial.update({
       where: { id: materialId },
       data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
@@ -653,9 +721,20 @@ export async function sweepStrandedMaterialExtractions(
  * knows nothing about: `extractionLeaseUntil` is only ever written by this
  * module, so theirs is null and `{ lt: now }` can never match it.
  *
- * There is no attempts ceiling to apply here, and none is needed: a resumed
- * re-embed either reaches READY or is failed back to FAILED by
- * `runMaterialReembed`. Either way it is terminal, so this cannot loop.
+ * A live worker is not mistaken for a dead one: every embed that holds this
+ * lease renews it through `withLeaseHeartbeat`, so an expired lease means the
+ * worker is gone rather than merely slow. That is what makes it safe for this
+ * scan to match a #685 restore target as well as a #1749 retry — the two are
+ * indistinguishable by row shape, and resuming a genuinely dead restore is the
+ * right outcome anyway.
+ *
+ * There is no attempts ceiling to apply here, and none is needed, but the
+ * reason is narrower than it first looks: every path out of the loop below is
+ * terminal. A resumed re-embed reaches READY or is failed by
+ * `runMaterialReembed`; a row whose text cannot be indexed is failed here
+ * rather than skipped, because skipping it left it PROCESSING behind a lease
+ * this loop had just renewed, and it would be selected and skipped again on
+ * every subsequent sweep (#1795 review round 2).
  */
 async function resumeStrandedReembeds(now: Date, requestContext: RequestContext): Promise<number> {
   const stranded = await prisma.courseMaterial.findMany({
@@ -690,7 +769,31 @@ async function resumeStrandedReembeds(now: Date, requestContext: RequestContext)
       where: { id: row.id },
       select: { rawText: true },
     });
-    if (!hasIndexableText(fresh?.rawText)) continue;
+
+    // A row that vanished or settled between the scan and here is genuinely
+    // nothing to do — it has already reached a terminal state by another path.
+    if (!fresh) continue;
+
+    // But a row that is still here with text this can never index has to be
+    // *failed*, not skipped (#1795 review round 2). Skipping left it PROCESSING
+    // with the lease the claim above just pushed out, so the next sweep
+    // selected it, re-leased it and skipped it again — parked forever in the
+    // one state the UI reads as "still working", which is the stranded-row
+    // problem this sweeper exists to solve, reached from the other side.
+    //
+    // The scan's `rawText: { not: null }` cannot express trimming, so `""` and
+    // whitespace-only rows do reach this point; `hasIndexableText` is the
+    // authority and this is where its answer becomes terminal.
+    if (!hasIndexableText(fresh.rawText)) {
+      await failMaterial(
+        row.id,
+        "MATERIAL_EXTRACT_ABANDONED",
+        "Stranded re-embed had no indexable text left to resume",
+        new Error("no indexable text"),
+        requestContext,
+      );
+      continue;
+    }
 
     // Awaited, not fire-and-forget: it bounds the sweep to one embed at a time
     // and keeps the returned summary honest. Failure is terminal inside

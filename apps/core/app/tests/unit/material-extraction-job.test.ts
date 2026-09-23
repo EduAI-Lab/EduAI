@@ -486,6 +486,107 @@ describe("sweepStrandedMaterialExtractions", () => {
         replace: true,
       });
     });
+
+    // #1795 review round 2 (F4): the claim above has already pushed the lease
+    // out by another EXTRACTION_LEASE_MS, so skipping a row here leaves it
+    // PROCESSING *and* freshly leased. Combined with a scan that asked
+    // `rawText: { not: null }` — the approximation `indexable-text.server.ts`
+    // exists to stop — an empty or whitespace-only row was selected, re-leased
+    // and skipped on every sweep, forever. The doc's "either READY or FAILED,
+    // so this cannot loop" is exactly the branch that reasoning missed.
+    describe("a row whose text cannot be indexed (#1795 review round 2)", () => {
+      // The scan's `rawText: { not: null }` stays a *prefilter*, not a decision:
+      // trimming is not expressible as a Prisma filter, and `hasIndexableText`
+      // after the claim is the authority. That split is only safe because the
+      // rejected case is now terminal — which is what these pin.
+      it("fails a whitespace-only row terminally instead of re-leasing it forever", async () => {
+        mockStrandedReembed();
+        vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+          rawText: "  \n\t ",
+        } as never);
+
+        await sweepStrandedMaterialExtractions(CTX);
+
+        // Terminal, so the next sweep cannot pick it up again.
+        expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: "mat-1" },
+            data: expect.objectContaining({ status: "FAILED" }),
+          }),
+        );
+        expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+      });
+
+      it("does not count a row it failed as resumed", async () => {
+        mockStrandedReembed();
+        vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+          rawText: "",
+        } as never);
+
+        const result = await sweepStrandedMaterialExtractions(CTX);
+
+        expect(result.resumed).toBe(0);
+      });
+    });
+
+    // #1795 review round 2 (F3): an expired lease was standing in for "the
+    // worker died", but nothing renewed it while an embed ran. A restore
+    // target — PROCESSING, non-null expired lease, rawText, no blob, written
+    // in one statement by `claimRestoreTarget` — matches this scan exactly, so
+    // a restore slower than the lease was reclaimed out from under a live
+    // worker and embedded twice with `replace: true`.
+    describe("does not reclaim a worker that is still alive", () => {
+      // The renewal is on a timer, so these drive the clock rather than wait.
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("renews the lease while the embed runs, so a slow row stays owned", async () => {
+        mockStrandedReembed();
+        vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+          rawText: "extracted lecture text",
+        } as never);
+
+        let resolveEmbed: () => void = () => {};
+        vi.mocked(processMaterialEmbeddings).mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveEmbed = resolve;
+            }),
+        );
+
+        const sweep = sweepStrandedMaterialExtractions(CTX);
+        // Past one whole lease period with the embed still running.
+        await vi.advanceTimersByTimeAsync(EXTRACTION_LEASE_MS);
+
+        const renewals = vi
+          .mocked(prisma.courseMaterial.updateMany)
+          .mock.calls.map(([args]: [any]) => args)
+          .filter((args: any) => args.where.id === "mat-1" && args.data.extractionLeaseUntil);
+        // The initial claim, plus at least one renewal while it ran.
+        expect(renewals.length).toBeGreaterThan(1);
+
+        resolveEmbed();
+        await sweep;
+      });
+
+      it("stops renewing once the embed settles", async () => {
+        mockStrandedReembed();
+        vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+          rawText: "extracted lecture text",
+        } as never);
+
+        await sweepStrandedMaterialExtractions(CTX);
+        const afterSweep = vi.mocked(prisma.courseMaterial.updateMany).mock.calls.length;
+
+        await vi.advanceTimersByTimeAsync(EXTRACTION_LEASE_MS * 3);
+
+        expect(vi.mocked(prisma.courseMaterial.updateMany).mock.calls.length).toBe(afterSweep);
+      });
+    });
   });
 });
 

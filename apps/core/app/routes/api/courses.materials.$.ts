@@ -160,8 +160,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       switch (request.method) {
         case "POST": {
-          // Same staff gate as upload below (a retry rewrites course RAG
-          // content), so it is dispatched after that gate rather than before it.
+          // Reprocess is dispatched after the upload gate below because it
+          // needs everything that gate establishes — but that gate is not the
+          // whole story for a retry. `reprocessMaterial` applies the stricter
+          // DELETE-shaped ownership check on top, because re-embedding
+          // rewrites an existing row's RAG content rather than adding a new
+          // row (#1795 review round 2).
 
           // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
           // Students cannot upload materials UNLESS the students.canUploadMaterials
@@ -201,7 +205,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
             if (!reprocessMaterialId) {
               return json(400, { error: "MATERIAL_ID_REQUIRED" });
             }
-            return reprocessMaterial(courseId, reprocessMaterialId, requestContext);
+            return reprocessMaterial(
+              courseId,
+              reprocessMaterialId,
+              access,
+              user.id,
+              requestContext,
+            );
           }
           return uploadMaterial(request, courseId, user, requestContext);
         }
@@ -551,15 +561,34 @@ async function reclaimProvisionalRow(
 async function reprocessMaterial(
   courseId: string,
   materialId: string,
+  access: { level: string; rank: number },
+  userId: string,
   requestContext: RequestContext,
 ) {
   const material = await prisma.courseMaterial.findFirst({
     where: { id: materialId, courseId, deletedAt: null },
-    select: { id: true, status: true, duplicateOfId: true, rawText: true },
+    select: { id: true, status: true, duplicateOfId: true, rawText: true, uploadedBy: true },
   });
 
   if (!material) {
     return json(404, { error: "MATERIAL_NOT_FOUND" });
+  }
+
+  // §7: ownership, not the upload gate (#1795 review round 2). Reaching here
+  // means only that the caller may *upload* — rank ≥ 1, or a student with
+  // `students.canUploadMaterials` in a published course, or a TA with
+  // `tas.canManageMaterials`. But a retry re-embeds this row's chunk set with
+  // `replace: true`, which is the DELETE/PATCH blast radius rather than the
+  // upload one, so it takes the DELETE gate: instructor and above, plus the
+  // own-material carve-out. A null `uploadedBy` means no owner, so the
+  // carve-out cannot match it — same rule as the TA branches above.
+  //
+  // Students get no carve-out even for their own upload: a failed upload is
+  // still re-uploadable, so the retry is a convenience rather than the only
+  // way back, and widening a staff gate to deliver it is the wrong trade.
+  const isOwnMaterial = material.uploadedBy !== null && material.uploadedBy === userId;
+  if (access.rank < 2 && !(access.level === "ta" && isOwnMaterial)) {
+    return json(403, { error: "Forbidden" });
   }
   if (material.status !== "FAILED") {
     return json(409, { error: "MATERIAL_NOT_FAILED" });
