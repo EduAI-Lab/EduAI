@@ -247,22 +247,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // #1666 review (Stavan): resolved once per navigation, alongside the
   // preference read, so the sidebar/command-palette Course Assistant link
   // is correct on every route — not just the one page that happened to
-  // fetch this caller's courses. ADMIN excluded to match
-  // instructor.chat.tsx's own loader: resolveAccess always resolves ADMIN
-  // to admin-level, never instructor-level, no matter their enrollment, so
-  // an ADMIN can never actually pass /instructor/chat's gate.
-  const teachingEnrollmentsPromise =
-    session.user.role === "ADMIN"
-      ? Promise.resolve([])
-      : prisma.enrollment.findMany({
-          where: {
-            userId: session.user.id,
-            role: { in: ["INSTRUCTOR", "TA"] },
-            isActive: true,
-          },
-          select: { role: true },
-          distinct: ["role"],
-        });
+  // fetch this caller's courses.
+  //
+  // #1843: the ADMIN exclusion that used to sit here is gone. It mirrored
+  // instructor.chat.tsx's own short-circuit, which existed because an ADMIN
+  // could never pass /instructor/chat's gate. That gate now admits an ADMIN
+  // holding a real active INSTRUCTOR enrollment, so the link must appear for
+  // them too — an ADMIN who teaches nothing still gets no rows here, exactly
+  // as before.
+  const teachingEnrollmentsPromise = prisma.enrollment.findMany({
+    where: {
+      userId: session.user.id,
+      role: { in: ["INSTRUCTOR", "TA"] },
+      isActive: true,
+    },
+    select: { role: true },
+    distinct: ["role"],
+  });
   teachingEnrollmentsPromise.catch(() => {});
 
   if (!isExempt) {

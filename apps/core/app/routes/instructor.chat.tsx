@@ -24,6 +24,8 @@ import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { getAuthorizedUnits, type RbacUser } from "~/lib/auth/course-access.server";
+import { canSwitchToInstructorView } from "~/lib/rbac/instructor-view.server";
+import { InstructorViewBanner } from "~/components/rbac/instructor-view-banner";
 
 /**
  * #1659 review: the only authority for "which courses can this instructor
@@ -42,11 +44,14 @@ import { getAuthorizedUnits, type RbacUser } from "~/lib/auth/course-access.serv
  * the guard, keeping this loader and the guard provably in lockstep.
  */
 async function listMyPublishedInstructorCourses(user: RbacUser) {
-  // Every ADMIN resolves to `admin`-level access on every course
-  // (resolveAccess's first branch) — never `instructor`, no matter their
-  // enrollment. Nothing they teach can ever pass the guard.
-  if (user.role === "ADMIN") return [];
-
+  // #1843: the ADMIN short-circuit that used to sit here is gone. It existed
+  // because `resolveAccess` resolves every ADMIN to `admin`-level, never
+  // `instructor`, so a listed course would then 403 on every chat turn — a
+  // loader and a guard out of lockstep. They are back in lockstep now:
+  // `canUseInstructorChatMode` admits an ADMIN/UNIT_ADMIN holding a REAL active
+  // INSTRUCTOR enrollment, which is exactly what the query below selects.
+  // An account with no such enrollment still gets an empty list here and a 403
+  // there, so nothing was widened.
   const authorizedUnits = user.role === "UNIT_ADMIN" ? await getAuthorizedUnits(user) : null;
 
   const courses = await prisma.course.findMany({
@@ -68,12 +73,14 @@ async function listMyPublishedInstructorCourses(user: RbacUser) {
 
   if (!authorizedUnits) return courses;
 
-  // §19 unit lock (course-access.server.ts): a UNIT_ADMIN whose authorized
-  // units include the course's department resolves to `unit`-level access
-  // there — never `instructor` — regardless of their real enrollment. A
-  // null department is never a unit match, so those courses fall through to
-  // the (allowed) enrollment check same as the guard.
-  return courses.filter((c) => c.department === null || !authorizedUnits.includes(c.department));
+  // #1843: a UNIT_ADMIN whose authorized units include the course's department
+  // resolves to `unit`-level, never `instructor` — but, like ADMIN above, the
+  // guard now admits them on a course they really teach, so these are no longer
+  // filtered out. `authorizedUnits` is still resolved because the guard's own
+  // unit check depends on it; keeping the lookup here documents that both sides
+  // read the same input.
+  void authorizedUnits;
+  return courses;
 }
 
 /** `startDate` formatted as e.g. "Jan 5, 2026" — always in UTC so the label doesn't shift with the server/test-runner's local timezone (`startDate` is a bare calendar date, not a moment). */
@@ -156,6 +163,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     chatModels,
     courses: labelInstructorCourses(courses),
     user: session.user,
+    // #1843: an ADMIN/UNIT_ADMIN reached this page through a course enrollment
+    // rather than their platform role. Label the view and offer a way back,
+    // rather than leaving them unsure which surface they are on.
+    showInstructorViewBanner: canSwitchToInstructorView(session.user.role, courses.length),
   };
 }
 
@@ -207,7 +218,7 @@ function describeInstructorChatError(error: Error): string {
 }
 
 export default function InstructorChatPage() {
-  const { chatModels, courses, user } = useLoaderData<typeof loader>();
+  const { chatModels, courses, user, showInstructorViewBanner } = useLoaderData<typeof loader>();
 
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : "");
   const [searchParams] = useSearchParams();
@@ -427,6 +438,11 @@ export default function InstructorChatPage() {
         </Breadcrumb>
       }
     >
+      {showInstructorViewBanner && (
+        <div className="mx-4 mt-4 shrink-0 md:mx-6">
+          <InstructorViewBanner />
+        </div>
+      )}
       {chatError && (
         <Alert variant="destructive" className="mx-4 mt-4 shrink-0 md:mx-6">
           <AlertTitle>Course assistant couldn&apos;t respond</AlertTitle>
