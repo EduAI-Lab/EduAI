@@ -1,7 +1,7 @@
 import type { JsonObject } from "~/lib/json-value";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useFetcher,
   useLocation,
@@ -10,7 +10,6 @@ import {
   useSearchParams,
 } from "react-router";
 import { IconHistory } from "@tabler/icons-react";
-import { toast } from "sonner";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
@@ -26,6 +25,7 @@ import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@eduai/ui";
+import { describeStudentChatError } from "~/lib/chat-error-copy";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
@@ -410,6 +410,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     append,
     setMessages,
     setInput,
+    // #1510: the SDK has published this all along; chat-screen never read it,
+    // which is the whole reason a failed turn was invisible to the student.
+    error: chatRequestError,
+    reload,
   } = useChat({
     api: "/api/chat",
     fetch: chatFetch,
@@ -527,9 +531,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onError: (error) => {
       activeRequestIdRef.current = null;
       logChatUseChatError(error, "learning-chat");
-      toast.error("Could not get a response", {
-        description: error.message || "Please try again.",
-      });
       pendingRoutedRegistryIdRef.current = null;
       pendingWasAutoRoutedRef.current = false;
       pendingAdhdAssistRef.current = false;
@@ -913,6 +914,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     [adhdAssist, append, chatId, isLoading, setInput],
   );
 
+  // #1510: classify the failure into copy a student can act on (wait / it's
+  // us, not you / check your connection) instead of the raw rejection body.
+  // Derived from the SDK's `error` rather than latched in `onError`, so the
+  // AI SDK's own reset — it clears `error` the moment the next request starts
+  // — also clears the banner, on a retry and on a fresh submit alike.
+  const chatError = useMemo(() => describeStudentChatError(chatRequestError), [chatRequestError]);
+
+  // Re-send the failed turn from the transcript the SDK still holds, so the
+  // student doesn't have to retype a question that was never answered.
+  const handleRetryChat = useCallback(() => {
+    void reload();
+  }, [reload]);
+
   const sharedViewProps = {
     chatModels,
     selectedModel,
@@ -948,6 +962,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     streamingWasAutoRouted,
     adhdAssistByMessageId,
     streamingAdhdAssist,
+    chatError,
+    onRetryChat: handleRetryChat,
   };
 
   return (
