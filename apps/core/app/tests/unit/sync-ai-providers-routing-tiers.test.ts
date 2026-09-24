@@ -55,6 +55,8 @@ describe("sync-ai-providers.ts — applyRoutingTierAssignments", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           providerId: VLLM_PROVIDER.id,
+          // Scoped to still-tiered rows so an admin re-enable survives the next sync.
+          routerTier: { not: null },
           modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
         }),
         data: { routerTier: null, isActive: false },
@@ -80,7 +82,7 @@ describe("sync-ai-providers.ts — applyRoutingTierAssignments", () => {
     );
   });
 
-  it("writes maxTokens on every vLLM model upsert's update branch, not only on create", async () => {
+  it("writes maxTokens and labels on every vLLM model upsert's update branch, not only on create", async () => {
     await import("../../../prisma/sync-ai-providers");
     await vi.waitFor(() => expect(aIModelUpsert).toHaveBeenCalled());
 
@@ -95,7 +97,12 @@ describe("sync-ai-providers.ts — applyRoutingTierAssignments", () => {
               modelId: model.modelId,
             },
           },
-          update: expect.objectContaining({ maxTokens: model.maxTokens }),
+          // Labels too, so an already-seeded row stops showing a stale tier description.
+          update: expect.objectContaining({
+            maxTokens: model.maxTokens,
+            name: model.name,
+            description: model.description,
+          }),
         }),
       );
     }

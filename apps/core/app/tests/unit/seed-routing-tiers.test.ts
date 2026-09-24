@@ -84,6 +84,8 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           providerId: VLLM_PROVIDER.id,
+          // Scoped to still-tiered rows so an admin re-enable survives the next sync.
+          routerTier: { not: null },
           modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
         }),
         data: { routerTier: null, isActive: false },
