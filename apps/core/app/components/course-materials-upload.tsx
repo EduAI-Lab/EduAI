@@ -3,6 +3,7 @@ import { Spinner } from "@eduai/ui";
 import { cn } from "@eduai/ui";
 import { Alert, AlertDescription } from "@eduai/ui";
 import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck, IconX } from "@tabler/icons-react";
+import { MATERIAL_INPUT_ACCEPT } from "~/lib/materials/accepted-types";
 
 export interface CourseMaterial {
   id: string;
@@ -43,9 +44,6 @@ export interface CourseMaterialsUploadProps {
   success?: string | null;
   onFileSelect: (file: File) => void;
 }
-
-export const ACCEPTED =
-  ".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown";
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -104,7 +102,7 @@ export function CourseMaterialsUpload({
       <input
         ref={inputRef}
         type="file"
-        accept={ACCEPTED}
+        accept={MATERIAL_INPUT_ACCEPT}
         onChange={handleFileChange}
         disabled={isUploading}
         className="sr-only"
