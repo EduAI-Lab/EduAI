@@ -34,7 +34,9 @@ describe("durable cron run leases", () => {
   it("converges concurrent starts on one leased owner", async () => {
     const jobName = testJobName();
 
-    const results = await Promise.all(Array.from({ length: 8 }, () => startCronRun(jobName)));
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => startCronRun(jobName, "ADMIN_UI")),
+    );
 
     const winners = results.filter((result) => result.created);
     expect(winners).toHaveLength(1);
@@ -42,9 +44,14 @@ describe("durable cron run leases", () => {
     expect(new Set(results.map((result) => result.runId)).size).toBe(1);
 
     const rows = await prisma.$queryRaw<
-      Array<{ id: string; leaseOwner: string | null; leaseExpiresAt: Date | null }>
+      Array<{
+        id: string;
+        leaseOwner: string | null;
+        leaseExpiresAt: Date | null;
+        triggerSource: string;
+      }>
     >`
-      SELECT id, "leaseOwner", "leaseExpiresAt"
+      SELECT id, "leaseOwner", "leaseExpiresAt", "triggerSource"
       FROM cron_job_runs
       WHERE "jobName" = ${jobName}
         AND status = 'RUNNING'::"CronJobStatus"
@@ -52,6 +59,9 @@ describe("durable cron run leases", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].leaseOwner).toBe(winners[0].created ? winners[0].leaseOwner : null);
     expect(rows[0].leaseExpiresAt).toBeInstanceOf(Date);
+    // The worker only claims ADMIN_UI/ADMIN_CHAT rows, so the enum cast in the
+    // INSERT has to reach the column verbatim or manual triggers never dispatch.
+    expect(rows[0].triggerSource).toBe("ADMIN_UI");
   });
 
   it("terminalizes one expired attempt, creates exactly one successor, and fences the old owner", async () => {
@@ -69,7 +79,9 @@ describe("durable cron run leases", () => {
       )
     `;
 
-    const results = await Promise.all(Array.from({ length: 8 }, () => startCronRun(jobName)));
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => startCronRun(jobName, "SCHEDULE")),
+    );
     const winners = results.filter((result) => result.created);
 
     expect(winners).toHaveLength(1);
