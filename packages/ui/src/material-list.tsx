@@ -37,6 +37,12 @@ export interface MaterialListProps<T extends MaterialListItem = MaterialListItem
   headerActions?: React.ReactNode;
   /** Per-item trailing actions (rename/delete/visibility), role-gated by the caller. */
   renderItemActions?: (item: T) => React.ReactNode;
+  /**
+   * Optional per-item slot rendered next to the status chip — e.g. a "why did
+   * this fail?" disclosure on a FAILED row (#1749). Return null for rows that
+   * need none; what warrants one is the caller's decision, not this list's.
+   */
+  renderStatusDetail?: (item: T) => React.ReactNode;
   /** Make the item name clickable (e.g. open a preview dialog). */
   onItemClick?: (item: T) => void;
   /** Override the empty-state block entirely; defaults to a shared EmptyState. */
@@ -62,6 +68,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
   showChip = true,
   headerActions,
   renderItemActions,
+  renderStatusDetail,
   onItemClick,
   emptyState,
   emptyStateDescription = "Materials will appear here once they're uploaded.",
@@ -134,6 +141,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
                 <div className="flex items-center gap-2 shrink-0">
                   {showChip && <MaterialStatusChip status={item.status} />}
                   <MaterialStatusIcon status={item.status} />
+                  {renderStatusDetail?.(item)}
                   {renderItemActions?.(item)}
                 </div>
               </div>

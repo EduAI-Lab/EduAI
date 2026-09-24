@@ -10,13 +10,19 @@ import { createHash } from "crypto";
 import { validateUploadedFile } from "~/lib/ai/file-processing";
 import prisma from "~/lib/prisma.server";
 import {
+  EXTRACTION_LEASE_MS,
   PENDING_CHECKSUM_PREFIX,
   ensureMaterialSweeperRunning,
   isChecksumConflict,
   persistUploadBlob,
   startMaterialExtraction,
+  startMaterialReembed,
   toBytesColumn,
 } from "~/lib/materials/extraction-job.server";
+import {
+  hasIndexableText,
+  selectMaterialIdsWithIndexableText,
+} from "~/lib/materials/indexable-text.server";
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
@@ -26,7 +32,8 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import type { Session } from "~/lib/auth/server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
+import type { RequestContext } from "~/lib/request-context.server";
+import { MAX_LIST_LIMIT, parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
@@ -138,8 +145,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const requestContext = getRequestContext(request);
 
+      // #1749: `.../:materialId/reprocess` retries a failed material from the
+      // text already on the row. Three routes map to this module and two of
+      // them supply `params.materialId`, so the param cannot tell them apart
+      // (#1795 review) — keying off it made `POST /materials/:id` a second,
+      // untested spelling of reprocess, and let DELETE/PATCH on the reprocess
+      // path act on the material as though the last segment were not there.
+      // The matched path is the discriminator; the loader already reads
+      // `request.url` for its cursor params, so nothing new is assumed of it.
+      const isReprocessRoute = new URL(request.url).pathname.endsWith("/reprocess");
+      if (isReprocessRoute && request.method !== "POST") {
+        return json(405, { error: "METHOD_NOT_ALLOWED" });
+      }
+
       switch (request.method) {
         case "POST": {
+          // Reprocess is dispatched after the upload gate below because it
+          // needs everything that gate establishes — but that gate is not the
+          // whole story for a retry. `reprocessMaterial` applies the stricter
+          // DELETE-shaped ownership check on top, because re-embedding
+          // rewrites an existing row's RAG content rather than adding a new
+          // row (#1795 review round 2).
+
           // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
           // Students cannot upload materials UNLESS the students.canUploadMaterials
           // grant is explicitly enabled (off by default).
@@ -172,6 +199,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
               action: "material.upload",
               courseId,
             });
+          }
+          if (isReprocessRoute) {
+            const reprocessMaterialId = params.materialId;
+            if (!reprocessMaterialId) {
+              return json(400, { error: "MATERIAL_ID_REQUIRED" });
+            }
+            return reprocessMaterial(
+              courseId,
+              reprocessMaterialId,
+              access,
+              user.id,
+              requestContext,
+            );
           }
           return uploadMaterial(request, courseId, user, requestContext);
         }
@@ -502,6 +542,98 @@ async function reclaimProvisionalRow(
   return { outcome: "reclaimed", materialId: existing.id };
 }
 
+/**
+ * Retry a failed material's indexing from the text already stored on the row
+ * (#1749).
+ *
+ * Only the embedding step is repeated, and only when repeating it can actually
+ * work. `runMaterialExtraction` writes `rawText` before embedding, so a row
+ * that failed at the embedding step is complete enough to re-run from the
+ * database — but one that failed at extraction is not, and `failMaterial` has
+ * already discarded its upload blob, so there are no bytes left either. Each
+ * unusable shape is refused with its own code rather than accepted and failed
+ * later, so the UI can decide up front whether to offer a retry at all.
+ *
+ * Answers 202, not 200: the re-embed runs in the background exactly as the
+ * upload path does (#949), and the row returns to PROCESSING, which the
+ * materials list already polls on.
+ */
+async function reprocessMaterial(
+  courseId: string,
+  materialId: string,
+  access: { level: string; rank: number },
+  userId: string,
+  requestContext: RequestContext,
+) {
+  const material = await prisma.courseMaterial.findFirst({
+    where: { id: materialId, courseId, deletedAt: null },
+    select: { id: true, status: true, duplicateOfId: true, rawText: true, uploadedBy: true },
+  });
+
+  if (!material) {
+    return json(404, { error: "MATERIAL_NOT_FOUND" });
+  }
+
+  // §7: ownership, not the upload gate (#1795 review round 2). Reaching here
+  // means only that the caller may *upload* — rank ≥ 1, or a student with
+  // `students.canUploadMaterials` in a published course, or a TA with
+  // `tas.canManageMaterials`. But a retry re-embeds this row's chunk set with
+  // `replace: true`, which is the DELETE/PATCH blast radius rather than the
+  // upload one, so it takes the DELETE gate: instructor and above, plus the
+  // own-material carve-out. A null `uploadedBy` means no owner, so the
+  // carve-out cannot match it — same rule as the TA branches above.
+  //
+  // Students get no carve-out even for their own upload: a failed upload is
+  // still re-uploadable, so the retry is a convenience rather than the only
+  // way back, and widening a staff gate to deliver it is the wrong trade.
+  const isOwnMaterial = material.uploadedBy !== null && material.uploadedBy === userId;
+  if (access.rank < 2 && !(access.level === "ta" && isOwnMaterial)) {
+    return json(403, { error: "Forbidden" });
+  }
+  if (material.status !== "FAILED") {
+    return json(409, { error: "MATERIAL_NOT_FAILED" });
+  }
+  // A duplicate receipt is not a failure to retry — the content is already on
+  // the course, and re-running would only reach the same conclusion.
+  if (material.duplicateOfId !== null) {
+    return json(409, { error: "MATERIAL_DUPLICATE" });
+  }
+  // The same predicate the list asked before it offered the button, so a row
+  // that was offered a retry is a row this accepts (#1795 review).
+  if (!hasIndexableText(material.rawText)) {
+    return json(409, { error: "MATERIAL_TEXT_UNAVAILABLE" });
+  }
+
+  // Claim conditionally rather than reading FAILED and then writing: two
+  // requests that both saw FAILED would otherwise both start a replace-mode
+  // embed over the same chunk set, and while `replace: true` converges, the
+  // interleaving leaves a window where the row reads READY over a half-replaced
+  // set. The `retrying` flag in the UI only guards a single tab. Losing the
+  // claim is the same answer as arriving late: the row is no longer FAILED.
+  //
+  // The lease is what makes the row recoverable: the re-embed below is a
+  // fire-and-forget in-process job, so a deploy or an OOM between here and its
+  // end would strand the row in PROCESSING. `sweepStrandedMaterialExtractions`
+  // picks up an expired lease and resumes it.
+  const claimed = await prisma.courseMaterial.updateMany({
+    where: { id: materialId, courseId, status: "FAILED" },
+    data: {
+      status: "PROCESSING",
+      processedAt: null,
+      extractionLeaseUntil: new Date(Date.now() + EXTRACTION_LEASE_MS),
+    },
+  });
+  if (claimed.count === 0) {
+    return json(409, { error: "MATERIAL_NOT_FAILED" });
+  }
+
+  // The caller is the actor for topic analysis, not the original uploader: this
+  // is the person who asked for the retry (#1795 review round 3).
+  startMaterialReembed(materialId, material.rawText, courseId, userId, requestContext);
+
+  return json(202, { materialId, status: "PROCESSING" });
+}
+
 async function uploadMaterial(
   request: Request,
   courseId: string,
@@ -664,6 +796,76 @@ const PREVIEW_EXCERPT_MAX = 4000;
  * that `visibleToStudents`/`availableAt` MUST stay selected — the staff branch
  * destructures them off the row and would emit `undefined` without them.
  */
+/**
+ * Which of these materials could still be retried without a re-upload (#1749).
+ *
+ * `rawText` is deliberately absent from `MATERIAL_LIST_SELECT` (#948) — it is
+ * the whole document, and the list must not carry it. So the yes/no question
+ * is asked of the database directly, ids only, and only about the rows that
+ * actually failed: a page with nothing failed costs no extra query at all.
+ */
+async function resolveRetryableMaterialIds(
+  rows: Array<{ id: string; status: string }>,
+): Promise<Set<string>> {
+  const failedIds = rows.filter((row) => row.status === "FAILED").map((row) => row.id);
+  return selectMaterialIdsWithIndexableText(failedIds);
+}
+
+/**
+ * The ids of a targeted `?ids=` re-read (#1795 review round 3).
+ *
+ * A retried material is the first PROCESSING row that can sit past page 1 —
+ * uploads are newest-first, so they are always on page 1 — and the client's
+ * poll only ever re-read page 1, leaving such a row on "Processing" until a
+ * full page reload. It now re-reads those rows by id instead.
+ *
+ * Returns null when the caller asked for no ids at all, which is the ordinary
+ * paged list rather than an empty re-read. Bounded by the same ceiling as a
+ * page: this is a re-read of rows the client already holds, and that list
+ * cannot outgrow the pages it came from.
+ */
+function parseMaterialIdsParam(searchParams: URLSearchParams): string[] | null {
+  const raw = searchParams.get("ids");
+  if (raw === null) return null;
+  const ids = [
+    ...new Set(
+      raw
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  return ids.slice(0, MAX_LIST_LIMIT);
+}
+
+/**
+ * The one shaping of a list row for a non-admin caller, shared by the paged
+ * read and the `?ids=` re-read.
+ *
+ * Shared rather than written twice on purpose: `hasExtractedText` is what
+ * decides whether the UI offers "Try again", and two copies of this mapping is
+ * exactly how the list and the route came to disagree about retryability in the
+ * first place (#1795 review rounds 1 and 2).
+ */
+async function toMaterialListRows(
+  rows: Array<Prisma.CourseMaterialGetPayload<{ select: typeof MATERIAL_LIST_SELECT }>>,
+  staff: boolean,
+) {
+  const retryableIds = await resolveRetryableMaterialIds(rows);
+  return rows.map(({ _count, visibleToStudents, availableAt, ...material }) => {
+    const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    };
+    // See the includeDeleted path above: failed rows only (#1749).
+    if (material.status === "FAILED") {
+      row.hasExtractedText = retryableIds.has(material.id);
+    }
+    if (!staff) return row;
+    return { ...row, visibleToStudents, availableAt };
+  });
+}
+
 const MATERIAL_LIST_SELECT = {
   id: true,
   courseId: true,
@@ -708,12 +910,21 @@ async function materialsListResponse(
     ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
     : await prisma.courseMaterial.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
+  const retryableIds = await resolveRetryableMaterialIds(page);
 
   return json(200, {
-    materials: page.map(({ _count, ...material }) => ({
-      ...material,
-      chunkCount: _count?.chunks ?? 0,
-    })),
+    materials: page.map(({ _count, ...material }) => {
+      const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+        ...material,
+        chunkCount: _count?.chunks ?? 0,
+      };
+      // Only meaningful for a failed row; left off entirely elsewhere rather
+      // than emitted as a misleading `false` (#1749).
+      if (material.status === "FAILED") {
+        row.hasExtractedText = retryableIds.has(material.id);
+      }
+      return row;
+    }),
     nextCursor,
   });
 }
@@ -831,6 +1042,31 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         });
       }
 
+      // Staff receive the scheduling fields so the management UI can render and edit
+      // them; students never do (they only ever see already-visible materials).
+      const staff = isStaffAccess(access);
+
+      // A targeted re-read of rows the client already holds (#1795 review round
+      // 3), not a page: no cursor in, no cursor out, so merging the answer
+      // cannot disturb the pages the user loaded with "load more". Every gate
+      // above still applies — `studentGate` in particular, so asking by id is
+      // not a way past #839 scheduling.
+      const requestedIds = parseMaterialIdsParam(new URL(request.url).searchParams);
+      if (requestedIds !== null) {
+        if (requestedIds.length === 0) {
+          return json(200, { materials: [], nextCursor: null });
+        }
+        const rows = await prisma.courseMaterial.findMany({
+          where: { courseId, deletedAt: null, ...studentGate, id: { in: requestedIds } },
+          select: MATERIAL_LIST_SELECT,
+          orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+        });
+        return json(200, {
+          materials: await toMaterialListRows(rows, staff),
+          nextCursor: null,
+        });
+      }
+
       const { cursor, limit } = cursorParams;
       const pageArgs = {
         where: { courseId, deletedAt: null, ...studentGate },
@@ -845,15 +1081,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : await prisma.courseMaterial.findMany(pageArgs);
       const { page, nextCursor } = splitPage(rows, limit);
 
-      // Staff receive the scheduling fields so the management UI can render and edit
-      // them; students never do (they only ever see already-visible materials).
-      const staff = isStaffAccess(access);
       return json(200, {
-        materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => {
-          const row = { ...material, chunkCount: _count?.chunks ?? 0 };
-          if (!staff) return row;
-          return { ...row, visibleToStudents, availableAt };
-        }),
+        materials: await toMaterialListRows(page, staff),
         nextCursor,
       });
     },
