@@ -80,6 +80,96 @@ describe("apiKeyStorage encrypt/decrypt round-trip", () => {
   });
 });
 
+describe("apiKeyStorage validation-verdict cache (task 15)", () => {
+  it("returns 'never validated' (all nulls) when nothing has been cached", () => {
+    expect(apiKeyStorage.getValidation("google")).toEqual({
+      valid: null,
+      validatedAt: null,
+      error: null,
+    });
+  });
+
+  it("round-trips a validation verdict written via setValidation", () => {
+    apiKeyStorage.setValidation("google", {
+      valid: true,
+      validatedAt: "2026-09-16T00:00:00.000Z",
+      error: null,
+    });
+
+    expect(apiKeyStorage.getValidation("google")).toEqual({
+      valid: true,
+      validatedAt: "2026-09-16T00:00:00.000Z",
+      error: null,
+    });
+  });
+
+  it("keeps verdicts scoped per provider", () => {
+    apiKeyStorage.setValidation("google", { valid: true, validatedAt: "t1", error: null });
+    apiKeyStorage.setValidation("openai", { valid: false, validatedAt: "t2", error: "bad key" });
+
+    expect(apiKeyStorage.getValidation("google").valid).toBe(true);
+    expect(apiKeyStorage.getValidation("openai")).toEqual({
+      valid: false,
+      validatedAt: "t2",
+      error: "bad key",
+    });
+  });
+
+  it("works for a Core-stored key, which has no local encrypted key record", async () => {
+    // setApiKey succeeding remotely never writes a local ciphertext record —
+    // the verdict cache must not depend on one existing.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 200 } as Response);
+    await apiKeyStorage.setApiKey("google", "AIza-real-key");
+    expect(localStorage.getItem("eduai_api_key_v2:test-user:google")).toBeNull();
+
+    apiKeyStorage.setValidation("google", {
+      valid: true,
+      validatedAt: "2026-09-19T00:00:00.000Z",
+      error: null,
+    });
+
+    expect(apiKeyStorage.getValidation("google").valid).toBe(true);
+  });
+
+  it("clearValidation removes a cached verdict", () => {
+    apiKeyStorage.setValidation("google", { valid: true, validatedAt: "t1", error: null });
+    apiKeyStorage.clearValidation("google");
+    expect(apiKeyStorage.getValidation("google")).toEqual({
+      valid: null,
+      validatedAt: null,
+      error: null,
+    });
+  });
+
+  it("removeProviderSetting clears the provider's cached verdict", async () => {
+    apiKeyStorage.setValidation("google", { valid: true, validatedAt: "t1", error: null });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 204 } as Response);
+
+    await apiKeyStorage.removeProviderSetting("google");
+
+    expect(apiKeyStorage.getValidation("google").valid).toBeNull();
+  });
+
+  it("clearApiKeysForUser also wipes cached verdicts for that account", () => {
+    apiKeyStorage.setValidation("google", { valid: true, validatedAt: "t1", error: null });
+    apiKeyStorage.clearApiKeysForUser("test-user");
+    apiKeyStorage.setAuthenticatedUser("test-user");
+    expect(apiKeyStorage.getValidation("google").valid).toBeNull();
+  });
+
+  it("returns 'never validated' when storage access throws", () => {
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(apiKeyStorage.getValidation("google")).toEqual({
+      valid: null,
+      validatedAt: null,
+      error: null,
+    });
+    getItemSpy.mockRestore();
+  });
+});
+
 describe("apiKeyStorage.getProviderFromModel", () => {
   it("extracts a known cloud provider prefix", () => {
     expect(apiKeyStorage.getProviderFromModel("google:gemini-pro")).toBe("google");
