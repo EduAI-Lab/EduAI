@@ -73,3 +73,12 @@ describe("StudentHome — StudentPreviewBanner exit link (#1660 follow-up)", () 
     expect(screen.getByTestId("student-preview-exit")).toHaveAttribute("href", "/instructor");
   });
 });
+
+describe("StudentHome — empty course list tour anchor (#1746)", () => {
+  it("tags the zero-courses empty state with the student-journey tour's emptyTarget", () => {
+    renderStudentHome("STUDENT", []);
+    expect(
+      screen.getByText("No courses yet").closest('[data-tour="student-courses-empty"]'),
+    ).not.toBeNull();
+  });
+});

@@ -47,6 +47,7 @@ model User {
   auditLogs                 AuditLog[]
   systemLogs                SystemLog[]
   passwordHistory           PasswordHistory[]
+  selfEnrollmentLinks       SelfEnrollmentLink[]   @relation("SelfEnrollmentLinkCreator")
 
   @@map("user")
 }
@@ -169,6 +170,7 @@ model Course {
   topics                      CourseTopic[]
   questions                   Question[]
   questionBanks               QuestionBank[]
+  selfEnrollmentLinks         SelfEnrollmentLink[]
 
   @@unique([code, startDate, section])
   // PostgreSQL unique indexes permit multiple NULL values, so ordinary Core
@@ -265,6 +267,55 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
+}
+
+/// Revocable, course-scoped link that a student redeems to enroll themselves
+/// (#1756). Always grants STUDENT — a shareable link must never be able to mint
+/// staff, so there is no role column to get wrong.
+///
+/// This is a row rather than a signed stateless token on purpose. A
+/// self-enrollment URL is a bearer credential: once it leaks into a public
+/// channel or a screenshot, a stateless HMAC over courseId+expiry can only be
+/// stopped by rotating the signing secret (killing every other course's links)
+/// or by waiting out the expiry. A row can be revoked in place, immediately, on
+/// its own.
+model SelfEnrollmentLink {
+  id String @id @default(cuid())
+
+  /// Scoped to exactly one course: redemption re-checks this against the course
+  /// being joined, so a token for course A can never enroll anyone in course B.
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  /// sha256 of the raw token, mirroring `Invitation.tokenHash`. The raw token
+  /// exists only in the URL handed to the instructor and is never persisted,
+  /// so a database leak yields no usable link.
+  tokenHash String @unique
+
+  expiresAt DateTime
+  /// Set the moment a staff member revokes the link; a revoked link never
+  /// redeems again, regardless of how much of its expiry window is left.
+  revokedAt DateTime?
+
+  /// Null means unlimited redemptions until expiry or revocation. When set, the
+  /// link stops redeeming once `redemptionCount` reaches it.
+  maxRedemptions  Int?
+  redemptionCount Int  @default(0)
+
+  /// Null when the issuing staff account has since been deleted; the audit log
+  /// keeps the attribution either way.
+  createdById String?
+  createdBy   User?   @relation("SelfEnrollmentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The staff-facing list is "every link for this course".
+  @@index([courseId])
+  /// `createdById` is `onDelete: SetNull` from User, so without this a user
+  /// delete seq-scans this table to apply the action.
+  @@index([createdById])
+  @@map("self_enrollment_links")
 }
 
 model AIInteraction {
@@ -1013,6 +1064,38 @@ enum AiJobStatus {
   CANCELLED // cancelled by user/system before completion
 }
 
+/// Reachability verdict only. DEGRADED is never written — it is derived at read
+/// time from waiting/cacheUsage so one code path owns the thresholds.
+enum AiServiceState {
+  OPERATIONAL
+  OUTAGE
+  UNKNOWN
+}
+
+/// One observation of one model on one fleet host (#764 follow-on).
+model AiServiceSample {
+  id              String         @id @default(cuid())
+  /// Stable fleet server id. Never sent to the browser.
+  serverId        String
+  /// Model id as advertised by /v1/models, e.g. "qwen3.5-9b-instruct".
+  modelId         String
+  state           AiServiceState
+  reachable       Boolean
+  /// Host-level vllm:num_requests_waiting. Written as a pair with cacheUsage.
+  waiting         Int?
+  /// Host-level vllm:gpu_cache_usage_perc, 0..1. Written as a pair with waiting.
+  cacheUsage      Float?
+  /// Effective poll cadence when this batch was written, so readers never
+  /// depend on an env var the admin may have overridden.
+  intervalMinutes Int
+  detail          String?
+  observedAt      DateTime       @default(now())
+
+  @@index([serverId, modelId, observedAt])
+  @@index([observedAt])
+  @@map("ai_service_samples")
+}
+
 // ─── Logging / Observability ──────────────────────────────────────────────
 // Three append-only streams surfaced in the admin /admin/logs viewer:
 //   AuditLog   — who changed what (domain mutations + accepted invitations)
@@ -1152,17 +1235,24 @@ enum CronJobTriggerSource {
 }
 
 model CronJobRun {
-  id               String        @id @default(cuid())
-  jobName          String
-  status           CronJobStatus
-  startedAt        DateTime
-  finishedAt       DateTime?
-  message          String?
-  exitCode         Int?
-  leaseOwner       String?
-  leaseHeartbeatAt DateTime?
-  leaseExpiresAt   DateTime?
-  createdAt        DateTime      @default(now())
+  id                String               @id @default(cuid())
+  jobName           String
+  status            CronJobStatus
+  /// Provenance of the run (added by 20260807000000_add_cron_run_trigger_provenance).
+  /// The dedicated cron worker dispatches only the administrator-triggered
+  /// values; SCHEDULE runs are dispatched in-process by whichever scheduler won
+  /// the lease. Declared here so `prisma db push` (integration databases)
+  /// provisions the same columns `migrate deploy` gives deployed databases.
+  triggerSource     CronJobTriggerSource @default(UNKNOWN)
+  triggeredByUserId String?
+  startedAt         DateTime
+  finishedAt        DateTime?
+  message           String?
+  exitCode          Int?
+  leaseOwner        String?
+  leaseHeartbeatAt  DateTime?
+  leaseExpiresAt    DateTime?
+  createdAt         DateTime             @default(now())
 
   @@index([jobName, startedAt])
   @@index([status, leaseExpiresAt])
