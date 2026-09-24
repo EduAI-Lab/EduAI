@@ -38,6 +38,9 @@ vi.mock("~/lib/prisma.server", () => {
   // Interactive transaction: hand the callback the same client the assertions
   // read, so a write made inside the reclaim transaction is still observable.
   client.$transaction = vi.fn(async (fn: any) => fn(client));
+  // #1749: the list's retryability probe is raw SQL, because the trimming rule
+  // it shares with the reprocess route is not expressible as a Prisma filter.
+  client.$queryRaw = vi.fn();
   return { default: client };
 });
 
@@ -46,6 +49,12 @@ vi.mock("~/lib/ai/embedding", () => ({
   // #1791: the extraction job asks whether a dead embedding was transient, so it
   // can record MATERIAL_EMBED_RATE_LIMITED instead of a flat embed failure.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
+}));
+
+// #1624: every material that reaches READY gets topic analysis, including one
+// recovered by the #1749 retry (#1795 review round 3).
+vi.mock("~/lib/topics/job.server", () => ({
+  startTopicAnalysis: vi.fn(),
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
@@ -80,6 +89,7 @@ import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
+import { startTopicAnalysis } from "~/lib/topics/job.server";
 import {
   extractUploadedFileContent,
   processUploadedFile,
@@ -160,6 +170,10 @@ function stubUploadArgs() {
   mockFormData.append("file", new File(["content"], "file.pdf", { type: "application/pdf" }));
   mockFormData.append("apiKeys", "{}");
   const stubRequest = {
+    // The collection URL a real upload arrives on: the action reads the matched
+    // path to tell an upload from a reprocess (#1795 review), and
+    // `withErrorResponse` reads it when logging a 500.
+    url: `http://localhost/api/courses/${COURSE_ID}/materials`,
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(mockFormData),
@@ -1835,5 +1849,575 @@ describe("PATCH materials — visibility scheduling (#839)", () => {
         data: { title: "New name", visibleToStudents: false },
       }),
     );
+  });
+});
+
+// #1749: a FAILED material offered no way forward but re-uploading the file.
+// When extraction succeeded and only indexing failed, `rawText` is still on the
+// row (runMaterialExtraction writes it before embedding) and
+// processMaterialEmbeddings is idempotent under `replace: true` — so the retry
+// can run straight from the database. These pin that the endpoint only accepts
+// the cases where that is actually true, rather than accepting everything and
+// failing later.
+describe("POST /api/courses/:courseId/materials/:materialId/reprocess (#1749)", () => {
+  function makeReprocessArgs(materialId: string) {
+    return {
+      request: new Request(
+        `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}/reprocess`,
+        { method: "POST" },
+      ),
+      params: { courseId: COURSE_ID, materialId },
+      context: {} as never,
+    } as any;
+  }
+
+  /** The columns reprocessMaterial selects off the row it is asked to retry. */
+  type RetryCandidateRow = {
+    id: string;
+    courseId: string;
+    status: string;
+    duplicateOfId: string | null;
+    rawText: string | null;
+  };
+
+  /** A FAILED row whose text survived — the only retryable shape. */
+  function mockRetryableMaterial(overrides: Partial<RetryCandidateRow> = {}) {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      courseId: COURSE_ID,
+      status: "FAILED",
+      duplicateOfId: null,
+      rawText: "extracted lecture text",
+      ...overrides,
+    } as never);
+  }
+
+  beforeEach(() => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "user-1", role: "INSTRUCTOR" },
+    } as never);
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({} as never);
+    // The claim is a conditional write; by default it wins.
+    vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 1 } as never);
+  });
+
+  it("accepts a failed material whose extracted text survived", async () => {
+    mockRetryableMaterial();
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(202);
+  });
+
+  it("returns the row to PROCESSING so the list's existing poll picks up the outcome", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "mat-1" }),
+        data: expect.objectContaining({ status: "PROCESSING" }),
+      }),
+    );
+  });
+
+  // #1795 review: the read and the write had nothing between them, so two
+  // requests that both read FAILED both proceeded and two replace-mode embeds
+  // raced on the same chunk set. `replace: true` makes the final state
+  // converge, but the interleaving leaves a window where the row reads READY
+  // over a half-replaced chunk set. The `retrying` flag only guards one tab.
+  it("claims the row with a conditional write, not a read followed by a blind update", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+
+    const [claim] = vi.mocked(prisma.courseMaterial.updateMany).mock.calls[0] as [any];
+    // FAILED is in the WHERE, so the second of two concurrent claims matches
+    // no row rather than starting a second embed.
+    expect(claim.where).toEqual(
+      expect.objectContaining({ id: "mat-1", courseId: COURSE_ID, status: "FAILED" }),
+    );
+  });
+
+  it("starts no work when another request claimed the row first", async () => {
+    mockRetryableMaterial();
+    vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 0 } as never);
+
+    const res = await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_NOT_FAILED" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1795 review: the retry hands its work to a fire-and-forget in-process job.
+  // A restart between the claim and the end of embedding used to leave the row
+  // PROCESSING with no recovery path — the sweeper could not see it, the
+  // popover was gone (the status is no longer FAILED) and the only escape was
+  // delete + re-upload. Taking a lease is what makes the row sweepable.
+  it("takes an extraction lease on the claim so a dead worker's row can be recovered", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+
+    const [claim] = vi.mocked(prisma.courseMaterial.updateMany).mock.calls[0] as [any];
+    expect(claim.data.extractionLeaseUntil).toBeInstanceOf(Date);
+    expect(claim.data.extractionLeaseUntil.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("re-embeds from the stored text, so the instructor never re-uploads the file", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+    // The worker is fire-and-forget, so let its first await settle.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "extracted lecture text", {
+      replace: true,
+    });
+  });
+
+  it("marks the material READY again once the retried embedding succeeds", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-1" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+  });
+
+  // #1795 review round 3. A retried material is indexed and readable exactly as
+  // an uploaded one is, so #1624 applies to it identically — without this, every
+  // material rescued by "Try again" is absent from the course's topics.
+  it("starts topic analysis once the retried material is READY (#1624)", async () => {
+    mockRetryableMaterial();
+
+    await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // The course from the route and the instructor who asked for the retry —
+    // not the original uploader, who is not the actor here.
+    expect(startTopicAnalysis).toHaveBeenCalledWith({
+      courseId: COURSE_ID,
+      userId: "user-1",
+      materialIds: ["mat-1"],
+    });
+  });
+
+  it("starts no topic analysis when the retried embedding fails again (#1624)", async () => {
+    mockRetryableMaterial();
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("provider down"));
+
+    await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(startTopicAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("refuses a material that is not in a failed state", async () => {
+    mockRetryableMaterial({ status: "READY" });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_NOT_FAILED" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("refuses a duplicate receipt, where retrying would only duplicate again", async () => {
+    mockRetryableMaterial({ duplicateOfId: "mat-winner" });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_DUPLICATE" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("refuses a material with no extracted text, whose upload bytes were discarded", async () => {
+    // failMaterial calls discardUploadBlob, so an extraction failure has
+    // nothing left to re-run against — the honest answer is re-upload.
+    mockRetryableMaterial({ rawText: null });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_TEXT_UNAVAILABLE" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("refuses the empty text every text-free upload carried before #1797", async () => {
+    // An image-only PDF scan, a figures-only DOCX and a blank .txt were all
+    // promoted with `rawText: ""` and then failed at embedding. Those rows are
+    // FAILED in every existing course, and the list must not offer them a
+    // retry the route would refuse (#1795 review).
+    mockRetryableMaterial({ rawText: "" });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_TEXT_UNAVAILABLE" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("refuses whitespace-only text rather than starting an embed that cannot chunk", async () => {
+    // `generateChunks` trims before it splits, so this reaches
+    // `processMaterialEmbeddings` only to throw "No content chunks generated"
+    // and land the row straight back in FAILED.
+    mockRetryableMaterial({ rawText: "  \n\t " });
+
+    const res = await action(makeReprocessArgs("mat-1"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "MATERIAL_TEXT_UNAVAILABLE" });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("404s a material that is not on this course", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+
+    const res = await action(makeReprocessArgs("mat-elsewhere"));
+
+    expect(res.status).toBe(404);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("denies a student, who cannot manage materials even in a published course", async () => {
+    mockAccess({ level: "student", rank: 0 });
+    mockRetryableMaterial();
+
+    const res = await action(makeReprocessArgs("mat-1"));
+
+    expect(res.status).toBe(403);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #1795 review round 2: reprocess was dispatched under the *upload* gate, so
+  // anything that may upload could retry anything. But a retry re-embeds an
+  // existing row with `replace: true` — that is the delete/edit blast radius,
+  // not the upload one, and every sibling mutation on this resource checks
+  // `uploadedBy`. PATCH uses `rank < 2 && !isOwnTaEdit`; DELETE uses
+  // `rank < 2 && !isOwnTa && !isOwnDuplicateReceipt`. Reprocess checked nothing.
+  describe("ownership, not just the upload gate (#1795 review round 2)", () => {
+    it("denies a student who may upload, retrying someone else's material", async () => {
+      // The `students.canUploadMaterials` grant is what makes this reachable:
+      // it clears the upload gate, and nothing afterwards looked at uploadedBy.
+      vi.mocked(getPolicy).mockResolvedValue(true);
+      mockAccess({ level: "student", rank: 0 });
+      mockRetryableMaterial({ uploadedBy: "instructor-9" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(403);
+      expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("denies a TA retrying a material it did not upload", async () => {
+      // A TA may rename or delete only its own material; re-embedding someone
+      // else's is strictly larger than either.
+      vi.mocked(getPolicy).mockResolvedValue(true);
+      mockAccess({ level: "ta", rank: 1 });
+      mockRetryableMaterial({ uploadedBy: "instructor-9" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(403);
+      expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("allows a TA retrying its own material, mirroring the DELETE carve-out", async () => {
+      vi.mocked(getPolicy).mockResolvedValue(true);
+      mockAccess({ level: "ta", rank: 1 });
+      mockRetryableMaterial({ uploadedBy: "user-1" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(202);
+    });
+
+    it("allows an instructor regardless of who uploaded the material", async () => {
+      mockAccess({ level: "instructor", rank: 2 });
+      mockRetryableMaterial({ uploadedBy: "someone-else" } as never);
+
+      const res = await action(makeReprocessArgs("mat-1"));
+
+      expect(res.status).toBe(202);
+    });
+
+    it("reads uploadedBy off the row so the gate has something to check", async () => {
+      mockRetryableMaterial();
+
+      await action(makeReprocessArgs("mat-1"));
+
+      expect(prisma.courseMaterial.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ uploadedBy: true }),
+        }),
+      );
+    });
+  });
+
+  // #1795 review: reprocess was dispatched on `params.materialId` being
+  // present, but `/api/courses/:courseId/materials/:materialId` maps to this
+  // same module and supplies that param too. The matched path is the real
+  // discriminator; the param cannot tell the two routes apart.
+  describe("which route actually matched", () => {
+    it("leaves a POST to the material itself as an upload, not a silent reprocess", async () => {
+      mockRetryableMaterial();
+
+      const res = await action({
+        request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/mat-1`, {
+          method: "POST",
+        }),
+        params: { courseId: COURSE_ID, materialId: "mat-1" },
+        context: {} as never,
+      } as any);
+
+      expect(res.status).not.toBe(202);
+      expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("refuses a DELETE aimed at the reprocess path instead of deleting the material", async () => {
+      mockRetryableMaterial();
+
+      const res = await action({
+        request: new Request(
+          `http://localhost/api/courses/${COURSE_ID}/materials/mat-1/reprocess`,
+          { method: "DELETE" },
+        ),
+        params: { courseId: COURSE_ID, materialId: "mat-1" },
+        context: {} as never,
+      } as any);
+
+      expect(res.status).toBe(405);
+      expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses a PATCH aimed at the reprocess path instead of renaming the material", async () => {
+      mockRetryableMaterial();
+
+      const res = await action({
+        request: new Request(
+          `http://localhost/api/courses/${COURSE_ID}/materials/mat-1/reprocess`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "renamed" }),
+          },
+        ),
+        params: { courseId: COURSE_ID, materialId: "mat-1" },
+        context: {} as never,
+      } as any);
+
+      expect(res.status).toBe(405);
+      expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// #1749: the failed badge needs to know whether a retry is even possible, and
+// that turns on whether `rawText` survived. The text itself must never reach
+// the list payload (#948), so the flag is resolved by a separate id-only query
+// over just the failed rows on the page.
+describe("GET materials — hasExtractedText on failed rows (#1749)", () => {
+  /** The fields the list loader reads off each page row before responding. */
+  type ListPageRow = { id: string; status: string; _count: { chunks: number } };
+
+  function mockListPage(rows: ListPageRow[]) {
+    vi.mocked(prisma.courseMaterial.findMany).mockReset();
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValueOnce(rows as never);
+  }
+
+  /** The ids the retryability probe reports as still holding indexable text. */
+  function mockProbeResult(ids: string[]) {
+    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce(ids.map((id) => ({ id })) as never);
+  }
+
+  beforeEach(() => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.$queryRaw).mockReset();
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
+  });
+
+  it("marks a failed material whose extracted text survived as retryable", async () => {
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    mockProbeResult(["mat-failed"]);
+
+    const body = await (await loader(makeArgs("GET"))).json();
+
+    expect(body.materials[0].hasExtractedText).toBe(true);
+  });
+
+  it("marks a failed material whose extraction never produced text as not retryable", async () => {
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    mockProbeResult([]);
+
+    const body = await (await loader(makeArgs("GET"))).json();
+
+    expect(body.materials[0].hasExtractedText).toBe(false);
+  });
+
+  it("omits the flag for materials that have not failed, where it means nothing", async () => {
+    mockListPage([{ id: "mat-ready", status: "READY", _count: { chunks: 3 } }]);
+
+    const body = await (await loader(makeArgs("GET"))).json();
+
+    expect(body.materials[0]).not.toHaveProperty("hasExtractedText");
+  });
+
+  it("skips the extra query entirely when no row on the page has failed", async () => {
+    mockListPage([{ id: "mat-ready", status: "READY", _count: { chunks: 3 } }]);
+
+    await loader(makeArgs("GET"));
+
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("probes retryability without ever selecting the document text", async () => {
+    // #948's contract: rawText must not enter the list payload. The probe asks
+    // the database the yes/no question instead of fetching the text to answer
+    // it here.
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    mockProbeResult([]);
+
+    await loader(makeArgs("GET"));
+
+    const [strings] = vi.mocked(prisma.$queryRaw).mock.calls[0] as [TemplateStringsArray];
+    expect(strings.join(" ? ")).toMatch(/SELECT\s+"id"\s+FROM/);
+  });
+
+  it("holds the list to the same trimming rule the reprocess route applies", async () => {
+    // #1795 review: `{ not: null }` here against `!material.rawText` there let
+    // a `rawText: ""` row be offered a retry the route answered 409 to. Both
+    // sides now go through `hasIndexableText` / its SQL twin.
+    //
+    // Round 2: that twin was `btrim("rawText") <> ''`, which trims U+0020 and
+    // nothing else, so `"\n\n\n"` drifted back the same way. Asserted as shape
+    // here; the two predicates are actually run against each other in
+    // `material-indexable-text.integration.test.ts`.
+    mockListPage([{ id: "mat-failed", status: "FAILED", _count: { chunks: 0 } }]);
+    mockProbeResult([]);
+
+    await loader(makeArgs("GET"));
+
+    const [strings] = vi.mocked(prisma.$queryRaw).mock.calls[0] as [TemplateStringsArray];
+    expect(strings.join(" ? ")).toMatch(/"rawText"\s+~\s+\?/);
+  });
+});
+
+/**
+ * #1795 review round 3. A retried material is the first PROCESSING row that can
+ * live past page 1, and the 30s poll only ever re-read page 1 — so the row sat
+ * on "Processing" until a full page reload. The client settles those rows by
+ * asking for them by id, which needs the list to answer that question.
+ */
+describe("GET materials — ?ids= re-read (#1795 review round 3)", () => {
+  function makeIdsArgs(ids: string) {
+    return {
+      request: new Request(
+        `http://localhost/api/courses/${COURSE_ID}/materials?ids=${encodeURIComponent(ids)}`,
+        { method: "GET" },
+      ),
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any;
+  }
+
+  beforeEach(() => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockReset();
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.$queryRaw).mockReset();
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
+  });
+
+  it("returns only the requested rows, scoped to the course", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-old", status: "READY", _count: { chunks: 4 } },
+    ] as never);
+
+    const body = await (await loader(makeIdsArgs("mat-old"))).json();
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where).toEqual(
+      expect.objectContaining({ courseId: COURSE_ID, deletedAt: null, id: { in: ["mat-old"] } }),
+    );
+    expect(body.materials.map((m: any) => m.id)).toEqual(["mat-old"]);
+  });
+
+  it("is not a page, so it never hands back a cursor to walk", async () => {
+    // A targeted re-read must not look like page 1 to the caller, or merging it
+    // would discard the pages the user actually loaded.
+    const body = await (await loader(makeIdsArgs("mat-old"))).json();
+
+    expect(body.nextCursor).toBeNull();
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.cursor).toBeUndefined();
+    expect(args.skip).toBeUndefined();
+  });
+
+  it("carries the same hasExtractedText answer the paged list gives", async () => {
+    // The retry affordance is decided by this flag, so a row re-read by id must
+    // not answer differently from the same row on a page.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-failed", status: "FAILED", _count: { chunks: 0 } },
+    ] as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ id: "mat-failed" }] as never);
+
+    const body = await (await loader(makeIdsArgs("mat-failed"))).json();
+
+    expect(body.materials[0].hasExtractedText).toBe(true);
+  });
+
+  it("bounds the number of ids it will look up in one request", async () => {
+    const ids = Array.from({ length: 200 }, (_, i) => `mat-${i}`);
+
+    await loader(makeIdsArgs(ids.join(",")));
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where.id.in.length).toBeLessThanOrEqual(100);
+  });
+
+  it("ignores blank entries rather than querying for empty ids", async () => {
+    await loader(makeIdsArgs("mat-a,,  ,mat-b"));
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where.id.in).toEqual(["mat-a", "mat-b"]);
+  });
+
+  it("answers an all-blank ids param with an empty list and no query", async () => {
+    const body = await (await loader(makeIdsArgs(" , "))).json();
+
+    expect(body).toEqual({ materials: [], nextCursor: null });
+    expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
+  });
+
+  it("still applies the student visibility gate to a re-read", async () => {
+    // Asking by id must not become a way around #839 scheduling.
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+
+    await loader(makeIdsArgs("mat-hidden"));
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where).toEqual(
+      expect.objectContaining({ id: { in: ["mat-hidden"] }, deletedAt: null }),
+    );
+    expect(Object.keys(args.where).length).toBeGreaterThan(3);
   });
 });

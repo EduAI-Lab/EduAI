@@ -185,6 +185,24 @@ const requireQmAuthoringOrLiveTa = async (req, res, next) => {
   });
 };
 
+/**
+ * GET /api/eduai/ai-status – proxies Core's shared fleet-status snapshot for
+ * the header chips. Readable by any signed-in user (no authoring/TA gate) —
+ * status is not a privileged surface, and gating it here would reintroduce a
+ * role-dependent chip. Forwards only the caller's session cookie, matching
+ * Core's own session-only auth on this endpoint.
+ */
+router.get("/ai-status", async (req, res) => {
+  const upstream = await eduaiService.getAiStatus({ cookie: req.headers.cookie ?? "" });
+  return res.status(upstream.status).json(upstream.body);
+});
+
+/** GET /api/eduai/ai-status/history – proxies Core's 72h history for the UBC chip's panel. */
+router.get("/ai-status/history", async (req, res) => {
+  const upstream = await eduaiService.getAiStatusHistory({ cookie: req.headers.cookie ?? "" });
+  return res.status(upstream.status).json(upstream.body);
+});
+
 router.get("/provider-settings", async (req, res, next) => {
   try {
     res.json(await getUserProviderSettingsFromCore(req.headers.cookie ?? ""));
@@ -282,6 +300,22 @@ const generationAdmission = qmAiProviderCallAdmission({
 
 function sendStableAiFailure(res, error, fallbackCode, fallbackMessage) {
   const statusCode = Number(error?.statusCode ?? error?.status);
+  // A rejected PROVIDER credential is the caller's own key being refused, not a
+  // QM fault, and the browser has to know: it caches a save-time verdict per
+  // provider and can only correct it when a live rejection reaches it. Flattening
+  // this to 500 with every other failure left a revoked key showing green
+  // forever. 400 matches `test-api-key`, which already answers 400 for a genuine
+  // key rejection; the code is what the client keys off. Only a failure marked
+  // PROVIDER_API_KEY_REQUIRED takes this path — an upstream 401 that is merely
+  // the QM→Core session leg still degrades to 500, because saying "your key is
+  // bad" about a session failure is the same lie in the other direction.
+  if (error?.reasonCode === "PROVIDER_API_KEY_REQUIRED") {
+    return res.status(400).json({
+      success: false,
+      error: "The AI provider rejected your API key",
+      code: "PROVIDER_API_KEY_REQUIRED",
+    });
+  }
   if (statusCode === 429) {
     return res.status(429).json({
       success: false,
@@ -340,16 +374,11 @@ router.post("/chat", qmAiUserRateLimit, chatAdmission, async (req, res) => {
     });
   } catch (error) {
     logEduaiRouteError("EduAI chat error", error);
-    if (
-      Number(error?.statusCode ?? error?.status) === 429 ||
-      isQmAiDeadlineError(error) ||
-      Number(error?.statusCode ?? error?.status) === 504
-    ) {
-      return sendStableAiFailure(res, error, "EDUAI_CHAT_FAILED", "Failed to process chat request");
-    }
-    res
-      .status(500)
-      .json({ success: false, error: "Failed to process chat request", code: "EDUAI_CHAT_FAILED" });
+    // Unconditional: the fallback branch answers exactly the 500 this used to
+    // send by hand, and routing everything through one place is what lets a
+    // provider-credential rejection reach the browser instead of being
+    // flattened with it.
+    return sendStableAiFailure(res, error, "EDUAI_CHAT_FAILED", "Failed to process chat request");
   }
 });
 

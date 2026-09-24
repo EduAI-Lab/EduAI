@@ -1,5 +1,5 @@
 import type { JsonObject } from "~/lib/json-value";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { asText } from "~/lib/json-value";
 
 export interface CourseMaterial {
@@ -32,11 +32,20 @@ export interface CourseMaterial {
   duplicateResolution?: MaterialDuplicateResolution | null;
   /** Why a FAILED row failed (#1791); null on rows that predate the column. */
   failureCode?: MaterialFailureCode | null;
+  /**
+   * Present only on FAILED rows (#1749): whether the extracted text survived
+   * on the server, which is what decides if indexing can be retried without
+   * the instructor uploading the file again. The text itself never reaches
+   * the client — the list resolves this server-side.
+   */
+  hasExtractedText?: boolean;
 }
 
 /**
  * Why a material's background processing failed (#1791). Mirrors the Prisma
- * enum; the UI turns these into sentences in `materialFailureMessage`.
+ * enum; `describeMaterialFailure` (`~/lib/material-failure-notice`) turns a
+ * recognized code into a more specific explanation than the row's shape alone
+ * can give.
  */
 export type MaterialFailureCode =
   | "MATERIAL_EXTRACT_FAILED"
@@ -101,6 +110,21 @@ export function useCourseMaterials(courseId: string) {
     [courseId],
   );
 
+  /**
+   * Re-read specific rows the client already holds (#1795 review round 3).
+   * Deliberately not a page: it carries no cursor either way, so merging its
+   * answer cannot disturb the pages loaded with `loadMore`.
+   */
+  const fetchByIds = useCallback(
+    async (ids: string[]) => {
+      const query = encodeURIComponent(ids.join(","));
+      const res = await fetch(`/api/courses/${courseId}/materials?ids=${query}`);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as { materials: CourseMaterial[]; nextCursor: string | null };
+    },
+    [courseId],
+  );
+
   const fetchMaterials = useCallback(async () => {
     if (!courseId) return;
     setLoading(true);
@@ -146,6 +170,47 @@ export function useCourseMaterials(courseId: string) {
   );
 
   /**
+   * Retry a failed material's indexing from the text already on the server
+   * (#1749). The endpoint answers 202 and returns the row to PROCESSING, so
+   * the list's existing processing poll reports the outcome — same shape as
+   * an upload, and no file is sent.
+   *
+   * The row is updated in place rather than by reloading the list (#1795 review
+   * round 3). `fetchMaterials` replaces everything with page 1 and resets the
+   * cursor, which discards every page loaded with "load more" — and because the
+   * list is newest-first, an older failed material is usually *on* one of those
+   * pages, so the row the instructor just retried would vanish from the screen.
+   * Uploads never hit this: a new row is always on page 1.
+   *
+   * The local edit mirrors the 202 the server just committed, so nothing here
+   * is guessed: the row is PROCESSING, its failure is over, and the affordances
+   * that belong to that failure go with it rather than offering "Try again" for
+   * a retry already running.
+   */
+  const reprocessMaterial = useCallback(
+    async (materialId: string): Promise<void> => {
+      const res = await fetch(`/api/courses/${courseId}/materials/${materialId}/reprocess`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setMaterials((prev) =>
+        prev.map((m) =>
+          m.id === materialId
+            ? {
+                ...m,
+                status: "PROCESSING",
+                processedAt: null,
+                hasExtractedText: undefined,
+                duplicateOfId: null,
+              }
+            : m,
+        ),
+      );
+    },
+    [courseId],
+  );
+
+  /**
    * Merge one freshly-read row into local state without clobbering pages the
    * user already loaded via `loadMore` — a poll only re-reads page 1.
    */
@@ -165,7 +230,7 @@ export function useCourseMaterials(courseId: string) {
    * next tick retries, and a transient read failure is not worth surfacing over
    * a list the user can already see.
    */
-  const refreshFirstPage = useCallback(async () => {
+  const refreshFirstPage = useCallback(async (): Promise<Set<string> | null> => {
     try {
       const data = await fetchPage(null);
       setMaterials((prev) => {
@@ -175,20 +240,60 @@ export function useCourseMaterials(courseId: string) {
         const added = data.materials.filter((m) => !known.has(m.id));
         return added.length > 0 ? [...added, ...updated] : updated;
       });
+      // Which rows this tick actually refreshed, so the caller can tell what
+      // page 1 could not reach.
+      return new Set(data.materials.map((m) => m.id));
+    } catch {
+      /* transient read failure — the next tick retries */
+      return null;
+    }
+  }, [fetchPage]);
+
+  // Read by the poll below, which runs long after the render that scheduled it
+  // and must see the list as it is now rather than as it was then.
+  const materialsRef = useRef<CourseMaterial[]>([]);
+  useEffect(() => {
+    materialsRef.current = materials;
+  }, [materials]);
+
+  /**
+   * One poll tick: refresh page 1, then re-read by id any PROCESSING row page 1
+   * did not return (#1795 review round 3).
+   *
+   * A retried material is the first PROCESSING row that can live past page 1 —
+   * uploads are newest-first, so their rows are always on page 1 — and a
+   * page-1-only poll can never settle it. Such a row sat on "Processing" until
+   * a full page reload.
+   *
+   * The second read is skipped whenever page 1 already covered everything being
+   * watched, which is the upload case and so the overwhelmingly common one: no
+   * extra request for a list that does not need it.
+   */
+  const refreshProcessingRows = useCallback(async () => {
+    const watching = materialsRef.current.filter((m) => m.status === "PROCESSING").map((m) => m.id);
+    const covered = await refreshFirstPage();
+    // Page 1 failed; the next tick retries both halves rather than half-working.
+    if (!covered) return;
+
+    const missing = watching.filter((id) => !covered.has(id));
+    if (missing.length === 0) return;
+    try {
+      const data = await fetchByIds(missing);
+      for (const row of data.materials) mergeMaterial(row);
     } catch {
       /* transient read failure — the next tick retries */
     }
-  }, [fetchPage]);
+  }, [fetchByIds, mergeMaterial, refreshFirstPage]);
 
   const hasProcessingRow = materials.some((m) => m.status === "PROCESSING");
 
   useEffect(() => {
     if (!courseId || !hasProcessingRow) return;
     const timer = setInterval(() => {
-      void refreshFirstPage();
+      void refreshProcessingRows();
     }, BACKGROUND_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [courseId, hasProcessingRow, refreshFirstPage]);
+  }, [courseId, hasProcessingRow, refreshProcessingRows]);
 
   /**
    * Watch a material until it leaves PROCESSING (#949). Uploads are ordered
@@ -298,6 +403,7 @@ export function useCourseMaterials(courseId: string) {
     loadMore,
     uploadMaterial,
     deleteMaterial,
+    reprocessMaterial,
     refetch: fetchMaterials,
   };
 }

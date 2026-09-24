@@ -11,6 +11,15 @@ const LEGACY_STORAGE_KEY_PREFIX = "eduai_api_key_";
 const LEGACY_ENCRYPTION_KEY_NAME = "eduai_encryption_key";
 const STORAGE_KEY_PREFIX = "eduai_api_key_v2:";
 const ENCRYPTION_KEY_PREFIX = "eduai_encryption_key_v2:";
+/**
+ * Prefix for the save-time validation-verdict cache (task 15). Keyed by
+ * provider only, deliberately separate from the encrypted key records above:
+ * a Core-stored key (`CORE_STORED_KEY`) has no local key record to hang a
+ * verdict on, since Core owns the ciphertext. Per-viewer browser storage is
+ * fine here — the verdict is a client-side cache of a check Core itself
+ * cannot perform (it never sees the raw key), not a security boundary.
+ */
+const VALIDATION_KEY_PREFIX = "eduai_key_validation_v1:";
 
 export type AIProvider = "google" | "openai" | "deepseek" | "anthropic" | "opencode";
 
@@ -39,6 +48,24 @@ export type ProviderSettingStatus = {
 
 export type SetApiKeyResult = { storedRemotely: boolean };
 
+/**
+ * The save-time validation verdict for one provider's key (task 15). `valid:
+ * null` means "never validated" — the state for every key saved before this
+ * shipped, and for a provider with no key at all — which callers must render
+ * as `unknown`, not an optimistic green. It is intentionally not part of
+ * `ProviderApiKey`/`ProviderSettingStatus`: those describe the key record
+ * itself, which for a Core-stored key lives entirely on Core (QM never sees
+ * the plaintext), whereas the verdict is a client-side cache of a check only
+ * the browser can make (Core cannot validate a key it cannot read).
+ */
+export type KeyValidation = {
+  valid: boolean | null;
+  validatedAt: string | null;
+  error: string | null;
+};
+
+const NEVER_VALIDATED: KeyValidation = { valid: null, validatedAt: null, error: null };
+
 /** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
 export type CampusProvider = "vllm" | "ollama";
 
@@ -66,6 +93,10 @@ const normalizeUserId = (userId: string | null | undefined): string | null => {
 
 const storageKeyFor = (userId: string, provider: AIProvider): string =>
   `${STORAGE_KEY_PREFIX}${encodeURIComponent(userId)}:${provider}`;
+
+/** Keyed by provider id (string, not `AIProvider`) so a campus provider can carry a verdict too. */
+const validationKeyFor = (userId: string, provider: string): string =>
+  `${VALIDATION_KEY_PREFIX}${encodeURIComponent(userId)}:${provider}`;
 
 const encryptionKeyNameFor = (userId: string): string =>
   `${ENCRYPTION_KEY_PREFIX}${encodeURIComponent(userId)}`;
@@ -234,10 +265,62 @@ export const apiKeyStorage = {
     try {
       removeStorageKeysWithPrefix(`${STORAGE_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}:`);
       localStorage.removeItem(encryptionKeyNameFor(normalizedUserId));
+      removeStorageKeysWithPrefix(
+        `${VALIDATION_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}:`,
+      );
     } catch {
       // Continue logout even when browser storage is unavailable.
     }
     if (authenticatedUserId === normalizedUserId) scopeRevision += 1;
+  },
+
+  /**
+   * Persists the save-time (or generation-time) validation verdict for one
+   * provider. Keyed by provider only — separate from the encrypted key
+   * record — so it works the same whether the key lives in Core or in the
+   * local browser fallback. Wrapped in try/catch: browser storage can throw
+   * in privacy-restricted contexts, and losing a cached verdict must not
+   * break the save/generate flow that triggered this write.
+   */
+  setValidation(provider: string, validation: KeyValidation): void {
+    const scope = currentScope();
+    if (!scope) return;
+    try {
+      localStorage.setItem(validationKeyFor(scope.userId, provider), JSON.stringify(validation));
+    } catch {
+      // Privacy-restricted context (or storage disabled) — the verdict just
+      // won't be cached; callers still see `unknown` on the next read.
+    }
+  },
+
+  /** Reads the cached verdict for one provider. `null` values mean "never validated". */
+  getValidation(provider: string): KeyValidation {
+    const scope = currentScope();
+    if (!scope) return NEVER_VALIDATED;
+    try {
+      const raw = localStorage.getItem(validationKeyFor(scope.userId, provider));
+      if (!raw) return NEVER_VALIDATED;
+      const parsed = JSON.parse(raw) as Partial<KeyValidation>;
+      return {
+        valid: parsed.valid ?? null,
+        validatedAt: parsed.validatedAt ?? null,
+        error: parsed.error ?? null,
+      };
+    } catch {
+      return NEVER_VALIDATED;
+    }
+  },
+
+  /** Clears a provider's cached verdict — used when its key is removed. */
+  clearValidation(provider: string): void {
+    const scope = currentScope();
+    if (!scope) return;
+    try {
+      localStorage.removeItem(validationKeyFor(scope.userId, provider));
+    } catch {
+      // Nothing to do — a stale verdict from here is no worse than one that
+      // was never written, since `removeProviderSetting` already deleted the key.
+    }
   },
 
   /** Stores an API key for the bound account after encrypting it. */
@@ -295,6 +378,7 @@ export const apiKeyStorage = {
     );
     if (!response.ok) throw new Error(`Failed to remove provider settings: ${response.status}`);
     removeApiKeyForCurrentUser(provider);
+    this.clearValidation(provider);
   },
 
   /** Returns provider keys only from one stable account-scope snapshot. */

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 
 describe("CourseMaterialsUpload — rendering", () => {
@@ -38,38 +38,5 @@ describe("CourseMaterialsUpload — rendering", () => {
       <CourseMaterialsUpload onFileSelect={vi.fn()} success="Material uploaded successfully" />,
     );
     expect(screen.getByText("Material uploaded successfully")).toBeInTheDocument();
-  });
-
-  // ── #1791: retry is offered next to the error, not left to the file picker ──
-
-  it("offers no retry when the failure is not worth retrying", () => {
-    render(<CourseMaterialsUpload onFileSelect={vi.fn()} error="Couldn't read this file" />);
-    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
-  });
-
-  it("runs the retry handler from the error alert", () => {
-    const onRetry = vi.fn();
-    render(
-      <CourseMaterialsUpload
-        onFileSelect={vi.fn()}
-        error="The AI service is rate-limiting requests right now"
-        onRetry={onRetry}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables the retry while an upload is already running", () => {
-    render(
-      <CourseMaterialsUpload
-        onFileSelect={vi.fn()}
-        error="rate-limited"
-        onRetry={vi.fn()}
-        isUploading
-      />,
-    );
-    expect(screen.getByRole("button", { name: /try again/i })).toBeDisabled();
   });
 });

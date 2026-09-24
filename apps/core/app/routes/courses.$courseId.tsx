@@ -14,6 +14,7 @@ import { CourseDetailStudentView } from "~/components/courses/course-detail-stud
 import { useCourseTopics } from "~/hooks/api/use-course-topics";
 import { useCourseEnrollments } from "~/hooks/api/use-course-enrollments";
 import { useCourseMaterials } from "~/hooks/api/use-course-materials";
+import type { CourseMaterial as CourseMaterialRow } from "~/hooks/api/use-course-materials";
 import { useCourseTAs } from "~/hooks/api/use-course-tas";
 import {
   Breadcrumb,
@@ -28,8 +29,8 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
+import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { materialFailure } from "~/lib/materials/failure-messages";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -92,6 +93,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const audience = isStudent ? "student" : "staff";
 
+  // #1841: every active instructor, so the detail header stops rendering one of
+  // three. The serializer redacts their emails for the student audience.
+  const instructorSummaries = (await getCourseInstructors([course.id])).get(course.id) ?? [];
+
   return {
     // SAFETY: the serializer adds audience-specific fields on top of the
     // detail shape; `JsonObject` names those extras as what they are — JSON
@@ -99,12 +104,42 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     course: serializeCourseForApi(course, {
       audience,
       detail: true,
+      instructors: instructorSummaries,
     }) as CourseDetail & JsonObject,
     // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
     // role=TA); the course query no longer includes a CourseTA relation.
     user,
     access,
     instructors,
+  };
+}
+
+/**
+ * Narrow a materials-list row to the shape the upload/manager list draws.
+ *
+ * #1749: `duplicateOfId` and `hasExtractedText` are the only two fields the
+ * failure popover has to tell "already on the course" and "we read it but
+ * couldn't index it" apart from "we couldn't read it" — and they are what
+ * decides whether **Try again** is offered at all. Dropping them here made
+ * every FAILED row fall through to the unreadable-file copy with no retry,
+ * which is the one outcome the instructor cannot act on. Both stay optional:
+ * the list only resolves them for FAILED rows.
+ */
+export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
+  return {
+    id: m.id,
+    title: m.title,
+    mimeType: m.mimeType,
+    fileSize: m.fileSize,
+    status: m.status,
+    createdAt: m.createdAt,
+    chunkCount: m.chunkCount,
+    uploadedBy: m.uploadedBy ?? null,
+    visibleToStudents: m.visibleToStudents,
+    availableAt: m.availableAt ?? null,
+    duplicateOfId: m.duplicateOfId ?? null,
+    hasExtractedText: m.hasExtractedText,
+    failureCode: m.failureCode ?? null,
   };
 }
 
@@ -137,6 +172,7 @@ export default function CourseDetailPage() {
     materials,
     uploadMaterial,
     deleteMaterial,
+    reprocessMaterial,
     hasMore: hasMoreMaterials,
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
@@ -146,14 +182,6 @@ export default function CourseDetailPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null);
-  /**
-   * The file behind the current error, kept so "Try again" can re-run the same
-   * upload (#1791). Most material failures are transient — a rate-limited
-   * embedding provider, a momentarily saturated PDF worker — and before this the
-   * only way to retry was to find the file again in a picker, which is also
-   * where the old "already exists" dead end started.
-   */
-  const [retryableUpload, setRetryableUpload] = useState<File | null>(null);
 
   const handleAssignInstructor = useCallback(
     async (instructorId: string) => {
@@ -186,25 +214,13 @@ export default function CourseDetailPage() {
     [removeEnrollment],
   );
 
-  const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
-    id: m.id,
-    title: m.title,
-    mimeType: m.mimeType,
-    fileSize: m.fileSize,
-    status: m.status,
-    createdAt: m.createdAt,
-    chunkCount: m.chunkCount,
-    uploadedBy: m.uploadedBy ?? null,
-    visibleToStudents: m.visibleToStudents,
-    availableAt: m.availableAt ?? null,
-  }));
+  const uploadMaterials: UploadMaterial[] = materials.map(toUploadMaterial);
 
   const handleFileSelect = useCallback(
     async (file: File) => {
       setIsUploading(true);
       setMaterialsError(null);
       setMaterialsSuccess(null);
-      setRetryableUpload(null);
       try {
         // The upload endpoint returns 202 and processes in the background (#949),
         // so the outcome arrives from polling rather than from the POST status.
@@ -228,15 +244,12 @@ export default function CourseDetailPage() {
             );
             break;
           }
-          case "failed": {
-            // #1791: name the actual failure. The reason used to reach only the
-            // server logs, so "rate limited, try again shortly" and "this file
-            // cannot be read" were the same sentence to an instructor.
-            const failure = materialFailure(outcome.failureCode);
-            setMaterialsError(failure.message);
-            if (failure.retryable) setRetryableUpload(file);
+          case "failed":
+            // The specific reason (#1791) shows on the settled row in the
+            // materials list, via its failure popover and "Try again" — the
+            // reprocess-based retry (#1749/#1795), not a re-upload of this file.
+            setMaterialsError("Processing failed for this file. Please try again.");
             break;
-          }
           case "processing":
             setMaterialsSuccess(
               "Upload accepted. Processing is taking a while — the list will update when it finishes.",
@@ -245,17 +258,12 @@ export default function CourseDetailPage() {
         }
       } catch (e) {
         setMaterialsError(e instanceof Error ? e.message : "Upload failed");
-        setRetryableUpload(file);
       } finally {
         setIsUploading(false);
       }
     },
     [uploadMaterial, materials],
   );
-
-  const handleRetryUpload = useCallback(() => {
-    if (retryableUpload) void handleFileSelect(retryableUpload);
-  }, [retryableUpload, handleFileSelect]);
 
   return (
     <CoreAppShell
@@ -310,10 +318,10 @@ export default function CourseDetailPage() {
               instructors={instructors}
               onEnrollStudent={handleEnrollStudent}
               onRemoveEnrollment={handleRemoveEnrollment}
+              onRefreshEnrollments={refetchEnrollments}
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
-              onMaterialsRetry={retryableUpload ? handleRetryUpload : null}
               onFileSelect={handleFileSelect}
               onCreateTopic={async (name) => {
                 await createTopic(name);
@@ -330,6 +338,7 @@ export default function CourseDetailPage() {
               onRemoveTA={removeTA}
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
+              onReprocessMaterial={reprocessMaterial}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={
@@ -350,7 +359,6 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
-              onMaterialsRetry={retryableUpload ? handleRetryUpload : null}
               onFileSelect={handleFileSelect}
               courseId={course.id}
               currentUserId={user.id}
@@ -376,7 +384,6 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
-              onMaterialsRetry={retryableUpload ? handleRetryUpload : null}
               onFileSelect={handleFileSelect}
             />
           )}

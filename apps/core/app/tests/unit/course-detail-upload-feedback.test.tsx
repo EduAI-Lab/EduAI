@@ -55,11 +55,6 @@ const materialsState: MaterialsState = { materials: [] };
 /** How the probe hands the captured `onFileSelect` back to the test. */
 const fileSelectBridge: FileSelectBridge = {};
 
-/** How the probe hands the #1791 retry callback back to the test. */
-type RetryBridge = { onMaterialsRetry?: (() => void) | null };
-
-const retryBridge: RetryBridge = {};
-
 vi.mock("~/hooks/api/use-course-materials", () => ({
   useCourseMaterials: () => ({
     materials: materialsState.materials,
@@ -103,19 +98,15 @@ interface ProbeProps {
   materialsError: string | null;
   materialsSuccess: string | null;
   isUploading: boolean;
-  /** #1791: present only when retrying the same file could actually help. */
-  onMaterialsRetry?: (() => void) | null;
 }
 
 function Probe(props: ProbeProps) {
   fileSelectBridge.onFileSelect = props.onFileSelect;
-  retryBridge.onMaterialsRetry = props.onMaterialsRetry ?? null;
   return (
     <div>
       <span data-testid="error">{props.materialsError ?? ""}</span>
       <span data-testid="success">{props.materialsSuccess ?? ""}</span>
       <span data-testid="uploading">{String(props.isUploading)}</span>
-      <span data-testid="retryable">{String(Boolean(props.onMaterialsRetry))}</span>
     </div>
   );
 }
@@ -205,75 +196,16 @@ describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
   });
 
   it("reports a processing failure", async () => {
-    uploadMaterial.mockResolvedValue({
-      status: "failed",
-      materialId: "mat-new",
-      failureCode: null,
-    });
+    // The specific reason (#1791), when there is one, shows on the settled row
+    // in the materials list rather than in this inline alert — the reprocess-
+    // based retry (#1749/#1795) lives there, not here.
+    uploadMaterial.mockResolvedValue({ status: "failed", materialId: "mat-new" });
     render(<CourseDetailPage />);
     await selectFile();
 
-    // Null is a row that failed before the reason column existed (#1791), so the
-    // old generic sentence is still the right fallback.
     expect(screen.getByTestId("error").textContent).toBe(
       "Processing failed for this file. Please try again.",
     );
-  });
-
-  it("names a rate limit instead of blaming the file (#1791)", async () => {
-    // The instructor's own read of the symptom — "seems this is related to rate
-    // limiting, but it is not obvious on the UI". Now it is.
-    uploadMaterial.mockResolvedValue({
-      status: "failed",
-      materialId: "mat-new",
-      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
-    });
-    render(<CourseDetailPage />);
-    await selectFile();
-
-    expect(screen.getByTestId("error").textContent).toContain("rate-limiting");
-    expect(screen.getByTestId("error").textContent).toContain("The file itself is fine");
-    expect(screen.getByTestId("retryable").textContent).toBe("true");
-  });
-
-  it("offers no retry for a file that cannot be read (#1791)", async () => {
-    // A corrupt or image-only PDF fails identically every time; inviting a retry
-    // would just walk the instructor back into the same wall.
-    uploadMaterial.mockResolvedValue({
-      status: "failed",
-      materialId: "mat-new",
-      failureCode: "MATERIAL_EXTRACT_FAILED",
-    });
-    render(<CourseDetailPage />);
-    await selectFile();
-
-    expect(screen.getByTestId("error").textContent).toContain("Couldn't read the contents");
-    expect(screen.getByTestId("retryable").textContent).toBe("false");
-  });
-
-  it("re-uploads the same file when the retry is taken (#1791)", async () => {
-    uploadMaterial.mockResolvedValue({
-      status: "failed",
-      materialId: "mat-new",
-      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
-    });
-    render(<CourseDetailPage />);
-    await selectFile();
-
-    uploadMaterial.mockResolvedValue({ status: "ready", materialId: "mat-new" });
-    const retry = retryBridge.onMaterialsRetry;
-    if (!retry) throw new Error("a retryable failure must expose a retry");
-    await act(async () => {
-      retry();
-    });
-
-    expect(uploadMaterial).toHaveBeenCalledTimes(2);
-    expect(uploadMaterial).toHaveBeenLastCalledWith(file);
-    expect(screen.getByTestId("success").textContent).toBe(
-      "Material uploaded and processed successfully",
-    );
-    // The retry succeeded, so the offer is withdrawn along with the error.
-    expect(screen.getByTestId("retryable").textContent).toBe("false");
   });
 
   it("reports a restored material as a success, not as 'already exists' (#1791)", async () => {

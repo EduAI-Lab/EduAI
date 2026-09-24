@@ -20,6 +20,10 @@ import {
 } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
 import { CourseMaterialsUpload, type CourseMaterial } from "~/components/course-materials-upload";
+import {
+  CourseInstructorsPanel,
+  resolveDisplayInstructors,
+} from "~/components/courses/course-instructors-panel";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import { CourseResponseStyleSummary } from "~/components/courses/course-response-style-settings";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
@@ -46,8 +50,6 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
-  /** Re-run the failed upload (#1791); null when retrying cannot help. */
-  onMaterialsRetry?: (() => void) | null;
   onFileSelect?: (file: File) => void;
 }
 
@@ -83,9 +85,11 @@ export function CourseDetailStudentView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
-  onMaterialsRetry = null,
   onFileSelect,
 }: Props) {
+  // #1841: every instructor of record, falling back to the single legacy field.
+  const displayInstructors = resolveDisplayInstructors(course);
+
   const { isEnabled } = usePolicyGate();
   // §2 gate: the materials section mirrors the loader 403 for students.canViewMaterials.
   const canViewMaterials = isEnabled("students.canViewMaterials");
@@ -212,20 +216,11 @@ export function CourseDetailStudentView({
             </ScrollReveal>
 
             {/* Instructor + TAs — visible to students so they know their teaching team */}
-            {course.instructor ? (
+            {displayInstructors.length > 0 ? (
               <ScrollReveal index={2}>
                 <ThemedPanel>
                   <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                    <p className="text-sm font-semibold text-foreground">Instructor</p>
-                    <div className="flex items-center gap-3">
-                      <Avatar name={course.instructor.name} size={40} radius={9} />
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">
-                          {course.instructor.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
-                      </div>
-                    </div>
+                    <CourseInstructorsPanel instructors={displayInstructors} />
                     <div>
                       <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
                         Teaching assistants
@@ -299,7 +294,6 @@ export function CourseDetailStudentView({
                   isUploading={isUploading}
                   error={materialsError}
                   success={materialsSuccess}
-                  onRetry={onMaterialsRetry}
                   onFileSelect={onFileSelect}
                 />
               </div>
