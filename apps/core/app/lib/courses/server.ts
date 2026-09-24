@@ -24,6 +24,7 @@ import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
+import { getCourseInstructors } from "./instructors.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
 import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
 import {
@@ -423,6 +424,11 @@ export async function getCourses(request: Request) {
     select: { courseId: true, role: true },
   });
   const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
+  // #1841: one batched lookup for the page, so a card can say "3 instructors"
+  // rather than naming the single `Course.instructorId`. Bounded by `pageSize`,
+  // not by the course count. The list projection is deliberately narrow and
+  // omits `instructorId`, so the course heads are resolved inside the helper.
+  const instructorsByCourseId = await getCourseInstructors(courses.map((course) => course.id));
   const coursesWithCallerRole = courses.map((course) => {
     const callerEnrollmentRole = roleByCourseId.get(course.id) ?? null;
     // Audience follows the resolved course relationship, not merely the
@@ -438,6 +444,7 @@ export async function getCourses(request: Request) {
     return serializeCourseForApi(course, {
       audience,
       callerEnrollmentRole,
+      instructors: instructorsByCourseId.get(course.id) ?? [],
     });
   });
 
