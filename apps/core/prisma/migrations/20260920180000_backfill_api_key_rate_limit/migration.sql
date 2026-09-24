@@ -6,4 +6,6 @@ SET "rateLimitMax" = 1000,
     "rateLimitTimeWindow" = 86400000,
     "requestCount" = 0,
     "lastRequest" = NULL
-WHERE "rateLimitMax" IS NULL OR "rateLimitMax" <= 10;
+-- Only rows carrying the plugin default, so a deliberately tight per-key ceiling survives.
+WHERE "rateLimitMax" IS NULL
+   OR ("rateLimitMax" = 10 AND "rateLimitTimeWindow" = 86400000);

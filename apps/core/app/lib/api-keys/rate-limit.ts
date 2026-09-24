@@ -8,8 +8,9 @@
  * `401 Unauthorized`, indistinguishable from revocation.
  *
  * The limit stays on (a leaked key should not be unbounded) but is sized for
- * server-to-server automation and is env-tunable. It is a coarse daily backstop;
- * burst control is the per-route limiter in `auth/rate-limit.server.ts`.
+ * server-to-server automation and is env-tunable. It is a coarse backstop, not a
+ * rolling daily quota: the plugin resets a key's counter only after a full window
+ * with no requests. Burst control is the per-route limiter in `auth/rate-limit.server.ts`.
  *
  * This module deliberately does not import `parseEnvInt` from
  * `auth/rate-limit.server.ts`: that module pulls in the Redis queue connection,

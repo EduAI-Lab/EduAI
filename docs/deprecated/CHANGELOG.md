@@ -6,7 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.20
 
-- Review follow-up on #1807: the plugin stamps `rateLimitMax`/`rateLimitTimeWindow` onto each key row at creation, so #1807's config change only applied to new keys. Backfill migration `20260920180000_backfill_api_key_rate_limit` raises every existing key to 1000/24h and resets its usage counter; the schema default is now 1000 too. Also fixed `parsePositiveInt` accepting `"0.5"` (it floored to 0 after the `<=0` check instead of before).
+- Review follow-up on #1807: the plugin stamps `rateLimitMax`/`rateLimitTimeWindow` onto each key row at creation, so #1807's config change only applied to new keys. Backfill migration `20260920180000_backfill_api_key_rate_limit` raises every existing key still on the plugin default (10/24h, or unset) to 1000/24h and resets its usage counter; a deliberately tighter per-key ceiling is left alone; the schema default is now 1000 too. Also fixed `parsePositiveInt` accepting `"0.5"` (it floored to 0 after the `<=0` check instead of before).
 
 ## 2026.09.19
 
