@@ -1,4 +1,5 @@
 import type { ValidationResult } from "~/lib/validation-result";
+import { ACCEPTED_MATERIAL_MIME_TYPES } from "~/lib/materials/accepted-types";
 import { z } from "zod";
 import { hasFileReader } from "@eduai/ui/runtime-env";
 import { createHash } from "crypto";
@@ -589,17 +590,9 @@ export async function extractTextFromFile(file: File | any, content: string): Pr
  * Validate file type and size
  */
 export function validateFile(file: File | any): ValidationResult {
-  const allowedTypes = [
-    "text/plain",
-    "text/markdown",
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ];
-
   const maxSize = 50 * 1024 * 1024; // 50MB - increased for presentations
 
-  if (!allowedTypes.includes(file.type)) {
+  if (!ACCEPTED_MATERIAL_MIME_TYPES.includes(file.type)) {
     return {
       isValid: false,
       error: `File type ${file.type} is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX`,

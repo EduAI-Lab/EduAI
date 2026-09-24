@@ -463,20 +463,25 @@ describe("findRelevantContent — student-visibility gate (#839)", () => {
 
 describe("findRelevantContent — course scope (#1785)", () => {
   it("filters both retrieval paths to the requested courseId so another course is never retrieved", async () => {
+    // Own the default rather than inherit it from whichever test ran before.
+    queryRawMock.mockResolvedValue([]);
     await findRelevantContent(QUERY, COURSE_ID, 4);
     expect(capturedSql()).toContain('cm."courseId" =');
     expect(capturedParams()).toContain(COURSE_ID);
+    // The marker used below must be specific to the hybrid path, or finding "the
+    // hybrid query" could quietly land on this one.
+    expect(capturedSql()).not.toContain("ts_rank(");
 
-    // vi.clearAllMocks() wipes queryRawMock.mock.calls, but the pgvector
-    // version-gate check is cached at module scope (not per-test) and was
-    // already resolved by the call above — the second findRelevantContent()
-    // call below issues only the retrieval query, landing back at index 0.
-    vi.clearAllMocks();
-    queryRawMock.mockResolvedValue([]);
+    // Find the hybrid query by what only it contains, not by its position: a
+    // cached or reset pgvector version check (or any other preliminary query)
+    // would shift a fixed index and fail with an unrelated "undefined" error.
     process.env.RAG_HYBRID_BM25 = "1";
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    const hybridSql = capturedSql(0);
-    expect(hybridSql.match(/cm\."courseId" =/g)).toHaveLength(2);
-    expect(capturedParams(0)).toContain(COURSE_ID);
+    const hybridCallIndex = queryRawMock.mock.calls.findIndex((_call, index) =>
+      capturedSql(index).includes("ts_rank("),
+    );
+    expect(hybridCallIndex).toBeGreaterThanOrEqual(0);
+    expect(capturedSql(hybridCallIndex).match(/cm\."courseId" =/g)).toHaveLength(2);
+    expect(capturedParams(hybridCallIndex)).toContain(COURSE_ID);
   });
 });

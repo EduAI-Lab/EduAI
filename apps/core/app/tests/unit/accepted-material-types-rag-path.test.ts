@@ -10,7 +10,11 @@
  */
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
-import { ACCEPTED } from "~/components/course-materials-upload";
+import {
+  ACCEPTED_MATERIAL_MIME_TYPES,
+  MATERIAL_INPUT_ACCEPT,
+  type AcceptedMaterialMimeType,
+} from "~/lib/materials/accepted-types";
 import { extractUploadedFileContent } from "~/lib/ai/file-processing";
 import {
   EMPTY_COURSE_RAG_INSTRUCTION,
@@ -104,53 +108,82 @@ async function expectExtractedPhraseNamedInRagSource(
   expect(systemBlock).toContain("Cite the **Source** header");
 }
 
+interface RoundTripCase {
+  label: string;
+  fileName: string;
+  mimeType: AcceptedMaterialMimeType;
+  phrase: string;
+  build: () => Promise<Buffer>;
+}
+
+/** One case per accepted type; the test above keeps this in step with the shared list. */
+const ROUND_TRIP_CASES: RoundTripCase[] = [
+  {
+    label: "PDF with a real text layer",
+    fileName: "lecture-notes.pdf",
+    mimeType: "application/pdf",
+    phrase: PDF_PHRASE,
+    build: async () => buildPdfWithTextLayer(PDF_PHRASE),
+  },
+  {
+    label: "DOCX",
+    fileName: "reading.docx",
+    mimeType: DOCX_MIME,
+    phrase: DOCX_PHRASE,
+    build: () => buildRealDocx(DOCX_PHRASE),
+  },
+  {
+    label: "PPTX",
+    fileName: "slides.pptx",
+    mimeType: PPTX_MIME,
+    phrase: PPTX_PHRASE,
+    build: () => buildPptxWithSlideText(PPTX_PHRASE),
+  },
+  {
+    label: "TXT file",
+    fileName: "notes.txt",
+    mimeType: "text/plain",
+    phrase: TXT_PHRASE,
+    build: async () => Buffer.from(`Course notes mention ${TXT_PHRASE} in week two.`),
+  },
+  {
+    label: "Markdown file",
+    fileName: "notes.md",
+    mimeType: "text/markdown",
+    phrase: MD_PHRASE,
+    build: async () => Buffer.from(`# Week 2\n\nRemember ${MD_PHRASE} from the reading.`),
+  },
+];
+
 describe("accepted course-material types → RAG path (#1785)", () => {
   it("advertises exactly pdf, docx, pptx, txt, and md on the upload input", () => {
-    const extensions = ACCEPTED.split(",").filter((token) => token.startsWith("."));
+    const extensions = MATERIAL_INPUT_ACCEPT.split(",").filter((token) => token.startsWith("."));
     expect(extensions).toEqual([".pdf", ".docx", ".pptx", ".txt", ".md"]);
-    expect(ACCEPTED).toContain("application/pdf");
-    expect(ACCEPTED).toContain(DOCX_MIME);
-    expect(ACCEPTED).toContain(PPTX_MIME);
-    expect(ACCEPTED).toContain("text/plain");
-    expect(ACCEPTED).toContain("text/markdown");
+    expect(MATERIAL_INPUT_ACCEPT).toContain("application/pdf");
+    expect(MATERIAL_INPUT_ACCEPT).toContain(DOCX_MIME);
+    expect(MATERIAL_INPUT_ACCEPT).toContain(PPTX_MIME);
+    expect(MATERIAL_INPUT_ACCEPT).toContain("text/plain");
+    expect(MATERIAL_INPUT_ACCEPT).toContain("text/markdown");
   });
 
-  it("extracts a planted phrase from a PDF with a real text layer and names the file in the RAG Source header", async () => {
-    const file = fileFromBytes(
-      buildPdfWithTextLayer(PDF_PHRASE),
-      "lecture-notes.pdf",
-      "application/pdf",
+  it("has an extraction case for every type on the shared accepted list, and no others", () => {
+    // The extractor's switch cannot read the list, so this is what stops a type
+    // being advertised (and accepted by validateFile) with no extractor branch
+    // proven to work.
+    expect(new Set(ROUND_TRIP_CASES.map((c) => c.mimeType))).toEqual(
+      new Set(ACCEPTED_MATERIAL_MIME_TYPES),
     );
-    await expectExtractedPhraseNamedInRagSource(file, PDF_PHRASE);
-  }, 30_000);
-
-  it("extracts a planted phrase from a DOCX and names the file in the RAG Source header", async () => {
-    const file = fileFromBytes(await buildRealDocx(DOCX_PHRASE), "reading.docx", DOCX_MIME);
-    await expectExtractedPhraseNamedInRagSource(file, DOCX_PHRASE);
-  }, 30_000);
-
-  it("extracts a planted phrase from a PPTX and names the file in the RAG Source header", async () => {
-    const file = fileFromBytes(await buildPptxWithSlideText(PPTX_PHRASE), "slides.pptx", PPTX_MIME);
-    await expectExtractedPhraseNamedInRagSource(file, PPTX_PHRASE);
-  }, 30_000);
-
-  it("extracts a planted phrase from a TXT file and names the file in the RAG Source header", async () => {
-    const file = fileFromBytes(
-      Buffer.from(`Course notes mention ${TXT_PHRASE} in week two.`),
-      "notes.txt",
-      "text/plain",
-    );
-    await expectExtractedPhraseNamedInRagSource(file, TXT_PHRASE);
+    expect(ROUND_TRIP_CASES).toHaveLength(ACCEPTED_MATERIAL_MIME_TYPES.length);
   });
 
-  it("extracts a planted phrase from a Markdown file and names the file in the RAG Source header", async () => {
-    const file = fileFromBytes(
-      Buffer.from(`# Week 2\n\nRemember ${MD_PHRASE} from the reading.`),
-      "notes.md",
-      "text/markdown",
-    );
-    await expectExtractedPhraseNamedInRagSource(file, MD_PHRASE);
-  });
+  it.each(ROUND_TRIP_CASES)(
+    "extracts a planted phrase from a $label and names the file in the RAG Source header",
+    async ({ fileName, mimeType, phrase, build }) => {
+      const file = fileFromBytes(await build(), fileName, mimeType);
+      await expectExtractedPhraseNamedInRagSource(file, phrase);
+    },
+    30_000,
+  );
 
   it("uses EMPTY_COURSE_RAG_INSTRUCTION when retrieval returns no excerpts, forbidding world knowledge", () => {
     expect(buildCappedRagContextText([], 4, 1000)).toBe("");
