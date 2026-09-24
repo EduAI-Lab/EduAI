@@ -58,9 +58,11 @@ describe("seed catalog agrees with the declared campus catalog", () => {
   it("seeds exactly the expected set — nothing extra, nothing missing", () => {
     expect([...seededIds].sort()).toEqual(
       [
-        ...CAMPUS_INTERACTIVE_MODEL_IDS,
-        RETAINED_ASSIST_MODEL_ID,
-        ...DIRECT_ADDRESSED_MODEL_IDS,
+        ...new Set<string>([
+          ...CAMPUS_INTERACTIVE_MODEL_IDS,
+          RETAINED_ASSIST_MODEL_ID,
+          ...DIRECT_ADDRESSED_MODEL_IDS,
+        ]),
       ].sort(),
     );
   });

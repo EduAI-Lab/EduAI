@@ -86,7 +86,7 @@ const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
 const expectedModels = parseCommaList(
   process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen3.5-2b-instruct,qwen3.5-9b-instruct",
 );
-const assistModel = (process.env.ADHD_ASSIST_AUTO_MODEL || "vllm:qwen2.5-32b-instruct")
+const assistModel = (process.env.ADHD_ASSIST_AUTO_MODEL || "vllm:qwen3.8-27b-instruct")
   .replace(/^vllm:/i, "")
   .trim();
 

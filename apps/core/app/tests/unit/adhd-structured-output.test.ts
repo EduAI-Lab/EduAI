@@ -120,10 +120,10 @@ describe("structured Assist output", () => {
     ).toBe(true);
   });
 
-  it("does not enable constrained decoding for the retained 32B Assist model", () => {
+  it("does not enable constrained decoding for the cmps02 Assist model", () => {
     expect(
       isStructuredAdhdAssistCandidate({
-        modelIdentifier: "vllm:qwen2.5-32b-instruct",
+        modelIdentifier: "vllm:qwen3.8-27b-instruct",
         adhdAssist: true,
         imagesPresent: false,
         chatMode: "learning",

@@ -61,7 +61,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `QUEUE_ENQUEUE_ENABLED` | deprecated (ignored) | dev/prod | Pre-MVP fail-closed boundary: setting this to `true` does not enable queuing. `/api/chat` continues through direct chat. Re-enabling requires a reviewed code change after owner-scoped status/cancellation and server-side model authorization exist. |
 | `QUEUE_MAX_DEPTH` | dormant pre-MVP | dev/prod | Retained for the future queue contract; has no effect on `/api/chat` while the queue is hard-disabled. |
 | `AI_JOB_DEFAULT_MODEL` | dormant pre-MVP | dev/prod | Retained for future worker model authorization; no worker starts while the queue is hard-disabled. Since #1624 it is also the second step of `TOPIC_ANALYSIS_MODEL`'s fallback, so it does affect topic analysis even while the queue is off. |
-| `TOPIC_ANALYSIS_MODEL` | optional (default `vllm:qwen2.5-32b-instruct`) | dev/prod | Model used by automatic topic provisioning (#1624), which runs in-process rather than on the dormant queue. Resolves `TOPIC_ANALYSIS_MODEL` → `AI_JOB_DEFAULT_MODEL` → the default. Only reached when Canvas modules and material headings both yield nothing, so most syncs never call a model at all. An `openai:`/`google:` prefix draws its key from `OPENAI_API_KEY`/`GOOGLE_GENERATIVE_AI_API_KEY` — the job has no user, so browser-supplied keys never apply. |
+| `TOPIC_ANALYSIS_MODEL` | optional (default `vllm:qwen3.8-27b-instruct`) | dev/prod | Model used by automatic topic provisioning (#1624), which runs in-process rather than on the dormant queue. Resolves `TOPIC_ANALYSIS_MODEL` → `AI_JOB_DEFAULT_MODEL` → the default. Only reached when Canvas modules and material headings both yield nothing, so most syncs never call a model at all. An `openai:`/`google:` prefix draws its key from `OPENAI_API_KEY`/`GOOGLE_GENERATIVE_AI_API_KEY` — the job has no user, so browser-supplied keys never apply. |
 | `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | dormant pre-MVP | dev/prod | Retained for future BullMQ worker concurrency. |
 | `AI_JOB_EXECUTION_TIMEOUT_MS` | dormant pre-MVP | dev/prod | Retained for the future async-job execution deadline. |
 | `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | dormant pre-MVP | dev/prod | Retained for future BullMQ retry policy. |
@@ -173,7 +173,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 |---|---|---|
 | `COURSE_SCOPE_GUARDRAIL_ENABLED` | `false` | Server kill switch for the Layer B course-scope classifier — **ANDed** with each course's own `courseScopeGuardrailEnabled` column, so Layer B runs only when both are on. Layer A (system-prompt policy) is always on |
 | `COURSE_SCOPE_CLASSIFIER_MODEL` / `COURSE_SCOPE_MIN_CONFIDENCE` / `COURSE_SCOPE_CLASSIFIER_TIMEOUT_MS` | — / `75` / `2000` | Layer B classifier; fails open on timeout |
-| `ADHD_ASSIST_AUTO_MODEL` | `vllm:qwen2.5-32b-instruct` | Model Assist Auto is pinned to |
+| `ADHD_ASSIST_AUTO_MODEL` | `vllm:qwen3.8-27b-instruct` | Model Assist Auto is pinned to |
 | `ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY` | off | `true`/`1`/`on` restricts oversight to the deterministic pass (no model rewrite) |
 | `CANVAS_SYNC_RATE_LIMIT` / `CANVAS_SYNC_RATE_WINDOW_MS` | `1` / `30000` | Per-user Canvas course/material sync limiter |
 | `CANVAS_LINK_ROSTER_RATE_LIMIT` / `CANVAS_LINK_ROSTER_RATE_WINDOW_MS` | `10` / `900000` | Per-user Canvas roster-link limiter |
@@ -185,7 +185,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `QM_BACKEND_URL` / `AI_TUTOR_SERVER_URL` | — | Extension base URLs Core calls outward to for best-effort cascade-delete on course deletion. Unset ⇒ the call is skipped and the extension's nightly reconcile self-heals |
 | `COOKIE_DOMAIN` | — | Cross-subdomain auth cookie domain (e.g. `.eduai.ok.ubc.ca`). Loopback values are ignored so `crossSubDomainCookies` stays off locally |
 | `LOG_LEVEL` | `info` | Server log verbosity |
-| `TOPIC_ANALYSIS_MODEL` | `vllm:qwen2.5-32b-instruct` | See the main table — resolves `TOPIC_ANALYSIS_MODEL` → `AI_JOB_DEFAULT_MODEL` → the default |
+| `TOPIC_ANALYSIS_MODEL` | `vllm:qwen3.8-27b-instruct` | See the main table — resolves `TOPIC_ANALYSIS_MODEL` → `AI_JOB_DEFAULT_MODEL` → the default |
 | `VITE_AI_TUTOR_URL` / `VITE_QUESTION_MAKER_URL` / `VITE_EXTRA_EXTENSIONS` | — | Sidebar app-switcher entries. An extension appears **only** when its URL var is set; `VITE_EXTRA_EXTENSIONS` is a JSON array of `{id,name,url,description?,color?}`. Baked in at build time |
 
 ### Future queue settings

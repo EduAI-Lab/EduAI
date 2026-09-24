@@ -43,21 +43,6 @@ export const VLLM_MODELS = [
     supportsTools: true,
     supportsImages: false,
   },
-  {
-    // NOT retired, despite being a generation behind. Two code paths still
-    // address this id directly — `ADHD_ASSIST_AUTO_MODEL_ID`
-    // (`app/lib/ai/adhd-assist.ts:61`) and `DEFAULT_TOPIC_ANALYSIS_MODEL`
-    // (`app/lib/topics/completion.server.ts:7`) — and both fail closed when the
-    // model has no active catalog row. Repointing them is gated on re-validating
-    // Assist's structural contract (#1523), which is a research decision, not a
-    // catalog one. Retire this row only once those two consumers have moved.
-    modelId: "qwen2.5-32b-instruct",
-    name: "Qwen 2.5 32B AWQ (vLLM)",
-    description: "Retained for Assist Auto and topic analysis — not in Auto routing",
-    maxTokens: 8192,
-    supportsTools: true,
-    supportsImages: false,
-  },
 ] as const;
 
 /**
@@ -98,9 +83,11 @@ export const VLLM_ROUTING_TIER_ASSIGNMENTS = [
 
 /**
  * IDs from prior fleet generations that this seed is allowed to retire.
- *
- * `qwen2.5-32b-instruct` is deliberately NOT here even though cmps02 migrated it
- * to `qwen3.8-27b-instruct` (`infra/cmps02/migrate-qwen38.sh`) — see the note on
- * its row above.
+ * cmps02 replaced `qwen2.5-32b-instruct` with `qwen3.8-27b-instruct`
+ * (`infra/cmps02/migrate-qwen38.sh`).
  */
-export const VLLM_RETIRED_MODEL_IDS = ["qwen2.5-7b-instruct", "qwen3.5-4b-instruct"] as const;
+export const VLLM_RETIRED_MODEL_IDS = [
+  "qwen2.5-7b-instruct",
+  "qwen3.5-4b-instruct",
+  "qwen2.5-32b-instruct",
+] as const;

@@ -106,7 +106,7 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
 
     await applyRoutingTierAssignments();
 
-    // Direct-addressed rows (e.g. qwen2.5-32b-instruct) stay active.
+    // Direct-addressed rows (e.g. qwen3.8-27b-instruct) stay active.
     expect(aIModelUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

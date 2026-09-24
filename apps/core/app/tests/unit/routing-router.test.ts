@@ -165,14 +165,14 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
 });
 
 describe("Assist Auto routing", () => {
-  it("pins non-image Assist Auto to the retained 32B model", async () => {
+  it("pins non-image Assist Auto to the cmps02 27B model", async () => {
     const decision = await resolveRoutedModel("explain photosynthesis", {
       courseId: "course-1",
       imagesPresent: false,
       adhdAssist: true,
     });
 
-    expect(decision.modelId).toBe("vllm:qwen2.5-32b-instruct");
+    expect(decision.modelId).toBe("vllm:qwen3.8-27b-instruct");
     expect(decision.features).toMatchObject({
       rule: "assist_auto_retained_model",
       assistAutoPinned: true,
