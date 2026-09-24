@@ -1,4 +1,5 @@
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
+import { RETAINED_ASSIST_MODEL_ID } from "~/lib/ai/campus-model-catalog";
 import { buildEduaiDiagramFence } from "~/lib/ai/eduai-diagram-payload";
 import { hasEduaiDiagramFence, resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
 
@@ -46,19 +47,11 @@ export const ADHD_ASSIST_POLICY_VERSION = "2.3";
  * material. Fleet resolution remains fail-closed when this model is absent.
  * Deployments may override the id during a controlled migration.
  *
- * This intentionally stays on Qwen2.5 32B (RETAINED_ASSIST_MODEL_ID in
- * campus-model-catalog.ts), NOT the Qwen3.5 2B/9B fleet this PR migrates
- * cmps01 to. #1523 established that 32B is, as of this policy version, the
- * only model that reliably preserves Assist's structural contract without
- * constrained decoding; isVllmStructuredAdhdAssistModel deliberately excludes
- * it from the JSON-schema structured-output path for the same reason. cmps02
- * keeps serving this model for Assist Auto only, for as long as that
- * dependency holds — see docs/research/MODEL_SPLIT_DOC.md and the
- * VLLM_FLEET_DEFAULT_MODELS / ADHD_ASSIST_AUTO_MODEL notes in .env.example.
- * Do not repoint this at a Qwen3.5 id without first re-validating structural
- * compliance and updating fleet-smoke's assumed host mapping (fleet-smoke.mjs).
+ * Points at RETAINED_ASSIST_MODEL_ID, which cmps02 serves in place of the
+ * Qwen2.5 32B that #1523 validated (#1802). Like the 32B, it stays off the
+ * constrained-decoding path (isVllmStructuredAdhdAssistModel).
  */
-export const ADHD_ASSIST_AUTO_MODEL_ID = "vllm:qwen2.5-32b-instruct";
+export const ADHD_ASSIST_AUTO_MODEL_ID = `vllm:${RETAINED_ASSIST_MODEL_ID}`;
 
 export function resolveAdhdAssistAutoModelId(): string {
   return process.env.ADHD_ASSIST_AUTO_MODEL?.trim() || ADHD_ASSIST_AUTO_MODEL_ID;
