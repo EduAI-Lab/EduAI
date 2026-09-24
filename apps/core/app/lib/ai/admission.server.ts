@@ -45,7 +45,7 @@ function abortError(): Error {
  *
  * A caller that just timed out waited the whole window and lost, so the window
  * is the natural timescale to suggest. `jitterRatio` spreads the suggestion
- * across [base, base * (1 + jitterRatio)] — with a classful 25 clients hitting
+ * across [base, base + floor(base * jitterRatio)] — with a classful 25 clients hitting
  * a gate of 8, a fixed delay would simply re-synchronize the same stampede one
  * window later (#1804).
  */

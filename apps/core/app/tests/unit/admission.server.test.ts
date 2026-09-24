@@ -207,4 +207,9 @@ describe("admission timeout response", () => {
       expect(value).toBeLessThanOrEqual(30);
     }
   });
+
+  it("floors the jitter at the default window, where base * ratio is fractional", () => {
+    process.env.AI_ADMISSION_WAIT_MS = "15000";
+    expect(admissionRetryAfterSeconds(0.5, () => 0.999)).toBe(22);
+  });
 });
