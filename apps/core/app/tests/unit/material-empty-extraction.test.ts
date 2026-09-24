@@ -120,9 +120,25 @@ describe("#1781 upload of a file with no extractable text", () => {
 
     // Extraction is the stage that knows the document had no text layer, so it
     // is the stage that must say so — naming the file, and in words an
-    // instructor can act on.
+    // instructor could act on once it is surfaced (#1794). A PDF gets its own
+    // wording, from `extractPdfText`; the generic one is pinned just below.
     await expect(extractUploadedFileContent(file)).rejects.toThrow(
-      /week3-lecture-scan\.pdf.*(no readable text|no extractable text)/i,
+      /week3-lecture-scan\.pdf.*no extractable text layer/i,
+    );
+  });
+
+  it("gives a text-free DOCX or TXT the generic message, since only a PDF has its own", async () => {
+    // `extractPdfText` throws before `assertExtractedContentNotEmpty` runs, so
+    // that assert's wording is only ever reached by the other formats. The two
+    // messages carry the same OCR advice; this keeps that split deliberate.
+    const blankTxt = uploadFile(Buffer.from("   \n\n\t \n"), "blank.txt", "text/plain");
+    const figuresDocx = uploadFile(await buildImageOnlyDocx(), "figures.docx", DOCX_MIME);
+
+    await expect(extractUploadedFileContent(blankTxt)).rejects.toThrow(
+      /blank\.txt.*No readable text could be extracted/,
+    );
+    await expect(extractUploadedFileContent(figuresDocx)).rejects.toThrow(
+      /figures\.docx.*No readable text could be extracted/,
     );
   });
 

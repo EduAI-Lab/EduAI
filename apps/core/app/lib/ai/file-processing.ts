@@ -71,8 +71,15 @@ export function assertExtractedContentWithinLimit(content: string): void {
  *
  * Throw here so the row fails as MATERIAL_EXTRACT_FAILED with `rawText` still
  * null and no checksum computed. `extractUploadedFileContent` wraps this as
- * `Failed to process file <name>: …`, which `toMaterialUploadUserMessage`
- * passes through to the instructor.
+ * `Failed to process file <name>: …`, which `runMaterialExtraction` records via
+ * `logSystemError`. The instructor does not see this text yet: `failMaterial`
+ * writes only `status: "FAILED"` to the row, so the upload badge cannot show it.
+ * Persisting and surfacing the reason is #1794.
+ *
+ * PDFs never reach this assert: `extractPdfText` throws
+ * {@link PDF_NO_TEXT_LAYER_MESSAGE} first, so this message is only produced for
+ * DOCX / PPTX / TXT / MD. The OCR advice is worded in both places; change them
+ * together.
  */
 export function assertExtractedContentNotEmpty(content: string): void {
   if (content.trim().length > 0) return;
@@ -1324,6 +1331,11 @@ export async function extractPdfTextIsolated<T = { content: string }>(
 /**
  * Raised when a PDF parses cleanly but carries no text at all (#1787).
  * Same defect as #1781, named at the PDF extractor so the stage is honest.
+ *
+ * This is the message a text-free PDF gets. It is thrown before
+ * `assertExtractedContentNotEmpty` runs, so that assert's generic wording is only
+ * ever seen for DOCX / PPTX / TXT / MD: the two are not alternatives for the same
+ * file. `material-empty-extraction.test.ts` pins which type gets which.
  */
 export const PDF_NO_TEXT_LAYER_MESSAGE =
   "PDF contains no extractable text layer — a scanned or image-only PDF has to be run " +
