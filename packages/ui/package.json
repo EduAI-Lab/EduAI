@@ -16,7 +16,8 @@
     "./term": "./src/lib/term.ts",
     "./runtime-env": "./src/lib/runtime-env.ts",
     "./primitive-union": "./src/lib/primitive-union.ts",
-    "./math-markdown": "./src/lib/math-markdown.ts"
+    "./math-markdown": "./src/lib/math-markdown.ts",
+    "./bug-report-capture": "./src/bug-report-capture.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -68,6 +69,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "embla-carousel-react": "^8.6.0",
+    "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "marked": "^16.1.2",
     "next-themes": "^0.4.6",

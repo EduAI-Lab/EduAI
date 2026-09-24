@@ -23,6 +23,10 @@ export default defineConfig({
         __dirname,
         "../../../packages/ui/src/lib/math-markdown.ts",
       ),
+      "@eduai/ui/bug-report-capture": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/bug-report-capture.ts",
+      ),
       "@eduai/ui": path.resolve(__dirname, "../../../packages/ui/src/index.ts"),
     },
   },
