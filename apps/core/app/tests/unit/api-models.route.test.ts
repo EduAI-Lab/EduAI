@@ -130,6 +130,28 @@ describe("GET /api/models", () => {
     ]);
   });
 
+  it("excludes bedrock and prototype-chain names that /api/chat would refuse", async () => {
+    getRequestSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    const row = (providerName: string) => ({
+      modelId: "m",
+      name: providerName,
+      supportsTools: false,
+      supportsImages: false,
+      maxTokens: 4096,
+      provider: { name: providerName },
+    });
+    // Bedrock is overflow-only: both endpoints answer 400 BEDROCK_NOT_SELECTABLE.
+    findMany.mockResolvedValue([...ROWS, row("bedrock"), row("constructor"), row("toString")]);
+
+    const response = await loader(makeArgs());
+    const body = await response.json();
+
+    expect(body.models.map((m: { id: string }) => m.id)).toEqual([
+      "vllm:qwen3.5-2b-instruct",
+      "google:gemini-2.5-flash",
+    ]);
+  });
+
   it("rate-limits under the shared chat limiter", async () => {
     getRequestSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
     checkRateLimit.mockResolvedValue({ limited: true, retryAfter: 12 });

@@ -75,15 +75,20 @@ export type ListedChatModel = {
  * Every model `/api/chat` and `/api/completion` will currently accept (#1805).
  *
  * The `where` clause matches `resolveActiveChatModel`'s, plus the same
- * provider-name filter `parseModelIdentifier` applies: an `AIProvider` row can
+ * provider-name check `parseModelIdentifier` applies: an `AIProvider` row can
  * be named anything, and an unrecognized name would otherwise be advertised
- * here while `/api/chat` 422s it as unparseable.
+ * here while `/api/chat` 422s it as unparseable. Bedrock is dropped too, since
+ * both endpoints refuse it with `BEDROCK_NOT_SELECTABLE`.
  *
  * Returns only what a caller needs to choose a model. It does not include the
  * provider row — unlike the admin `/api/ai-models` list — because this endpoint
  * has a wider audience and should not grow a provider-shaped payload by
  * default.
  */
+function isCallerSelectableProvider(name: string): name is SupportedProvider {
+  return name !== "bedrock" && Object.keys(PROVIDER_CONFIGS).includes(name);
+}
+
 export async function listActiveChatModels(): Promise<ListedChatModel[]> {
   const models = await prisma.aIModel.findMany({
     where: {
@@ -103,7 +108,7 @@ export async function listActiveChatModels(): Promise<ListedChatModel[]> {
   });
 
   return models
-    .filter((model) => model.provider.name in PROVIDER_CONFIGS)
+    .filter((model) => isCallerSelectableProvider(model.provider.name))
     .map((model) => {
       const providerId = model.provider.name as SupportedProvider;
       return {
