@@ -7,6 +7,7 @@ import {
 } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
 import { serializeCourseForApi } from "~/lib/courses/dto.server";
+import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
@@ -17,7 +18,10 @@ import { withErrorResponse } from "~/lib/errors.server";
 /** A course row as this endpoint answers with it: the query's shape, plus the
  * instructor the student payload attaches when the query did not include one. */
 type CourseWithInstructor = Awaited<ReturnType<typeof getCourse>> & {
-  instructor?: { name: string; email: string } | null;
+  // #1841: `email` is nullable because the course head is now derived from a
+  // `CourseInstructorSummary`, whose email is redacted for student audiences.
+  // On this path it is always populated; the serializer tolerates either.
+  instructor?: { name: string; email: string | null } | null;
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -103,20 +107,45 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
 
       const audience = access.level === "student" ? "student" : "staff";
-      // The student payload gains an `instructor` the staff query already includes.
+
+      // #1841: the full instructor set, plus the single `instructor` field kept
+      // for the consumers that already read it. The serializer redacts these
+      // emails for the student audience.
+      const instructors = (await getCourseInstructors([course.id])).get(course.id) ?? [];
+
+      // `resolveCourseAccessWithCourse` returns scalar columns only, so no
+      // caller of this route ever received a populated `instructor` — students
+      // got one from an extra lookup, staff got nothing at all. Derive it from
+      // the course head we just resolved, for every audience, so the common
+      // case costs no second query.
       let responseCourse: CourseWithInstructor = course;
-      if (access.level === "student" && course.instructorId && !("instructor" in responseCourse)) {
-        const instructor = await prisma.user.findUnique({
-          where: { id: course.instructorId },
-          select: { name: true, email: true },
-        });
-        responseCourse = { ...responseCourse, instructor };
+      if (!("instructor" in responseCourse)) {
+        const primary = instructors.find((row) => row.isPrimary) ?? null;
+        // `Course.instructorId` can point at someone with no active INSTRUCTOR
+        // enrollment — a legacy row, or a head demoted through
+        // PATCH /courses/enrollments/:id, which does not move the column. The
+        // batch above only returns active enrollments, so read the column
+        // directly in that case: the page loader renders that person from the
+        // `instructor` relation, and answering `null` here would leave the page
+        // and this route disagreeing about the same course.
+        const fromColumn =
+          primary || !course.instructorId
+            ? null
+            : await prisma.user.findUnique({
+                where: { id: course.instructorId },
+                select: { name: true, email: true },
+              });
+        responseCourse = {
+          ...responseCourse,
+          instructor: primary ? { name: primary.name, email: primary.email } : fromColumn,
+        };
       }
       return new Response(
         JSON.stringify(
           serializeCourseForApi(responseCourse, {
             audience,
             detail: true,
+            instructors,
           }),
         ),
         {
