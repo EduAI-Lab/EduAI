@@ -1185,7 +1185,8 @@ export async function applyRoutingTierAssignments() {
 
   // Clear only IDs from a known retired fleet generation. Do not clear every
   // non-catalog row: an administrator may have added an active vLLM model and
-  // intentionally assigned it a tier through the admin UI.
+  // intentionally assigned it a tier through the admin UI. Retired rows are
+  // deactivated only while they still hold a tier, so an admin re-enable sticks.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -1195,6 +1196,7 @@ export async function applyRoutingTierAssignments() {
     await prisma.aIModel.updateMany({
       where: {
         providerId: vllm.id,
+        routerTier: { not: null },
         modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
       },
       data: { routerTier: null, isActive: false },
@@ -1366,6 +1368,8 @@ async function seedAIProvidersAndModels() {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
       update: {
+        name: m.name,
+        description: m.description,
         isActive: true,
         maxTokens: m.maxTokens,
         supportsTools: m.supportsTools,

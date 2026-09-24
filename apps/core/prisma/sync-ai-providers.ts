@@ -48,7 +48,7 @@ async function applyRoutingTierAssignments() {
     });
   }
 
-  // Clear stale tiers and deactivate retired vLLM rows — mirrors seed.ts.
+  // Clear stale tiers and deactivate still-tiered retired vLLM rows — mirrors seed.ts.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -58,6 +58,7 @@ async function applyRoutingTierAssignments() {
     await prisma.aIModel.updateMany({
       where: {
         providerId: vllm.id,
+        routerTier: { not: null },
         modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
       },
       data: { routerTier: null, isActive: false },
@@ -243,6 +244,8 @@ async function main() {
         providerId_modelId: { providerId: vllm.id, modelId: m.modelId },
       },
       update: {
+        name: m.name,
+        description: m.description,
         isActive: true,
         maxTokens: m.maxTokens,
         supportsTools: m.supportsTools,
