@@ -32,7 +32,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.16
 
-- Remind pending invitees before their invitation expires: a new `notify-invitation-expiry` Core cron job (04:30 UTC daily) emails anyone whose PENDING invitation is nearing its deadline. The reminder lead time is derived from the configured `INVITE_EXPIRY_HOURS` rather than hardcoded, so shortening the TTL cannot silently stop reminders going out. The email deliberately carries no accept link — `Invitation` persists only a sha256 `tokenHash`, so the raw token exists solely in the original invitation email; the reminder points recipients back at it and names the inviting administrator. Also replaces `triggerCronJobAsync`'s hardcoded API-key import with a `CORE_CRON_HANDLERS` lookup, so an unregistered `execution: "CORE"` job now fails as ERROR instead of silently running the API-key handler. Closes #724.
 - Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
 
 ## 2026.09.15
