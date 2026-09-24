@@ -19,6 +19,21 @@ interface BugReportProviderProps {
   children: ReactNode;
 }
 
+// Diagnostics come only from the dialog, which fills them after the reporter
+// opts in; with the toggle off they are sent as null (#1752).
+async function submitBugReport(data: BugReportSubmitData) {
+  await bugReportApi.submit({
+    description: data.description,
+    bugType: data.bugType,
+    isAnonymous: data.isAnonymous,
+    consoleLogs: data.consoleLogs ?? null,
+    networkLogs: data.networkLogs ?? null,
+    screenshot: data.screenshot ?? null,
+    pageUrl: data.pageUrl ?? null,
+    userAgent: data.userAgent ?? null,
+  });
+}
+
 export function BugReportProvider({ children }: BugReportProviderProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const [open, setOpen] = useState(false);
@@ -26,21 +41,6 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
   const captureEnabled = !isLoading && isAuthenticated;
   const { captureScreenshot, getCapturedData, clearScreenshot } =
     useBugReportCapture(captureEnabled);
-
-  // Diagnostics come only from the dialog, which fills them after the reporter
-  // opts in; with the toggle off they are sent as null (#1752).
-  const handleSubmit = async (data: BugReportSubmitData) => {
-    await bugReportApi.submit({
-      description: data.description,
-      bugType: data.bugType,
-      isAnonymous: data.isAnonymous,
-      consoleLogs: data.consoleLogs ?? null,
-      networkLogs: data.networkLogs ?? null,
-      screenshot: data.screenshot ?? null,
-      pageUrl: data.pageUrl ?? null,
-      userAgent: data.userAgent ?? null,
-    });
-  };
 
   const handleOpenChange = (next: boolean) => {
     if (!next) clearScreenshot();
@@ -56,7 +56,7 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
         <BugReportDialog
           open={open}
           onOpenChange={handleOpenChange}
-          onSubmit={handleSubmit}
+          onSubmit={submitBugReport}
           captureScreenshot={captureScreenshot}
           getCapturedData={getCapturedData}
         />
