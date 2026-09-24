@@ -67,10 +67,22 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
   const originalConcurrency = process.env.REINDEX_CONCURRENCY;
   const originalEmbeddingDimension = process.env.EMBEDDING_DIMENSION;
   const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
+  // #1792: Vitest loads apps/core/.env into process.env, and that file sets
+  // OPENROUTER_API_KEY. getCloudEmbeddingModel resolves OpenRouter before
+  // OpenAI, so a leaked key silently moved these tests onto the OpenRouter
+  // branch — which passes the model id through provider-qualified instead of
+  // stripping the `openai/` prefix, failing the snapshot test on any machine
+  // with an .env while staying green in CI, which has none.
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalGoogleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const originalVllmEmbeddingBaseUrl = process.env.VLLM_EMBEDDING_BASE_URL;
 
   beforeEach(() => {
     vi.clearAllMocks();
     clearCourseEmbeddingSettingsCache();
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    delete process.env.VLLM_EMBEDDING_BASE_URL;
     process.env.EMBEDDING_DIMENSION = "1024";
     process.env.EMBEDDING_PROVIDER = "cloud";
     process.env.OPENAI_API_KEY = "test-key";
@@ -93,6 +105,12 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
     else process.env.EMBEDDING_DIMENSION = originalEmbeddingDimension;
     if (originalEmbeddingProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
     else process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
+    if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    if (originalGoogleKey === undefined) delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    else process.env.GOOGLE_GENERATIVE_AI_API_KEY = originalGoogleKey;
+    if (originalVllmEmbeddingBaseUrl === undefined) delete process.env.VLLM_EMBEDDING_BASE_URL;
+    else process.env.VLLM_EMBEDDING_BASE_URL = originalVllmEmbeddingBaseUrl;
     delete process.env.OPENAI_API_KEY;
   });
 
@@ -478,5 +496,105 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
     expect(result.total).toBe(1);
     expect(result.processed).toBe(1);
     expect(result.failed).toEqual([]);
+  });
+});
+
+// #1792: the `openai/` prefix on a course's embedding model is handled
+// differently per provider, and nothing pinned either side — the only reason
+// the difference was ever noticed is that a leaked `OPENROUTER_API_KEY` from
+// `apps/core/.env` silently flipped the branch under the suite above. These
+// control every provider-selecting variable explicitly rather than inheriting
+// whatever the ambient environment happens to hold.
+describe("reEmbedCourseMaterials cloud model resolution (#1792)", () => {
+  const SAVED_ENV = [
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "VLLM_EMBEDDING_BASE_URL",
+    "EMBEDDING_DIMENSION",
+    "EMBEDDING_PROVIDER",
+    "REINDEX_CONCURRENCY",
+  ] as const;
+  const originals = new Map<string, string | undefined>();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearCourseEmbeddingSettingsCache();
+    for (const key of SAVED_ENV) {
+      originals.set(key, process.env[key]);
+      delete process.env[key];
+    }
+    process.env.EMBEDDING_DIMENSION = "1024";
+    process.env.EMBEDDING_PROVIDER = "cloud";
+    process.env.REINDEX_CONCURRENCY = "1";
+
+    prisma.course.findUnique.mockResolvedValue({
+      embeddingProvider: "cloud",
+      embeddingModel: null,
+      embeddedWithProvider: null,
+      embeddedWithModel: null,
+      lastEmbeddedAt: null,
+    });
+    prisma.courseMaterial.update.mockResolvedValue({});
+    prisma.course.update.mockResolvedValue({});
+    setupTransactionMock();
+    mockMaterials([{ id: "m0", rawText: "content 0", title: "First" }]);
+    (embedManyMock as any).mockImplementation(async ({ values }: any) => ({
+      embeddings: values.map(() => [...SAMPLE_EMBEDDING]),
+    }));
+  });
+
+  afterEach(() => {
+    for (const [key, value] of originals) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    originals.clear();
+  });
+
+  /** Run one re-embed against a fixed settings snapshot and report the wire model id. */
+  async function embedWithSnapshotModel(model: string): Promise<string> {
+    let wireModelId = "";
+    (embedManyMock as any).mockImplementation(async ({ model: resolved, values }: any) => {
+      wireModelId = resolved.modelId;
+      return { embeddings: values.map(() => [...SAMPLE_EMBEDDING]) };
+    });
+
+    await reEmbedCourseMaterials("course-1", {
+      embeddingSettings: {
+        provider: "cloud" as const,
+        model,
+        wantsLocal: false,
+        source: { provider: "course" as const, model: "course" as const },
+      },
+    });
+    return wireModelId;
+  }
+
+  it("sends the provider-qualified model id to OpenRouter, which addresses models that way", async () => {
+    process.env.OPENROUTER_API_KEY = "router-key";
+
+    expect(await embedWithSnapshotModel("openai/model-a")).toBe("openai/model-a");
+  });
+
+  it("strips the provider prefix when falling back to OpenAI direct, which does not", async () => {
+    process.env.OPENAI_API_KEY = "openai-key";
+
+    expect(await embedWithSnapshotModel("openai/model-a")).toBe("model-a");
+  });
+
+  it("stores the canonical provider-qualified id regardless of which client sent it", async () => {
+    process.env.OPENAI_API_KEY = "openai-key";
+
+    await embedWithSnapshotModel("openai/model-a");
+
+    expect(prisma.course.update).toHaveBeenCalledWith({
+      where: { id: "course-1" },
+      data: {
+        embeddedWithProvider: "cloud",
+        embeddedWithModel: "openai/model-a",
+        lastEmbeddedAt: expect.any(Date),
+      },
+    });
   });
 });
