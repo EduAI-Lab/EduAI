@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
+import { cronEvery, pollMinutes } from "~/lib/ai/status/config.server";
 import prisma from "~/lib/prisma.server";
 import {
   redactErrorForConsole,
@@ -119,6 +120,14 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     scheduleLabel: "Daily at 02:00 UTC (QM server)",
     script: "",
     triggerEnabled: false,
+  },
+  {
+    name: "ai-status-probe",
+    description: "Sample UBC fleet health per model and persist a status history point",
+    schedule: cronEvery(pollMinutes()),
+    scheduleLabel: `Every ${pollMinutes()} minutes`,
+    script: "Core handler",
+    execution: "CORE",
   },
 ];
 
@@ -287,7 +296,19 @@ export async function reapExpiredCronRuns(): Promise<number> {
   return reapExpiredCronRunsWithDb(prisma);
 }
 
-export async function startCronRun(jobName: string): Promise<StartCronRunResult> {
+/**
+ * Acquire the lease for one logical cron run and record who asked for it.
+ *
+ * `triggerSource` is required rather than defaulted: `dispatchManualCronRuns`
+ * only claims rows stamped ADMIN_UI/ADMIN_CHAT, so a call site that forgets to
+ * declare its provenance would record a RUNNING row nobody ever dispatches —
+ * and that row would hold the job's lease until the reaper terminalized it.
+ * Making the compiler demand the value keeps that failure impossible.
+ */
+export async function startCronRun(
+  jobName: string,
+  triggerSource: CronJobTriggerSource,
+): Promise<StartCronRunResult> {
   const leaseOwner = randomUUID();
   const leaseMs = resolveCronRunLeaseMs();
 
@@ -309,13 +330,14 @@ export async function startCronRun(jobName: string): Promise<StartCronRunResult>
     // the database clock, so host clock skew cannot shorten or extend a lease.
     const inserted = await tx.$queryRaw<Array<{ id: string }>>`
       INSERT INTO cron_job_runs (
-        id, "jobName", status, "startedAt", "createdAt",
+        id, "jobName", status, "triggerSource", "startedAt", "createdAt",
         "leaseOwner", "leaseHeartbeatAt", "leaseExpiresAt"
       )
       VALUES (
         gen_random_uuid()::text,
         ${jobName},
         'RUNNING'::"CronJobStatus",
+        ${triggerSource}::"CronJobTriggerSource",
         statement_timestamp(),
         statement_timestamp(),
         ${leaseOwner},
@@ -433,31 +455,34 @@ function persistedCronMessage(
   );
 }
 
+type CoreJobHandler = () => Promise<{ message: string }>;
+
 /**
- * Cron jobs with `execution: "CORE"` run in-process instead of spawning a
- * script. Each entry imports its module lazily — an eager import would pull
- * prisma, the mailer and auth into every consumer of this module — and returns
- * the summary persisted on the run row.
+ * CORE jobs run in-process in the cron worker. Each entry resolves its handler
+ * lazily so the module graph stays as lazy as the previous single hardcoded
+ * import. Adding a job here is the only change a new CORE job needs.
  */
-const CORE_CRON_HANDLERS = new Map<string, () => Promise<string>>([
-  [
-    "notify-api-key-expiry",
-    async () => {
-      const { notifyExpiringApiKeys } = await import("~/lib/cron-notify-api-key-expiry.server");
+const CORE_JOB_HANDLERS = {
+  "notify-api-key-expiry": async () => {
+    const { notifyExpiringApiKeys } = await import("~/lib/cron-notify-api-key-expiry.server");
+    return async () => {
       const { notified } = await notifyExpiringApiKeys();
-      return `Sent ${notified} API key expiry notification(s)`;
-    },
-  ],
-  [
-    "notify-invitation-expiry",
-    async () => {
-      const { notifyExpiringInvitations } =
-        await import("~/lib/cron-notify-invitation-expiry.server");
+      return { message: `Sent ${notified} API key expiry notification(s)` };
+    };
+  },
+  "notify-invitation-expiry": async () => {
+    const { notifyExpiringInvitations } =
+      await import("~/lib/cron-notify-invitation-expiry.server");
+    return async () => {
       const { notified } = await notifyExpiringInvitations();
-      return `Sent ${notified} invitation expiry reminder(s)`;
-    },
-  ],
-]);
+      return { message: `Sent ${notified} invitation expiry reminder(s)` };
+    };
+  },
+  "ai-status-probe": async () => {
+    const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");
+    return runAiStatusProbe;
+  },
+} satisfies Record<string, () => Promise<CoreJobHandler>>;
 
 export function triggerCronJobAsync(
   jobName: string,
@@ -467,14 +492,23 @@ export function triggerCronJobAsync(
   execution: CronJobExecution = "SCRIPT",
 ): void {
   if (execution === "CORE") {
-    const handler = CORE_CRON_HANDLERS.get(jobName);
-    // A `Map` so an unregistered name cannot resolve to an inherited property.
-    const run = handler
-      ? handler()
-      : Promise.reject(new Error(`No Core handler registered for cron job "${jobName}"`));
+    const resolve = CORE_JOB_HANDLERS[jobName as keyof typeof CORE_JOB_HANDLERS];
+    if (!resolve) {
+      void finishCronRun(
+        runId,
+        leaseOwner,
+        "ERROR",
+        `No CORE handler registered for "${jobName}"`,
+        1,
+      ).catch((cause: unknown) =>
+        console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
+      );
+      return;
+    }
 
-    void run
-      .then((summary) => finishCronRun(runId, leaseOwner, "SUCCESS", summary, 0))
+    void resolve()
+      .then((handler) => handler())
+      .then(({ message }) => finishCronRun(runId, leaseOwner, "SUCCESS", message, 0))
       .catch((cause: unknown) =>
         finishCronRun(
           runId,
