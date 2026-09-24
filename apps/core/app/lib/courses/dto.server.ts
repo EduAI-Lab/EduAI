@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
+import {
+  redactInstructorEmails,
+  type CourseInstructorSummary,
+} from "~/lib/courses/instructors.server";
 
 /**
  * Course fields that are safe for every authenticated course member.
@@ -65,6 +69,12 @@ export type CourseDtoOptions = {
   callerEnrollmentRole?: string | null;
   /** Detail pages may need the staff-only instructor/canvas metadata. */
   detail?: boolean;
+  /**
+   * #1841: every active instructor on the course, resolved by the caller via
+   * `getCourseInstructors`. The serializer redacts their emails for the
+   * `student` audience itself, so a caller cannot forget to.
+   */
+  instructors?: CourseInstructorSummary[];
 };
 
 type DateLike = Date | string | null | undefined;
@@ -86,7 +96,15 @@ function isoDate(value: DateLike): string | null {
  * `deletedAt` is not in any select but is read for the forensic branch below.
  */
 type CourseRowCandidate = Partial<
-  Prisma.CourseGetPayload<{ select: typeof COURSE_STAFF_SELECT }> & { deletedAt: Date | null }
+  Omit<Prisma.CourseGetPayload<{ select: typeof COURSE_STAFF_SELECT }>, "instructor"> & {
+    deletedAt: Date | null;
+    // #1841: widened from the Prisma projection's non-null `email`. Callers may
+    // supply a course head derived from a `CourseInstructorSummary`, whose email
+    // is null for student audiences. The serializer already coalesces both
+    // fields, so this states what it actually accepts. Every other column still
+    // comes from the staff select, so a rename still fails here.
+    instructor: { name: string | null; email: string | null } | null;
+  }
 >;
 
 /**
@@ -114,6 +132,11 @@ export type CoursePublicDto = {
   hasAiConfig?: boolean;
   responseStyleTags?: string[];
   instructor?: { name: string | null; email: string | null } | null;
+  /**
+   * #1841: the full instructor set. `instructor` above remains the single
+   * course head, for the extensions that already read it.
+   */
+  instructors?: CourseInstructorSummary[];
   externalSource?: string | null;
   externalId?: string | null;
   aiInstructions?: string | null;
@@ -190,11 +213,23 @@ export function serializeCourseForApi(
       if (row.instructor) {
         dto.instructor = {
           name: row.instructor.name ?? null,
-          email: row.instructor.email ?? null,
+          // #1841: one rule for both instructor fields. The page loader selects
+          // `COURSE_STAFF_SELECT`, whose `instructor` relation carries the
+          // address, so redacting only `instructors` below left the course
+          // head's email in the student hydration payload — the one address
+          // this boundary exists to protect. Nulled here rather than at each
+          // caller, for the same reason the set is.
+          email: null,
         };
       } else if (hasOwn(row, "instructor")) {
         dto.instructor = null;
       }
+    }
+    // #1841: students see who teaches the course, but not how to reach them —
+    // the same boundary the TA roster applies. Outside the `detail` guard
+    // because the course LIST renders an instructor summary on each card.
+    if (options.instructors) {
+      dto.instructors = redactInstructorEmails(options.instructors);
     }
     return dto;
   }
@@ -240,6 +275,10 @@ export function serializeCourseForApi(
       dto.instructor = null;
     }
   }
+
+  // #1841: staff keep the contact addresses they work from. Outside the
+  // `detail` guard for the same reason as the student branch above.
+  if (options.instructors) dto.instructors = options.instructors;
 
   return dto;
 }
