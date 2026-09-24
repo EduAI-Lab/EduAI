@@ -138,7 +138,15 @@ describe("courses.$courseId loader", () => {
     expect(result.course).toHaveProperty("hasAiConfig");
     expect(result.course).not.toHaveProperty("courseScopeGuardrailEnabled");
     expect(result.courseInstructors).toEqual([]);
-    expect(prisma.enrollment.findMany).not.toHaveBeenCalled();
+    // #1840: the staff roster query (`courseId` as a string) never runs for a
+    // student. #1841: the instructor-summary lookup (`courseId: { in }`) runs for
+    // every audience, so it is the only enrollment read here.
+    expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { courseId: { in: ["course-1"] }, role: "INSTRUCTOR", isActive: true },
+      }),
+    );
   });
 
   it("returns aiInstructions (not hasAiConfig) and every course instructor for an admin", async () => {
