@@ -362,10 +362,22 @@ function makeGetRequest(headers?: Record<string, string>) {
   });
 }
 
+/**
+ * `getCourses` issues two enrollment reads: the caller-role annotation (keyed
+ * on `userId`) and, since #1841, the per-course instructor lookup (keyed on
+ * `role: "INSTRUCTOR"`). They share one mock, so dispatch on the query rather
+ * than handing the instructor lookup rows shaped for the other one.
+ */
+function mockCallerEnrollments(rows: unknown[]) {
+  prismaMock.enrollment.findMany.mockImplementation(async (args: any) =>
+    args?.where?.userId ? rows : [],
+  );
+}
+
 describe("getCourses", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.enrollment.findMany.mockResolvedValue([]);
+    mockCallerEnrollments([]);
     prismaMock.course.count.mockResolvedValue(0);
     prismaMock.$transaction.mockImplementation(async (arg: any) =>
       Array.isArray(arg) ? Promise.all(arg) : arg(prismaMock),
@@ -381,13 +393,15 @@ describe("getCourses", () => {
   it("returns 200 with courses when ADMIN", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.course.findMany.mockResolvedValue([{ id: "c1", name: "Algorithms" }]);
-    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", role: "INSTRUCTOR" }]);
+    mockCallerEnrollments([{ courseId: "c1", role: "INSTRUCTOR" }]);
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
     // #1041: the unified `{ data, total, page, pageSize }` envelope.
     expect(body).toEqual({
-      data: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR" }],
+      // #1841: every list row carries its instructor set — an explicit empty
+      // array rather than an absent field, so a client can read `.length`.
+      data: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR", instructors: [] }],
       total: 0,
       page: 1,
       pageSize: 25,
@@ -432,7 +446,7 @@ describe("getCourses", () => {
         instructorId: "private-instructor",
       },
     ] as any);
-    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", role: "STUDENT" }] as any);
+    mockCallerEnrollments([{ courseId: "c1", role: "STUDENT" }]);
 
     const res = await getCourses(makeGetRequest());
     const body = await res.json();
@@ -474,9 +488,7 @@ describe("getCourses", () => {
         ragSimilarityThreshold: 0.8,
       },
     ] as any);
-    prismaMock.enrollment.findMany.mockResolvedValue([
-      { courseId: "student-course", role: "STUDENT" },
-    ] as any);
+    mockCallerEnrollments([{ courseId: "student-course", role: "STUDENT" }] as any);
 
     const body = await (await getCourses(makeGetRequest())).json();
     expect(body.data[0]).toMatchObject({

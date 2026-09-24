@@ -10,11 +10,12 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    course: { findUnique: vi.fn() },
+    course: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
     user: { findUnique: vi.fn(), findMany: vi.fn() },
     // #1840: the staff branch loads every active INSTRUCTOR enrollment rather
-    // than a platform-wide INSTRUCTOR user list.
-    enrollment: { findMany: vi.fn() },
+    // than a platform-wide INSTRUCTOR user list. #1841: the loader also resolves
+    // every active instructor via getCourseInstructors.
+    enrollment: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 

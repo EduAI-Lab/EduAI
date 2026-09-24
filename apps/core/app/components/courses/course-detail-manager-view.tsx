@@ -61,6 +61,10 @@ import { MultiSelect } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
+import {
+  CourseInstructorsPanel,
+  resolveDisplayInstructors,
+} from "~/components/courses/course-instructors-panel";
 import { MaterialFailureDetail } from "~/components/courses/material-failure-detail";
 import {
   describeMaterialFailure,
@@ -481,6 +485,9 @@ export function CourseDetailManagerView({
   // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
   const canRenameMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
+
+  // #1841: every instructor of record, falling back to the single legacy field.
+  const displayInstructors = resolveDisplayInstructors(course);
 
   const handleTopicCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1305,19 +1312,10 @@ export function CourseDetailManagerView({
             </Card>
 
             {/* Instructor + TAs */}
-            {course.instructor ? (
+            {displayInstructors.length > 0 ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-sm font-semibold text-foreground">Instructor</p>
-                  <div className="flex items-center gap-3">
-                    <Avatar name={course.instructor.name} size={40} radius={9} />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">
-                        {course.instructor.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
-                    </div>
-                  </div>
+                  <CourseInstructorsPanel instructors={displayInstructors} />
                   <div>
                     <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
                       Teaching assistants
