@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useMemo, ReactNode } from "react";
 import { BugReportDialog } from "@eduai/ui";
 import type { BugReportSubmitData } from "@eduai/ui";
+import { useBugReportCapture } from "@eduai/ui/bug-report-capture";
 import { useAuth } from "./AuthContext";
-import { useBugReportCapture } from "../hooks/useBugReportCapture";
 import { bugReportApi } from "../services/bugReportApi";
 
 type BugReportContextValue = {
@@ -24,34 +24,30 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
   const [open, setOpen] = useState(false);
 
   const captureEnabled = !isLoading && isAuthenticated;
-  const { captureScreenshot, getCapturedData } = useBugReportCapture(captureEnabled);
+  const { captureScreenshot, getCapturedData, clearScreenshot } =
+    useBugReportCapture(captureEnabled);
 
+  // Diagnostics come only from the dialog, which fills them after the reporter
+  // opts in; with the toggle off they are sent as null (#1752).
   const handleSubmit = async (data: BugReportSubmitData) => {
-    const capturedData = getCapturedData();
-
     await bugReportApi.submit({
       description: data.description,
       bugType: data.bugType,
-      consoleLogs: capturedData.consoleLogs,
-      networkLogs: capturedData.networkLogs,
-      screenshot: capturedData.screenshot,
-      pageUrl: data.pageUrl ?? window.location.href,
-      userAgent: data.userAgent ?? navigator.userAgent,
       isAnonymous: data.isAnonymous,
+      consoleLogs: data.consoleLogs ?? null,
+      networkLogs: data.networkLogs ?? null,
+      screenshot: data.screenshot ?? null,
+      pageUrl: data.pageUrl ?? null,
+      userAgent: data.userAgent ?? null,
     });
   };
 
-  const value = useMemo(
-    () => ({
-      openBugReport: () => {
-        // Capture before mounting the dialog so html2canvas does not include
-        // its portal/backdrop in the report image.
-        void captureScreenshot();
-        setOpen(true);
-      },
-    }),
-    [captureScreenshot],
-  );
+  const handleOpenChange = (next: boolean) => {
+    if (!next) clearScreenshot();
+    setOpen(next);
+  };
+
+  const value = useMemo(() => ({ openBugReport: () => setOpen(true) }), []);
 
   return (
     <BugReportContext.Provider value={value}>
@@ -59,7 +55,7 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
       {captureEnabled && (
         <BugReportDialog
           open={open}
-          onOpenChange={setOpen}
+          onOpenChange={handleOpenChange}
           onSubmit={handleSubmit}
           captureScreenshot={captureScreenshot}
           getCapturedData={getCapturedData}

@@ -10,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbLink,
   BreadcrumbSeparator,
+  BugReportTriggerButton,
   Button,
   CommandSearchButton,
   AIServiceHistoryPanel,
@@ -345,17 +346,7 @@ function QmAppLayoutInner() {
             )}
           </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          {bugReport ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={bugReport.openBugReport}
-              aria-label="Report a bug"
-            >
-              <IconBug className="h-4 w-4 sm:mr-1" />
-              <span className="hidden sm:inline">Report a bug</span>
-            </Button>
-          ) : null}
+          {bugReport ? <BugReportTriggerButton onClick={bugReport.openBugReport} /> : null}
         </>
       }
       commandPalette={

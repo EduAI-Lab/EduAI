@@ -22,11 +22,12 @@ export type BugReportRow = AdminBugReportRow;
 export interface SubmitBugReportPayload {
   description: string;
   bugType: BugReportType | null;
-  consoleLogs: string;
-  networkLogs: string;
+  /** Diagnostics are null unless the reporter opted in (#1752). */
+  consoleLogs: string | null;
+  networkLogs: string | null;
   screenshot: string | null;
-  pageUrl: string;
-  userAgent: string;
+  pageUrl: string | null;
+  userAgent: string | null;
   isAnonymous: boolean;
 }
 
