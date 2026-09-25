@@ -73,6 +73,8 @@ Async AI jobs expose `GET /api/ai-jobs/:jobId` for owner-scoped status polling. 
 
 Course enrollment pickers use the paginated `/api/users` contract with a managed `courseId`, `role=STUDENT`, `isActive=true`, and `exclude=enrolled` or `exclude=ta`. This narrowly scoped mode is available to course managers only, filters candidates on the server, and does not expose the general user directory.
 
+**Adding and removing instructors:** `Enrollment` carries any number of active `INSTRUCTOR` rows per course and `resolveCourseAccess` resolves access from those rows, not from `Course.instructorId` — that column names only the course *head*. Adding an instructor (`POST /api/courses/:id/enrollments` with `role: "INSTRUCTOR"`, rank >= 3) never deactivates another, and removing one is refused with `409 INSTRUCTOR_FLOOR_VIOLATION` if it would leave the course with none. Removing the head hands that column to the longest-standing remaining instructor. The instructor picker searches the whole staff set — an ADMIN or UNIT_ADMIN account can hold a course `INSTRUCTOR` enrollment — via `/api/users?courseId=&exclude=instructor`, which is pinned to `role=ADMIN,UNIT_ADMIN,INSTRUCTOR&isActive=true` and gated at rank >= 3 so it cannot become a platform user directory. See [`docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) for the operational procedure, including what an enrollment does *not* grant an ADMIN account.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
