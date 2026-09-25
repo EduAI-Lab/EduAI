@@ -30,6 +30,25 @@ describe("InstructorViewBanner (#1843)", () => {
     expect(screen.getByTestId("instructor-view-exit")).toHaveAttribute("href", "/admin/chat");
   });
 
+  it("can name a unit administrator and link to their own page", () => {
+    render(
+      <MemoryRouter>
+        <InstructorViewBanner
+          exitHref="/unit-admin/invitations"
+          exitLabel="Back to unit admin"
+          description="You are signed in as a unit administrator and are viewing the courses you teach. Your unit administrator access is unchanged."
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/unit administrator access is unchanged/i)).toBeInTheDocument();
+    expect(screen.queryByText(/signed in as an administrator/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("instructor-view-exit")).toHaveAttribute(
+      "href",
+      "/unit-admin/invitations",
+    );
+    expect(screen.getByTestId("instructor-view-exit")).toHaveTextContent("Back to unit admin");
+  });
+
   it("does not call the instructor view a preview", () => {
     // Divergence from AI Tutor's StudentPreviewBanner, on purpose: the viewer
     // really is an instructor of record here — the enrollment is why they can

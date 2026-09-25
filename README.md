@@ -75,6 +75,8 @@ Async AI jobs expose `GET /api/ai-jobs/:jobId` for owner-scoped status polling. 
 
 Course enrollment pickers use the paginated `/api/users` contract with a managed `courseId`, `role=STUDENT`, `isActive=true`, and `exclude=enrolled` or `exclude=ta`. This narrowly scoped mode is available to course managers only, filters candidates on the server, and does not expose the general user directory.
 
+**Adding and removing instructors:** `Enrollment` carries any number of active `INSTRUCTOR` rows per course and `resolveCourseAccess` resolves access from those rows, not from `Course.instructorId` — that column names only the course *head*. Adding an instructor (`POST /api/courses/:id/enrollments` with `role: "INSTRUCTOR"`, rank >= 3) never deactivates another, and removing one is refused with `409 INSTRUCTOR_FLOOR_VIOLATION` if it would leave the course with none. Removing the head hands that column to the longest-standing remaining instructor. The instructor picker searches the whole staff set — an ADMIN or UNIT_ADMIN account can hold a course `INSTRUCTOR` enrollment — via `/api/users?courseId=&exclude=instructor`, which is pinned to `role=ADMIN,UNIT_ADMIN,INSTRUCTOR&isActive=true` and gated at rank >= 3 so it cannot become a platform user directory. See [`docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) for the operational procedure, including what an enrollment does *not* grant an ADMIN account.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
@@ -377,6 +379,20 @@ Individual database commands:
 | `npm run docker:dev:nuke` | **Full teardown** — stop all services and delete all data volumes (irreversible; use when you need a clean slate) |
 
 `docker compose up --wait` requires Docker Compose v2 with healthcheck support.
+
+**Not every database object is declared in `schema.prisma`.** Prisma cannot express
+generated columns, ivfflat indexes or a `WHERE` predicate on a unique index, so those
+live in hand-written files under `apps/core/prisma/migrations/` and are applied to
+deployed databases by `prisma migrate deploy`. Integration databases are provisioned
+with `prisma db push`, which reads only `schema.prisma` and therefore skips them —
+`apps/core/app/tests/globalSetup.ts` re-applies each one explicitly. **Add a raw-SQL
+migration to that file in the same change**, or the object is silently missing from
+every integration run and any test meant to prove it is enforced passes for the wrong
+reason. Current entries: the `material_chunks.content_tsv` generated column, the
+`material_embeddings` ivfflat index, and the partial unique index
+`courses_code_startDate_section_active_key` (`#1842`), which lets a soft-deleted
+course release its `(code, startDate, section)` identity so the same course can be
+created again.
 
 ### Inspecting the database
 

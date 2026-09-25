@@ -23,7 +23,7 @@ import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { getAuthorizedUnits, type RbacUser } from "~/lib/auth/course-access.server";
+import type { RbacUser } from "~/lib/auth/course-access.server";
 import { canSwitchToInstructorView } from "~/lib/rbac/instructor-view.server";
 import { InstructorViewBanner } from "~/components/rbac/instructor-view-banner";
 
@@ -51,9 +51,8 @@ async function listMyPublishedInstructorCourses(user: RbacUser) {
   // `canUseInstructorChatMode` admits an ADMIN/UNIT_ADMIN holding a REAL active
   // INSTRUCTOR enrollment, which is exactly what the query below selects.
   // An account with no such enrollment still gets an empty list here and a 403
-  // there, so nothing was widened.
-  const authorizedUnits = user.role === "UNIT_ADMIN" ? await getAuthorizedUnits(user) : null;
-
+  // there, so nothing was widened. The unit list is not read here: the guard
+  // does its own lookup, and discarding the result was an extra query per load.
   const courses = await prisma.course.findMany({
     where: {
       isPublished: true,
@@ -71,15 +70,6 @@ async function listMyPublishedInstructorCourses(user: RbacUser) {
     orderBy: { code: "asc" },
   });
 
-  if (!authorizedUnits) return courses;
-
-  // #1843: a UNIT_ADMIN whose authorized units include the course's department
-  // resolves to `unit`-level, never `instructor` — but, like ADMIN above, the
-  // guard now admits them on a course they really teach, so these are no longer
-  // filtered out. `authorizedUnits` is still resolved because the guard's own
-  // unit check depends on it; keeping the lookup here documents that both sides
-  // read the same input.
-  void authorizedUnits;
   return courses;
 }
 
@@ -215,6 +205,23 @@ function describeInstructorChatError(error: Error): string {
     return `${body.error} Open the settings (gear) icon next to the message box to add or fix a provider API key.`;
   }
   return body.error;
+}
+
+/**
+ * #1843 review: `/admin` sends a UNIT_ADMIN to `/dashboard`, and there is no
+ * `/unit-admin` index — their own page is `/unit-admin/invitations`. The banner
+ * has to say "unit administrator" too, or it describes the wrong account.
+ */
+function instructorViewBannerProps(role: string | undefined) {
+  if (role === "UNIT_ADMIN") {
+    return {
+      exitHref: "/unit-admin/invitations",
+      exitLabel: "Back to unit admin",
+      description:
+        "You are signed in as a unit administrator and are viewing the courses you teach. Your unit administrator access is unchanged.",
+    };
+  }
+  return {};
 }
 
 export default function InstructorChatPage() {
@@ -440,7 +447,7 @@ export default function InstructorChatPage() {
     >
       {showInstructorViewBanner && (
         <div className="mx-4 mt-4 shrink-0 md:mx-6">
-          <InstructorViewBanner />
+          <InstructorViewBanner {...instructorViewBannerProps(user.role)} />
         </div>
       )}
       {chatError && (

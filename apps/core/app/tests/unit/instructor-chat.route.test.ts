@@ -107,6 +107,8 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
       courses: [{ id: "course-1", code: "COSC 121", name: "Intro to CS" }],
       showInstructorViewBanner: true,
     });
+    // #1843 review: the loader used to await getAuthorizedUnits and discard it.
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it("still lists a UNIT_ADMIN's course OUTSIDE their authorized units — resolveAccess falls through to their real INSTRUCTOR enrollment there", async () => {

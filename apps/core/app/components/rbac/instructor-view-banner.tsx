@@ -24,7 +24,15 @@ import { Button } from "@eduai/ui";
  * really is an instructor of record on the course — the enrollment is the
  * whole reason they can be here. Calling it a preview would misdescribe it.
  */
-export function InstructorViewBanner({ exitHref = "/admin" }: { exitHref?: string }) {
+export function InstructorViewBanner({
+  exitHref = "/admin",
+  exitLabel = "Back to admin",
+  description = "You are signed in as an administrator and are viewing the courses you teach. Your administrator access is unchanged.",
+}: {
+  exitHref?: string;
+  exitLabel?: string;
+  description?: string;
+}) {
   return (
     <div
       className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
@@ -35,15 +43,12 @@ export function InstructorViewBanner({ exitHref = "/admin" }: { exitHref?: strin
           <IconEye className="mt-0.5 size-5 shrink-0 text-primary-text" aria-hidden />
           <div className="min-w-0 space-y-1">
             <p className="text-sm font-medium text-foreground">Instructor view</p>
-            <p className="text-sm text-muted-foreground">
-              You are signed in as an administrator and are viewing the courses you teach. Your
-              administrator access is unchanged.
-            </p>
+            <p className="text-sm text-muted-foreground">{description}</p>
           </div>
         </div>
         <Button variant="outline" size="sm" className="shrink-0" asChild>
           <Link to={exitHref} data-testid="instructor-view-exit">
-            Back to admin
+            {exitLabel}
           </Link>
         </Button>
       </div>
