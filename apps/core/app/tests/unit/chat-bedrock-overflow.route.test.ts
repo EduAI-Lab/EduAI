@@ -300,9 +300,15 @@ describe("Bedrock overflow after admission timeout (#1441)", () => {
   it("returns 503 when overflow cannot activate", async () => {
     const res = await action(makeRequest(baseBody()));
     expect(res.status).toBe(503);
+
+    // #1804: the 503 now carries a Retry-After advisory (and its body mirror),
+    // shared with /api/completion via admissionTimeoutResponse().
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    expect(retryAfter).toBeGreaterThan(0);
     await expect(res.json()).resolves.toEqual({
       error: "Server busy — too many concurrent AI requests. Try again shortly.",
       code: "AI_ADMISSION_TIMEOUT",
+      retryAfter,
     });
     expect(streamText).not.toHaveBeenCalled();
   });

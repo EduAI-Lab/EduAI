@@ -23,6 +23,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.20
 
+- Review follow-up on #1808: `admissionRetryAfterSeconds`'s jitter was half-open (`Math.random()` never returns 1), so the documented `base * (1 + jitterRatio)` upper bound was never actually emitted. Fixed to an inclusive `[base, base + floor(base * jitterRatio)]`.
+
+## 2026.09.19
+
+- Add `Retry-After` to the `503 AI_ADMISSION_TIMEOUT` returned when a request loses the local-GPU admission race. The 503 previously carried no retry hint at all — unlike the `429` on the same route — so a client had nothing to back off against and retried straight into the back of the same queue; the COSC 301 pilot report shows six consecutive 503s over 138s from exactly that loop. PR: https://github.com/EduAI-Lab/EduAI/pull/1808. Closes #1804.
+- Derive the advisory delay from `AI_ADMISSION_WAIT_MS` (the window the caller just lost), floor it at 1s so a sub-second window cannot emit `Retry-After: 0`, and jitter it across the window — a fixed delay would re-synchronize a class-sized burst (25 students against a default 8 slots) into the next window instead of spreading it.
+- Serve that 503 from one shared builder (`admissionTimeoutResponse` in `lib/ai/admission.server.ts`) used by both `POST /api/chat` and `POST /api/completion`. The two routes had duplicated the response literal, which is why only one of them was named in the original report though both behaved identically.
 - PR Link: https://github.com/EduAI-Lab/EduAICore/pull/1827
 - Add persisted **AI service status**: an `ai-status-probe` cron job samples each UBC fleet host's `/v1/models` and `/metrics` on a configurable cadence and writes one row per model into a new `ai_service_samples` table. `GET /api/ai-status` now reads that snapshot instead of probing the fleet live on every request, and reports `checkedAt` and `stale` so the UI can say how old the answer is rather than implying it is current.
 - Record a missing key or malformed config as **UNKNOWN, never OUTAGE** — "we could not tell" is not downtime, and `unknown` hours are excluded from the uptime denominator so a configuration fault is never reported to users as a service failure.
