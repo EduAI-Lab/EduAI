@@ -20,6 +20,7 @@ import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
+import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asText } from "~/lib/json-value";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
 import { buildEmailVerificationEmail } from "../email/templates/email-verification";
@@ -98,6 +99,10 @@ export const auth = betterAuth({
       keyExpiration: {
         maxExpiresIn: MAX_API_KEY_EXPIRATION_DAYS,
       },
+      // #1803: never omit this. The plugin rate-limits keys whether or not it is
+      // configured, and its own defaults are 10 requests per 24 hours — which is
+      // what every EduAI key was silently getting.
+      rateLimit: getApiKeyRateLimitConfig(),
     }),
   ],
   hooks: {
