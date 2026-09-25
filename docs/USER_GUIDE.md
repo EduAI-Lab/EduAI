@@ -30,7 +30,8 @@ You remain signed in because Core provides the shared session for all three appl
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
 - Open the **profile menu** in the sidebar footer for Settings and Log out.
 - Use **Help** for the in-product guide.
-- Use **Report a bug** in the header when something does not work. Include what you were trying to do and, when appropriate, allow the app to attach its screenshot and diagnostic context.
+- Use **Report a bug** in the header when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
+- Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
 
 ## Sign in and account setup

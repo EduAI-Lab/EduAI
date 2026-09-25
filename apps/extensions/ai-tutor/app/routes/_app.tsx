@@ -5,7 +5,7 @@ import {
   AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
-  Button,
+  BugReportTriggerButton,
   CommandSearchButton,
   ThemeToggle,
   useAiServiceStatus,
@@ -16,7 +16,6 @@ import {
 import { getCoreStatusUrl } from "../lib/coreUrl";
 import {
   IconBooks,
-  IconBug,
   IconDashboard,
   IconHelpCircle,
   IconMessageChatbot,
@@ -83,7 +82,7 @@ function AppLayoutInner() {
   const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
-  const { captureScreenshot, getCapturedData, context } = useBugReport();
+  const { captureScreenshot, getCapturedData, clearScreenshot, context } = useBugReport();
   // 300s, not the hook's 60s default: the underlying value only changes when
   // the cron probe runs (roughly every 15 minutes), so polling every minute is
   // pure waste — Core already sets this explicitly for the same reason.
@@ -119,16 +118,22 @@ function AppLayoutInner() {
 
   const handleOpenBugReport = () => setBugReportOpen(true);
 
+  const handleBugReportOpenChange = (next: boolean) => {
+    if (!next) clearScreenshot();
+    setBugReportOpen(next);
+  };
+
   const handleSubmitBugReport = async (data: BugReportSubmitData) => {
     await api.submitBugReport({
       description: data.description,
       bugType: data.bugType,
       isAnonymous: data.isAnonymous,
-      consoleLogs: data.consoleLogs ?? "[]",
-      networkLogs: data.networkLogs ?? "[]",
+      // The dialog fills these only after the reporter opts in; otherwise they stay null.
+      consoleLogs: data.consoleLogs ?? null,
+      networkLogs: data.networkLogs ?? null,
       screenshot: data.screenshot ?? null,
-      pageUrl: data.pageUrl ?? window.location.href,
-      userAgent: data.userAgent ?? navigator.userAgent,
+      pageUrl: data.pageUrl ?? null,
+      userAgent: data.userAgent ?? null,
       context,
     });
   };
@@ -207,10 +212,7 @@ function AppLayoutInner() {
             onUbcOpenChange={onAiHistoryOpenChange}
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          <Button type="button" variant="outline" size="sm" onClick={handleOpenBugReport}>
-            <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />
-            Report a bug
-          </Button>
+          <BugReportTriggerButton onClick={handleOpenBugReport} />
         </>
       }
       commandPalette={
@@ -218,7 +220,7 @@ function AppLayoutInner() {
           <CommandPalette />
           <BugReportDialog
             open={bugReportOpen}
-            onOpenChange={setBugReportOpen}
+            onOpenChange={handleBugReportOpenChange}
             onSubmit={handleSubmitBugReport}
             captureScreenshot={captureScreenshot}
             getCapturedData={getCapturedData}

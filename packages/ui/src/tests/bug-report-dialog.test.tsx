@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { BugReportDialog } from "../bug-report-dialog";
+import { BugReportTriggerButton } from "../bug-report-trigger-button";
 
 describe("BugReportDialog", () => {
   it("does not render dialog content when closed", () => {
@@ -118,5 +119,14 @@ describe("BugReportDialog", () => {
         expect.objectContaining({ consoleLogs: "[]", networkLogs: "[]", screenshot: null }),
       );
     });
+  });
+});
+
+describe("BugReportTriggerButton", () => {
+  it("is named 'Report a bug' even when the text label is hidden", () => {
+    const onClick = vi.fn();
+    render(<BugReportTriggerButton onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });

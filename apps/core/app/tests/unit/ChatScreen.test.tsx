@@ -62,6 +62,16 @@ vi.mock("~/lib/assistive-events.client", () => ({
   postAssistiveClientEvent: postAssistiveClientEventMock,
 }));
 
+// CoreAppShell's bug-report dialog mounts the diagnostics capture hook, which
+// wraps window.fetch; these tests assert on the stubbed fetch directly (#1752).
+vi.mock("@eduai/ui/bug-report-capture", () => ({
+  useBugReportCapture: () => ({
+    captureScreenshot: async () => null,
+    getCapturedData: () => ({ consoleLogs: "[]", networkLogs: "[]", screenshot: null }),
+    clearScreenshot: () => {},
+  }),
+}));
+
 const DEFAULT_COURSES = [
   { id: "c1", code: "COSC 101", name: "Intro to CS" },
   { id: "c2", code: "PHYS 121", name: "Mechanics" },

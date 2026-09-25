@@ -12,13 +12,22 @@ router.post("/bug-reports", requireAuth, requireRole(QM_AUTHORIZED), async (req,
     return res.status(503).json({ success: false, error: "Service key not configured" });
   }
 
-  const { description, isAnonymous, consoleLogs, networkLogs, screenshot, pageUrl, userAgent } =
-    req.body || {};
+  const {
+    description,
+    bugType,
+    isAnonymous,
+    consoleLogs,
+    networkLogs,
+    screenshot,
+    pageUrl,
+    userAgent,
+  } = req.body || {};
 
   const body = {
     source: "QUESTION_MAKER",
     userId: req.user.id,
     description,
+    bugType: bugType ?? null,
     isAnonymous: isAnonymous ?? false,
     consoleLogs: consoleLogs ?? null,
     networkLogs: networkLogs ?? null,

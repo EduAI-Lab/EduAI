@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { IconBug } from "@tabler/icons-react";
 
-import { Button, BugReportDialog } from "@eduai/ui";
+import { BugReportDialog, BugReportTriggerButton } from "@eduai/ui";
 import type { BugReportSubmitData } from "@eduai/ui";
+import { useBugReportCapture } from "@eduai/ui/bug-report-capture";
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
 
 type BugReportSubmitDialogProps = {
@@ -12,28 +12,31 @@ type BugReportSubmitDialogProps = {
 export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialogProps) {
   const [open, setOpen] = useState(false);
   const { submitBugReport } = useSubmitBugReport();
+  // Mounted once, via CoreAppShell; a second mount would double-patch console/fetch.
+  const { captureScreenshot, getCapturedData, clearScreenshot } = useBugReportCapture();
 
+  const handleOpenChange = (next: boolean) => {
+    if (!next) clearScreenshot();
+    setOpen(next);
+  };
+
+  // The dialog only fills the diagnostics fields when the toggle is on, so the
+  // data passes straight through.
   const handleSubmit = async (data: BugReportSubmitData) => {
-    const ok = await submitBugReport({
-      description: data.description,
-      bugType: data.bugType,
-      isAnonymous: data.isAnonymous,
-    });
-    if (!ok) throw new Error("Failed to submit bug report");
+    const result = await submitBugReport(data);
+    if (!result.ok) throw new Error(result.error);
   };
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className={triggerClassName}
-        onClick={() => setOpen(true)}
-      >
-        <IconBug className="h-4 w-4 mr-1" />
-        Report a bug
-      </Button>
-      <BugReportDialog open={open} onOpenChange={setOpen} onSubmit={handleSubmit} />
+      <BugReportTriggerButton className={triggerClassName} onClick={() => setOpen(true)} />
+      <BugReportDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        onSubmit={handleSubmit}
+        captureScreenshot={captureScreenshot}
+        getCapturedData={getCapturedData}
+      />
     </>
   );
 }
