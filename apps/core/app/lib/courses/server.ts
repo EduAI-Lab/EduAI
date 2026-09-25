@@ -1,5 +1,5 @@
 import type { JsonValue } from "~/lib/json-value";
-import { UserRole, type Prisma } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
 import {
@@ -569,37 +569,64 @@ export async function createCourse(request: Request) {
     return apiError(422, "INVALID_INSTRUCTOR");
   }
 
-  const course = await prisma.$transaction(async (tx) => {
-    const created = await tx.course.create({
-      data: {
-        name: result.data.name,
+  let course;
+  try {
+    course = await prisma.$transaction(async (tx) => {
+      const created = await tx.course.create({
+        data: {
+          name: result.data.name,
+          code: result.data.code,
+          section: result.data.section,
+          term: result.data.term,
+          year: result.data.year,
+          startDate: result.data.startDate,
+          endDate: result.data.endDate,
+          department: result.data.department,
+          description: result.data.description,
+          isPublished: result.data.isPublished,
+          aiInstructions: result.data.aiInstructions,
+          instructorId: result.data.instructorUserIds[0],
+        },
+      });
+
+      await tx.enrollment.createMany({
+        data: result.data.instructorUserIds.map((userId) => ({
+          courseId: created.id,
+          userId,
+          role: "INSTRUCTOR" as const,
+          isActive: true,
+        })),
+      });
+
+      await ensureDefaultBank(created.id, tx);
+
+      return created;
+    });
+  } catch (error: unknown) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+    // #1842: the identity slot is now partial on `deletedAt`, so a collision
+    // here can only be a LIVE course — a tombstone no longer blocks
+    // re-creation. This used to escape as an unexplained 500. Name the row that
+    // is actually in the way rather than guessing from `error.meta`; if no live
+    // row matches, the P2002 belongs to another constraint (e.g. the external
+    // identity) and must stay visible.
+    const blocking = await prisma.course.findFirst({
+      where: {
         code: result.data.code,
-        section: result.data.section,
-        term: result.data.term,
-        year: result.data.year,
         startDate: result.data.startDate,
-        endDate: result.data.endDate,
-        department: result.data.department,
-        description: result.data.description,
-        isPublished: result.data.isPublished,
-        aiInstructions: result.data.aiInstructions,
-        instructorId: result.data.instructorUserIds[0],
+        section: result.data.section,
+        deletedAt: null,
       },
+      select: { name: true },
     });
-
-    await tx.enrollment.createMany({
-      data: result.data.instructorUserIds.map((userId) => ({
-        courseId: created.id,
-        userId,
-        role: "INSTRUCTOR" as const,
-        isActive: true,
-      })),
+    if (!blocking) throw error;
+    const startsOn = result.data.startDate.toISOString().slice(0, 10);
+    return apiError(409, "COURSE_IDENTITY_TAKEN", {
+      code: `${result.data.code} section ${result.data.section} starting ${startsOn} is already used by "${blocking.name}"`,
     });
-
-    await ensureDefaultBank(created.id, tx);
-
-    return created;
-  });
+  }
 
   // #1624: a course must never exist with zero topics — Question Maker requires
   // one to author against. Canvas-imported courses get this from the import
@@ -715,12 +742,15 @@ export async function updateCourse(request: Request, courseId: string) {
 
   const updated = await prisma.$transaction(async (tx) => {
     if (instructorChanging) {
-      if (course.instructorId) {
-        await tx.enrollment.updateMany({
-          where: { courseId, userId: course.instructorId, role: "INSTRUCTOR" },
-          data: { isActive: false },
-        });
-      }
+      // #1840: naming a primary instructor is NOT a move. This used to
+      // deactivate the sitting instructor's enrollment first, so the only
+      // control the UI offered was a silent demotion — assigning Dr. Mostafa
+      // would have stripped Dr. Abdallah. A course may hold any number of
+      // active INSTRUCTOR enrollments, so the previous instructor keeps theirs;
+      // `Course.instructorId` only records which of them is the course head.
+      // Removing an instructor is a separate, explicit action through
+      // DELETE /api/courses/:id/enrollments/:enrollmentId, which is where the
+      // instructor-floor invariant is enforced.
       await tx.enrollment.upsert({
         where: { courseId_userId: { courseId, userId: newInstructorId! } },
         create: {
