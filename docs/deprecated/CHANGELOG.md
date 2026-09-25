@@ -4,6 +4,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## 2026.09.21
+
+- Review follow-up on #1809: `GET /api/models` now filters out any `AIModel` whose provider name isn't in `PROVIDER_CONFIGS` (an admin-renamed provider row was otherwise listed here as live while `/api/chat` 422s it as unparseable), adds a `requiresApiKey` flag per model so a caller can tell which ones work without a key, and is rate-limited under the shared chat limiter (`models:` prefix) instead of left uncached.
+
+## 2026.09.19
+
+- Add `GET /api/models`, returning the active chat models as `provider:modelId` strings — exactly what `POST /api/chat` and `POST /api/completion` will accept. There was previously no way to ask which models are live without an admin browser session: `/api/vllm-models` and `/api/ollama-models` are ADMIN cookie-session only, and `/api/ai-models` requires `page` and `pageSize` and answers `400 PAGINATION_REQUIRED` without them. An instructor writing a grading script had to guess a model id and read a `422` to find out it was wrong. PR: https://github.com/EduAI-Lab/EduAI/pull/1809. Closes #1805.
+- Share the activeness predicate with `resolveActiveChatModel` via a new `listActiveChatModels()` so the endpoint cannot advertise a model the completion endpoint then rejects — the exact confusion it exists to remove.
+- Mirror `/api/completion`'s auth ladder exactly (admin `x-api-key`, an ordinary session, or the `Bearer` service key): anyone who can call completion can discover what to pass it, and nobody else gains a view of the catalog. The response is `no-store` and carries ids, names and capability flags only — not the provider rows the admin list returns.
 ## 2026.09.18
 
 - Give a failed course-material upload a reason and a way out. The badge said only **Failed**, so an instructor's only move was to re-upload the file and hope — even when the file was fine and the upload had simply landed while the embedding provider was down. A `(?)` beside the badge now explains which stage failed: the content is already on the course, the file could not be read, or the text was read but indexing it failed. Where the extracted text survived server-side, **Try again** re-runs indexing straight from the database, with no re-upload — `POST /api/courses/:courseId/materials/:materialId/reprocess`, which answers 202 and returns the row to PROCESSING so the list's existing poll reports the outcome. Retry is deliberately *not* offered for an extraction failure, a duplicate receipt, or a row whose stored text is empty or whitespace-only, where it could not succeed; a retry the server does refuse now says why instead of silently resetting the button. A retry whose worker dies mid-flight is resumed by the existing materials sweeper rather than leaving the material stuck in PROCESSING. The exact server-side message is still not shown, because the background job never persists it; that needs a schema change and is tracked as #1794. Closes #1749. (@Ayyhab, 2026-09-18) — [#1795](https://github.com/EduAI-Lab/EduAI/pull/1795)
@@ -14,6 +23,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.20
 
+- Review follow-up on #1808: `admissionRetryAfterSeconds`'s jitter was half-open (`Math.random()` never returns 1), so the documented `base * (1 + jitterRatio)` upper bound was never actually emitted. Fixed to an inclusive `[base, base + floor(base * jitterRatio)]`.
+
+## 2026.09.19
+
+- Add `Retry-After` to the `503 AI_ADMISSION_TIMEOUT` returned when a request loses the local-GPU admission race. The 503 previously carried no retry hint at all — unlike the `429` on the same route — so a client had nothing to back off against and retried straight into the back of the same queue; the COSC 301 pilot report shows six consecutive 503s over 138s from exactly that loop. PR: https://github.com/EduAI-Lab/EduAI/pull/1808. Closes #1804.
+- Derive the advisory delay from `AI_ADMISSION_WAIT_MS` (the window the caller just lost), floor it at 1s so a sub-second window cannot emit `Retry-After: 0`, and jitter it across the window — a fixed delay would re-synchronize a class-sized burst (25 students against a default 8 slots) into the next window instead of spreading it.
+- Serve that 503 from one shared builder (`admissionTimeoutResponse` in `lib/ai/admission.server.ts`) used by both `POST /api/chat` and `POST /api/completion`. The two routes had duplicated the response literal, which is why only one of them was named in the original report though both behaved identically.
 - PR Link: https://github.com/EduAI-Lab/EduAICore/pull/1827
 - Add persisted **AI service status**: an `ai-status-probe` cron job samples each UBC fleet host's `/v1/models` and `/metrics` on a configurable cadence and writes one row per model into a new `ai_service_samples` table. `GET /api/ai-status` now reads that snapshot instead of probing the fleet live on every request, and reports `checkedAt` and `stale` so the UI can say how old the answer is rather than implying it is current.
 - Record a missing key or malformed config as **UNKNOWN, never OUTAGE** — "we could not tell" is not downtime, and `unknown` hours are excluded from the uptime denominator so a configuration fault is never reported to users as a service failure.

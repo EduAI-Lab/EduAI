@@ -742,12 +742,15 @@ export async function updateCourse(request: Request, courseId: string) {
 
   const updated = await prisma.$transaction(async (tx) => {
     if (instructorChanging) {
-      if (course.instructorId) {
-        await tx.enrollment.updateMany({
-          where: { courseId, userId: course.instructorId, role: "INSTRUCTOR" },
-          data: { isActive: false },
-        });
-      }
+      // #1840: naming a primary instructor is NOT a move. This used to
+      // deactivate the sitting instructor's enrollment first, so the only
+      // control the UI offered was a silent demotion — assigning Dr. Mostafa
+      // would have stripped Dr. Abdallah. A course may hold any number of
+      // active INSTRUCTOR enrollments, so the previous instructor keeps theirs;
+      // `Course.instructorId` only records which of them is the course head.
+      // Removing an instructor is a separate, explicit action through
+      // DELETE /api/courses/:id/enrollments/:enrollmentId, which is where the
+      // instructor-floor invariant is enforced.
       await tx.enrollment.upsert({
         where: { courseId_userId: { courseId, userId: newInstructorId! } },
         create: {
