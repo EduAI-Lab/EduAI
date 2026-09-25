@@ -1,9 +1,10 @@
 # Adding an instructor to an existing course
 
-**Status:** interim procedure. Tracked by [#1839](https://github.com/EduAI-Lab/EduAI/issues/1839);
-superseded for the common case once [#1840](https://github.com/EduAI-Lab/EduAI/issues/1840)
-ships an "Add instructor" control. Keep this document for the cases the UI still
-does not cover, and for the audit trail of how the first ones were done.
+**Status:** the common case is now the course page. Tracked by
+[#1839](https://github.com/EduAI-Lab/EduAI/issues/1839). [#1840](https://github.com/EduAI-Lab/EduAI/issues/1840)
+shipped **Add instructor** on the Staff tab. Use that. The API steps below are
+the fallback for when you are not in the UI, plus the record of how the first
+ones were done.
 
 ---
 
@@ -12,18 +13,19 @@ does not cover, and for the audit trail of how the first ones were done.
 Use this procedure to add a **second or third instructor** to a course that already
 exists, without removing the current one.
 
-You cannot do this from the UI today. The only instructor control on the course
-detail page is a **replace**: `updateCourse` deactivates the current instructor's
-enrollment before upserting the new one
-([`app/lib/courses/server.ts`](../../apps/core/app/lib/courses/server.ts), the
-`instructorChanging` branch), and the UI says so — the helper text reads "Selecting a
-new instructor will replace the current one" and the button is labelled **Replace**.
-Using it would silently demote the sitting instructor.
+Do it from the course page. Open the course, go to the **Staff** tab, and use
+**Add instructor** (ADMIN or UNIT_ADMIN). The helper text on that control says
+adding someone does not remove anyone. The first instructor added to a course
+with no head becomes the primary. **Make primary** only moves `Course.instructorId`.
 
-The data model is not the obstacle. `Enrollment` supports any number of active
-`INSTRUCTOR` rows per course, `resolveCourseAccess` resolves off enrollments rather
-than the single-valued `Course.instructorId` column, and `addEnrollment` does not
-inspect the target's platform role at all. Only the UI is missing.
+The old **Replace** control is gone. It used to deactivate the sitting instructor
+before writing the new one. A deactivated instructor row in the verify script is
+a leftover from that control, not from **Add instructor**.
+
+The sections after this are the API fallback: same end state, for a console
+session when you are not on the course page. `Enrollment` still supports any
+number of active `INSTRUCTOR` rows, and `addEnrollment` does not inspect the
+target's platform role.
 
 ## Read this before you start: what an enrollment does and does not buy
 
