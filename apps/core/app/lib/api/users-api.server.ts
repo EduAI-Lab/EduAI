@@ -31,6 +31,15 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const USER_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
 
+/**
+ * #1840: who may be offered as a course instructor. Deliberately the whole
+ * staff set rather than platform-role INSTRUCTOR alone — an ADMIN or UNIT_ADMIN
+ * account can hold an INSTRUCTOR enrollment (`addEnrollment` never checks the
+ * target's platform role), and the INSTRUCTOR-only list is exactly why
+ * Dr. Abdallah ended up running two accounts (#1782).
+ */
+export const INSTRUCTOR_CANDIDATE_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+
 /** Columns the admin users table may sort by. Whitelisted so `sortBy` cannot reach arbitrary fields. */
 const USER_SORT_FIELDS = [
   "name",
@@ -91,10 +100,15 @@ export async function handleUsersApiRequest(request: Request) {
       // a course the caller can manage. Ordinary user-list reads remain ADMIN
       // only; `courseId` enables a narrowly scoped candidate search.
       const courseId = url.searchParams.get("courseId")?.trim() || null;
+      // #1840: the instructor picker is gated one rank higher than the
+      // student/TA pickers, matching `requiredRankForEnrollmentRole`, which
+      // returns 3 for INSTRUCTOR. A course INSTRUCTOR (rank 2) cannot add an
+      // instructor, so they must not be able to enumerate candidates either.
+      const requiredCandidateRank = url.searchParams.get("exclude") === "instructor" ? 3 : 2;
       let isCourseManager = false;
       if (courseId && session.user.role !== "ADMIN") {
         const { course, access } = await resolveCourseAccessGate(session.user, courseId);
-        isCourseManager = Boolean(course && access && access.rank >= 2);
+        isCourseManager = Boolean(course && access && access.rank >= requiredCandidateRank);
       }
       if (session.user.role !== "ADMIN" && !isCourseManager) {
         logAdminDenied(session.user);
@@ -145,21 +159,43 @@ export async function handleUsersApiRequest(request: Request) {
       }
 
       if (courseId) {
-        // This mode is constrained to the picker contract so course managers
-        // cannot turn it into a platform-wide user directory.
-        if (roleFilter.length !== 1 || roleFilter[0] !== "STUDENT" || isActiveParam !== "true") {
+        const exclude = url.searchParams.get("exclude");
+        if (exclude !== "enrolled" && exclude !== "ta" && exclude !== "instructor") {
+          return apiError(400, "COURSE_CANDIDATES_EXCLUDE_REQUIRED");
+        }
+
+        // Each mode is pinned to an exact role set so a course manager cannot
+        // widen this into a platform-wide user directory. #1840 adds the
+        // instructor picker, whose candidates are deliberately the STAFF set
+        // rather than platform-role INSTRUCTOR alone: an ADMIN account must be
+        // assignable as a course instructor (#1782), which is why Dr. Abdallah
+        // ended up running two accounts.
+        if (exclude === "instructor") {
+          // Set comparison, not a sorted-array one: a repeated role
+          // (["ADMIN","ADMIN","ADMIN"]) must not pass a length check while
+          // leaving a role out.
+          const asked = new Set(roleFilter);
+          const allowed = new Set<string>(INSTRUCTOR_CANDIDATE_ROLES);
+          const matchesStaffSet =
+            asked.size === allowed.size && [...asked].every((role) => allowed.has(role));
+          if (!matchesStaffSet || isActiveParam !== "true") {
+            return apiError(400, "COURSE_CANDIDATES_REQUIRE_ACTIVE_STAFF");
+          }
+        } else if (
+          roleFilter.length !== 1 ||
+          roleFilter[0] !== "STUDENT" ||
+          isActiveParam !== "true"
+        ) {
           return apiError(400, "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
         }
 
-        const exclude = url.searchParams.get("exclude");
-        if (exclude !== "enrolled" && exclude !== "ta") {
-          return apiError(400, "COURSE_CANDIDATES_EXCLUDE_REQUIRED");
-        }
         where.enrollments = {
           none:
             exclude === "ta"
               ? { courseId, role: "TA", isActive: true }
-              : { courseId, isActive: true },
+              : exclude === "instructor"
+                ? { courseId, role: "INSTRUCTOR", isActive: true }
+                : { courseId, isActive: true },
         };
       }
 

@@ -244,6 +244,7 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `backup-rotate` | `15 3 * * *` (03:15 UTC) | Infra | Delete local dumps past retention window |
 | `cleanup-invitations` | `30 3 * * *` (03:30 UTC) | Infra | Delete revoked/expired invitations past a 30-day grace period |
 | `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Core handler (`execution: "CORE"`) | Email users whose provider API keys expire in 7 days |
+| `notify-invitation-expiry` | `30 4 * * *` (04:30 UTC) | Core handler (`execution: "CORE"`) | Email pending invitees before their invitation expires; lead time derived from `INVITE_EXPIRY_HOURS` |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 
@@ -252,6 +253,8 @@ For data lifecycle jobs (user expiry, course deletion, etc.) see the [spec](impl
 
 Run one dedicated worker per environment with `npm run cron:worker -w edu-ai` (`apps/core/scripts/cron-worker.ts`). It calls `refreshCronSchedules()` at startup and again every 30 seconds, and stops the scheduler cleanly on `SIGINT`/`SIGTERM`. Monitor the process and its `[cron-worker]` logs; restart it if it exits unexpectedly.
 
-**Core web servers also start an in-process scheduler.** `entry.server.tsx` calls `startCoreServerRuntime()` during module startup (before the first HTTP request), which runs `ensureCronSchedulerRunning()` — reaping expired leases and registering a `node-cron` timer for every `KNOWN_CRON_JOBS` entry that has a `script`. Extension-managed jobs (empty `script`) are skipped. A failed init retries every 5 s rather than silently disabling cron.
+**Core web servers also start an in-process scheduler.** `entry.server.tsx` calls `startCoreServerRuntime()` during module startup (before the first HTTP request), which runs `ensureCronSchedulerRunning()` — reaping expired leases and registering a `node-cron` timer for every `KNOWN_CRON_JOBS` entry that has a `script` **and is not `execution: "CORE"`**. Extension-managed jobs (empty `script`) and CORE jobs are both skipped. A failed init retries every 5 s rather than silently disabling cron.
 
-That is deliberate and safe: **the database lease, not process topology, is what prevents double execution.** Every replica may hold a timer for the same expression, but Postgres grants exactly one live `RUNNING` row per job (a partial unique index), so losing replicas reuse the winner's run id and never spawn a second child process. Scheduled work therefore does not depend on web traffic, and running the dedicated worker alongside the web servers adds a scheduler that keeps firing even if every web process is restarted.
+That is deliberate and safe: **the database lease prevents double execution, and the CORE skip prevents wrong-mode execution.** Every replica may hold a timer for the same SCRIPT expression, but Postgres grants exactly one live `RUNNING` row per job (a partial unique index), so losing replicas reuse the winner's run id and never spawn a second child process. CORE jobs are excluded from web replicas entirely, because their `script` field is the placeholder `"Core handler"` — a web replica dispatching one would run `bash ./Core handler` and fail the run. Scheduled work therefore does not depend on web traffic, and the dedicated worker is the only process that executes CORE handlers.
+
+In an environment with no worker running (typical local development), a manually triggered run is recorded but never dispatched; its lease is reclaimed by the next `reapExpiredCronRuns()` sweep.
