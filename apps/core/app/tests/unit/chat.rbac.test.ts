@@ -41,6 +41,9 @@ vi.mock("~/lib/prisma.server", () => ({
     course: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     user: { create: vi.fn(), findUnique: vi.fn() },
     externalUser: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    // #1843: the instructor gate now reads the caller's own enrollment for
+    // admin/unit-level access, which the resolver short-circuits past.
+    enrollment: { findUnique: vi.fn() },
   },
 }));
 
@@ -408,6 +411,59 @@ describe("POST /api/chat — instructor chatMode gate (#1659)", () => {
 
   it("denies UNIT_ADMIN-level access without a real INSTRUCTOR enrollment on this course", async () => {
     mockAccess({ level: "unit", rank: 3 });
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(403);
+  });
+
+  // #1843: the two cases above are the ones that must NOT change — an admin
+  // with no enrollment still cannot take the instructor view. These two are
+  // what the view switch adds: the same accounts on a course they really
+  // teach, which the resolver short-circuits past before it reads enrollments.
+  it("admits ADMIN-level access WITH a real INSTRUCTOR enrollment on this course", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(prisma.enrollment.findUnique).mockResolvedValue({
+      role: "INSTRUCTOR",
+      isActive: true,
+    } as never);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("admits UNIT_ADMIN-level access WITH a real INSTRUCTOR enrollment on this course", async () => {
+    mockAccess({ level: "unit", rank: 3 });
+    vi.mocked(prisma.enrollment.findUnique).mockResolvedValue({
+      role: "INSTRUCTOR",
+      isActive: true,
+    } as never);
+    const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("does not accept a deactivated or non-instructor enrollment as teaching the course", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(prisma.enrollment.findUnique).mockResolvedValue({
+      role: "INSTRUCTOR",
+      isActive: false,
+    } as never);
+    expect(
+      (await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }))).status,
+    ).toBe(403);
+
+    vi.mocked(prisma.enrollment.findUnique).mockResolvedValue({
+      role: "TA",
+      isActive: true,
+    } as never);
+    expect(
+      (await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }))).status,
+    ).toBe(403);
+  });
+
+  it("still denies an unpublished course to an enrolled ADMIN", async () => {
+    mockAccess({ level: "admin", rank: 4 }, { ...COURSE, isPublished: false });
+    vi.mocked(prisma.enrollment.findUnique).mockResolvedValue({
+      role: "INSTRUCTOR",
+      isActive: true,
+    } as never);
     const res = await action(makeArgs({ messages: [], chatMode: "instructor", courseId: "c1" }));
     expect(res.status).toBe(403);
   });

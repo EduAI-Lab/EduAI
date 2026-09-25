@@ -59,30 +59,56 @@ describe("instructor.chat loader auth (#1659)", () => {
   });
 });
 
-describe("instructor.chat loader — dual-role visibility matches the /api/chat guard (#1659 review)", () => {
-  it("never lists any course for an ADMIN, even one with a real INSTRUCTOR enrollment — resolveAccess always resolves ADMIN to admin-level, never instructor-level", async () => {
+describe("instructor.chat loader — dual-role visibility matches the /api/chat guard (#1659 review, #1843)", () => {
+  // #1843 REVERSES the two cases below. They asserted the ADMIN/in-unit
+  // UNIT_ADMIN exclusion, which existed because `resolveAccess` resolves those
+  // accounts to `admin`/`unit` and never `instructor`, so a listed course would
+  // then 403 on every chat turn. The guard now admits them on a course they
+  // hold a REAL active INSTRUCTOR enrollment for, so the loader lists it — the
+  // two sides are still in lockstep, which is what #1659 review was protecting.
+  // The "no enrollment" case is unchanged and covered by the `/api/chat` gate
+  // tests and instructor-view-switch.integration.test.ts.
+  it("lists the course an ADMIN holds a real INSTRUCTOR enrollment on, and flags the view banner", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([COURSE_ROW] as never);
+
+    const result = await loader(makeArgs());
+
+    expect(result).toMatchObject({
+      courses: [{ id: "course-1", code: "COSC 121", name: "Intro to CS" }],
+      showInstructorViewBanner: true,
+    });
+  });
+
+  it("redirects an ADMIN whose enrollment query returns nothing", async () => {
+    // The query is the authority: no enrollment, no instructor view.
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "admin-1", role: "ADMIN" },
+    } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([] as never);
 
     const res = (await loader(makeArgs())) as Response;
 
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/dashboard");
-    // The ADMIN short-circuit must never even issue the enrollment query.
-    expect(prisma.course.findMany).not.toHaveBeenCalled();
   });
 
-  it("excludes an in-unit UNIT_ADMIN's course from the dropdown — resolveAccess resolves that course to unit-level, never instructor-level, for them", async () => {
+  it("lists an in-unit UNIT_ADMIN's course too, which the unit lock used to filter out", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "ua-1", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
     } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([COURSE_ROW] as never);
 
-    const res = (await loader(makeArgs())) as Response;
+    const result = await loader(makeArgs());
 
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    expect(result).toMatchObject({
+      courses: [{ id: "course-1", code: "COSC 121", name: "Intro to CS" }],
+      showInstructorViewBanner: true,
+    });
+    // #1843 review: the loader used to await getAuthorizedUnits and discard it.
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it("still lists a UNIT_ADMIN's course OUTSIDE their authorized units — resolveAccess falls through to their real INSTRUCTOR enrollment there", async () => {
@@ -108,6 +134,8 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
 
     expect(result).toMatchObject({
       courses: [{ id: "course-1", code: "COSC 121", name: "Intro to CS" }],
+      // #1843: no banner — they have no other view to switch back to.
+      showInstructorViewBanner: false,
     });
   });
 

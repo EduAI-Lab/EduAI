@@ -45,6 +45,7 @@ import {
 import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { canUseInstructorChatMode, teachesCourse } from "~/lib/rbac/instructor-view.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
@@ -1113,15 +1114,32 @@ export async function action({ request }: ActionFunctionArgs) {
           // #1659: instructor mode is scoped to ONE published course the caller
           // actually teaches — reusing the same access decision every other
           // course-scoped route uses, rather than a bespoke ownership check.
-          // access.level === "instructor" already means "an active INSTRUCTOR
-          // enrollment on courseId" (course-access.server.ts), so an ADMIN or
-          // UNIT_ADMIN without a real enrollment on this course is denied here
-          // too — they have /admin/chat for platform-wide ops instead.
-          if (chatMode === "instructor" && (access.level !== "instructor" || !course.isPublished)) {
-            return new Response(JSON.stringify({ error: "Forbidden" }), {
-              status: 403,
-              headers: { "Content-Type": "application/json" },
-            });
+          //
+          // #1843: `access.level === "instructor"` means "an active INSTRUCTOR
+          // enrollment on courseId", but the resolver short-circuits ADMIN to
+          // `admin` and an in-unit UNIT_ADMIN to `unit` BEFORE reading any
+          // enrollment — so those accounts could never reach the instructor
+          // surface on a course they genuinely teach. `canUseInstructorChatMode`
+          // admits them only when that enrollment really exists. It is not a
+          // widening: they already resolve to a level that outranks
+          // `instructor` here, and one without the enrollment is still denied.
+          if (chatMode === "instructor") {
+            // Only the two levels that short-circuit ahead of the enrollment
+            // check need the extra lookup. `instructor` already proves it, and
+            // `ta`/`student`/null are denied outright — no query for either.
+            const needsEnrollmentLookup =
+              (access.level === "admin" || access.level === "unit") && session?.user?.id != null;
+            const holdsInstructorEnrollment = needsEnrollmentLookup
+              ? await teachesCourse(session.user.id, effectiveCourseId)
+              : false;
+            if (
+              !canUseInstructorChatMode(access.level, course.isPublished, holdsInstructorEnrollment)
+            ) {
+              return new Response(JSON.stringify({ error: "Forbidden" }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
           }
           courseAccess = access;
           // Layer A's policy prompt is injected for every course turn (including

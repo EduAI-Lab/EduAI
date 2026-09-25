@@ -274,18 +274,27 @@ describe("root loader — hasInstructorEnrollment (#1666 review)", () => {
     expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
   });
 
-  // resolveAccess (course-access.server.ts) always resolves ADMIN to
-  // admin-level, never instructor-level, no matter their enrollment — an
-  // ADMIN can never actually pass /instructor/chat's own gate, so showing
-  // the link for one (even with a stray enrollment row) would be a dead
-  // link. Matches instructor.chat.tsx's own loader exclusion.
-  it("is false for ADMIN without even querying the enrollment table", async () => {
+  // #1843 REVERSES this case. It used to assert the ADMIN exclusion: an ADMIN
+  // could never pass /instructor/chat's gate (resolveAccess resolves them to
+  // admin-level, never instructor-level), so the link would have been dead.
+  // The gate now admits an ADMIN holding a REAL active INSTRUCTOR enrollment,
+  // so the link must appear — and the enrollment table is the authority for
+  // whether it does, exactly as it is for every other role.
+  it("is true for an ADMIN with a real active INSTRUCTOR enrollment", async () => {
     signedInAs("ADMIN");
+    prismaMock.enrollment.findMany.mockResolvedValue([{ role: "INSTRUCTOR" }]);
 
     const data = (await run()) as RootData;
 
-    expect(data.hasInstructorEnrollment).toBe(false);
-    expect(prismaMock.enrollment.findMany).not.toHaveBeenCalled();
+    expect(data.hasInstructorEnrollment).toBe(true);
+  });
+
+  it("is false for an ADMIN who teaches nothing", async () => {
+    // The link is still absent for the ordinary admin — nothing was widened.
+    signedInAs("ADMIN");
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+
+    expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
   });
 
   it("is false for a guest", async () => {
