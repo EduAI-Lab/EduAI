@@ -212,7 +212,7 @@ function describeInstructorChatError(error: Error): string {
  * `/unit-admin` index — their own page is `/unit-admin/invitations`. The banner
  * has to say "unit administrator" too, or it describes the wrong account.
  */
-function instructorViewBannerProps(role: string | undefined) {
+function instructorViewBannerProps(role: string | null | undefined) {
   if (role === "UNIT_ADMIN") {
     return {
       exitHref: "/unit-admin/invitations",
