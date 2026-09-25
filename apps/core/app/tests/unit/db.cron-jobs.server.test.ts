@@ -12,6 +12,8 @@ const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
+const mockNotifyExpiringInvitations = vi.hoisted(() => vi.fn());
+
 const runAiStatusProbeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/ai/status-probe.server", () => ({
@@ -33,6 +35,10 @@ vi.mock("~/lib/prisma.server", () => ({
 
 vi.mock("~/lib/cron-notify-api-key-expiry.server", () => ({
   notifyExpiringApiKeys: mockNotifyExpiringApiKeys,
+}));
+
+vi.mock("~/lib/cron-notify-invitation-expiry.server", () => ({
+  notifyExpiringInvitations: mockNotifyExpiringInvitations,
 }));
 
 const {
@@ -144,6 +150,7 @@ beforeEach(() => {
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
   mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
+  mockNotifyExpiringInvitations.mockResolvedValue({ notified: 0 });
   delete globalThis.__manualCronRunIds;
 });
 
@@ -428,6 +435,28 @@ describe("resetCronSchedule", () => {
   });
 });
 
+describe("KNOWN_CRON_JOBS registry", () => {
+  const invitationJob = () => KNOWN_CRON_JOBS.find((j) => j.name === "notify-invitation-expiry");
+
+  it("registers a Core-handler job for invitation expiry reminders", () => {
+    expect(invitationJob()).toMatchObject({
+      script: "Core handler",
+      execution: "CORE",
+    });
+  });
+
+  it("schedules it daily", () => {
+    expect(invitationJob()!.schedule).toMatch(/^\d+ \d+ \* \* \*$/);
+  });
+
+  it("does not collide with an already-occupied daily slot", () => {
+    const slots = KNOWN_CRON_JOBS.filter((j) => j.name !== "notify-invitation-expiry").map(
+      (j) => j.schedule,
+    );
+    expect(slots).not.toContain(invitationJob()!.schedule);
+  });
+});
+
 describe("triggerCronJobAsync", () => {
   it("runs a Core handler without spawning a shell process", async () => {
     mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
@@ -442,6 +471,30 @@ describe("triggerCronJobAsync", () => {
     await vi.waitFor(() => {
       expect(mockExecuteRaw).toHaveBeenCalledOnce();
     });
+  });
+
+  it("routes the invitation-expiry job to the invitation reminder handler", async () => {
+    mockNotifyExpiringInvitations.mockResolvedValue({ notified: 3 });
+    triggerCronJobAsync("notify-invitation-expiry", "Core handler", "run-2", "owner-2", "CORE");
+
+    await vi.waitFor(() => {
+      expect(mockNotifyExpiringInvitations).toHaveBeenCalledOnce();
+    });
+    expect(mockNotifyExpiringApiKeys).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("reports an unknown Core job as an error instead of running the wrong handler", async () => {
+    triggerCronJobAsync("not-a-core-job", "Core handler", "run-3", "owner-3", "CORE");
+
+    await vi.waitFor(() => {
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    });
+    expect(mockNotifyExpiringApiKeys).not.toHaveBeenCalled();
+    expect(mockNotifyExpiringInvitations).not.toHaveBeenCalled();
   });
 
   it("spawns bash with the resolved script path", () => {
