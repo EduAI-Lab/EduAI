@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { z } from "zod";
 import {
   IconTrash,
   IconPencil,
   IconPlus,
   IconUsers,
   IconUserCheck,
-  IconArrowsExchange,
   IconUserPlus,
   IconUpload,
   IconSettings,
@@ -14,6 +14,8 @@ import {
   IconEyeOff,
   IconClock,
   IconDownload,
+  IconLink,
+  IconCopy,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
@@ -21,6 +23,16 @@ import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
 import { MaterialList, type MaterialListItem } from "@eduai/ui";
+
+/**
+ * The manager list carries two extra fields beyond what the shared list draws,
+ * purely so the failure popover can decide what to say and whether a retry is
+ * possible (#1749).
+ */
+type ManagerMaterialListItem = MaterialListItem & {
+  duplicateOfId: string | null;
+  hasExtractedText: boolean;
+};
 import {
   Dialog,
   DialogContent,
@@ -45,10 +57,19 @@ import { StatusBadge } from "@eduai/ui";
 import { Avatar } from "@eduai/ui";
 import { StatCard } from "@eduai/ui";
 import { Input } from "@eduai/ui";
-import { MultiSelect, Combobox } from "@eduai/ui";
+import { MultiSelect } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
+import {
+  CourseInstructorsPanel,
+  resolveDisplayInstructors,
+} from "~/components/courses/course-instructors-panel";
+import { MaterialFailureDetail } from "~/components/courses/material-failure-detail";
+import {
+  describeMaterialFailure,
+  describeMaterialRetryFailure,
+} from "~/lib/material-failure-notice";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
 import {
@@ -75,11 +96,87 @@ import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 
-interface StaffUser {
+/**
+ * One active INSTRUCTOR enrollment, as the course loader projects it (#1840).
+ * `enrollmentId` is what the remove endpoint takes; `isPrimary` marks the row
+ * `Course.instructorId` points at.
+ */
+export interface CourseInstructor {
+  enrollmentId: string;
   id: string;
   name: string;
   email: string;
+  platformRole: string;
+  isPrimary: boolean;
 }
+
+/**
+ * #1756 — the response body of `POST /api/courses/:id/enrollments/csv`.
+ *
+ * Restated here rather than imported: the server module that owns these caps
+ * and shapes is `enrollments-csv.server.ts`, which must not reach the client
+ * bundle. Keep these in sync with that route's JSON response.
+ *
+ * Both bodies are parsed rather than asserted — the import result drives what
+ * the instructor is told about their roster file, so a response that does not
+ * match becomes a visible failure instead of an `undefined` in the summary.
+ */
+const enrollmentCsvImportSummarySchema = z.object({
+  totalRows: z.number(),
+  imported: z.number(),
+  alreadyEnrolled: z.number(),
+  failed: z.number(),
+  errors: z.array(
+    z.object({
+      line: z.number(),
+      email: z.string().nullable(),
+      code: z.string(),
+      message: z.string(),
+    }),
+  ),
+});
+
+export type EnrollmentCsvImportSummary = z.infer<typeof enrollmentCsvImportSummarySchema>;
+
+const enrollmentCsvErrorSchema = z.object({
+  error: z.string(),
+  message: z.string().optional(),
+});
+
+/** Mirrors MAX_CSV_ROWS / MAX_CSV_BYTES in `~/lib/courses/enrollments-csv.server`. */
+const CSV_MAX_ROWS = 500;
+const CSV_MAX_KB = 256;
+
+/**
+ * #1756 — self-enrollment link payloads from `/api/courses/:id/self-enroll`.
+ * Dates arrive as ISO strings because the route serialises them with
+ * `JSON.stringify`. The `url` on a freshly minted link is the ONLY time the raw
+ * token is ever available, so a response that fails to parse has to surface as
+ * an error rather than be silently dropped.
+ */
+const selfEnrollmentLinkSchema = z.object({
+  id: z.string(),
+  status: z.enum(["ACTIVE", "REVOKED", "EXPIRED", "EXHAUSTED"]),
+  expiresAt: z.string(),
+  revokedAt: z.string().nullable(),
+  maxRedemptions: z.number().nullable(),
+  redemptionCount: z.number(),
+  createdAt: z.string(),
+});
+const selfEnrollmentListSchema = z.object({ links: z.array(selfEnrollmentLinkSchema) });
+const selfEnrollmentCreatedSchema = z.object({
+  url: z.string(),
+  link: selfEnrollmentLinkSchema,
+});
+
+type SelfEnrollmentLinkSummary = z.infer<typeof selfEnrollmentLinkSchema>;
+
+const SELF_ENROLLMENT_STATUS_LABELS = {
+  ACTIVE: "Active",
+  REVOKED: "Turned off",
+  EXPIRED: "Expired",
+  EXHAUSTED: "Limit reached",
+} satisfies Record<SelfEnrollmentLinkSummary["status"], string>;
 
 export type CourseDetailManagerCourse = CourseDetail & {
   /** Staff course loaders always include the persisted, non-null toggle. */
@@ -98,11 +195,18 @@ interface Props {
   enrollmentsLoadingMore?: boolean;
   onLoadMoreEnrollments?: () => void;
   materials: CourseMaterial[];
+  /**
+   * #1749: retry a failed material's indexing from the text already stored
+   * server-side. Optional — a caller that supplies none simply gets no retry
+   * affordance on the failure popover, rather than a button that cannot work.
+   */
+  onReprocessMaterial?: (materialId: string) => Promise<void>;
   hasMoreMaterials?: boolean;
   materialsLoadingMore?: boolean;
   onLoadMoreMaterials?: () => void;
   tas: CourseTA[];
-  instructors: StaffUser[];
+  /** Every active INSTRUCTOR enrollment on this course (#1840), not one column. */
+  courseInstructors: CourseInstructor[];
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
@@ -117,11 +221,23 @@ interface Props {
   onRenameTopic?: (id: string, name: string) => Promise<void>;
   /** Re-reads the topic list after a suggestion is approved, merged, or dismissed (#1624). */
   onRefreshTopics?: () => Promise<void> | void;
-  onAssignInstructor: (instructorId: string) => Promise<void>;
+  /** Adds an INSTRUCTOR enrollment; must not deactivate anyone (#1840). */
+  onAddInstructor: (userId: string) => Promise<void>;
+  /** Removes one instructor by enrollment id; rejects with the server error code. */
+  onRemoveInstructor: (enrollmentId: string) => Promise<void>;
+  /** Moves `Course.instructorId` only — no enrollment is touched. */
+  onSetPrimaryInstructor: (userId: string) => Promise<void>;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
   onEnrollStudent: (userId: string) => Promise<void>;
   onRemoveEnrollment: (enrollmentId: string) => Promise<void>;
+  /**
+   * #1756: re-read the roster after a CSV import, which enrolls users this
+   * component never learns about individually. Optional like `onRefreshTopics`
+   * — a caller that supplies none simply keeps the list it already rendered
+   * until the next navigation; the import itself still succeeds.
+   */
+  onRefreshEnrollments?: () => Promise<void> | void;
   onRefreshMaterials?: () => Promise<void>;
   /** Wired to `useCourseMaterials.deleteMaterial` — refetches the list itself. */
   onDeleteMaterial?: (materialId: string) => Promise<void>;
@@ -182,6 +298,26 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
   return null;
 }
 
+/**
+ * #1840: the server answers a few specific failures that an operator can act
+ * on. Rendering "Please try again" over an instructor-floor 409 would tell them
+ * to retry something that can never succeed, so those are named.
+ */
+function instructorErrorMessage(code: string, fallback: string): string {
+  switch (code) {
+    case "INSTRUCTOR_FLOOR_VIOLATION":
+      return "A course must keep at least one instructor. Add another instructor before removing this one.";
+    case "ALREADY_ENROLLED":
+      return "That person already has a role on this course.";
+    case "USER_NOT_FOUND":
+      return "That account no longer exists.";
+    case "Forbidden":
+      return "You do not have permission to change instructors on this course.";
+    default:
+      return fallback;
+  }
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 /** The body of `PATCH /api/courses/:id/rag-settings`. */
@@ -203,11 +339,12 @@ export function CourseDetailManagerView({
   enrollmentsLoadingMore = false,
   onLoadMoreEnrollments,
   materials,
+  onReprocessMaterial,
   hasMoreMaterials = false,
   materialsLoadingMore = false,
   onLoadMoreMaterials,
   tas,
-  instructors,
+  courseInstructors,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -216,11 +353,14 @@ export function CourseDetailManagerView({
   onDeleteTopic,
   onRenameTopic,
   onRefreshTopics,
-  onAssignInstructor,
+  onAddInstructor,
+  onRemoveInstructor,
+  onSetPrimaryInstructor,
   onAddTA,
   onRemoveTA,
   onEnrollStudent,
   onRemoveEnrollment,
+  onRefreshEnrollments,
   onRefreshMaterials,
   onDeleteMaterial,
   courseId,
@@ -245,7 +385,10 @@ export function CourseDetailManagerView({
   const [retryingAnalysis, setRetryingAnalysis] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
-  const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
+  const [selectedInstructorIds, setSelectedInstructorIds] = useState<string[]>([]);
+  const [addingInstructors, setAddingInstructors] = useState(false);
+  const [removingInstructorId, setRemovingInstructorId] = useState<string | null>(null);
+  const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
   const [selectedTAIds, setSelectedTAIds] = useState<string[]>([]);
   const [addingTAs, setAddingTAs] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -277,6 +420,25 @@ export function CourseDetailManagerView({
   const [enrollmentActionSuccess, setEnrollmentActionSuccess] = useState<string | null>(null);
   const [enrollmentToRemove, setEnrollmentToRemove] = useState<CourseEnrollment | null>(null);
   const [removingEnrollmentId, setRemovingEnrollmentId] = useState<string | null>(null);
+  // #1756 — CSV roster import.
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [csvSummary, setCsvSummary] = useState<EnrollmentCsvImportSummary | null>(null);
+  // #1756 — self-enrollment links.
+  const [selfEnrollLinks, setSelfEnrollLinks] = useState<SelfEnrollmentLinkSummary[]>([]);
+  /**
+   * The link just minted, carried as `{ linkId, url }` rather than a bare URL.
+   * The id is what lets a revocation tell "the link on screen" from "some other
+   * link in the list" — clearing the wrong one destroys a URL that is shown
+   * once and cannot be re-read.
+   */
+  const [mintedLink, setMintedLink] = useState<{ linkId: string; url: string } | null>(null);
+  const [selfEnrollBusy, setSelfEnrollBusy] = useState(false);
+  const [selfEnrollError, setSelfEnrollError] = useState<string | null>(null);
+  const [selfEnrollCopied, setSelfEnrollCopied] = useState(false);
+  /** Set when the list read comes back 401/403 — see `refreshSelfEnrollLinks`. */
+  const [selfEnrollForbidden, setSelfEnrollForbidden] = useState(false);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess);
@@ -307,6 +469,15 @@ export function CourseDetailManagerView({
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
   const studentCandidates = useStudentCandidates(courseId, "enrolled");
   const taCandidates = useStudentCandidates(courseId, "ta");
+  // #1840: staff candidates (ADMIN/UNIT_ADMIN/INSTRUCTOR), server-gated at rank 3.
+  // Passing `undefined` when the caller can't assign skips the fetch entirely:
+  // a course INSTRUCTOR (rank 2) also renders this view, and the rank-3 gate
+  // logs an ADMIN_ACCESS_DENIED security event on every rejected request. An
+  // unconditional fetch here wrote one on each page load and revalidation.
+  const instructorCandidates = useStudentCandidates(
+    canAssignInstructor ? courseId : undefined,
+    "instructor",
+  );
 
   const canDeleteMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
@@ -315,7 +486,8 @@ export function CourseDetailManagerView({
   const canRenameMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
 
-  const availableInstructors = instructors.filter((p) => p.id !== course.instructorId);
+  // #1841: every instructor of record, falling back to the single legacy field.
+  const displayInstructors = resolveDisplayInstructors(course);
 
   const handleTopicCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -324,18 +496,61 @@ export function CourseDetailManagerView({
     setNewTopic("");
   };
 
-  const handleAssignInstructor = async () => {
-    if (!selectedInstructorId) return;
+  const handleAddInstructors = async () => {
+    if (selectedInstructorIds.length === 0) return;
+    setAddingInstructors(true);
+    setStaffError(null);
+    setStaffSuccess(null);
+    const ids = selectedInstructorIds;
+    const failures: string[] = [];
+    for (const id of ids) {
+      try {
+        await onAddInstructor(id);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        failures.push(instructorErrorMessage(code, "Could not add instructor."));
+      }
+    }
+    setAddingInstructors(false);
+    setSelectedInstructorIds([]);
+    if (failures.length === 0) {
+      setStaffSuccess(
+        `${ids.length} instructor${ids.length > 1 ? "s" : ""} added. No existing instructor was removed.`,
+      );
+    } else {
+      setStaffError(failures[0]);
+    }
+  };
+
+  const handleRemoveInstructor = async (enrollmentId: string) => {
+    setRemovingInstructorId(enrollmentId);
     setStaffError(null);
     setStaffSuccess(null);
     try {
-      await onAssignInstructor(selectedInstructorId);
-      setStaffSuccess(
-        course.instructor ? "Instructor replaced successfully" : "Instructor assigned successfully",
+      await onRemoveInstructor(enrollmentId);
+      setStaffSuccess("Instructor removed successfully");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setStaffError(instructorErrorMessage(code, "Could not remove instructor. Please try again."));
+    } finally {
+      setRemovingInstructorId(null);
+    }
+  };
+
+  const handleSetPrimaryInstructor = async (userId: string) => {
+    setSettingPrimaryId(userId);
+    setStaffError(null);
+    setStaffSuccess(null);
+    try {
+      await onSetPrimaryInstructor(userId);
+      setStaffSuccess("Primary instructor updated. Every instructor keeps their access.");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setStaffError(
+        instructorErrorMessage(code, "Could not set the primary instructor. Please try again."),
       );
-      setSelectedInstructorId("");
-    } catch {
-      setStaffError("Could not assign instructor. Please try again.");
+    } finally {
+      setSettingPrimaryId(null);
     }
   };
 
@@ -396,6 +611,159 @@ export function CourseDetailManagerView({
       setEnrollmentActionError(`${failed.length} of ${ids.length} students failed to enroll`);
     }
   };
+
+  /**
+   * #1756 — POST the chosen file to the bulk-import endpoint and render the
+   * per-row summary it returns. A partial import is the normal outcome, not an
+   * error: the endpoint reports which lines failed and enrolls the rest.
+   */
+  const handleImportCsv = async () => {
+    if (!csvFile || !courseId) return;
+    setImportingCsv(true);
+    setCsvSummary(null);
+    setEnrollmentActionError(null);
+    setEnrollmentActionSuccess(null);
+    try {
+      const body = new FormData();
+      body.set("file", csvFile);
+      const res = await fetch(`/api/courses/${courseId}/enrollments/csv`, { method: "POST", body });
+      const payload: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const failure = enrollmentCsvErrorSchema.safeParse(payload);
+        setEnrollmentActionError(
+          failure.success
+            ? (failure.data.message ?? failure.data.error)
+            : "Could not import this CSV file.",
+        );
+        return;
+      }
+      const summary = enrollmentCsvImportSummarySchema.safeParse(payload);
+      if (!summary.success) {
+        setEnrollmentActionError("The import finished but returned an unexpected result.");
+        return;
+      }
+      setCsvSummary(summary.data);
+      if (summary.data.imported > 0) await onRefreshEnrollments?.();
+    } catch {
+      setEnrollmentActionError("Could not import this CSV file. Please try again.");
+    } finally {
+      setImportingCsv(false);
+      setCsvFile(null);
+      // Clear the native input too, so re-picking the same corrected file fires
+      // another change event.
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  };
+
+  /**
+   * #1756 — self-enrollment link management. All three calls share one error
+   * slot and one busy flag: the section only ever runs one of them at a time.
+   */
+  const refreshSelfEnrollLinks = async (signal?: AbortSignal) => {
+    if (!courseId) return;
+    try {
+      const res = await fetch(`/api/courses/${courseId}/self-enroll`, { signal });
+      if (!res.ok) {
+        // A refused read is not the same as a flaky one. The gate guarding this
+        // GET guards the POST and DELETE too, so an instructor whose
+        // `manageEnrollments` policy was switched off while this page stayed
+        // open would otherwise see an empty section that looks merely unused,
+        // click Create link, and get a generic "please try again" for something
+        // retrying cannot fix. Say so instead.
+        if (res.status === 401 || res.status === 403) {
+          setSelfEnrollLinks([]);
+          setSelfEnrollForbidden(true);
+        }
+        return;
+      }
+      const parsed = selfEnrollmentListSchema.safeParse(await res.json());
+      if (parsed.success) {
+        setSelfEnrollForbidden(false);
+        setSelfEnrollLinks(parsed.data.links);
+      }
+    } catch (error: unknown) {
+      // An abort is this component unmounting or the course changing — not a
+      // failure, and nothing to tell the instructor about.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      // Anything else is transient: the list stays as it was and the next
+      // refresh picks it up, which is not worth an error banner.
+    }
+  };
+
+  const handleCreateSelfEnrollLink = async () => {
+    if (!courseId) return;
+    setSelfEnrollBusy(true);
+    setSelfEnrollError(null);
+    setSelfEnrollCopied(false);
+    try {
+      const res = await fetch(`/api/courses/${courseId}/self-enroll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const parsed = selfEnrollmentCreatedSchema.safeParse(await res.json().catch(() => null));
+      if (!res.ok || !parsed.success) {
+        setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
+        return;
+      }
+      // Shown once and only once: the server cannot re-issue this URL.
+      setMintedLink({ linkId: parsed.data.link.id, url: parsed.data.url });
+      await refreshSelfEnrollLinks();
+    } catch {
+      setSelfEnrollError("Could not create a self-enrollment link. Please try again.");
+    } finally {
+      setSelfEnrollBusy(false);
+    }
+  };
+
+  const handleRevokeSelfEnrollLink = async (linkId: string) => {
+    if (!courseId) return;
+    setSelfEnrollBusy(true);
+    setSelfEnrollError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/self-enroll?linkId=${encodeURIComponent(linkId)}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        setSelfEnrollError("Could not turn off that link. Please try again.");
+        return;
+      }
+      // The revoked link's URL must stop being offered for copying — but only
+      // if it is the one on screen. Tidying up last term's link must not wipe a
+      // URL minted seconds ago and not yet copied, because nothing can bring
+      // that one back.
+      setMintedLink((current) => (current?.linkId === linkId ? null : current));
+      await refreshSelfEnrollLinks();
+    } catch {
+      setSelfEnrollError("Could not turn off that link. Please try again.");
+    } finally {
+      setSelfEnrollBusy(false);
+    }
+  };
+
+  const handleCopySelfEnrollUrl = async () => {
+    if (!mintedLink) return;
+    try {
+      await navigator.clipboard.writeText(mintedLink.url);
+      setSelfEnrollCopied(true);
+    } catch {
+      // Clipboard access can be denied; the URL is selectable in the field.
+      setSelfEnrollError("Copying failed — select the link and copy it manually.");
+    }
+  };
+
+  // Staff-only, so it is fetched here rather than in the shared course loader —
+  // a student's course page must not issue this request at all.
+  useEffect(() => {
+    if (!courseId || !canManageStudentEnrollments) return;
+    const controller = new AbortController();
+    void refreshSelfEnrollLinks(controller.signal);
+    return () => controller.abort();
+    // Deliberately keyed on the course and the gate only. The refresher is
+    // redeclared every render and reads nothing else, so depending on its
+    // identity would refetch the list on every unrelated state change.
+  }, [courseId, canManageStudentEnrollments]);
 
   const handleRemoveEnrollment = async () => {
     if (!enrollmentToRemove) return;
@@ -538,6 +906,46 @@ export function CourseDetailManagerView({
       setRagSaving(false);
     }
   };
+
+  // #1749: which material has a retry in flight, so its popover button can
+  // show progress instead of accepting a second click.
+  const [retryingMaterialId, setRetryingMaterialId] = useState<string | null>(null);
+
+  // #1795 review: why the last retry was refused, keyed by material. The
+  // handler below had no `catch`, so every non-2xx — a 409 from a row that
+  // settled between the list read and the click, a 403 from the policy gate, a
+  // 500, a dropped connection — became an unhandled rejection and the
+  // instructor saw only "Retrying…" flash. It is scoped to the row because the
+  // page's other error slot (`materialsError`) lives inside the upload dialog,
+  // which is closed while a row is being retried.
+  const [retryErrorByMaterialId, setRetryErrorByMaterialId] = useState<Record<string, string>>({});
+
+  const handleReprocessMaterial = useCallback(
+    async (materialId: string) => {
+      if (!onReprocessMaterial) return;
+      setRetryingMaterialId(materialId);
+      // A fresh attempt starts from a clean slate: leaving the last refusal up
+      // while this one runs would say nothing true about either.
+      setRetryErrorByMaterialId((prev) => {
+        if (!(materialId in prev)) return prev;
+        const { [materialId]: _cleared, ...rest } = prev;
+        return rest;
+      });
+      try {
+        await onReprocessMaterial(materialId);
+      } catch (error) {
+        setRetryErrorByMaterialId((prev) => ({
+          ...prev,
+          [materialId]: describeMaterialRetryFailure(
+            error instanceof Error ? error.message : String(error),
+          ),
+        }));
+      } finally {
+        setRetryingMaterialId(null);
+      }
+    },
+    [onReprocessMaterial],
+  );
 
   // B2: top-right hero badges
   const topRightBadges: string[] = course.isActive ? ["Active"] : [];
@@ -904,19 +1312,10 @@ export function CourseDetailManagerView({
             </Card>
 
             {/* Instructor + TAs */}
-            {course.instructor ? (
+            {displayInstructors.length > 0 ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-sm font-semibold text-foreground">Instructor</p>
-                  <div className="flex items-center gap-3">
-                    <Avatar name={course.instructor.name} size={40} radius={9} />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">
-                        {course.instructor.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
-                    </div>
-                  </div>
+                  <CourseInstructorsPanel instructors={displayInstructors} />
                   <div>
                     <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
                       Teaching assistants
@@ -977,11 +1376,13 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
-            items={materials.map((m): MaterialListItem => ({
+            items={materials.map((m): ManagerMaterialListItem => ({
               id: m.id,
               name: m.title,
               status: m.status,
               mimeType: m.mimeType,
+              duplicateOfId: m.duplicateOfId ?? null,
+              hasExtractedText: m.hasExtractedText ?? false,
               meta: (
                 <>
                   {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
@@ -989,6 +1390,26 @@ export function CourseDetailManagerView({
               ),
             }))}
             fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
+            renderStatusDetail={(item) => {
+              // #1749: only a failed row has anything to explain; every other
+              // status is either self-evident or still in progress.
+              const notice = describeMaterialFailure({
+                status: item.status,
+                duplicateOfId: item.duplicateOfId ?? null,
+                hasExtractedText: item.hasExtractedText ?? false,
+              });
+              if (!notice) return null;
+              return (
+                <MaterialFailureDetail
+                  notice={notice}
+                  onRetry={
+                    onReprocessMaterial ? () => void handleReprocessMaterial(item.id) : undefined
+                  }
+                  retrying={retryingMaterialId === item.id}
+                  retryError={retryErrorByMaterialId[item.id] ?? null}
+                />
+              );
+            }}
             headerActions={
               <>
                 {showCanvasMaterialSync && courseId && (
@@ -1331,6 +1752,155 @@ export function CourseDetailManagerView({
                       </Button>
                     </div>
                   )}
+
+                  {/* #1756 — bulk enrollment from a roster CSV. */}
+                  {canManageStudentEnrollments && courseId && (
+                    <div className="flex flex-col gap-2 border-t pt-4">
+                      <Label htmlFor="enrollment-csv">Import a roster CSV</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Needs a header row with an <code>email</code> column. An optional{" "}
+                        <code>role</code> column accepts STUDENT or TA — and INSTRUCTOR for
+                        administrators. Up to {CSV_MAX_ROWS} rows and {CSV_MAX_KB} KB per upload.
+                        Rows that fail are reported by line number; the rest are still enrolled.
+                      </p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          ref={csvInputRef}
+                          id="enrollment-csv"
+                          type="file"
+                          accept=".csv,text/csv"
+                          disabled={importingCsv}
+                          onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)}
+                          className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleImportCsv()}
+                          disabled={!csvFile || importingCsv}
+                        >
+                          <IconUpload className="w-4 h-4 mr-1" />
+                          {importingCsv ? "Importing…" : "Import CSV"}
+                        </Button>
+                      </div>
+
+                      {csvSummary && (
+                        <Card>
+                          <CardContent className="py-3 text-sm space-y-2">
+                            <p>
+                              Imported {csvSummary.imported} of {csvSummary.totalRows} row
+                              {csvSummary.totalRows === 1 ? "" : "s"}
+                              {csvSummary.alreadyEnrolled > 0
+                                ? ` · ${csvSummary.alreadyEnrolled} already enrolled`
+                                : ""}
+                              {csvSummary.failed > 0 ? ` · ${csvSummary.failed} failed` : ""}.
+                            </p>
+                            {csvSummary.errors.length > 0 && (
+                              <ul className="space-y-1 text-xs text-destructive">
+                                {csvSummary.errors.map((rowError) => (
+                                  <li key={`${rowError.line}-${rowError.code}`}>
+                                    Line {rowError.line}: {rowError.message}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {/* #1756 — revocable self-enrollment link. */}
+                  {canManageStudentEnrollments && courseId && (
+                    <div className="flex flex-col gap-2 border-t pt-4">
+                      <Label>Self-enrollment link</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Anyone with an EduAI account who opens this link joins as a student. Treat
+                        it like a password: turn it off if it ends up somewhere public. Links expire
+                        after 30 days.
+                      </p>
+
+                      {selfEnrollError && (
+                        <p className="text-sm text-destructive">{selfEnrollError}</p>
+                      )}
+
+                      {selfEnrollForbidden && (
+                        <p className="text-sm text-muted-foreground">
+                          You no longer have permission to manage self-enrollment links for this
+                          course. Reload the page, or ask an administrator if you think this is
+                          wrong.
+                        </p>
+                      )}
+
+                      <Button
+                        variant="outline"
+                        className="self-start"
+                        disabled={selfEnrollBusy || selfEnrollForbidden}
+                        onClick={() => void handleCreateSelfEnrollLink()}
+                      >
+                        <IconLink className="w-4 h-4 mr-1" />
+                        {selfEnrollBusy ? "Working…" : "Create link"}
+                      </Button>
+
+                      {mintedLink && (
+                        <Card>
+                          <CardContent className="py-3 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              Copy this now — it is shown once and cannot be retrieved again.
+                            </p>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <Input
+                                readOnly
+                                value={mintedLink.url}
+                                aria-label="Self-enrollment link"
+                              />
+                              <Button
+                                variant="outline"
+                                onClick={() => void handleCopySelfEnrollUrl()}
+                              >
+                                <IconCopy className="w-4 h-4 mr-1" />
+                                {selfEnrollCopied ? "Copied" : "Copy"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {selfEnrollLinks.length > 0 && (
+                        <div className="grid gap-2">
+                          {selfEnrollLinks.map((link) => (
+                            <Card key={link.id}>
+                              <CardContent className="flex items-center justify-between py-3 text-sm">
+                                <div>
+                                  <span className="font-medium">
+                                    {SELF_ENROLLMENT_STATUS_LABELS[link.status]}
+                                  </span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    Expires {new Date(link.expiresAt).toLocaleDateString()} ·{" "}
+                                    {link.redemptionCount} use
+                                    {link.redemptionCount === 1 ? "" : "s"}
+                                    {link.maxRedemptions === null
+                                      ? ""
+                                      : ` of ${link.maxRedemptions}`}
+                                  </span>
+                                </div>
+                                {link.status === "ACTIVE" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    disabled={selfEnrollBusy}
+                                    onClick={() => void handleRevokeSelfEnrollLink(link.id)}
+                                  >
+                                    Turn off
+                                  </Button>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -1355,87 +1925,91 @@ export function CourseDetailManagerView({
               {staffError && <p className="text-sm text-destructive">{staffError}</p>}
               {staffSuccess && <p className="text-sm text-green-600">{staffSuccess}</p>}
 
-              {/* Instructor assignment — ADMIN/UNIT_ADMIN only */}
+              {/* Instructors — ADMIN/UNIT_ADMIN only (#1840) */}
               {canAssignInstructor && (
                 <div className="flex flex-col gap-3">
-                  <p className="text-sm font-medium">Instructor</p>
-                  {course.instructor ? (
-                    <>
-                      <Card>
-                        <CardContent className="flex items-center justify-between py-3">
-                          <div>
-                            <span className="text-sm font-medium">{course.instructor.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">
-                              {course.instructor.email}
-                            </span>
-                          </div>
-                          <Badge>Current</Badge>
-                        </CardContent>
-                      </Card>
-                      {availableInstructors.length > 0 ? (
-                        <div className="flex flex-col gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            Selecting a new instructor will replace the current one.
-                          </p>
-                          <div className="flex gap-2">
-                            <Combobox
-                              className="flex-1"
-                              options={availableInstructors.map((p) => ({
-                                value: p.id,
-                                label: p.name,
-                                description: p.email,
-                              }))}
-                              value={selectedInstructorId || null}
-                              onValueChange={(v) => setSelectedInstructorId(v ?? "")}
-                              placeholder="Select replacement instructor"
-                              searchPlaceholder="Search by name or email"
-                              emptyText="No instructors found"
-                            />
-                            <Button
-                              variant="outline"
-                              onClick={handleAssignInstructor}
-                              disabled={!selectedInstructorId}
-                            >
-                              <IconArrowsExchange className="w-4 h-4 mr-1" />
-                              Replace
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No other instructors available.
-                        </p>
-                      )}
-                    </>
+                  <p className="text-sm font-medium">Instructors</p>
+                  {courseInstructors.length === 0 ? (
+                    <Card>
+                      <CardContent className="flex items-center justify-center py-6 text-muted-foreground text-sm">
+                        No instructor assigned yet.
+                      </CardContent>
+                    </Card>
                   ) : (
-                    <>
-                      <p className="text-xs text-muted-foreground">No instructor assigned yet.</p>
-                      {availableInstructors.length > 0 ? (
-                        <div className="flex gap-2">
-                          <Combobox
-                            className="flex-1"
-                            options={availableInstructors.map((p) => ({
-                              value: p.id,
-                              label: p.name,
-                              description: p.email,
-                            }))}
-                            value={selectedInstructorId || null}
-                            onValueChange={(v) => setSelectedInstructorId(v ?? "")}
-                            placeholder="Select an instructor to assign"
-                            searchPlaceholder="Search by name or email"
-                            emptyText="No instructors found"
-                          />
-                          <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
-                            Assign
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No instructors available to assign.
-                        </p>
-                      )}
-                    </>
+                    <div className="grid gap-2">
+                      {courseInstructors.map((instructor) => (
+                        <Card key={instructor.enrollmentId}>
+                          <CardContent className="flex items-center justify-between gap-2 py-3">
+                            <div className="min-w-0">
+                              <span className="text-sm font-medium">{instructor.name}</span>
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {instructor.email}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {instructor.isPrimary ? (
+                                <Badge>Primary</Badge>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSetPrimaryInstructor(instructor.id)}
+                                  disabled={settingPrimaryId === instructor.id}
+                                >
+                                  {settingPrimaryId === instructor.id ? "Saving…" : "Make primary"}
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Remove instructor ${instructor.name}`}
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleRemoveInstructor(instructor.enrollmentId)}
+                                disabled={removingInstructorId === instructor.enrollmentId}
+                              >
+                                <IconTrash className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
                   )}
+
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Adding an instructor does not remove anyone. Every instructor keeps full
+                      access to the course; the primary is only who is listed as the course head.
+                    </p>
+                    <MultiSelect
+                      options={instructorCandidates.candidates.map((u) => ({
+                        value: u.id,
+                        label: u.name,
+                        description: u.email,
+                      }))}
+                      value={selectedInstructorIds}
+                      onValueChange={setSelectedInstructorIds}
+                      onSearchChange={instructorCandidates.search}
+                      loading={instructorCandidates.loading}
+                      placeholder="Search and select instructors to add"
+                      searchPlaceholder="Search by name or email"
+                      emptyText="No instructors found"
+                    />
+                    <Button
+                      onClick={handleAddInstructors}
+                      disabled={selectedInstructorIds.length === 0 || addingInstructors}
+                      className="self-end"
+                    >
+                      <IconUserPlus className="w-4 h-4 mr-1" />
+                      {addingInstructors
+                        ? "Adding…"
+                        : `Add ${
+                            selectedInstructorIds.length > 0
+                              ? `${selectedInstructorIds.length} `
+                              : ""
+                          }instructor${selectedInstructorIds.length !== 1 ? "s" : ""}`}
+                    </Button>
+                  </div>
                 </div>
               )}
 

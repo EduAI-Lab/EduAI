@@ -517,3 +517,135 @@ describe("useCourseMaterials background refresh (#1494 review)", () => {
     expect(vi.mocked(fetch).mock.calls.length).toBe(callsBefore);
   });
 });
+
+/**
+ * #1795 review round 3. Retry is the first case where a row can go PROCESSING
+ * while sitting past page 1 — uploads are newest-first, so a new row is always
+ * on page 1. Reloading page 1 after the 202 threw away every page the user had
+ * loaded with "load more", taking the retried row off screen with it.
+ */
+describe("useCourseMaterials.reprocessMaterial past page 1", () => {
+  const REFRESH_MS = 30 * 1000;
+  const page1Row = { ...material, id: "mat-new" };
+  const failed = {
+    ...material,
+    id: "mat-old",
+    status: "FAILED",
+    processedAt: null,
+    hasExtractedText: true,
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function accepted() {
+    return new Response(JSON.stringify({ materialId: "mat-old", status: "PROCESSING" }), {
+      status: 202,
+    });
+  }
+
+  /** The failed row is on page 2, which is where an older failure actually lives. */
+  async function mountTwoPages() {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(materialsResponse([page1Row], "cursor-2"))
+      .mockResolvedValueOnce(materialsResponse([failed], null));
+    const { result } = renderHook(() => useCourseMaterials("course-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(result.current.materials.map((m) => m.id)).toEqual(["mat-new", "mat-old"]);
+    return result;
+  }
+
+  it("keeps the pages already loaded when a retry is accepted", async () => {
+    const result = await mountTwoPages();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      // What a page-1 reload would answer — the retried row is not in it.
+      .mockResolvedValue(materialsResponse([page1Row], "cursor-2"));
+
+    await act(async () => {
+      await result.current.reprocessMaterial("mat-old");
+    });
+
+    expect(result.current.materials.map((m) => m.id)).toEqual(["mat-new", "mat-old"]);
+  });
+
+  it("returns the retried row to PROCESSING in place, without reloading the list", async () => {
+    const result = await mountTwoPages();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(materialsResponse([page1Row], "cursor-2"));
+
+    await act(async () => {
+      await result.current.reprocessMaterial("mat-old");
+    });
+
+    const row = result.current.materials.find((m) => m.id === "mat-old");
+    expect(row?.status).toBe("PROCESSING");
+    // The failure affordances go with the failure: the popover must not keep
+    // offering "Try again" for a retry that is already running.
+    expect(row?.hasExtractedText).toBeUndefined();
+    // No skeleton flash over a list the user is already looking at.
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("settles a PROCESSING row past page 1 by re-reading it by id", async () => {
+    const result = await mountTwoPages();
+    vi.mocked(fetch).mockResolvedValueOnce(accepted());
+    await act(async () => {
+      await result.current.reprocessMaterial("mat-old");
+    });
+
+    // Page 1 never mentions mat-old, so a page-1-only poll can never settle it.
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input).includes("ids=")
+          ? materialsResponse([{ ...failed, status: "READY", hasExtractedText: undefined }])
+          : materialsResponse([page1Row], "cursor-2"),
+      ),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    });
+
+    expect(result.current.materials.find((m) => m.id === "mat-old")?.status).toBe("READY");
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("ids=mat-old"))).toBe(
+      true,
+    );
+  });
+
+  it("asks for no id read when page 1 already covers every PROCESSING row", async () => {
+    // The upload case, which is every case before this change: an extra request
+    // per tick for rows the page-1 read already refreshed would be pure waste.
+    vi.mocked(fetch).mockResolvedValueOnce(
+      materialsResponse([{ ...page1Row, status: "PROCESSING", processedAt: null }], null),
+    );
+    const { result } = renderHook(() => useCourseMaterials("course-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    vi.mocked(fetch).mockResolvedValue(
+      materialsResponse([{ ...page1Row, status: "PROCESSING", processedAt: null }], null),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    });
+
+    expect(result.current.materials[0].status).toBe("PROCESSING");
+    expect(vi.mocked(fetch).mock.calls.every(([url]) => !String(url).includes("ids="))).toBe(true);
+  });
+});

@@ -10,6 +10,16 @@ const prismaMock = vi.hoisted(() => {
       findFirst: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
+      // #1840 review: adding an INSTRUCTOR runs in a transaction so it can
+      // claim a vacant `Course.instructorId` atomically; other roles keep the
+      // untransacted `prisma.enrollment.create`.
+      create: vi.fn(),
+    },
+    // #1840: removing an instructor may hand `Course.instructorId` to a
+    // remaining one, so the transaction client now touches `course` too.
+    course: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
   };
   return {
@@ -122,6 +132,75 @@ describe("addEnrollment", () => {
   });
 });
 
+// #1840 review: a course may have no head at all — `instructorUserIds: []` is
+// allowed at creation, and the "Assign" control that used to PATCH
+// `instructorId` is gone. Adding the first instructor has to fill the column,
+// or the course page, `GET /api/courses/:id` and every consumer of the single
+// field keep reading null while the Staff tab shows an active instructor.
+describe("addEnrollment — claiming a vacant primary instructor (#1840 review)", () => {
+  it("claims the column for the first instructor added to a headless course", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
+    tx.enrollment.create.mockResolvedValue({ id: "e1" });
+    tx.course.findUnique.mockResolvedValue({ instructorId: null });
+
+    const result = await addEnrollment("c1", { userId: "u1", role: "INSTRUCTOR" }, 3);
+
+    expect(result.status).toBe("201");
+    expect(tx.enrollment.create).toHaveBeenCalledWith({
+      data: { courseId: "c1", userId: "u1", role: "INSTRUCTOR", isActive: true },
+    });
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { instructorId: "u1" },
+    });
+  });
+
+  it("leaves an existing head alone when a second instructor is added", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: "u2" });
+    tx.enrollment.create.mockResolvedValue({ id: "e2" });
+    tx.course.findUnique.mockResolvedValue({ instructorId: "head" });
+
+    const result = await addEnrollment("c1", { userId: "u2", role: "INSTRUCTOR" }, 3);
+
+    expect(result.status).toBe("201");
+    expect(tx.course.update).not.toHaveBeenCalled();
+  });
+
+  it("claims the column when a removed instructor is re-added by reactivation", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
+    tx.enrollment.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("unique", {
+        code: "P2002",
+        clientVersion: "5.0.0",
+      }),
+    );
+    prismaMock.enrollment.findUnique.mockResolvedValue({ id: "e1", isActive: false });
+    tx.enrollment.update.mockResolvedValue({ id: "e1", role: "INSTRUCTOR", isActive: true });
+    tx.course.findUnique.mockResolvedValue({ instructorId: null });
+
+    const result = await addEnrollment("c1", { userId: "u1", role: "INSTRUCTOR" }, 3);
+
+    expect(result.status).toBe("201");
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { instructorId: "u1" },
+    });
+  });
+
+  it("does not transact or touch the course for a non-instructor role", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
+    prismaMock.enrollment.create.mockResolvedValue({ id: "e1" });
+
+    const result = await addEnrollment("c1", { userId: "u1", role: "STUDENT" }, 2);
+
+    // Bulk STUDENT import runs one call per row; it must not take the
+    // course-wide row lock the instructor path needs.
+    expect(result.status).toBe("201");
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(tx.course.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
   it("returns 404 when the enrollment does not exist in the course", async () => {
     tx.enrollment.findFirst.mockResolvedValue(null);
@@ -189,6 +268,69 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
     const result = await updateEnrollmentRole("c1", "e1", { role: "WIZARD" });
     expect(result.status).toBe("422");
   });
+
+  // #1840 review: removal was not the only way to stop being an instructor.
+  // Demoting the head passes the floor check whenever a second instructor
+  // exists, and used to leave `Course.instructorId` naming someone who is now
+  // a TA. Both paths share `reassignPrimaryIfNeeded`.
+  it("hands the primary column to the successor when the head is demoted to TA", async () => {
+    tx.enrollment.findFirst
+      .mockResolvedValueOnce({
+        id: "e1",
+        courseId: "c1",
+        userId: "head",
+        role: "INSTRUCTOR",
+        isActive: true,
+      })
+      // The successor lookup: the demoted row is already a TA by this point,
+      // so it cannot be selected as its own replacement.
+      .mockResolvedValueOnce({ userId: "successor" });
+    tx.enrollment.count.mockResolvedValue(2);
+    tx.enrollment.update.mockResolvedValue({ id: "e1", role: "TA" });
+    tx.course.findUnique.mockResolvedValue({ instructorId: "head" });
+
+    const result = await updateEnrollmentRole("c1", "e1", { role: "TA" });
+
+    expect(result.status).toBe("200");
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { instructorId: "successor" },
+    });
+  });
+
+  it("leaves the primary column alone when a non-head instructor is demoted", async () => {
+    tx.enrollment.findFirst.mockResolvedValueOnce({
+      id: "e2",
+      courseId: "c1",
+      userId: "other",
+      role: "INSTRUCTOR",
+      isActive: true,
+    });
+    tx.enrollment.count.mockResolvedValue(2);
+    tx.enrollment.update.mockResolvedValue({ id: "e2", role: "TA" });
+    tx.course.findUnique.mockResolvedValue({ instructorId: "head" });
+
+    const result = await updateEnrollmentRole("c1", "e2", { role: "TA" });
+
+    expect(result.status).toBe("200");
+    expect(tx.course.update).not.toHaveBeenCalled();
+  });
+
+  it("does not touch the primary column when a TA is promoted to instructor", async () => {
+    tx.enrollment.findFirst.mockResolvedValueOnce({
+      id: "e3",
+      courseId: "c1",
+      userId: "ta",
+      role: "TA",
+      isActive: true,
+    });
+    tx.enrollment.update.mockResolvedValue({ id: "e3", role: "INSTRUCTOR" });
+
+    const result = await updateEnrollmentRole("c1", "e3", { role: "INSTRUCTOR" });
+
+    expect(result.status).toBe("200");
+    expect(tx.course.update).not.toHaveBeenCalled();
+  });
 });
 
 describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
@@ -219,17 +361,66 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
     tx.enrollment.findFirst.mockResolvedValue({
       id: "e1",
       courseId: "c1",
+      userId: "u1",
       role: "INSTRUCTOR",
       isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(2);
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
+    // Someone else is the course head, so the column is not touched.
+    tx.course.findUnique.mockResolvedValue({ instructorId: "someone-else" });
     const result = await deactivateEnrollment("c1", "e1");
     expect(result.status).toBe("204");
     expect(tx.enrollment.update).toHaveBeenCalledWith({
       where: { id: "e1" },
       data: { isActive: false },
     });
+    expect(tx.course.update).not.toHaveBeenCalled();
+  });
+
+  // #1840: `Course.instructorId` must never point at someone who no longer
+  // teaches the course — every surface reading `course.instructor` would still
+  // render them.
+  it("hands the primary-instructor column to the longest-standing remaining instructor", async () => {
+    tx.enrollment.findFirst
+      // the row being removed
+      .mockResolvedValueOnce({
+        id: "e1",
+        courseId: "c1",
+        userId: "primary",
+        role: "INSTRUCTOR",
+        isActive: true,
+      })
+      // the successor lookup
+      .mockResolvedValueOnce({ userId: "successor" });
+    tx.enrollment.count.mockResolvedValue(2);
+    tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
+    tx.course.findUnique.mockResolvedValue({ instructorId: "primary" });
+
+    const result = await deactivateEnrollment("c1", "e1");
+
+    expect(result.status).toBe("204");
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { instructorId: "successor" },
+    });
+  });
+
+  it("does not touch the primary column when a TA is removed", async () => {
+    tx.enrollment.findFirst.mockResolvedValue({
+      id: "e1",
+      courseId: "c1",
+      userId: "u1",
+      role: "TA",
+      isActive: true,
+    });
+    tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
+
+    const result = await deactivateEnrollment("c1", "e1");
+
+    expect(result.status).toBe("204");
+    expect(tx.course.findUnique).not.toHaveBeenCalled();
+    expect(tx.course.update).not.toHaveBeenCalled();
   });
 
   it("deactivates a STUDENT without a floor check", async () => {

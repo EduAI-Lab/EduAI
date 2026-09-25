@@ -244,6 +244,7 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `backup-rotate` | `15 3 * * *` (03:15 UTC) | Infra | Delete local dumps past retention window |
 | `cleanup-invitations` | `30 3 * * *` (03:30 UTC) | Infra | Delete revoked/expired invitations past a 30-day grace period |
 | `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Core handler (`execution: "CORE"`) | Email users whose provider API keys expire in 7 days |
+| `notify-invitation-expiry` | `30 4 * * *` (04:30 UTC) | Core handler (`execution: "CORE"`) | Email pending invitees before their invitation expires; lead time derived from `INVITE_EXPIRY_HOURS` |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 

@@ -47,6 +47,7 @@ model User {
   auditLogs                 AuditLog[]
   systemLogs                SystemLog[]
   passwordHistory           PasswordHistory[]
+  selfEnrollmentLinks       SelfEnrollmentLink[]   @relation("SelfEnrollmentLinkCreator")
 
   @@map("user")
 }
@@ -169,11 +170,26 @@ model Course {
   topics                      CourseTopic[]
   questions                   Question[]
   questionBanks               QuestionBank[]
+  selfEnrollmentLinks         SelfEnrollmentLink[]
 
-  @@unique([code, startDate, section])
+  // #1842: the course identity slot is a PARTIAL unique index —
+  // `courses_code_startDate_section_active_key ... WHERE "deletedAt" IS NULL`.
+  // Prisma cannot express a `WHERE` predicate on a unique index, so it is NOT
+  // declared here; it lives in migrations/20260922000000_partial_unique_course_identity
+  // and is re-applied to integration databases by app/tests/globalSetup.ts
+  // (which provisions via `db push`, not `migrate deploy`).
+  //
+  // Do NOT re-add `@@unique([code, startDate, section])`. A total unique index
+  // lets a soft-deleted tombstone own the slot forever, which is the bug #1842
+  // fixed; courses.soft-delete-recreate.integration.test.ts asserts the index
+  // is still partial so a drifted `prisma migrate dev` fails loudly here.
+  //
   // PostgreSQL unique indexes permit multiple NULL values, so ordinary Core
   // courses remain unconstrained while every populated external identity maps
   // to exactly one row (including a soft-deleted row that can be reactivated).
+  // This one stays TOTAL on purpose: `upsertCoreCourseFromCanvas` upserts on it
+  // and clears `deletedAt`, so re-importing a deleted Canvas course restores the
+  // row (with its materials and embeddings) instead of forking an empty one.
   @@unique([externalSource, externalId])
   // #1369: FK -> Discipline.code (onDelete: Restrict, onUpdate: Cascade). Without an
   // index every discipline rename or delete seq-scans courses to enforce the action.
@@ -265,6 +281,55 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
+}
+
+/// Revocable, course-scoped link that a student redeems to enroll themselves
+/// (#1756). Always grants STUDENT — a shareable link must never be able to mint
+/// staff, so there is no role column to get wrong.
+///
+/// This is a row rather than a signed stateless token on purpose. A
+/// self-enrollment URL is a bearer credential: once it leaks into a public
+/// channel or a screenshot, a stateless HMAC over courseId+expiry can only be
+/// stopped by rotating the signing secret (killing every other course's links)
+/// or by waiting out the expiry. A row can be revoked in place, immediately, on
+/// its own.
+model SelfEnrollmentLink {
+  id String @id @default(cuid())
+
+  /// Scoped to exactly one course: redemption re-checks this against the course
+  /// being joined, so a token for course A can never enroll anyone in course B.
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  /// sha256 of the raw token, mirroring `Invitation.tokenHash`. The raw token
+  /// exists only in the URL handed to the instructor and is never persisted,
+  /// so a database leak yields no usable link.
+  tokenHash String @unique
+
+  expiresAt DateTime
+  /// Set the moment a staff member revokes the link; a revoked link never
+  /// redeems again, regardless of how much of its expiry window is left.
+  revokedAt DateTime?
+
+  /// Null means unlimited redemptions until expiry or revocation. When set, the
+  /// link stops redeeming once `redemptionCount` reaches it.
+  maxRedemptions  Int?
+  redemptionCount Int  @default(0)
+
+  /// Null when the issuing staff account has since been deleted; the audit log
+  /// keeps the attribution either way.
+  createdById String?
+  createdBy   User?   @relation("SelfEnrollmentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The staff-facing list is "every link for this course".
+  @@index([courseId])
+  /// `createdById` is `onDelete: SetNull` from User, so without this a user
+  /// delete seq-scans this table to apply the action.
+  @@index([createdById])
+  @@map("self_enrollment_links")
 }
 
 model AIInteraction {
