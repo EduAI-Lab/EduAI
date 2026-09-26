@@ -36,7 +36,7 @@ import {
   CourseInstructorsPanel,
   resolveDisplayInstructors,
 } from "~/components/courses/course-instructors-panel";
-import type { CourseMaterial } from "~/components/course-materials-upload";
+import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
 import {
   CourseResponseStyleSettings,
   CourseResponseStyleSummary,
@@ -57,7 +57,9 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
-  onFileSelect: (file: File) => void;
+  /** Per-file progress of the current batch upload (#1748). */
+  uploads?: UploadItem[];
+  onFilesSelect: (files: File[]) => void;
   courseId?: string;
   /** Current viewer's user id — TAs may delete only their OWN uploads (§7). */
   currentUserId?: string;
@@ -92,7 +94,8 @@ export function CourseDetailTaView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
-  onFileSelect,
+  uploads,
+  onFilesSelect,
   courseId,
   currentUserId,
   onRefreshMaterials,
@@ -308,7 +311,8 @@ export function CourseDetailTaView({
               isUploading={isUploading}
               error={materialsError}
               success={materialsSuccess}
-              onFileSelect={onFileSelect}
+              uploads={uploads}
+              onFilesSelect={onFilesSelect}
             />
           </DialogContent>
         </Dialog>

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Spinner } from "@eduai/ui";
 import { cn } from "@eduai/ui";
 import { Alert, AlertDescription } from "@eduai/ui";
-import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck, IconX } from "@tabler/icons-react";
+import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck } from "@tabler/icons-react";
 import { MATERIAL_INPUT_ACCEPT } from "~/lib/materials/accepted-types";
 
 export interface CourseMaterial {
@@ -38,11 +38,52 @@ export interface CourseMaterial {
   hasExtractedText?: boolean;
 }
 
+/** Where one file of a batch upload (#1748) stands. */
+export type UploadItemStatus =
+  | "queued"
+  | "uploading"
+  | "ready"
+  | "processing"
+  | "duplicate"
+  | "failed";
+
+export interface UploadItem {
+  name: string;
+  status: UploadItemStatus;
+  /** Why the file wasn't added; set on `duplicate` and `failed`. */
+  message?: string;
+}
+
 export interface CourseMaterialsUploadProps {
   isUploading?: boolean;
   error?: string | null;
   success?: string | null;
-  onFileSelect: (file: File) => void;
+  /** Per-file progress of the current batch; listed only when it has more than one file. */
+  uploads?: UploadItem[];
+  onFilesSelect: (files: File[]) => void;
+}
+
+const STATUS_LABEL = {
+  queued: "Waiting",
+  uploading: "Uploading…",
+  ready: "Added",
+  processing: "Still processing",
+  duplicate: "Already in course",
+  failed: "Failed",
+} satisfies Record<UploadItemStatus, string>;
+
+function UploadItemIcon({ status }: { status: UploadItemStatus }) {
+  switch (status) {
+    case "uploading":
+      return <Spinner className="shrink-0" />;
+    case "ready":
+      return <IconCircleCheck className="h-4 w-4 shrink-0 text-[var(--color-success-500)]" />;
+    case "duplicate":
+    case "failed":
+      return <IconAlertCircle className="h-4 w-4 shrink-0 text-destructive" />;
+    default:
+      return <IconFile className="h-4 w-4 shrink-0 text-muted-foreground" />;
+  }
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -51,24 +92,23 @@ export function CourseMaterialsUpload({
   isUploading = false,
   error = null,
   success = null,
-  onFileSelect,
+  uploads = [],
+  onFilesSelect,
 }: CourseMaterialsUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const triggerPick = () => {
     if (!isUploading) inputRef.current?.click();
   };
 
-  const processFile = (file: File) => {
-    setSelectedFile(file);
-    onFileSelect(file);
+  const processFiles = (list: FileList | null | undefined) => {
+    const files = Array.from(list ?? []);
+    if (files.length > 0) onFilesSelect(files);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processFile(file);
+    processFiles(e.target.files);
     e.target.value = "";
   };
 
@@ -76,8 +116,7 @@ export function CourseMaterialsUpload({
     e.preventDefault();
     setIsDragging(false);
     if (isUploading) return;
-    const file = e.dataTransfer.files?.[0];
-    if (file) processFile(file);
+    processFiles(e.dataTransfer.files);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -89,12 +128,13 @@ export function CourseMaterialsUpload({
     if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false);
   };
 
-  const clearFile = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedFile(null);
-  };
-
-  const showFile = selectedFile && !isUploading && !success && !error;
+  const settled = uploads.filter((u) => u.status !== "queued" && u.status !== "uploading").length;
+  const uploadingLabel =
+    uploads.length > 1
+      ? `Uploading ${uploads.length} files (${settled} of ${uploads.length} done)…`
+      : uploads.length === 1
+        ? `Uploading "${uploads[0].name}"…`
+        : "Uploading…";
 
   return (
     <div className="space-y-3">
@@ -102,6 +142,7 @@ export function CourseMaterialsUpload({
       <input
         ref={inputRef}
         type="file"
+        multiple
         accept={MATERIAL_INPUT_ACCEPT}
         onChange={handleFileChange}
         disabled={isUploading}
@@ -136,33 +177,17 @@ export function CourseMaterialsUpload({
               browse files
             </span>
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT, MD</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            PDF, DOCX, PPTX, TXT, MD · select several to upload them together
+          </p>
         </div>
       </button>
-
-      {/* Selected file pill (brief flash before upload state takes over) */}
-      {showFile && (
-        <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-border bg-muted/30 px-3 py-2">
-          <IconFile className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="flex-1 truncate text-sm text-foreground">{selectedFile.name}</span>
-          <button
-            type="button"
-            aria-label="Clear selection"
-            onClick={clearFile}
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <IconX className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Upload states */}
       {isUploading && (
         <Alert>
           <Spinner />
-          <AlertDescription>
-            Uploading{selectedFile ? ` "${selectedFile.name}"` : ""}…
-          </AlertDescription>
+          <AlertDescription>{uploadingLabel}</AlertDescription>
         </Alert>
       )}
       {error && (
@@ -176,6 +201,27 @@ export function CourseMaterialsUpload({
           <IconCircleCheck className="h-4 w-4" />
           <AlertDescription>{success}</AlertDescription>
         </Alert>
+      )}
+
+      {/* Per-file progress; a single file is fully described by the alerts above */}
+      {uploads.length > 1 && (
+        <ul
+          aria-label="Upload progress"
+          className="max-h-60 space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-muted/30 p-2"
+        >
+          {uploads.map((item, i) => (
+            <li key={`${i}-${item.name}`} className="flex items-start gap-2 px-1 py-1 text-sm">
+              <UploadItemIcon status={item.status} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-foreground">{item.name}</p>
+                {item.message && <p className="text-xs text-muted-foreground">{item.message}</p>}
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {STATUS_LABEL[item.status]}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

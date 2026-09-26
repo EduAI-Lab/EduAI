@@ -14,7 +14,10 @@ import { CourseDetailStudentView } from "~/components/courses/course-detail-stud
 import { useCourseTopics } from "~/hooks/api/use-course-topics";
 import { useCourseEnrollments } from "~/hooks/api/use-course-enrollments";
 import { useCourseMaterials } from "~/hooks/api/use-course-materials";
-import type { CourseMaterial as CourseMaterialRow } from "~/hooks/api/use-course-materials";
+import type {
+  CourseMaterial as CourseMaterialRow,
+  UploadOutcome,
+} from "~/hooks/api/use-course-materials";
 import { useCourseTAs } from "~/hooks/api/use-course-tas";
 import {
   Breadcrumb,
@@ -24,7 +27,10 @@ import {
   BreadcrumbSeparator,
 } from "@eduai/ui";
 import { CourseSwitcher } from "~/components/layout/course-switcher";
-import type { CourseMaterial as UploadMaterial } from "~/components/course-materials-upload";
+import type {
+  CourseMaterial as UploadMaterial,
+  UploadItem,
+} from "~/components/course-materials-upload";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
@@ -159,6 +165,15 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
   };
 }
 
+type UploadResult = Omit<UploadItem, "name">;
+
+/** Files in flight at once during a batch upload; each also polls until it settles. */
+const UPLOAD_CONCURRENCY = 3;
+
+const UPLOAD_READY_MESSAGE = "Material uploaded and processed successfully";
+const UPLOAD_PROCESSING_MESSAGE =
+  "Upload accepted. Processing is taking a while — the list will update when it finishes.";
+
 export default function CourseDetailPage() {
   const { course, user, access, courseInstructors } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
@@ -198,6 +213,7 @@ export default function CourseDetailPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
 
   /**
    * #1840: add an instructor WITHOUT touching anyone else's enrollment. This is
@@ -282,41 +298,90 @@ export default function CourseDetailPage() {
 
   const uploadMaterials: UploadMaterial[] = materials.map(toUploadMaterial);
 
-  const handleFileSelect = async (file: File) => {
+  /** One file's outcome in the words the instructor reads. */
+  const describeUpload = (outcome: UploadOutcome): UploadResult => {
+    switch (outcome.status) {
+      case "ready":
+        return { status: "ready" };
+      case "duplicate": {
+        const existing = materials.find((m) => m.id === outcome.duplicateOfId);
+        return {
+          status: "duplicate",
+          message: existing
+            ? `"${existing.title}" already contains identical content — nothing was added`
+            : "A file with identical content already exists in this course",
+        };
+      }
+      case "failed":
+        return {
+          status: "failed",
+          message: "Processing failed for this file. Please try again.",
+        };
+      case "processing":
+        return { status: "processing" };
+    }
+  };
+
+  /**
+   * Batch upload (#1748). The endpoint still takes one file per request, so a
+   * batch is a small worker pool over `uploadMaterial`: each file keeps its own
+   * validation, duplicate check and outcome, and one bad file never sinks the rest.
+   */
+  const handleFilesSelect = async (files: File[]) => {
+    if (files.length === 0) return;
     setIsUploading(true);
     setMaterialsError(null);
     setMaterialsSuccess(null);
-    try {
-      // The upload endpoint returns 202 and processes in the background (#949),
-      // so the outcome arrives from polling rather than from the POST status.
-      const outcome = await uploadMaterial(file);
-      switch (outcome.status) {
-        case "ready":
-          setMaterialsSuccess("Material uploaded and processed successfully");
-          break;
-        case "duplicate": {
-          const existing = materials.find((m) => m.id === outcome.duplicateOfId);
-          setMaterialsError(
-            existing
-              ? `"${existing.title}" already contains identical content — nothing was added`
-              : "A file with identical content already exists in this course",
-          );
-          break;
+
+    const results: UploadItem[] = files.map((f) => ({ name: f.name, status: "queued" }));
+    setUploads([...results]);
+    const settle = (i: number, item: UploadResult) => {
+      results[i] = { ...item, name: files[i].name };
+      setUploads([...results]);
+    };
+
+    let next = 0;
+    const worker = async () => {
+      while (next < files.length) {
+        const i = next++;
+        settle(i, { status: "uploading" });
+        try {
+          // The upload endpoint returns 202 and processes in the background (#949),
+          // so the outcome arrives from polling rather than from the POST status.
+          settle(i, describeUpload(await uploadMaterial(files[i])));
+        } catch (e) {
+          settle(i, {
+            status: "failed",
+            message: e instanceof Error ? e.message : "Upload failed",
+          });
         }
-        case "failed":
-          setMaterialsError("Processing failed for this file. Please try again.");
-          break;
-        case "processing":
-          setMaterialsSuccess(
-            "Upload accepted. Processing is taking a while — the list will update when it finishes.",
-          );
-          break;
       }
-    } catch (e) {
-      setMaterialsError(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setIsUploading(false);
+    };
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, worker));
+
+    if (files.length === 1) {
+      const [only] = results;
+      if (only.message) setMaterialsError(only.message);
+      else
+        setMaterialsSuccess(
+          only.status === "processing" ? UPLOAD_PROCESSING_MESSAGE : UPLOAD_READY_MESSAGE,
+        );
+    } else {
+      const rejected = results.filter((r) => r.status === "failed" || r.status === "duplicate");
+      const stillProcessing = results.some((r) => r.status === "processing");
+      if (rejected.length > 0) {
+        setMaterialsError(
+          `${rejected.length} of ${files.length} files couldn't be added — see the list below.`,
+        );
+      } else if (stillProcessing) {
+        setMaterialsSuccess(
+          `All ${files.length} files accepted. Some are still processing — the list will update when they finish.`,
+        );
+      } else {
+        setMaterialsSuccess(`All ${files.length} files uploaded and processed successfully`);
+      }
     }
+    setIsUploading(false);
   };
 
   return (
@@ -376,7 +441,8 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
-              onFileSelect={handleFileSelect}
+              uploads={uploads}
+              onFilesSelect={handleFilesSelect}
               onCreateTopic={async (name) => {
                 await createTopic(name);
               }}
@@ -415,7 +481,8 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
-              onFileSelect={handleFileSelect}
+              uploads={uploads}
+              onFilesSelect={handleFilesSelect}
               courseId={course.id}
               currentUserId={user.id}
               onRefreshMaterials={refetchMaterials}
@@ -440,7 +507,8 @@ export default function CourseDetailPage() {
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
-              onFileSelect={handleFileSelect}
+              uploads={uploads}
+              onFilesSelect={handleFilesSelect}
             />
           )}
         </div>

@@ -77,7 +77,7 @@ import {
   CourseResponseStyleSummary,
 } from "~/components/courses/course-response-style-settings";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
-import type { CourseMaterial } from "~/components/course-materials-upload";
+import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
@@ -210,7 +210,9 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
-  onFileSelect: (file: File) => void;
+  /** Per-file progress of the current batch upload (#1748). */
+  uploads?: UploadItem[];
+  onFilesSelect: (files: File[]) => void;
   onCreateTopic: (name: string) => Promise<void>;
   onDeleteTopic: (id: string) => Promise<void>;
   /**
@@ -348,7 +350,8 @@ export function CourseDetailManagerView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
-  onFileSelect,
+  uploads,
+  onFilesSelect,
   onCreateTopic,
   onDeleteTopic,
   onRenameTopic,
@@ -986,7 +989,8 @@ export function CourseDetailManagerView({
             isUploading={isUploading}
             error={materialsError}
             success={materialsSuccess}
-            onFileSelect={onFileSelect}
+            uploads={uploads}
+            onFilesSelect={onFilesSelect}
           />
         </DialogContent>
       </Dialog>
