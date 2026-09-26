@@ -25,13 +25,14 @@ import { EmptyState } from "@eduai/ui";
 import { MaterialList, type MaterialListItem } from "@eduai/ui";
 
 /**
- * The manager list carries two extra fields beyond what the shared list draws,
- * purely so the failure popover can decide what to say and whether a retry is
- * possible (#1749).
+ * The manager list carries three extra fields beyond what the shared list
+ * draws, purely so the failure popover can decide what to say and whether a
+ * retry is possible (#1749, #1791).
  */
 type ManagerMaterialListItem = MaterialListItem & {
   duplicateOfId: string | null;
   hasExtractedText: boolean;
+  failureCode: MaterialFailureCode | null;
 };
 import {
   Dialog,
@@ -78,6 +79,7 @@ import {
 } from "~/components/courses/course-response-style-settings";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import type { CourseMaterial } from "~/components/course-materials-upload";
+import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
@@ -1383,6 +1385,7 @@ export function CourseDetailManagerView({
               mimeType: m.mimeType,
               duplicateOfId: m.duplicateOfId ?? null,
               hasExtractedText: m.hasExtractedText ?? false,
+              failureCode: m.failureCode ?? null,
               meta: (
                 <>
                   {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
@@ -1397,6 +1400,7 @@ export function CourseDetailManagerView({
                 status: item.status,
                 duplicateOfId: item.duplicateOfId ?? null,
                 hasExtractedText: item.hasExtractedText ?? false,
+                failureCode: item.failureCode ?? null,
               });
               if (!notice) return null;
               return (

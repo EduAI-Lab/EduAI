@@ -509,6 +509,14 @@ model CourseMaterial {
   /// is the asynchronous successor to the old synchronous 409. Null on every
   /// row that is not a duplicate receipt.
   duplicateOfId     String?
+  /// Set alongside `duplicateOfId` on a receipt row (#1791): did this upload
+  /// revive the material it points at, or was that material already there?
+  /// Null on every row that is not a duplicate receipt.
+  duplicateResolution MaterialDuplicateResolution?
+  /// Why this row is FAILED (#1791). Cleared whenever the row leaves FAILED —
+  /// on a reclaim, a restore, or a successful finalize — so a stale reason can
+  /// never outlive the failure it described.
+  failureCode       MaterialFailureCode?
   /// Durable-extraction bookkeeping (#949). Extraction runs off the request, so
   /// the row is also the job record: a worker must hold a lease before it may
   /// run, and the lease is what makes a restart recoverable. A PROCESSING row
@@ -1037,6 +1045,36 @@ enum MaterialStatus {
   PROCESSING
   READY
   FAILED
+}
+
+/// Why a material reached terminal FAILED (#1791). The row is the only thing the
+/// client can see — `logSystemError` is operator-only — so without this an
+/// instructor gets one undifferentiated "processing failed" for a rate-limited
+/// provider, a busy PDF worker and a genuinely unreadable file alike. Values
+/// mirror the `logSystemError` codes so a UI report and a log line grep the same.
+enum MaterialFailureCode {
+  MATERIAL_EXTRACT_FAILED
+  /// Local PDF-extraction capacity was exhausted (`PdfExtractionBusyError`), not
+  /// a property of the file. Retried rather than terminal; only surfaces once
+  /// the attempt budget runs out.
+  MATERIAL_EXTRACT_BUSY
+  MATERIAL_EXTRACT_ABANDONED
+  MATERIAL_EMBED_FAILED
+  /// The embedding provider kept answering 429/503 (or timing out) until the
+  /// retry budget ran out. Transient and worth retrying later, which is the one
+  /// thing the old generic message could not tell anyone.
+  MATERIAL_EMBED_RATE_LIMITED
+}
+
+/// How a duplicate receipt's upload was resolved (#1791). `duplicateOfId` alone
+/// says "the content is over there", not whether this upload *did* anything —
+/// and the two need different words: re-uploading a file that failed processing
+/// retries it (RESTORED, a success), while re-uploading one that is already
+/// READY adds nothing (EXISTING). Reporting the first as "already exists" is
+/// what left instructors with no way to retry a failed material.
+enum MaterialDuplicateResolution {
+  EXISTING
+  RESTORED
 }
 
 /// Provenance of a CourseTopic (#1624), ordered from most to least trusted.

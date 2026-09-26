@@ -196,6 +196,9 @@ describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
   });
 
   it("reports a processing failure", async () => {
+    // The specific reason (#1791), when there is one, shows on the settled row
+    // in the materials list rather than in this inline alert — the reprocess-
+    // based retry (#1749/#1795) lives there, not here.
     uploadMaterial.mockResolvedValue({ status: "failed", materialId: "mat-new" });
     render(<CourseDetailPage />);
     await selectFile();
@@ -203,6 +206,23 @@ describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
     expect(screen.getByTestId("error").textContent).toBe(
       "Processing failed for this file. Please try again.",
     );
+  });
+
+  it("reports a restored material as a success, not as 'already exists' (#1791)", async () => {
+    // Re-uploading a file whose processing failed retries it. Reporting that as
+    // a duplicate is what made a working retry look like another refusal.
+    uploadMaterial.mockResolvedValue({
+      status: "restored",
+      materialId: "mat-new",
+      duplicateOfId: "mat-win",
+    });
+    render(<CourseDetailPage />);
+    await selectFile();
+
+    expect(screen.getByTestId("success").textContent).toBe(
+      "Material processed successfully and is ready to use",
+    );
+    expect(screen.getByTestId("error").textContent).toBe("");
   });
 
   it("treats a still-processing upload as accepted, not an error", async () => {

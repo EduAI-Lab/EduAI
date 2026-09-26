@@ -17,6 +17,7 @@ const failedIndexing = {
   status: "FAILED" as const,
   duplicateOfId: null,
   hasExtractedText: true,
+  failureCode: null,
 };
 
 describe("describeMaterialFailure — nothing to explain", () => {
@@ -34,6 +35,7 @@ describe("describeMaterialFailure — duplicate receipt", () => {
     status: "FAILED" as const,
     duplicateOfId: "material-winner",
     hasExtractedText: true,
+    failureCode: null,
   };
 
   it("explains that the file is already on the course rather than that it failed", () => {
@@ -66,6 +68,7 @@ describe("describeMaterialFailure — extraction failed", () => {
     status: "FAILED" as const,
     duplicateOfId: null,
     hasExtractedText: false,
+    failureCode: null,
   };
 
   it("says the file could not be read", () => {
@@ -100,6 +103,107 @@ describe("describeMaterialFailure — indexing failed", () => {
     const notice = describeMaterialFailure(failedIndexing);
 
     expect(notice?.description).not.toMatch(/corrupt|invalid file|unsupported/i);
+  });
+});
+
+// #1794: the background job now persists *why* it failed on the row itself,
+// so a recognized `failureCode` swaps in a more specific message than the
+// three shape-derived ones above — without changing `kind` or `canRetry`,
+// which stay derived from the shape (`duplicateOfId`/`hasExtractedText`),
+// because that is what the reprocess endpoint itself gates on.
+describe("describeMaterialFailure — failureCode refines the message", () => {
+  const unreadable = {
+    status: "FAILED" as const,
+    duplicateOfId: null,
+    hasExtractedText: false,
+    failureCode: null,
+  };
+
+  it("uses the extract-failed code's specific wording, still not retryable", () => {
+    const notice = describeMaterialFailure({
+      ...unreadable,
+      failureCode: "MATERIAL_EXTRACT_FAILED",
+    });
+
+    expect(notice?.kind).toBe("unreadable-file");
+    expect(notice?.description).toMatch(/corrupted|password-protected/i);
+    expect(notice?.canRetry).toBe(false);
+  });
+
+  it("uses the extract-busy code's specific wording, still not retryable", () => {
+    const notice = describeMaterialFailure({
+      ...unreadable,
+      failureCode: "MATERIAL_EXTRACT_BUSY",
+    });
+
+    expect(notice?.description).toMatch(/too busy/i);
+    expect(notice?.canRetry).toBe(false);
+  });
+
+  it("uses the extract-abandoned code's specific wording, still not retryable", () => {
+    const notice = describeMaterialFailure({
+      ...unreadable,
+      failureCode: "MATERIAL_EXTRACT_ABANDONED",
+    });
+
+    expect(notice?.description).toMatch(/attempted several times/i);
+    expect(notice?.canRetry).toBe(false);
+  });
+
+  it("uses the embed-failed code's specific wording, and stays retryable", () => {
+    const notice = describeMaterialFailure({
+      ...failedIndexing,
+      failureCode: "MATERIAL_EMBED_FAILED",
+    });
+
+    expect(notice?.kind).toBe("indexing-failed");
+    expect(notice?.description).toMatch(/search data couldn't be built/i);
+    expect(notice?.canRetry).toBe(true);
+  });
+
+  it("uses the embed-rate-limited code's specific wording, and stays retryable", () => {
+    const notice = describeMaterialFailure({
+      ...failedIndexing,
+      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
+    });
+
+    expect(notice?.description).toMatch(/rate-limiting/i);
+    expect(notice?.canRetry).toBe(true);
+  });
+
+  it("falls back to the generic shape-derived message when failureCode is null", () => {
+    // A row that failed before the column existed (#1794).
+    const notice = describeMaterialFailure({ ...failedIndexing, failureCode: null });
+
+    expect(notice?.description).toMatch(
+      /text was read successfully, but indexing it for course chat failed/i,
+    );
+  });
+
+  it("falls back to the generic shape-derived message for a code this build doesn't know", () => {
+    const notice = describeMaterialFailure({
+      ...failedIndexing,
+      // SAFETY: exercising a server build ahead of this client's enum.
+      failureCode: "MATERIAL_SOMETHING_NEW" as never,
+    });
+
+    expect(notice?.description).toMatch(
+      /text was read successfully, but indexing it for course chat failed/i,
+    );
+  });
+
+  it("keeps the duplicate branch first even when a restore-failure receipt carries a code", () => {
+    // `copyFailureFromRestoreTarget` (#1791) can leave a receipt with both
+    // `duplicateOfId` and `failureCode` set. Duplicate-branch-first ordering
+    // means this is still reported as a duplicate, not refined by the code.
+    const notice = describeMaterialFailure({
+      status: "FAILED",
+      duplicateOfId: "material-winner",
+      hasExtractedText: true,
+      failureCode: "MATERIAL_EMBED_FAILED",
+    });
+
+    expect(notice?.kind).toBe("duplicate");
   });
 });
 

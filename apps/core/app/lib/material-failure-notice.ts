@@ -1,4 +1,5 @@
 import type { MaterialStatus } from "@eduai/ui";
+import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 
 /**
  * Why a material upload ended in FAILED, at the granularity the *instructor*
@@ -31,17 +32,62 @@ export type MaterialFailureFacts = {
   duplicateOfId: string | null;
   /** `rawText !== null` on the row — computed server-side, never the text itself. */
   hasExtractedText: boolean;
+  /**
+   * The reason the background job recorded (#1791/#1794), when the row has
+   * one. Null on a row that failed before the column existed, and on a
+   * duplicate receipt (which has no failure of its own to explain). Refines
+   * the message within whatever bucket `duplicateOfId`/`hasExtractedText`
+   * already put the row in — it never changes `kind` or `canRetry`, which
+   * stay derived from the row's shape: a code says what class of failure this
+   * is, but only the shape says whether the server actually has something to
+   * retry from.
+   */
+  failureCode: MaterialFailureCode | null;
 };
 
 /**
- * Explain a FAILED material from the row alone.
+ * Per-code copy (#1794), more specific than the three shape-derived messages
+ * below. `satisfies`, not an annotation: every code must be listed, while the
+ * literal's own type stays intact for the lookup below — an explicit open
+ * dictionary type would discard that a code not on this list is a type error,
+ * not a value this ever has to handle at runtime.
+ */
+const FAILURE_CODE_TEXT = {
+  MATERIAL_EXTRACT_FAILED: {
+    title: "Couldn't read this file",
+    description:
+      "Couldn't read the contents of this file. It may be corrupted, password-protected, or a scan with no selectable text.",
+  },
+  MATERIAL_EXTRACT_BUSY: {
+    title: "The server was too busy to process this file",
+    description:
+      "The server was too busy to process this file after several attempts. Nothing is wrong with the file — try again in a few minutes.",
+  },
+  MATERIAL_EXTRACT_ABANDONED: {
+    title: "Processing didn't complete",
+    description:
+      "Processing this file was attempted several times and didn't complete. Try again, or upload a smaller or simpler version of the file.",
+  },
+  MATERIAL_EMBED_FAILED: {
+    title: "Couldn't prepare this file for search",
+    description:
+      "The file was read successfully, but its search data couldn't be built. Try again — if it keeps failing, contact your administrator.",
+  },
+  MATERIAL_EMBED_RATE_LIMITED: {
+    title: "Rate-limited while indexing",
+    description:
+      "The AI service is rate-limiting requests right now, so this file's search data couldn't be built. The file itself is fine — try again in a few minutes.",
+  },
+} satisfies Record<MaterialFailureCode, { title: string; description: string }>;
+
+/**
+ * Explain a FAILED material from the row.
  *
  * #1749: the failed badge carried no reason and no recovery, so the only way
- * to make progress was to re-upload and hope. The reason the background job
- * recorded is not readable here — `failMaterial` writes only `status`, sending
- * the message to `logSystemError`, and `CourseMaterial` has no column for it
- * (#1794). What the row *does* distinguish is the stage that failed, which is
- * what decides whether retrying is even possible:
+ * to make progress was to re-upload and hope. #1794 then gave the background
+ * job a column to record *why* on the row itself (`failureCode`), but a row
+ * can still predate that column, or carry a code this client build does not
+ * recognize — so the derivation below still starts from what every row has:
  *
  * - `duplicateOfId` set — the content checksummed to a material already on the
  *   course (#949's async successor to the old synchronous 409).
@@ -52,12 +98,21 @@ export type MaterialFailureFacts = {
  *   database. `processMaterialEmbeddings` uses `replace: true` and is
  *   idempotent, which is what makes that safe to repeat.
  *
+ * `failureCode`, when present and recognized, only swaps in a more specific
+ * title/description within whichever of those three buckets the shape already
+ * chose — `canRetry` keeps coming from the shape, because that is what the
+ * reprocess endpoint itself checks (`MATERIAL_TEXT_UNAVAILABLE`), and codes
+ * like `MATERIAL_EXTRACT_ABANDONED` can be reached both with and without text
+ * left to retry from.
+ *
  * Returns `null` for any material that has not failed.
  */
 export function describeMaterialFailure(
   material: MaterialFailureFacts,
 ): MaterialFailureNotice | null {
   if (material.status !== "FAILED") return null;
+
+  const specific = material.failureCode ? FAILURE_CODE_TEXT[material.failureCode] : undefined;
 
   // Checked first: a duplicate receipt always has extracted text — it got far
   // enough to checksum the content — so the indexing branch would claim it.
@@ -75,8 +130,9 @@ export function describeMaterialFailure(
   if (!material.hasExtractedText) {
     return {
       kind: "unreadable-file",
-      title: "Couldn't read this file",
+      title: specific?.title ?? "Couldn't read this file",
       description:
+        specific?.description ??
         "No usable text could be extracted, so there is nothing to retry — the original upload is no longer stored. Check the file opens correctly, then upload it again.",
       canRetry: false,
       duplicateOfId: null,
@@ -85,8 +141,9 @@ export function describeMaterialFailure(
 
   return {
     kind: "indexing-failed",
-    title: "Couldn't prepare this file for search",
+    title: specific?.title ?? "Couldn't prepare this file for search",
     description:
+      specific?.description ??
       "The text was read successfully, but indexing it for course chat failed. The text is still saved, so this can be retried without uploading the file again.",
     canRetry: true,
     duplicateOfId: null,

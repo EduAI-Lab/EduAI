@@ -46,6 +46,9 @@ vi.mock("~/lib/prisma.server", () => {
 
 vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn().mockResolvedValue(undefined),
+  // #1791: the extraction job asks whether a dead embedding was transient, so it
+  // can record MATERIAL_EMBED_RATE_LIMITED instead of a flat embed failure.
+  isTransientEmbeddingError: vi.fn().mockReturnValue(false),
 }));
 
 // #1624: every material that reaches READY gets topic analysis, including one
@@ -58,6 +61,14 @@ vi.mock("~/lib/ai/file-processing", () => ({
   processUploadedFile: vi.fn(),
   validateUploadedFile: vi.fn(),
   extractUploadedFileContent: vi.fn(),
+  // A real class: the job uses `instanceof` to tell a capacity failure (retry it)
+  // from a bad file (fail it).
+  PdfExtractionBusyError: class PdfExtractionBusyError extends Error {
+    constructor(message = "PDF extraction busy") {
+      super(message);
+      this.name = "PdfExtractionBusyError";
+    }
+  },
 }));
 
 // getPolicy resolves to each flag's real code default unless a test overrides it.
@@ -827,8 +838,14 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
       where: { id: "mat-failed" },
       // The lease is released alongside the terminal status so the sweeper does
-      // not later mistake a settled row for an abandoned one.
-      data: { status: "FAILED", extractionLeaseUntil: null },
+      // not later mistake a settled row for an abandoned one, and the reason is
+      // recorded on the row itself (#1791) — it is the only thing the client can
+      // read, and a dead PDF worker is not the same as a rate limit.
+      data: {
+        status: "FAILED",
+        failureCode: "MATERIAL_EXTRACT_FAILED",
+        extractionLeaseUntil: null,
+      },
     });
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
@@ -849,8 +866,13 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
       where: { id: "mat-embed" },
       // The lease is released alongside the terminal status so the sweeper does
-      // not later mistake a settled row for an abandoned one.
-      data: { status: "FAILED", extractionLeaseUntil: null },
+      // not later mistake a settled row for an abandoned one. A raw-query
+      // failure is not transient, so it stays a plain embed failure (#1791).
+      data: {
+        status: "FAILED",
+        failureCode: "MATERIAL_EMBED_FAILED",
+        extractionLeaseUntil: null,
+      },
     });
   });
 

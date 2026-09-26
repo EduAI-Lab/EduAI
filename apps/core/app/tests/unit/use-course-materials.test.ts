@@ -344,6 +344,79 @@ describe("useCourseMaterials.uploadMaterial (#949 async contract)", () => {
     expect(await upload(result)).toEqual({
       status: "failed",
       materialId: "mat-new",
+      // Null covers rows that failed before the column existed (#1791); the UI
+      // falls back to the old generic sentence for those.
+      failureCode: null,
+    });
+  });
+
+  it("carries the failure reason so the UI can name it (#1791)", async () => {
+    const result = await mount();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(
+        materialsResponse([
+          { ...processing, status: "FAILED", failureCode: "MATERIAL_EMBED_RATE_LIMITED" },
+        ]),
+      );
+
+    expect(await upload(result)).toEqual({
+      status: "failed",
+      materialId: "mat-new",
+      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
+    });
+  });
+
+  it("reports a restored material as a success, not as 'already exists' (#1791)", async () => {
+    // Re-uploading a file whose processing failed retries it, and the receipt
+    // says so. Calling that a duplicate is what left the instructor in a loop:
+    // the retry worked and was still reported as a refusal.
+    const result = await mount();
+    const receipt = {
+      ...processing,
+      status: "FAILED",
+      duplicateOfId: "mat-1",
+      duplicateResolution: "RESTORED",
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([receipt]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // receipt cleanup
+      .mockResolvedValueOnce(materialsResponse([])); // post-cleanup refresh
+
+    expect(await upload(result)).toEqual({
+      status: "restored",
+      materialId: "mat-new",
+      duplicateOfId: "mat-1",
+    });
+  });
+
+  it("reports a receipt carrying a reason as failed, not duplicate (#1791)", async () => {
+    // A restore whose embedding died. The receipt still points at the material
+    // it tried to revive — that row holds the real failure — but reporting it as
+    // a duplicate told the instructor the file was already there while the only
+    // copy of it sat FAILED, with the receipt then deleted.
+    const result = await mount();
+    const receipt = {
+      ...processing,
+      status: "FAILED",
+      duplicateOfId: "mat-1",
+      duplicateResolution: "RESTORED",
+      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([receipt]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // receipt cleanup
+      .mockResolvedValueOnce(materialsResponse([])); // post-cleanup refresh
+
+    expect(await upload(result)).toEqual({
+      status: "failed",
+      materialId: "mat-new",
+      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
     });
   });
 
