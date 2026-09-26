@@ -1,13 +1,14 @@
 /**
  * #949: the upload endpoint returns 202 and the real outcome arrives from
- * polling, so `CourseDetailPage.handleFileSelect` is the only place that turns
+ * polling, so `CourseDetailPage.handleFilesSelect` is the only place that turns
  * an `UploadOutcome` into something the instructor actually reads. These pin
  * that mapping — including the duplicate branch, which has to look the winning
  * material up by id to name it.
  *
  * The route module imports server-only code (`auth/server`, `prisma.server`)
  * at the top level, so those are stubbed; the three role views are replaced by
- * one probe that surfaces `onFileSelect` and the two message props.
+ * one probe that surfaces `onFilesSelect`, the two message props and the
+ * per-file `uploads` list.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
@@ -37,8 +38,8 @@ const uploadMaterial = vi.fn();
 /** What the mocked `useCourseMaterials` hands back; rewritten per test. */
 type MaterialsState = { materials: CourseMaterialFixture[] };
 
-/** How the probe hands the captured `onFileSelect` back to the test. */
-type FileSelectBridge = { onFileSelect?: (file: File) => void | Promise<void> };
+/** How the probe hands the captured `onFilesSelect` back to the test. */
+type FileSelectBridge = { onFilesSelect?: (files: File[]) => void | Promise<void> };
 
 /** The fields the view reads off a material row. */
 type CourseMaterialFixture = {
@@ -52,7 +53,7 @@ type CourseMaterialFixture = {
 
 const materialsState: MaterialsState = { materials: [] };
 
-/** How the probe hands the captured `onFileSelect` back to the test. */
+/** How the probe hands the captured `onFilesSelect` back to the test. */
 const fileSelectBridge: FileSelectBridge = {};
 
 vi.mock("~/hooks/api/use-course-materials", () => ({
@@ -94,19 +95,28 @@ vi.mock("~/components/layout/course-switcher", () => ({ CourseSwitcher: () => nu
 
 /** Probe standing in for whichever role view the page picks. */
 interface ProbeProps {
-  onFileSelect: (file: File) => void | Promise<void>;
+  onFilesSelect: (files: File[]) => void | Promise<void>;
+  uploads?: Array<{ name: string; status: string; message?: string }>;
   materialsError: string | null;
   materialsSuccess: string | null;
   isUploading: boolean;
 }
 
 function Probe(props: ProbeProps) {
-  fileSelectBridge.onFileSelect = props.onFileSelect;
+  fileSelectBridge.onFilesSelect = props.onFilesSelect;
   return (
     <div>
       <span data-testid="error">{props.materialsError ?? ""}</span>
       <span data-testid="success">{props.materialsSuccess ?? ""}</span>
       <span data-testid="uploading">{String(props.isUploading)}</span>
+      <ul>
+        {(props.uploads ?? []).map((u) => (
+          <li key={u.name} data-testid={`upload-${u.name}`}>
+            {u.status}
+            {u.message ? `: ${u.message}` : ""}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -125,13 +135,15 @@ import CourseDetailPage from "~/routes/courses.$courseId";
 
 const file = new File(["x"], "week2.pdf", { type: "application/pdf" });
 
-async function selectFile() {
-  const handler = fileSelectBridge.onFileSelect;
+async function selectFiles(files: File[]) {
+  const handler = fileSelectBridge.onFilesSelect;
   if (!handler) throw new Error("the probe never rendered, so no handler was captured");
   await act(async () => {
-    await handler(file);
+    await handler(files);
   });
 }
+
+const selectFile = () => selectFiles([file]);
 
 describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
   beforeEach(() => {
@@ -238,5 +250,89 @@ describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
     expect(screen.getByTestId("success").textContent).toBe(
       "Material uploaded and processed successfully",
     );
+  });
+});
+
+const pdf = (name: string) => new File([name], name, { type: "application/pdf" });
+
+describe("CourseDetailPage batch upload (#1748)", () => {
+  beforeEach(() => {
+    materialsState.materials = [];
+    uploadMaterial.mockReset();
+  });
+
+  it("uploads every file and reports one summary when all succeed", async () => {
+    uploadMaterial.mockResolvedValue({ status: "ready", materialId: "m" });
+    render(<CourseDetailPage />);
+    await selectFiles([pdf("a.pdf"), pdf("b.pdf"), pdf("c.pdf")]);
+
+    expect(uploadMaterial).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId("success").textContent).toBe(
+      "All 3 files uploaded and processed successfully",
+    );
+    expect(screen.getByTestId("upload-a.pdf").textContent).toBe("ready");
+    expect(screen.getByTestId("uploading").textContent).toBe("false");
+  });
+
+  it("keeps going past a failed file and names why it failed", async () => {
+    uploadMaterial
+      .mockResolvedValueOnce({ status: "ready", materialId: "m1" })
+      .mockRejectedValueOnce(new Error("FILE_TOO_LARGE"))
+      .mockResolvedValueOnce({ status: "ready", materialId: "m3" });
+    render(<CourseDetailPage />);
+    await selectFiles([pdf("a.pdf"), pdf("b.pdf"), pdf("c.pdf")]);
+
+    expect(uploadMaterial).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId("upload-b.pdf").textContent).toBe("failed: FILE_TOO_LARGE");
+    expect(screen.getByTestId("upload-c.pdf").textContent).toBe("ready");
+    expect(screen.getByTestId("error").textContent).toBe(
+      "1 of 3 files couldn't be added — see the list below.",
+    );
+    expect(screen.getByTestId("success").textContent).toBe("");
+  });
+
+  it("counts a duplicate as not added", async () => {
+    uploadMaterial
+      .mockResolvedValueOnce({ status: "ready", materialId: "m1" })
+      .mockResolvedValueOnce({ status: "duplicate", materialId: "m2", duplicateOfId: "gone" });
+    render(<CourseDetailPage />);
+    await selectFiles([pdf("a.pdf"), pdf("b.pdf")]);
+
+    expect(screen.getByTestId("upload-b.pdf").textContent).toBe(
+      "duplicate: A file with identical content already exists in this course",
+    );
+    expect(screen.getByTestId("error").textContent).toBe(
+      "1 of 2 files couldn't be added — see the list below.",
+    );
+  });
+
+  it("treats still-processing files as accepted", async () => {
+    uploadMaterial
+      .mockResolvedValueOnce({ status: "ready", materialId: "m1" })
+      .mockResolvedValueOnce({ status: "processing", materialId: "m2" });
+    render(<CourseDetailPage />);
+    await selectFiles([pdf("a.pdf"), pdf("b.pdf")]);
+
+    expect(screen.getByTestId("success").textContent).toBe(
+      "All 2 files accepted. Some are still processing — the list will update when they finish.",
+    );
+    expect(screen.getByTestId("error").textContent).toBe("");
+  });
+
+  it("never has more than three uploads in flight", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    uploadMaterial.mockImplementation(async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight--;
+      return { status: "ready", materialId: "m" };
+    });
+    render(<CourseDetailPage />);
+    await selectFiles(Array.from({ length: 7 }, (_, i) => pdf(`f${i}.pdf`)));
+
+    expect(uploadMaterial).toHaveBeenCalledTimes(7);
+    expect(peak).toBe(3);
   });
 });
