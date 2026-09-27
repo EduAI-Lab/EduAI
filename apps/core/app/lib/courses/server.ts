@@ -23,6 +23,7 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
+import { INSTRUCTOR_CANDIDATE_ROLES } from "~/lib/rbac/instructor-candidates";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
 import { getCourseInstructors } from "./instructors.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
@@ -560,7 +561,7 @@ export async function createCourse(request: Request) {
   const instructors = await prisma.user.findMany({
     where: {
       id: { in: result.data.instructorUserIds },
-      role: "INSTRUCTOR",
+      role: { in: [...INSTRUCTOR_CANDIDATE_ROLES] },
     },
     select: { id: true },
   });

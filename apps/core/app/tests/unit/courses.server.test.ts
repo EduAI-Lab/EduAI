@@ -651,7 +651,7 @@ describe("createCourse", () => {
     expect(res.status).toBe(201);
     // Validation only ever queried the creator — the supplied victim id was dropped.
     expect(prismaMock.user.findMany).toHaveBeenCalledWith({
-      where: { id: { in: ["instr-1"] }, role: "INSTRUCTOR" },
+      where: { id: { in: ["instr-1"] }, role: { in: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] } },
       select: { id: true },
     });
     // The course's primary instructor (instructorUserIds[0]) is the creator.
@@ -715,7 +715,24 @@ describe("createCourse", () => {
     expect(body).toHaveProperty("error", "VALIDATION_ERROR");
   });
 
-  it("returns 422 when instructorUserIds do not map to INSTRUCTOR users", async () => {
+  it("accepts an ADMIN or UNIT_ADMIN account as the course instructor (#1840)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "user-1" }]);
+    prismaMock.course.create.mockResolvedValue({ id: "course-1" });
+    prismaMock.enrollment.createMany.mockResolvedValue({ count: 1 });
+    const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
+    expect(res.status).toBe(201);
+    // The instructor lookup admits the whole staff set, not platform-role INSTRUCTOR alone.
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          role: { in: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] },
+        }),
+      }),
+    );
+  });
+
+  it("returns 422 when instructorUserIds do not map to staff users", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.user.findMany.mockResolvedValue([]);
     const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
