@@ -28,17 +28,9 @@ import {
   type Pagination,
 } from "~/lib/pagination.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { INSTRUCTOR_CANDIDATE_ROLES } from "~/lib/rbac/instructor-candidates";
 
 const USER_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
-
-/**
- * #1840: who may be offered as a course instructor. Deliberately the whole
- * staff set rather than platform-role INSTRUCTOR alone — an ADMIN or UNIT_ADMIN
- * account can hold an INSTRUCTOR enrollment (`addEnrollment` never checks the
- * target's platform role), and the INSTRUCTOR-only list is exactly why
- * Dr. Abdallah ended up running two accounts (#1782).
- */
-export const INSTRUCTOR_CANDIDATE_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
 
 /** Columns the admin users table may sort by. Whitelisted so `sortBy` cannot reach arbitrary fields. */
 const USER_SORT_FIELDS = [
