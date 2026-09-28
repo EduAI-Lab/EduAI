@@ -718,12 +718,36 @@ describe("POST /api/courses", () => {
     expect(body).toHaveProperty("error", "VALIDATION_ERROR");
   });
 
-  it("returns 422 when instructorUserIds do not resolve to INSTRUCTOR users", async () => {
+  it("returns 422 when instructorUserIds do not resolve to staff users", async () => {
+    const student = await seedUser({ role: "STUDENT" });
+    try {
+      vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
+      const res = await createCourse(
+        makeFormDataPost({
+          name: "Bad Instructor Course",
+          code: "BI 001",
+          section: "001",
+          term: "W1",
+          year: 2025,
+          startDate: "2025-09-01",
+          department: "COSC",
+          instructorUserIds: student.id,
+        }),
+      );
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body).toHaveProperty("error", "INVALID_INSTRUCTOR");
+    } finally {
+      await cleanupRbac({ userIds: [student.id] });
+    }
+  });
+
+  it("accepts an ADMIN as the new course's instructor (#1840)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const res = await createCourse(
       makeFormDataPost({
-        name: "Bad Instructor Course",
-        code: "BI 001",
+        name: "Admin Instructor Course",
+        code: "AI 001",
         section: "001",
         term: "W1",
         year: 2025,
@@ -732,9 +756,14 @@ describe("POST /api/courses", () => {
         instructorUserIds: adminId,
       }),
     );
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body).toHaveProperty("error", "INVALID_INSTRUCTOR");
+    createdCourseIds.push(body.id);
+
+    const enrollment = await prisma.enrollment.findFirst({
+      where: { courseId: body.id, userId: adminId, role: "INSTRUCTOR", isActive: true },
+    });
+    expect(enrollment).not.toBeNull();
   });
 
   it("creates course and INSTRUCTOR enrollment in a transaction", async () => {
