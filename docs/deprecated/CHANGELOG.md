@@ -23,6 +23,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.09.20
 
+- Review follow-up on #1807: the plugin stamps `rateLimitMax`/`rateLimitTimeWindow` onto each key row at creation, so #1807's config change only applied to new keys. Backfill migration `20260920180000_backfill_api_key_rate_limit` raises every existing key still on the plugin default (10/24h, or unset) to 1000/24h and resets its usage counter; a deliberately tighter per-key ceiling is left alone; the schema default is now 1000 too. Also fixed `parsePositiveInt` accepting `"0.5"` (it floored to 0 after the `<=0` check instead of before).
+
+## 2026.09.19
+
+- Fix EduAI API keys being capped at **10 requests per 24 hours**. The Better Auth api-key plugin rate-limits every key whether or not the host configures it, and its defaults are `maxRequests: 10` / `timeWindow: 24h`; Core passed only `apiKeyHeaders` and `keyExpiration`, so every key silently inherited that. Core now always passes an explicit `rateLimit`, defaulting to 1000 requests per 24h and tunable via `API_KEY_RATE_LIMIT_MAX`, `API_KEY_RATE_LIMIT_WINDOW_MS` and `API_KEY_RATE_LIMIT_ENABLED`. PR: https://github.com/EduAI-Lab/EduAI/pull/1807. Closes #1803.
+- Stop reporting a throttled API key as `401 Unauthorized`. `enforceAdminIfApiKey` discarded the plugin's error entirely, so a rate-limited key, a spent key, an expired key and a forged one were indistinguishable and no caller could tell a transient denial from a revocation — the "keys silently revoked server-side" symptom in the COSC 301 pilot report. A throttled key now answers `429 {"error":"RATE_LIMITED","retryAfter":<seconds>}` with a `Retry-After` header (derived from the plugin's `tryAgainIn`, clamped to 24h), a spent key answers `429 {"error":"USAGE_EXCEEDED"}` with no retry hint, and genuinely invalid credentials keep their existing `401`.
+- Audit throttled keys under a new `API_KEY_RATE_LIMITED` action code instead of `API_KEY_DENIED`, so exhausting a quota no longer reads as a credential failure in the security log.
+- Document `API_KEY_RATE_LIMIT_*` in `docs/ENVIRONMENT.md` and `apps/core/.env.example`, including the warning that omitting the config does not mean "no limit".
 - Review follow-up on #1808: `admissionRetryAfterSeconds`'s jitter was half-open (`Math.random()` never returns 1), so the documented `base * (1 + jitterRatio)` upper bound was never actually emitted. Fixed to an inclusive `[base, base + floor(base * jitterRatio)]`.
 
 ## 2026.09.19

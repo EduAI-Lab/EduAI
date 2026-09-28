@@ -781,7 +781,8 @@ model apikey {
   enabled             Boolean   @default(true)
   rateLimitEnabled    Boolean   @default(true)
   rateLimitTimeWindow Int?      @default(86400000)
-  rateLimitMax        Int?      @default(10)
+  // Matches DEFAULT_API_KEY_RATE_LIMIT_MAX in api-keys/rate-limit.ts.
+  rateLimitMax        Int?      @default(1000)
   requestCount        Int       @default(0)
   remaining           Int?
   lastRequest         DateTime?
