@@ -99,12 +99,23 @@ than allowing duplicate service managers to compete with systemd.
 
 ## Canonical deployment
 
-Run the deployer from the repository root:
+Run every step that writes to the checkout **as the service account** that owns
+it (`service_eduai`, #1872), so files never end up with mixed owners. `sudo -u`
+resets `PATH`, and the host's `/usr/bin/node` is an old v10, so pass the Node 24
+path explicitly. Then restart as yourself (an `eduai-dev` member):
 
 ```bash
 cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-bash infra/s378/go-live-build.sh --install
+AS_SVC="sudo -u service_eduai env PATH=/usr/local/bin:/usr/bin:/bin HOME=/var/lib/service_eduai"
+$AS_SVC git status --short
+$AS_SVC git pull --ff-only origin development
+$AS_SVC bash infra/s378/go-live-build.sh --install --no-restart
+sudo /usr/local/sbin/eduai-cron-sync
+systemctl restart eduai-core eduai-aitutor-server eduai-qm-backend eduai-cron-worker
 ```
+
+`--no-restart` is needed because the build's restart step calls `sudo` and
+`systemctl` from the build user, and the locked service account has neither.
 
 The implementation owns the order:
 

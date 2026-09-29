@@ -41,8 +41,25 @@ echo "  group eduai-dev ok"
 getent group adm >/dev/null || { echo "ERROR: group adm does not exist (needed for audit-log access)"; exit 1; }
 echo "  group adm ok"
 
+# #1872: the web units (core, aitutor, qm) run as service_eduai, a locked,
+# no-login service account that also owns the checkout. Refuse to install
+# units that would point at a missing account.
+getent passwd service_eduai >/dev/null || {
+  echo "ERROR: user service_eduai does not exist"
+  echo "       Create it first:"
+  echo "         sudo useradd --system --user-group --home-dir /var/lib/service_eduai --create-home --shell /sbin/nologin service_eduai"
+  echo "         sudo passwd -l service_eduai"
+  exit 1
+}
+id -nG service_eduai | tr ' ' '\n' | grep -qx eduai-dev || {
+  echo "ERROR: service_eduai must be a member of eduai-dev to read the shared service env"
+  echo "       Run: sudo usermod -a -G eduai-dev service_eduai"
+  exit 1
+}
+echo "  user service_eduai ok (member of eduai-dev)"
+
 # The worker executes the shell jobs as the dedicated account. Keep this
-# separate from ssaada08 (the account used by the web services) so the cron
+# separate from service_eduai (the account used by the web services) so the cron
 # env, backup files, and audit log have one predictable owner.
 getent passwd eduai-cron >/dev/null || {
   echo "ERROR: user eduai-cron does not exist"

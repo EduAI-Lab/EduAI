@@ -173,12 +173,17 @@ The complete procedure, including one-time systemd installation, belongs in
 Update the shared branch and prepare generated state:
 
 ```bash
-git status --short
-git fetch origin
-git checkout development
-git pull --ff-only origin development
-bash infra/s378/go-live-build.sh --install
+AS_SVC="sudo -u service_eduai env PATH=/usr/local/bin:/usr/bin:/bin HOME=/var/lib/service_eduai"
+$AS_SVC git status --short
+$AS_SVC git pull --ff-only origin development
+$AS_SVC bash infra/s378/go-live-build.sh --install --no-restart
+sudo /usr/local/sbin/eduai-cron-sync
+systemctl restart eduai-core eduai-aitutor-server eduai-qm-backend eduai-cron-worker
 ```
+
+The checkout and the web services belong to the `service_eduai` service account
+(#1872), so run the git and build steps as that account to avoid mixed file
+ownership, then restart as yourself. See [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md#canonical-deployment).
 
 The deployer performs environment synchronization, Prisma client generation,
 migrations, reference and extension seed steps, builds, service restarts, and
