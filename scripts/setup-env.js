@@ -1,14 +1,8 @@
 const { randomBytes } = require("crypto");
-const {
-  existsSync,
-  copyFileSync,
-  readFileSync,
-  appendFileSync,
-  writeFileSync,
-  chmodSync,
-} = require("fs");
+const { existsSync, copyFileSync, readFileSync, appendFileSync, writeFileSync } = require("fs");
 const { execSync } = require("child_process");
 const { resolve } = require("path");
+const { applyEnvFileMode, resolveEnvFileMode } = require("./lib/env-file-mode");
 
 const root = resolve(__dirname, "..");
 
@@ -89,7 +83,10 @@ for (const envPath of serviceEnvPaths) {
   }
 }
 
-for (const [, dest] of envPairs) chmodSync(resolve(root, dest), 0o600);
+applyEnvFileMode(
+  envPairs.map(([, dest]) => resolve(root, dest)),
+  resolveEnvFileMode(process.env.EDUAI_ENV_FILE_MODE),
+);
 
 // CI generates each workspace client explicitly in the job that consumes it. Skipping
 // this implicit generation there avoids doing the same work during npm ci and again

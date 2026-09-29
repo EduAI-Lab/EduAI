@@ -26,6 +26,8 @@ None of this affects Docker: `docker-compose.dev.yml` only reads the root `.env`
 
 `scripts/setup-env.js` also runs `prisma generate` for Core, the AI Tutor server, and the QM backend after the copy/merge step. Set `SKIP_PRISMA_GENERATE=1` to skip that (CI does, because each job generates the client it needs explicitly).
 
+After the merge it sets each generated `.env` / `.env.test` to owner-only (`0600`), so a laptop checkout keeps its secrets private. On a shared host where services run as different accounts in one group, set `EDUAI_ENV_FILE_MODE=0660` (or `0640`) so the group can still read them; `infra/s378/go-live-build.sh` does this for s378, where the cron worker runs as `eduai-cron` in `eduai-dev` (#1881). Only `0600`, `0640` and `0660` are accepted, since these files hold secrets. If the user running `npm install` doesn't own a file, the chmod is skipped with a warning instead of failing the install.
+
 The AI Tutor **frontend** app (`apps/extensions/ai-tutor/`, distinct from its `server/` sibling) has no `.env` of its own — it does not inherit from `apps/core/.env` or `apps/extensions/ai-tutor/server/.env`. It reads `VITE_API_URL`, `VITE_CORE_URL`, `VITE_EDUAI_URL`, and `VITE_AI_TUTOR_URL` from `import.meta.env` (Vite build/dev-server time), each with a hardcoded `localhost` fallback in code (`app/lib/api.ts`, `app/lib/extension-urls.ts`), so no env file is required for local `npm run dev`. In CI, `docker-compose.test.yml` sets `AI_TUTOR_SERVER_URL` (consumed by the integration test runner, not by the app itself) and does not set any `VITE_*` var.
 
 ## Test env files
