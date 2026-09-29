@@ -5,12 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ssaada08
+# #1872: dedicated locked, no-login service account (not a person's account).
+User=service_eduai
 Group=eduai
 UMask=0007
 WorkingDirectory=/srv/www/eduai-production/current/apps/extensions/question-maker/app/backend
 EnvironmentFile=/etc/eduai/eduai-qm.env
-Environment=HOME=/home/ssaada08
+Environment=HOME=/var/lib/service_eduai
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=PORT=8000
 Environment=HOST=127.0.0.1
