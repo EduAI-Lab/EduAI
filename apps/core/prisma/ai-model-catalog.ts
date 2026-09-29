@@ -6,7 +6,7 @@
  * generation apart once (#1802): this file still seeded the Qwen 2.5 pair and
  * listed the Qwen 3.5 models the fleet actually serves as *retired*, so a seed
  * or sync left `vllm:qwen3.5-2b-instruct` with no active catalog row and every
- * request for it failing 422. `campus-model-catalog.spec` now asserts the two
+ * request for it failing 422. `campus-model-catalog.test.ts` now asserts the two
  * agree, so the same drift fails CI instead of the pilot.
  *
  * Ground truth for what is deployed: `infra/cmps01/migrate.sh` and
@@ -62,7 +62,8 @@ export const VLLM_MODELS = [
  *
  * The Assist model (qwen3.8-27b-instruct) is intentionally absent: it carries no
  * routerTier, because Assist Auto addresses it directly rather than through the
- * tier router, and a tiered row would put it in the Auto pool.
+ * tier router, and a tiered row would put it in the Auto pool. Its estimates live
+ * in VLLM_UNTIERED_ENERGY_ESTIMATES instead.
  */
 export const VLLM_ROUTING_TIER_ASSIGNMENTS = [
   {
@@ -78,6 +79,20 @@ export const VLLM_ROUTING_TIER_ASSIGNMENTS = [
     routerTier: "TIER_3" as const,
     estEnergyJoulesPerToken: 0.103,
     averageCarbonGramsPerToken: 2.29e-6,
+  },
+] as const;
+
+/**
+ * Energy and carbon estimates for seeded models that carry no routerTier, so
+ * their turns still report energy (`estimate.server.ts` returns null without a
+ * figure). Same linear-from-7B scaling and caveats as VLLM_ROUTING_TIER_ASSIGNMENTS;
+ * the retired 32B's 0.5 J/token suggests this understates the 27B.
+ */
+export const VLLM_UNTIERED_ENERGY_ESTIMATES = [
+  {
+    modelId: "qwen3.8-27b-instruct",
+    estEnergyJoulesPerToken: 0.309,
+    averageCarbonGramsPerToken: 6.87e-6,
   },
 ] as const;
 

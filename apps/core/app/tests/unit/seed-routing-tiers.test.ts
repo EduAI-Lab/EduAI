@@ -119,6 +119,23 @@ describe("seed.ts — applyRoutingTierAssignments", () => {
     );
   });
 
+  it("writes energy figures onto untiered models without giving them a tier", async () => {
+    const { applyRoutingTierAssignments } = await import("../../../prisma/seed");
+    const { VLLM_UNTIERED_ENERGY_ESTIMATES } = await import("../../../prisma/ai-model-catalog");
+
+    await applyRoutingTierAssignments();
+
+    for (const row of VLLM_UNTIERED_ENERGY_ESTIMATES) {
+      expect(aIModelUpdateMany).toHaveBeenCalledWith({
+        where: { providerId: VLLM_PROVIDER.id, modelId: row.modelId },
+        data: {
+          estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+          averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+        },
+      });
+    }
+  });
+
   it("also clears any leftover tier on Google rows", async () => {
     const { applyRoutingTierAssignments } = await import("../../../prisma/seed");
 

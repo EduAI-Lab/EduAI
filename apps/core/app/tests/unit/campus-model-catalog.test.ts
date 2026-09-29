@@ -9,6 +9,7 @@ import {
   VLLM_MODELS,
   VLLM_RETIRED_MODEL_IDS,
   VLLM_ROUTING_TIER_ASSIGNMENTS,
+  VLLM_UNTIERED_ENERGY_ESTIMATES,
 } from "../../../prisma/ai-model-catalog";
 
 describe("campus model catalog contract", () => {
@@ -100,6 +101,15 @@ describe("seed catalog agrees with the declared campus catalog", () => {
     for (const direct of DIRECT_ADDRESSED_MODEL_IDS) {
       expect(tieredIds).not.toContain(direct);
     }
+  });
+
+  it("gives every seeded model exactly one energy estimate, tiered or not", () => {
+    // estimate.server.ts records no energy for a model without a figure (#1802).
+    const estimatedIds = [
+      ...VLLM_ROUTING_TIER_ASSIGNMENTS.map((a) => a.modelId),
+      ...VLLM_UNTIERED_ENERGY_ESTIMATES.map((e) => e.modelId),
+    ];
+    expect([...estimatedIds].sort()).toEqual([...seededIds].sort());
   });
 
   it("routes a small tier-1 and a large tier-3 model, as local-vLLM routing expects", () => {

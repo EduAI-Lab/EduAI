@@ -82,6 +82,25 @@ describe("sync-ai-providers.ts — applyRoutingTierAssignments", () => {
     );
   });
 
+  it("writes energy figures onto untiered models without giving them a tier", async () => {
+    await import("../../../prisma/sync-ai-providers");
+    await vi.waitFor(() => expect(aIModelUpdateMany).toHaveBeenCalled());
+
+    const { VLLM_UNTIERED_ENERGY_ESTIMATES } = await import("../../../prisma/ai-model-catalog");
+
+    for (const row of VLLM_UNTIERED_ENERGY_ESTIMATES) {
+      await vi.waitFor(() =>
+        expect(aIModelUpdateMany).toHaveBeenCalledWith({
+          where: { providerId: VLLM_PROVIDER.id, modelId: row.modelId },
+          data: {
+            estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+            averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+          },
+        }),
+      );
+    }
+  });
+
   it("writes maxTokens and labels on every vLLM model upsert's update branch, not only on create", async () => {
     await import("../../../prisma/sync-ai-providers");
     await vi.waitFor(() => expect(aIModelUpsert).toHaveBeenCalled());

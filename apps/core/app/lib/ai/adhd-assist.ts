@@ -50,6 +50,9 @@ export const ADHD_ASSIST_POLICY_VERSION = "2.3";
  * Points at RETAINED_ASSIST_MODEL_ID, which cmps02 serves in place of the
  * Qwen2.5 32B that #1523 validated (#1802). Like the 32B, it stays off the
  * constrained-decoding path (isVllmStructuredAdhdAssistModel).
+ * CAVEAT: #1523's structural check (stages/tldr/next without constrained
+ * decoding) has not been re-run against the 27B; until it is, treat a missing
+ * section in Assist output as a likely model regression, not a prompt bug.
  */
 export const ADHD_ASSIST_AUTO_MODEL_ID = `vllm:${RETAINED_ASSIST_MODEL_ID}`;
 

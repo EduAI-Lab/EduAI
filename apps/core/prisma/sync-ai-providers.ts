@@ -8,6 +8,7 @@ import {
   VLLM_MODELS,
   VLLM_RETIRED_MODEL_IDS,
   VLLM_ROUTING_TIER_ASSIGNMENTS,
+  VLLM_UNTIERED_ENERGY_ESTIMATES,
 } from "./ai-model-catalog";
 
 const prisma = new PrismaClient();
@@ -73,6 +74,17 @@ async function applyRoutingTierAssignments() {
       },
       data: { routerTier: null },
     });
+
+    // Untiered models still need energy figures, or their turns report none.
+    for (const row of VLLM_UNTIERED_ENERGY_ESTIMATES) {
+      await prisma.aIModel.updateMany({
+        where: { providerId: vllm.id, modelId: row.modelId },
+        data: {
+          estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+          averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+        },
+      });
+    }
   }
 }
 
