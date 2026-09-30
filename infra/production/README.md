@@ -137,6 +137,20 @@ workspace client required by systemd exists.
 
 Use a new release directory for every production change:
 
+0. **Check the inference fleet from s348 and update the fleet config first.**
+   - Run the authenticated edge check **on s348** (a check from s378 does not
+     count) for every host you intend to put in `VLLM_FLEET_CHAT_URLS`, and
+     compare the model IDs with the list in "Inference configuration":
+     ```bash
+     KEY=$(sudo sed -n 's/^VLLM_API_KEY=//p' /etc/eduai/eduai-core.env | tr -d '"')
+     for h in cmps01 cmps02 cmps03; do
+       echo "== $h"; curl -fsS -m 10 -H "Authorization: Bearer $KEY" "http://$h.ok.ubc.ca:8001/v1/models" | grep -oE '"id":"[^"]+"' || echo "EDGE CHECK FAILED"
+     done; unset KEY
+     ```
+     If a host fails, **leave it out** of `VLLM_FLEET_CHAT_URLS` and
+     `fleet.config.json` for this release.
+   - Update `/etc/eduai/fleet/fleet.config.json` (see "Fleet config") so each
+     server lists what it actually serves.
 1. Create or obtain the reviewed release checkout under
    `/srv/www/eduai-production/releases/<release-id>`.
 2. Confirm the intended branch/commit and keep the release checkout clean.
@@ -243,6 +257,30 @@ may be used in production after the authenticated edge check succeeds on the
 production host. See
 [`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
+
+### Fleet config
+
+`fleet.config.json` maps each inference server to the models it serves. It is
+gitignored and host-specific, so it must **not** live in a release directory:
+each release is a fresh checkout, and `activate-release` does not copy it
+forward. Keep it at `FLEET_CONFIG_PATH=/etc/eduai/fleet/fleet.config.json`
+(set in `/etc/eduai/eduai-core.env`). Install the directory once, group-writable
+so Admin → AI Management → Servers can save the file (it writes a temp file and
+renames it):
+
+```bash
+sudo install -d -o root -g eduai -m 2770 /etc/eduai/fleet
+sudo cp -n /srv/www/eduai-production/current/apps/core/fleet.config.json /etc/eduai/fleet/ 2>/dev/null \
+  || sudo cp /srv/www/eduai-production/current/apps/core/fleet.config.example.json /etc/eduai/fleet/fleet.config.json
+sudo chown root:eduai /etc/eduai/fleet/fleet.config.json && sudo chmod 0660 /etc/eduai/fleet/fleet.config.json
+```
+
+Then edit it to match the edge check. As of the Weeks 1–3 release: cmps01
+`qwen3.5-2b-instruct` + `qwen3.5-9b-instruct`; **cmps02 `qwen3.5-2b-instruct` +
+`qwen3.8-27b-instruct`** (was `qwen2.5-32b-instruct`); cmps03 the 2b/9b pair,
+only if its edge check passed. Without this file the registry assumes every
+fleet URL serves `VLLM_FLEET_DEFAULT_MODELS` (2b + 9b), which is wrong for
+cmps02, and the AI status probe samples hosts from it.
 
 **Auto routing tier assignment is a manual step on production.** Unlike
 `eduai-dev`/s378 (`infra/s378/go-live-build.sh` runs
