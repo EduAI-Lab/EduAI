@@ -498,12 +498,22 @@ describe("CronJobsAdminView", () => {
   });
 
   it("edits a setting, posts update-setting with a number, and closes on success", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ jobs: [purgeJob({ value: 30, overridden: true })] }),
-    });
+    // The mount-time status fetch returns the pre-save job and only the save returns
+    // the override, so the row can show 30 only if the save response reaches onSaved.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [purgeJob()] }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [purgeJob({ value: 30, overridden: true })] }),
+      });
     vi.stubGlobal("fetch", fetchMock);
     render(<CronJobsAdminView jobs={[purgeJob()]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Delete after (days): 90 (default)")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
     const input = (await screen.findByLabelText("Delete after (days)")) as HTMLInputElement;
@@ -532,6 +542,8 @@ describe("CronJobsAdminView", () => {
       expect(screen.queryByLabelText("Delete after (days)")).not.toBeInTheDocument(),
     );
     expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
+    // Mount fetch plus the save; nothing else refetched the status list.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not post when Save is pressed without changes", async () => {
