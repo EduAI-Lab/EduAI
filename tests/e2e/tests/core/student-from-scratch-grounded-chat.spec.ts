@@ -19,7 +19,6 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 import { CORE_URL } from "../../playwright.config";
 import { createAdmin, createInstructor, registerUser } from "../helpers/auth";
 
-const RUN_SUFFIX = Date.now().toString().slice(-5);
 const PLANTED_PHRASE = "QUOKKA_MIGRATION_WINDOW_17";
 const MATERIAL_TITLE = "Quokka Migration Policy";
 const MATERIAL_FILENAME = "Quokka Migration Policy.txt";
@@ -157,7 +156,9 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
       const studentProfile = (await meRes.json()) as MeProfile;
       const studentId = studentProfile.id;
 
-      const courseCode = `QKA-${RUN_SUFFIX}`;
+      // Per run, not per module: a retry re-enters this body in the same worker and would
+      // otherwise reuse the code and hit COURSE_IDENTITY_TAKEN (409).
+      const courseCode = `QKA-${Date.now().toString().slice(-5)}`;
       const createRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
         form: coursePayload(instrId, courseCode),
       });
@@ -237,7 +238,11 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
       await input.fill(STUDENT_QUESTION);
       await page.getByRole("button", { name: "Send message" }).click();
 
-      await expect(page.getByText("Source")).toBeVisible({ timeout: 20_000 });
+      // Anchor on the citation line, not a bare "Source": the privacy banner says
+      // "official UBC sources", and getByText is a case-insensitive substring match.
+      await expect(page.getByText(new RegExp(`Source\\W+${MATERIAL_TITLE}`))).toBeVisible({
+        timeout: 20_000,
+      });
       await expect(page.getByText(PLANTED_PHRASE)).toBeVisible();
     } finally {
       await adminCtx.dispose();
