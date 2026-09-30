@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 
 const mockSpawn = vi.hoisted(() => vi.fn());
@@ -11,6 +11,10 @@ const mockTransaction = vi.hoisted(() => vi.fn());
 const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
+const mockSettingFindMany = vi.hoisted(() => vi.fn());
+const mockSettingFindUnique = vi.hoisted(() => vi.fn());
+const mockSettingUpsert = vi.hoisted(() => vi.fn());
+const mockSettingDeleteMany = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringInvitations = vi.hoisted(() => vi.fn());
 
@@ -29,6 +33,12 @@ vi.mock("~/lib/prisma.server", () => ({
       findMany: mockOverrideFindMany,
       upsert: mockOverrideUpsert,
       deleteMany: mockOverrideDeleteMany,
+    },
+    cronJobSetting: {
+      findMany: mockSettingFindMany,
+      findUnique: mockSettingFindUnique,
+      upsert: mockSettingUpsert,
+      deleteMany: mockSettingDeleteMany,
     },
   },
 }));
@@ -53,6 +63,10 @@ const {
   resolveCronOutputMaxBytes,
   triggerCronJobAsync,
   dispatchManualCronRuns,
+  getCronJobSetting,
+  updateCronJobSetting,
+  resetCronJobSetting,
+  CronJobSettingError,
   KNOWN_CRON_JOBS,
 } = await import("~/lib/db.cron-jobs.server");
 
@@ -149,6 +163,14 @@ beforeEach(() => {
   mockOverrideFindMany.mockResolvedValue([]);
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
+  mockSettingFindMany.mockReset();
+  mockSettingFindUnique.mockReset();
+  mockSettingUpsert.mockReset();
+  mockSettingDeleteMany.mockReset();
+  mockSettingFindMany.mockResolvedValue([]);
+  mockSettingFindUnique.mockResolvedValue(null);
+  mockSettingUpsert.mockResolvedValue({});
+  mockSettingDeleteMany.mockResolvedValue({ count: 0 });
   mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
   mockNotifyExpiringInvitations.mockResolvedValue({ notified: 0 });
   delete globalThis.__manualCronRunIds;
@@ -718,5 +740,167 @@ describe("dispatchManualCronRuns", () => {
     expect(wasClaimed("run-unknown")).toBe(false);
     expect(mockNotifyExpiringApiKeys).not.toHaveBeenCalled();
     expect(mockSpawn).not.toHaveBeenCalled();
+  });
+});
+
+describe("cron job settings", () => {
+  const JOB = "test-settings-job";
+
+  beforeEach(() => {
+    if (!KNOWN_CRON_JOBS.some((j) => j.name === JOB)) {
+      KNOWN_CRON_JOBS.push({
+        name: JOB,
+        description: "Settings fixture",
+        schedule: "7 7 * * *",
+        scheduleLabel: "Daily at 07:07 UTC",
+        script: "Core handler",
+        execution: "CORE",
+        settings: [
+          {
+            key: "retainDays",
+            label: "Delete after (days)",
+            type: "int",
+            min: 1,
+            max: 3650,
+            default: 90,
+          },
+        ],
+      });
+    }
+  });
+
+  afterAll(() => {
+    const i = KNOWN_CRON_JOBS.findIndex((j) => j.name === JOB);
+    if (i >= 0) KNOWN_CRON_JOBS.splice(i, 1);
+  });
+
+  describe("getCronJobSetting", () => {
+    it("returns the declared default when no override is stored", async () => {
+      await expect(getCronJobSetting(JOB, "retainDays")).resolves.toBe(90);
+      expect(mockSettingFindUnique).toHaveBeenCalledWith({
+        where: { jobName_key: { jobName: JOB, key: "retainDays" } },
+      });
+    });
+
+    it("returns a valid stored override", async () => {
+      mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: "30" });
+      await expect(getCronJobSetting(JOB, "retainDays")).resolves.toBe(30);
+    });
+
+    it.each(["0", "3651", "abc", "1.5", "", " "])(
+      "falls back to the default for an invalid stored value %j",
+      async (stored) => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: stored });
+        await expect(getCronJobSetting(JOB, "retainDays")).resolves.toBe(90);
+        expect(warn).toHaveBeenCalled();
+      },
+    );
+
+    it("throws for a setting the job does not declare", async () => {
+      await expect(getCronJobSetting(JOB, "nope")).rejects.toThrow(/Unknown cron job setting/);
+      await expect(getCronJobSetting("ghost-job", "retainDays")).rejects.toThrow(
+        /Unknown cron job setting/,
+      );
+    });
+  });
+
+  describe("updateCronJobSetting", () => {
+    it("upserts a valid value and returns the previous and new values", async () => {
+      mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: "60" });
+      await expect(updateCronJobSetting(JOB, "retainDays", 30, "admin-1")).resolves.toEqual({
+        previous: 60,
+        value: 30,
+      });
+      expect(mockSettingUpsert).toHaveBeenCalledWith({
+        where: { jobName_key: { jobName: JOB, key: "retainDays" } },
+        create: { jobName: JOB, key: "retainDays", value: "30", updatedBy: "admin-1" },
+        update: { value: "30", updatedBy: "admin-1" },
+      });
+    });
+
+    it("reports the default as the previous value when nothing was stored", async () => {
+      await expect(updateCronJobSetting(JOB, "retainDays", 30, "admin-1")).resolves.toEqual({
+        previous: 90,
+        value: 30,
+      });
+    });
+
+    it.each([
+      [0, /between 1 and 3650/],
+      [3651, /between 1 and 3650/],
+      [1.5, /whole number/],
+      [Number.NaN, /whole number/],
+    ])("rejects %s without writing", async (value, message) => {
+      const error = await updateCronJobSetting(JOB, "retainDays", value, "admin-1").catch(
+        (e: Error) => e,
+      );
+      expect(error).toBeInstanceOf(CronJobSettingError);
+      expect((error as Error).message).toMatch(message);
+      expect((error as Error).message).toContain("Delete after (days)");
+      expect(mockSettingUpsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects an unknown job or key", async () => {
+      await expect(updateCronJobSetting("ghost-job", "retainDays", 30, "a")).rejects.toThrow(
+        "Unknown job: ghost-job",
+      );
+      await expect(updateCronJobSetting(JOB, "nope", 30, "a")).rejects.toThrow(
+        `Unknown setting "nope" for job ${JOB}`,
+      );
+      expect(mockSettingUpsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resetCronJobSetting", () => {
+    it("deletes the override and returns the previous value and the default", async () => {
+      mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: "30" });
+      await expect(resetCronJobSetting(JOB, "retainDays")).resolves.toEqual({
+        previous: 30,
+        value: 90,
+      });
+      expect(mockSettingDeleteMany).toHaveBeenCalledWith({
+        where: { jobName: JOB, key: "retainDays" },
+      });
+    });
+
+    it("rejects an unknown key without deleting", async () => {
+      await expect(resetCronJobSetting(JOB, "nope")).rejects.toBeInstanceOf(CronJobSettingError);
+      expect(mockSettingDeleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("listCronJobStatuses settings", () => {
+    it("attaches default settings with overridden:false", async () => {
+      const jobs = await listCronJobStatuses();
+      const entry = jobs.find((j) => j.name === JOB)!;
+      expect(entry.settings).toEqual([
+        expect.objectContaining({ key: "retainDays", value: 90, default: 90, overridden: false }),
+      ]);
+    });
+
+    it("applies a stored override with overridden:true", async () => {
+      mockSettingFindMany.mockResolvedValue([{ jobName: JOB, key: "retainDays", value: "30" }]);
+      const jobs = await listCronJobStatuses();
+      expect(jobs.find((j) => j.name === JOB)!.settings![0]).toMatchObject({
+        value: 30,
+        overridden: true,
+      });
+    });
+
+    it("treats an invalid stored override as the default, not overridden", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockSettingFindMany.mockResolvedValue([{ jobName: JOB, key: "retainDays", value: "0" }]);
+      const jobs = await listCronJobStatuses();
+      expect(jobs.find((j) => j.name === JOB)!.settings![0]).toMatchObject({
+        value: 90,
+        overridden: false,
+      });
+    });
+
+    it("leaves settings undefined on jobs that declare none", async () => {
+      const jobs = await listCronJobStatuses();
+      expect(jobs.find((j) => j.name === "backup-nightly")!.settings).toBeUndefined();
+    });
   });
 });
