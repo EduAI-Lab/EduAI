@@ -416,7 +416,7 @@ describe("POST /api/admin/cron-jobs (action) — intent: update-setting", () => 
     vi.mocked(listCronJobStatuses).mockResolvedValue([{ name: "backup-nightly" } as any]);
   });
 
-  function update(extra: Record<string, string | number | null>) {
+  function update(extra: Record<string, string | number | boolean | number[] | null>) {
     return action(
       makeArgs(
         makeRequest("/api/admin/cron-jobs", "POST", {
@@ -467,9 +467,45 @@ describe("POST /api/admin/cron-jobs (action) — intent: update-setting", () => 
     );
   });
 
-  it("passes NaN through for a missing or null value so validation rejects it", async () => {
-    await update({ key: "retainDays", value: null });
+  // Only a JSON number or a string of digits is a value; everything else reaches
+  // updateCronJobSetting as NaN. Its real no-write rejection of NaN is covered in
+  // db.cron-jobs.server.test.ts, so here it is mocked to reject non-integers the same way.
+  it.each([
+    ["null", null],
+    ["true", true],
+    ["false", false],
+    ["an empty string", ""],
+    ["a padded numeric string", " 30 "],
+    ["a one-element array", [5]],
+  ])("rejects %s as not a whole number with 400 and no audit", async (_label, value) => {
+    vi.mocked(updateCronJobSetting).mockImplementationOnce(async (_job, _key, parsed) => {
+      if (!Number.isSafeInteger(parsed)) {
+        throw new CronJobSettingError('"Delete after (days)" must be a whole number');
+      }
+      return { previous: 90, value: parsed };
+    });
+    const res = await update({ key: "retainDays", value });
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe('"Delete after (days)" must be a whole number');
     expect(vi.mocked(updateCronJobSetting).mock.calls[0][2]).toBeNaN();
+    expect(listCronJobStatuses).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when jobName is missing, without touching settings", async () => {
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-setting",
+          key: "retainDays",
+          value: 30,
+        }),
+      ),
+    );
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe("jobName is required");
+    expect(updateCronJobSetting).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
   });
 
   it("returns 400 when key is missing", async () => {
@@ -522,6 +558,21 @@ describe("POST /api/admin/cron-jobs (action) — intent: reset-setting", () => {
         }),
       ),
     );
+  });
+
+  it("returns 400 when jobName is missing, without touching settings", async () => {
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-setting",
+          key: "retainDays",
+        }),
+      ),
+    );
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe("jobName is required");
+    expect(resetCronJobSetting).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an unknown setting", async () => {

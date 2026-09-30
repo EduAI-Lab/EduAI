@@ -1,6 +1,7 @@
 import { data } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import cron from "node-cron";
+import { z } from "zod";
 
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
@@ -56,6 +57,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     { request },
   );
 }
+
+/**
+ * A setting value is a JSON number or a string of digits, nothing else. `Number()`
+ * alone would turn `true` into 1, `" 30 "` into 30, `[5]` into 5 and `""`/`false`
+ * into 0. Anything this rejects is passed on as NaN so `updateCronJobSetting`
+ * rejects it as "must be a whole number".
+ */
+const settingValueInputSchema = z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]);
 
 export async function action({ request }: ActionFunctionArgs) {
   return withErrorResponse(
@@ -128,7 +137,10 @@ export async function action({ request }: ActionFunctionArgs) {
         return data({ jobs });
       }
 
-      if ((intent === "update-setting" || intent === "reset-setting") && jobName) {
+      if (intent === "update-setting" || intent === "reset-setting") {
+        if (!jobName) {
+          return data({ error: "jobName is required" }, { status: 400 });
+        }
         const { key } = body;
         if (!key) {
           return data({ error: "key is required" }, { status: 400 });
@@ -137,7 +149,12 @@ export async function action({ request }: ActionFunctionArgs) {
         try {
           change =
             intent === "update-setting"
-              ? await updateCronJobSetting(jobName, key, Number(body.value ?? Number.NaN), user.id)
+              ? await updateCronJobSetting(
+                  jobName,
+                  key,
+                  settingValueInputSchema.safeParse(body.value).data ?? Number.NaN,
+                  user.id,
+                )
               : await resetCronJobSetting(jobName, key);
         } catch (error) {
           if (error instanceof CronJobSettingError) {
