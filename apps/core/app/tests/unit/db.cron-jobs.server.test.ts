@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 
 const mockSpawn = vi.hoisted(() => vi.fn());
@@ -709,6 +709,117 @@ describe("triggerCronJobAsync", () => {
       vi.useRealTimers();
       if (originalLeaseMs === undefined) delete process.env.CRON_RUN_LEASE_MS;
       else process.env.CRON_RUN_LEASE_MS = originalLeaseMs;
+    }
+  });
+});
+
+describe("triggerCronJobAsync CORE lease heartbeat", () => {
+  const PURGE_RESULT = {
+    purged: 5,
+    truncated: false,
+    cutoff: new Date("2026-07-02T05:00:00.000Z"),
+    retainDays: 90,
+  };
+  let originalLeaseMs: string | undefined;
+
+  function renewCalls(): unknown[][] {
+    return mockExecuteRaw.mock.calls.filter((call) =>
+      sqlTextOf(call).includes('SET "leaseHeartbeatAt" = statement_timestamp()'),
+    );
+  }
+
+  function finishCalls(): unknown[][] {
+    return mockExecuteRaw.mock.calls.filter((call) =>
+      sqlTextOf(call).includes('"finishedAt" = statement_timestamp()'),
+    );
+  }
+
+  /** A handler that stays in flight until the test settles it. */
+  function deferredPurge() {
+    let resolvePurge: (value: typeof PURGE_RESULT) => void = () => {};
+    let rejectPurge: (reason: Error) => void = () => {};
+    mockPurgeDeletedMaterials.mockReturnValue(
+      new Promise<typeof PURGE_RESULT>((resolve, reject) => {
+        resolvePurge = resolve;
+        rejectPurge = reject;
+      }),
+    );
+    return {
+      resolve: () => resolvePurge(PURGE_RESULT),
+      reject: (reason: Error) => rejectPurge(reason),
+    };
+  }
+
+  beforeEach(() => {
+    originalLeaseMs = process.env.CRON_RUN_LEASE_MS;
+    // A 15s lease heartbeats every 5s (a third of the lease).
+    process.env.CRON_RUN_LEASE_MS = "15000";
+    // Fake only the interval so the dynamic handler import and vi.waitFor keep real timeouts.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalLeaseMs === undefined) delete process.env.CRON_RUN_LEASE_MS;
+    else process.env.CRON_RUN_LEASE_MS = originalLeaseMs;
+  });
+
+  it("renews the lease while a long Core handler runs and stops once it succeeds", async () => {
+    const purge = deferredPurge();
+    triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-h", "owner-h", "CORE");
+    await vi.waitFor(() => expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce());
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(renewCalls()).toHaveLength(1);
+    expect(renewCalls()[0]).toEqual(expect.arrayContaining(["run-h", "owner-h"]));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(renewCalls()).toHaveLength(2);
+    expect(finishCalls()).toHaveLength(0);
+
+    purge.resolve();
+    await vi.waitFor(() => expect(finishCalls()).toHaveLength(1));
+    expect(finishCalls()[0][1]).toBe("SUCCESS");
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(renewCalls()).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops renewing once a long Core handler fails", async () => {
+    const purge = deferredPurge();
+    triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-f", "owner-f", "CORE");
+    await vi.waitFor(() => expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce());
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(renewCalls()).toHaveLength(1);
+
+    purge.reject(new Error("database went away"));
+    await vi.waitFor(() => expect(finishCalls()).toHaveLength(1));
+    const [, status, message] = finishCalls()[0];
+    expect(status).toBe("ERROR");
+    expect(message).toContain("database went away");
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(renewCalls()).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("logs a warning when the run's lease was lost so its result was not recorded", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockPurgeDeletedMaterials.mockResolvedValue(PURGE_RESULT);
+    // The finishing UPDATE matched no row: the lease expired and was reaped or taken over.
+    mockExecuteRaw.mockResolvedValue(0);
+
+    try {
+      triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-l", "owner-l", "CORE");
+
+      await vi.waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("result was not recorded")),
+      );
+      expect(finishCalls()).toHaveLength(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("purge-deleted-materials"));
+    } finally {
+      warn.mockRestore();
     }
   });
 });

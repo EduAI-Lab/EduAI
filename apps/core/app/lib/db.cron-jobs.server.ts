@@ -256,7 +256,7 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
         return {
           ...def,
           value: effectiveSettingValue(job.name, def, row),
-          overridden: row != null && parseSettingValue(def, row.value) !== null,
+          overridden: row !== undefined && parseSettingValue(def, row.value) !== null,
         };
       });
     }
@@ -642,6 +642,49 @@ const CORE_JOB_HANDLERS = {
   },
 } satisfies Record<string, () => Promise<CoreJobHandler>>;
 
+type CronLeaseLossReason = "lost" | "renewal-failed";
+
+/**
+ * Keep a run's lease alive while its work is in flight. Every execution path
+ * (spawned SCRIPT jobs and in-process CORE handlers) shares this heartbeat so a
+ * run that outlives one lease period is not reaped mid-flight, which would drop
+ * its recorded outcome and let a second run of the same job start. Returns a
+ * stop function; `onLeaseLost` fires when the database no longer confirms the
+ * lease (ownership changed or the renewal query failed).
+ */
+function startCronRunLeaseHeartbeat(
+  jobName: string,
+  runId: string,
+  leaseOwner: string,
+  onLeaseLost: (reason: CronLeaseLossReason) => void,
+): () => void {
+  let stopped = false;
+  let leaseRenewalInFlight = false;
+  const leaseHeartbeatMs = Math.max(5_000, Math.floor(resolveCronRunLeaseMs() / 3));
+  const heartbeatTimer = setInterval(() => {
+    if (stopped || leaseRenewalInFlight) return;
+    leaseRenewalInFlight = true;
+    void renewCronRunLease(runId, leaseOwner)
+      .then((renewed) => {
+        if (!renewed) {
+          onLeaseLost("lost");
+        }
+      })
+      .catch((cause: unknown) => {
+        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(cause));
+        onLeaseLost("renewal-failed");
+      })
+      .finally(() => {
+        leaseRenewalInFlight = false;
+      });
+  }, leaseHeartbeatMs);
+  heartbeatTimer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(heartbeatTimer);
+  };
+}
+
 export function triggerCronJobAsync(
   jobName: string,
   script: string,
@@ -664,8 +707,19 @@ export function triggerCronJobAsync(
       return;
     }
 
+    // An in-process handler cannot be killed, so a lost lease is only reported;
+    // the finish below is then fenced out and logged rather than recorded.
+    const stopHeartbeat = startCronRunLeaseHeartbeat(jobName, runId, leaseOwner, (reason) =>
+      console.warn(
+        reason === "lost"
+          ? `[cron] ${jobName} lease ownership was lost while its Core handler was running`
+          : `[cron] ${jobName} lease could not be renewed while its Core handler was running`,
+      ),
+    );
+
     void resolve()
       .then((handler) => handler())
+      .finally(stopHeartbeat)
       .then(({ message }) => finishCronRun(runId, leaseOwner, "SUCCESS", message, 0))
       .catch((cause: unknown) =>
         finishCronRun(
@@ -680,7 +734,14 @@ export function triggerCronJobAsync(
         ).catch((cause: unknown) =>
           console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
         ),
-      );
+      )
+      .then((finished) => {
+        if (finished === false) {
+          console.warn(
+            `[cron] ${jobName} run lease was lost before completion; its result was not recorded`,
+          );
+        }
+      });
     return;
   }
 
@@ -711,7 +772,6 @@ export function triggerCronJobAsync(
   let exceededOutputLimit = false;
   let finalized = false;
   let terminating = false;
-  let leaseRenewalInFlight = false;
   let forcedMessage: string | undefined;
   let killTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -754,32 +814,20 @@ export function triggerCronJobAsync(
   child.stdout?.on("data", capture);
   child.stderr?.on("data", capture);
 
-  const leaseHeartbeatMs = Math.max(5_000, Math.floor(resolveCronRunLeaseMs() / 3));
-  const heartbeatTimer = setInterval(() => {
-    if (finalized || leaseRenewalInFlight) return;
-    leaseRenewalInFlight = true;
-    void renewCronRunLease(runId, leaseOwner)
-      .then((renewed) => {
-        if (!renewed) {
-          terminate("Cron run lease ownership was lost; process terminated");
-        }
-      })
-      .catch((cause: unknown) => {
-        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(cause));
-        // Continuing after the database can no longer confirm our lease risks
-        // overlapping external side effects with a successor after expiry.
-        terminate("Cron run lease could not be renewed; process terminated");
-      })
-      .finally(() => {
-        leaseRenewalInFlight = false;
-      });
-  }, leaseHeartbeatMs);
-  heartbeatTimer.unref?.();
+  const stopHeartbeat = startCronRunLeaseHeartbeat(jobName, runId, leaseOwner, (reason) => {
+    if (reason === "lost") {
+      terminate("Cron run lease ownership was lost; process terminated");
+      return;
+    }
+    // Continuing after the database can no longer confirm our lease risks
+    // overlapping external side effects with a successor after expiry.
+    terminate("Cron run lease could not be renewed; process terminated");
+  });
 
   const finalize = (code: number | null, overrideMessage?: string): void => {
     if (finalized) return;
     finalized = true;
-    clearInterval(heartbeatTimer);
+    stopHeartbeat();
     if (killTimer) clearTimeout(killTimer);
 
     const rawExitCode = code ?? 1;
