@@ -191,6 +191,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/models",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/models.ts",
+    note: "Active chat models in `provider:modelId` form — what /api/chat and /api/completion will accept (#1805). Unpaginated; same auth ladder as /api/completion.",
+  }),
+  entry({
+    method: "GET",
     path: "/api/chats",
     readiness: "excluded",
     reason: "Chat UI persistence — not ops",

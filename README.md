@@ -62,6 +62,8 @@ Core and its extensions use the shared EduAI graduation-cap mark for in-app bran
 
 Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
 
+To discover which AI models are usable rather than to administer them, use `GET /api/models` instead of `/api/ai-models`. It needs no pagination, accepts the same credentials as `POST /api/completion` (admin `x-api-key`, an ordinary session, or the `Bearer` service key), and returns `{ models: [{ id, provider, name, supportsTools, supportsImages, maxTokens }] }` where `id` is the `provider:modelId` string to pass as `model`.
+
 Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
 A course may have **several instructors of record**, and every surface that shows a course shows all of them. `GET /api/courses/:id` and the course list both return an `instructors` array (id, name, email, `isPrimary`) resolved from the active `INSTRUCTOR` enrollments, alongside the single `instructor` field kept for existing consumers — `Course.instructorId` names only the course *head*. Instructor emails are redacted for student audiences, matching the TA roster; the `service` audience used by AI Tutor and Question Maker is unchanged, so their read-through mappers (which copy a fixed field list) are unaffected.
 
@@ -70,6 +72,8 @@ Core conversations are pinned to a single course so their history and RAG contex
 Async AI jobs expose `GET /api/ai-jobs/:jobId` for owner-scoped status polling. The response includes a live `queuePosition` and an advisory time-to-completion `etaSeconds` derived from worker-sized waves and recent completions in the job's persisted pool; the estimate is null until that pool has usable timing history.
 
 Course enrollment pickers use the paginated `/api/users` contract with a managed `courseId`, `role=STUDENT`, `isActive=true`, and `exclude=enrolled` or `exclude=ta`. This narrowly scoped mode is available to course managers only, filters candidates on the server, and does not expose the general user directory.
+
+**Adding and removing instructors:** `Enrollment` carries any number of active `INSTRUCTOR` rows per course and `resolveCourseAccess` resolves access from those rows, not from `Course.instructorId` — that column names only the course *head*. Adding an instructor (`POST /api/courses/:id/enrollments` with `role: "INSTRUCTOR"`, rank >= 3) never deactivates another, and removing one is refused with `409 INSTRUCTOR_FLOOR_VIOLATION` if it would leave the course with none. Removing the head hands that column to the longest-standing remaining instructor. The instructor picker searches the whole staff set — an ADMIN or UNIT_ADMIN account can hold a course `INSTRUCTOR` enrollment — via `/api/users?courseId=&exclude=instructor`, which is pinned to `role=ADMIN,UNIT_ADMIN,INSTRUCTOR&isActive=true` and gated at rank >= 3 so it cannot become a platform user directory. Creating a course uses the same staff set: the create-course instructor select, `createCourse` validation and the admin chat `create_course` tool all read `INSTRUCTOR_CANDIDATE_ROLES` (`apps/core/app/lib/rbac/instructor-candidates.ts`), so an ADMIN or UNIT_ADMIN can be made a new course's instructor directly. See [`docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) for the operational procedure, including what an enrollment does *not* grant an ADMIN account.
 
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
@@ -83,7 +87,7 @@ Full-stack tool for building course question banks and assessments. Supports AI-
 
 Question authoring surfaces let instructors expand an explicit “Add topic” control when they need to create a Core-synchronized course topic. Authoring toasts appear in the top-right and can be dismissed.
 
-Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
+Campus AI defaults (as of the Qwen 3.5 fleet generation): generation/OCR prefer `vllm:qwen3.5-9b-instruct`, connectivity probes prefer `vllm:qwen3.5-2b-instruct` (`FALLBACK_GENERATION_MODEL` / `FALLBACK_PROBE_MODEL` in the Question Maker frontend), and both resolve from Core’s live model catalog when available — these ids are only the last resort when that catalog is empty. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
 Core disables Qwen3.5 thinking-mode output for vLLM chat requests by default. Set `VLLM_DISABLE_THINKING=0` only when the model's `<think>` reasoning output is explicitly required.
 
@@ -372,6 +376,20 @@ Individual database commands:
 | `npm run docker:dev:nuke` | **Full teardown** — stop all services and delete all data volumes (irreversible; use when you need a clean slate) |
 
 `docker compose up --wait` requires Docker Compose v2 with healthcheck support.
+
+**Not every database object is declared in `schema.prisma`.** Prisma cannot express
+generated columns, ivfflat indexes or a `WHERE` predicate on a unique index, so those
+live in hand-written files under `apps/core/prisma/migrations/` and are applied to
+deployed databases by `prisma migrate deploy`. Integration databases are provisioned
+with `prisma db push`, which reads only `schema.prisma` and therefore skips them —
+`apps/core/app/tests/globalSetup.ts` re-applies each one explicitly. **Add a raw-SQL
+migration to that file in the same change**, or the object is silently missing from
+every integration run and any test meant to prove it is enforced passes for the wrong
+reason. Current entries: the `material_chunks.content_tsv` generated column, the
+`material_embeddings` ivfflat index, and the partial unique index
+`courses_code_startDate_section_active_key` (`#1842`), which lets a soft-deleted
+course release its `(code, startDate, section)` identity so the same course can be
+created again.
 
 ### Inspecting the database
 

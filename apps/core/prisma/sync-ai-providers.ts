@@ -3,10 +3,12 @@
  * Safe to run on every dev start (existing DB with users).
  */
 import { PrismaClient } from "@prisma/client";
+import { DIRECT_ADDRESSED_MODEL_IDS } from "~/lib/ai/campus-model-catalog";
 import {
   VLLM_MODELS,
   VLLM_RETIRED_MODEL_IDS,
   VLLM_ROUTING_TIER_ASSIGNMENTS,
+  VLLM_UNTIERED_ENERGY_ESTIMATES,
 } from "./ai-model-catalog";
 
 const prisma = new PrismaClient();
@@ -47,8 +49,7 @@ async function applyRoutingTierAssignments() {
     });
   }
 
-  // Clear stale tiers on retired vLLM rows (e.g. after a fleet generation
-  // change) so loadTierRows() cannot keep selecting them — mirrors seed.ts.
+  // Clear stale tiers and deactivate still-tiered retired vLLM rows — mirrors seed.ts.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -61,8 +62,29 @@ async function applyRoutingTierAssignments() {
         routerTier: { not: null },
         modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
       },
+      data: { routerTier: null, isActive: false },
+    });
+
+    // Direct-addressed models stay active but must not carry a stale tier.
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { in: [...DIRECT_ADDRESSED_MODEL_IDS] },
+      },
       data: { routerTier: null },
     });
+
+    // Untiered models still need energy figures, or their turns report none.
+    for (const row of VLLM_UNTIERED_ENERGY_ESTIMATES) {
+      await prisma.aIModel.updateMany({
+        where: { providerId: vllm.id, modelId: row.modelId },
+        data: {
+          estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+          averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+        },
+      });
+    }
   }
 }
 
@@ -234,7 +256,10 @@ async function main() {
         providerId_modelId: { providerId: vllm.id, modelId: m.modelId },
       },
       update: {
+        name: m.name,
+        description: m.description,
         isActive: true,
+        maxTokens: m.maxTokens,
         supportsTools: m.supportsTools,
         supportsImages: m.supportsImages,
       },

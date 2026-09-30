@@ -249,7 +249,7 @@ export function FleetConfigPanel({
                           models: event.target.value.split(",").map((model) => model.trim()),
                         })
                       }
-                      placeholder="qwen2.5-7b-instruct, qwen2.5-32b-instruct"
+                      placeholder="qwen3.5-2b-instruct, qwen3.5-9b-instruct"
                     />
                     <span className="block text-xs font-normal text-muted-foreground">
                       Comma-separated model IDs used only if the live model check fails.
