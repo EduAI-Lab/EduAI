@@ -127,6 +127,27 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
+    name: "purge-deleted-materials",
+    description: "Permanently delete course materials soft-deleted more than N days ago",
+    // After backup-nightly (02:00) so a purged material is still in that night's dump.
+    schedule: "0 5 * * *",
+    scheduleLabel: "Daily at 05:00 UTC",
+    script: "Core handler",
+    execution: "CORE",
+    settings: [
+      {
+        key: "retainDays",
+        label: "Delete after (days)",
+        description:
+          "Materials soft-deleted longer than this are permanently removed along with their embeddings and cannot be restored.",
+        type: "int",
+        min: 1,
+        max: 3650,
+        default: 90,
+      },
+    ],
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
@@ -609,6 +630,11 @@ const CORE_JOB_HANDLERS = {
       const { notified } = await notifyExpiringInvitations();
       return { message: `Sent ${notified} invitation expiry reminder(s)` };
     };
+  },
+  "purge-deleted-materials": async () => {
+    const { purgeDeletedMaterials, formatPurgeMessage } =
+      await import("~/lib/cron-purge-deleted-materials.server");
+    return async () => ({ message: formatPurgeMessage(await purgeDeletedMaterials()) });
   },
   "ai-status-probe": async () => {
     const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");

@@ -17,6 +17,7 @@ const mockSettingUpsert = vi.hoisted(() => vi.fn());
 const mockSettingDeleteMany = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringInvitations = vi.hoisted(() => vi.fn());
+const mockPurgeDeletedMaterials = vi.hoisted(() => vi.fn());
 
 const runAiStatusProbeMock = vi.hoisted(() => vi.fn());
 
@@ -49,6 +50,11 @@ vi.mock("~/lib/cron-notify-api-key-expiry.server", () => ({
 
 vi.mock("~/lib/cron-notify-invitation-expiry.server", () => ({
   notifyExpiringInvitations: mockNotifyExpiringInvitations,
+}));
+
+vi.mock("~/lib/cron-purge-deleted-materials.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/cron-purge-deleted-materials.server")>()),
+  purgeDeletedMaterials: mockPurgeDeletedMaterials,
 }));
 
 const {
@@ -173,6 +179,12 @@ beforeEach(() => {
   mockSettingDeleteMany.mockResolvedValue({ count: 0 });
   mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
   mockNotifyExpiringInvitations.mockResolvedValue({ notified: 0 });
+  mockPurgeDeletedMaterials.mockResolvedValue({
+    purged: 0,
+    truncated: false,
+    cutoff: new Date("2026-07-02T05:00:00.000Z"),
+    retainDays: 90,
+  });
   delete globalThis.__manualCronRunIds;
 });
 
@@ -477,6 +489,39 @@ describe("KNOWN_CRON_JOBS registry", () => {
     );
     expect(slots).not.toContain(invitationJob()!.schedule);
   });
+
+  describe("purge-deleted-materials", () => {
+    const purgeJob = () => KNOWN_CRON_JOBS.find((j) => j.name === "purge-deleted-materials");
+
+    it("is a daily Core-handler job at 05:00 UTC", () => {
+      expect(purgeJob()).toMatchObject({
+        schedule: "0 5 * * *",
+        scheduleLabel: "Daily at 05:00 UTC",
+        script: "Core handler",
+        execution: "CORE",
+      });
+    });
+
+    it("declares the retainDays setting with a 90-day default", () => {
+      expect(purgeJob()!.settings).toEqual([
+        {
+          key: "retainDays",
+          label: "Delete after (days)",
+          description:
+            "Materials soft-deleted longer than this are permanently removed along with their embeddings and cannot be restored.",
+          type: "int",
+          min: 1,
+          max: 3650,
+          default: 90,
+        },
+      ]);
+    });
+
+    it("runs after backup-nightly and does not share a slot with another job", () => {
+      const others = KNOWN_CRON_JOBS.filter((j) => j.name !== "purge-deleted-materials");
+      expect(others.map((j) => j.schedule)).not.toContain(purgeJob()!.schedule);
+    });
+  });
 });
 
 describe("triggerCronJobAsync", () => {
@@ -507,6 +552,27 @@ describe("triggerCronJobAsync", () => {
     await vi.waitFor(() => {
       expect(mockExecuteRaw).toHaveBeenCalledOnce();
     });
+  });
+
+  it("routes purge-deleted-materials to the purge handler and records its summary", async () => {
+    mockPurgeDeletedMaterials.mockResolvedValue({
+      purged: 3,
+      truncated: false,
+      cutoff: new Date("2026-07-02T05:00:00.000Z"),
+      retainDays: 90,
+    });
+    triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-p", "owner-p", "CORE");
+
+    await vi.waitFor(() => {
+      expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce();
+    });
+    expect(mockSpawn).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    });
+    expect(JSON.stringify(mockExecuteRaw.mock.calls[0])).toContain(
+      "Purged 3 material(s) soft-deleted before 2026-07-02",
+    );
   });
 
   it("reports an unknown Core job as an error instead of running the wrong handler", async () => {

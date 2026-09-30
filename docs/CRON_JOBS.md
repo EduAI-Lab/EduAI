@@ -245,10 +245,16 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `cleanup-invitations` | `30 3 * * *` (03:30 UTC) | Infra | Delete revoked/expired invitations past a 30-day grace period |
 | `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Core handler (`execution: "CORE"`) | Email users whose provider API keys expire in 7 days |
 | `notify-invitation-expiry` | `30 4 * * *` (04:30 UTC) | Core handler (`execution: "CORE"`) | Email pending invitees before their invitation expires; lead time derived from `INVITE_EXPIRY_HOURS` |
+| `purge-deleted-materials` | `0 5 * * *` (05:00 UTC) | Core handler (`execution: "CORE"`) | Permanently delete course materials soft-deleted more than `retainDays` days ago (default 90, admin-editable), with their chunks and embeddings; one `MATERIAL_PURGED` audit entry per material |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 
+### Per-job settings
+
+A job can declare tunable settings on its `KNOWN_CRON_JOBS` entry (`settings: [{ key, label, description, type: "int", min, max, default }]`). The code default applies until an admin saves a value on `/admin/cron-jobs` ("Edit settings"), which is stored in `cron_job_settings` (`CronJobSetting`, one row per `jobName` + `key`); "Reset to default" deletes the row. Handlers read the effective value with `getCronJobSetting(jobName, key)` at the start of each run, so changes apply on the next run without a restart. A stored value that is not an integer inside `min`–`max` is ignored with a warning and the default is used. Every change is audited as `CRON_SETTING_UPDATED` / `CRON_SETTING_RESET`.
+
 For data lifecycle jobs (user expiry, course deletion, etc.) see the [spec](implementations/EduAI_CronJob_DataLifecycle_Spec.md) — those scripts are defined there and are not yet registered in `KNOWN_CRON_JOBS`.
+
 ## Scheduler worker deployment
 
 Run one dedicated worker per environment with `npm run cron:worker -w edu-ai` (`apps/core/scripts/cron-worker.ts`). It calls `refreshCronSchedules()` at startup and again every 30 seconds, and stops the scheduler cleanly on `SIGINT`/`SIGTERM`. Monitor the process and its `[cron-worker]` logs; restart it if it exits unexpectedly.
