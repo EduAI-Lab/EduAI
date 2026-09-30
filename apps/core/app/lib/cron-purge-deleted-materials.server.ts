@@ -16,6 +16,16 @@ export const PURGE_MAX_BATCHES = 50;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * A soft-deleted row updated within this window is left alone. A Canvas re-sync
+ * restores a soft-deleted material by flipping it to PROCESSING without taking a
+ * lease or clearing `deletedAt`, then spends minutes downloading, extracting and
+ * re-embedding before it finally clears `deletedAt`. Throughout that window the
+ * row still looks old and unleased, so without this guard a purge could delete
+ * it mid-restore. The PROCESSING write bumps `updatedAt`, which this checks.
+ */
+export const RECENTLY_TOUCHED_MS = 60 * 60 * 1000;
+
 export type PurgeDeletedMaterialsResult = {
   purged: number;
   truncated: boolean;
@@ -28,7 +38,8 @@ export type PurgeDeletedMaterialsResult = {
  *
  * Only soft-deleted rows are eligible, and never one whose `extractionLeaseUntil`
  * is still live — a restore (`claimRestoreTarget`) or re-embed holds that lease
- * while it works on the row. Chunks, embeddings, upload blobs and topic-source
+ * while it works on the row — nor one updated within `RECENTLY_TOUCHED_MS`, which
+ * covers the lease-less Canvas re-sync restore. Chunks, embeddings, upload blobs and topic-source
  * links go with the row through `onDelete: Cascade`; receipts pointing at it via
  * `duplicateOfId` are set to null.
  *
@@ -46,6 +57,7 @@ export async function purgeDeletedMaterials(
   const eligible = {
     deletedAt: { lt: cutoff },
     OR: [{ extractionLeaseUntil: null }, { extractionLeaseUntil: { lt: now } }],
+    updatedAt: { lt: new Date(now.getTime() - RECENTLY_TOUCHED_MS) },
   };
 
   let purged = 0;

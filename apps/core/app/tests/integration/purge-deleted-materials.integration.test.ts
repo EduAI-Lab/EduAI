@@ -27,6 +27,16 @@ function daysAgo(days: number): Date {
   return new Date(Date.now() - days * DAY_MS);
 }
 
+/**
+ * Rows seeded (or updated) here get `updatedAt` = now, which the purge's
+ * recently-touched guard treats as in flight. Backdate it for rows a test expects
+ * to be judged only on `deletedAt` and the lease. Raw SQL, since a Prisma
+ * `update` would bump `@updatedAt` right back to now.
+ */
+async function backdateUpdatedAt(id: string, at: Date): Promise<void> {
+  await prisma.$executeRaw`UPDATE course_materials SET "updatedAt" = ${at} WHERE id = ${id}`;
+}
+
 async function exists(id: string): Promise<boolean> {
   return (await prisma.courseMaterial.count({ where: { id } })) === 1;
 }
@@ -63,6 +73,7 @@ describe("purgeDeletedMaterials (real Postgres)", () => {
       data: { courseId, name: `Purge topic ${old.id}` },
     });
     await prisma.courseTopicSource.create({ data: { topicId: topic.id, materialId: old.id } });
+    await backdateUpdatedAt(old.id, daysAgo(120));
 
     const result = await purgeDeletedMaterials();
 
@@ -92,6 +103,9 @@ describe("purgeDeletedMaterials (real Postgres)", () => {
       where: { id: leased.id },
       data: { extractionLeaseUntil: new Date(Date.now() + 10 * 60 * 1000) },
     });
+    // Old updatedAt on both, so each survives for its own reason, not the recent-touch guard.
+    await backdateUpdatedAt(recent.id, daysAgo(10));
+    await backdateUpdatedAt(leased.id, daysAgo(120));
     const unpublishedOnly = await seedMaterial({ courseId, unpublishedAt: daysAgo(400) });
 
     await purgeDeletedMaterials();
@@ -108,6 +122,7 @@ describe("purgeDeletedMaterials (real Postgres)", () => {
       where: { id: stale.id },
       data: { extractionLeaseUntil: daysAgo(1) },
     });
+    await backdateUpdatedAt(stale.id, daysAgo(1));
     await purgeDeletedMaterials();
     expect(await exists(stale.id)).toBe(false);
   });
@@ -119,6 +134,7 @@ describe("purgeDeletedMaterials (real Postgres)", () => {
       where: { id: receipt.id },
       data: { status: "FAILED", duplicateOfId: original.id },
     });
+    await backdateUpdatedAt(original.id, daysAgo(120));
 
     await purgeDeletedMaterials();
 
@@ -127,8 +143,28 @@ describe("purgeDeletedMaterials (real Postgres)", () => {
     expect(after.duplicateOfId).toBeNull();
   });
 
+  it("keeps an old soft-deleted material touched within the last hour (Canvas restore in flight)", async () => {
+    const restoring = await seedMaterial({ courseId, deletedAt: daysAgo(120) });
+    await backdateUpdatedAt(restoring.id, daysAgo(120));
+    // What a Canvas re-sync restore does first: flip to PROCESSING with no lease and
+    // deletedAt still set. The update bumps updatedAt to now.
+    await prisma.courseMaterial.update({
+      where: { id: restoring.id },
+      data: { status: "PROCESSING" },
+    });
+
+    await purgeDeletedMaterials();
+    expect(await exists(restoring.id)).toBe(true);
+
+    // The same row with an old updatedAt is purged: the guard, not the rest of the filter, kept it.
+    await backdateUpdatedAt(restoring.id, daysAgo(120));
+    await purgeDeletedMaterials();
+    expect(await exists(restoring.id)).toBe(false);
+  });
+
   it("honours an admin retainDays override", async () => {
     const twentyDays = await seedMaterial({ courseId, deletedAt: daysAgo(20) });
+    await backdateUpdatedAt(twentyDays.id, daysAgo(20));
 
     await purgeDeletedMaterials();
     expect(await exists(twentyDays.id)).toBe(true);

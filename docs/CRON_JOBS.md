@@ -245,7 +245,7 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `cleanup-invitations` | `30 3 * * *` (03:30 UTC) | Infra | Delete revoked/expired invitations past a 30-day grace period |
 | `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Core handler (`execution: "CORE"`) | Email users whose provider API keys expire in 7 days |
 | `notify-invitation-expiry` | `30 4 * * *` (04:30 UTC) | Core handler (`execution: "CORE"`) | Email pending invitees before their invitation expires; lead time derived from `INVITE_EXPIRY_HOURS` |
-| `purge-deleted-materials` | `0 5 * * *` (05:00 UTC) | Core handler (`execution: "CORE"`) | Permanently delete course materials soft-deleted more than `retainDays` days ago (default 90, admin-editable), with their chunks and embeddings; one `MATERIAL_PURGED` audit entry per material |
+| `purge-deleted-materials` | `0 5 * * *` (05:00 UTC) | Core handler (`execution: "CORE"`) | Permanently delete course materials soft-deleted more than `retainDays` days ago (default 90, admin-editable), with their chunks and embeddings, skipping rows under a live extraction lease or updated within the last hour (a Canvas re-sync restore in flight); one `MATERIAL_PURGED` audit entry per material |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 

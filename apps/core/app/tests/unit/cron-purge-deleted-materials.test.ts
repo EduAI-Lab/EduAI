@@ -18,10 +18,12 @@ const {
   PURGE_BATCH_SIZE,
   PURGE_MAX_BATCHES,
   PURGE_DELETED_MATERIALS_JOB,
+  RECENTLY_TOUCHED_MS,
 } = await import("~/lib/cron-purge-deleted-materials.server");
 
 const NOW = new Date("2026-09-30T05:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
+const TOUCHED_BEFORE = new Date(NOW.getTime() - 60 * 60 * 1000);
 
 function material(id: string) {
   return {
@@ -70,7 +72,7 @@ describe("purgeDeletedMaterials", () => {
     expect(mockDeleteMany).not.toHaveBeenCalled();
   });
 
-  it("selects only soft-deleted rows past the cutoff with no live extraction lease", async () => {
+  it("selects only soft-deleted rows past the cutoff with no live lease and no recent update", async () => {
     mockGetCronJobSetting.mockResolvedValue(30);
     scriptBatches([[]]);
     await purgeDeletedMaterials(NOW);
@@ -79,11 +81,21 @@ describe("purgeDeletedMaterials", () => {
       where: {
         deletedAt: { lt: cutoff },
         OR: [{ extractionLeaseUntil: null }, { extractionLeaseUntil: { lt: NOW } }],
+        updatedAt: { lt: TOUCHED_BEFORE },
       },
       select: { id: true, courseId: true, title: true, deletedAt: true, deletedBy: true },
       orderBy: { deletedAt: "asc" },
       take: PURGE_BATCH_SIZE,
     });
+  });
+
+  it("skips rows touched within the last hour, such as a Canvas restore in progress", async () => {
+    expect(RECENTLY_TOUCHED_MS).toBe(60 * 60 * 1000);
+    scriptBatches([[material("m1")]]);
+    await purgeDeletedMaterials(NOW);
+    // The guard sits in the shared filter, so the select and the delete both carry it.
+    expect(mockFindMany.mock.calls[0][0].where.updatedAt).toEqual({ lt: TOUCHED_BEFORE });
+    expect(mockDeleteMany.mock.calls[0][0].where.updatedAt).toEqual({ lt: TOUCHED_BEFORE });
   });
 
   it("re-checks eligibility inside the delete and audits each purged material", async () => {
@@ -95,6 +107,7 @@ describe("purgeDeletedMaterials", () => {
         id: { in: ["m1", "m2"] },
         deletedAt: { lt: cutoff },
         OR: [{ extractionLeaseUntil: null }, { extractionLeaseUntil: { lt: NOW } }],
+        updatedAt: { lt: TOUCHED_BEFORE },
       },
     });
     expect(result.purged).toBe(2);
