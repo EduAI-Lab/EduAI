@@ -25,6 +25,16 @@ export interface CourseMaterial {
    */
   availableAt?: string | null;
   chunks?: Array<{ id: string; content: string }>;
+  /**
+   * Set on a FAILED row whose content turned out to already exist on the
+   * course (#949) — points at the material that won.
+   */
+  duplicateOfId?: string | null;
+  /**
+   * FAILED rows only (#1749): whether the extracted text survived server-side,
+   * which decides whether indexing can be retried without re-uploading.
+   */
+  hasExtractedText?: boolean;
 }
 
 export interface CourseMaterialsUploadProps {

@@ -11,7 +11,7 @@
       "id": "cmps02",
       "baseUrl": "http://cmps02.ok.ubc.ca:8001",
       "jobTypes": ["interactive"],
-      "models": ["qwen2.5-32b-instruct"]
+      "models": ["qwen3.8-27b-instruct"]
     },
     {
       "id": "cmps03",

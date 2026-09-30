@@ -67,7 +67,10 @@ describe("course API DTO projections", () => {
       description: "Public description",
       hasAiConfig: true,
       responseStyleTags: ["socratic"],
-      instructor: { name: "Prof. Example", email: "prof@example.edu" },
+      // #1841: the head's address is withheld from students on this field too,
+      // not only on `instructors` — the page loader's projection carries the
+      // relation, so an unredacted copy here reaches the hydration payload.
+      instructor: { name: "Prof. Example", email: null },
       startDate: "2026-01-01T00:00:00.000Z",
     });
     for (const key of [

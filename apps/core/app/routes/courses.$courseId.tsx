@@ -14,6 +14,7 @@ import { CourseDetailStudentView } from "~/components/courses/course-detail-stud
 import { useCourseTopics } from "~/hooks/api/use-course-topics";
 import { useCourseEnrollments } from "~/hooks/api/use-course-enrollments";
 import { useCourseMaterials } from "~/hooks/api/use-course-materials";
+import type { CourseMaterial as CourseMaterialRow } from "~/hooks/api/use-course-materials";
 import { useCourseTAs } from "~/hooks/api/use-course-tas";
 import {
   Breadcrumb,
@@ -28,6 +29,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
+import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -71,25 +73,46 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Students cannot view unpublished courses by direct URL
   if (access === "student" && !course.isPublished) return redirect("/courses?access=unpublished");
 
-  // Reassigning the instructor is ADMIN/UNIT_ADMIN only. Load the instructor
-  // list only when usable.
+  // Managing course staff is ADMIN/UNIT_ADMIN only.
   const canManageStaff = access === "admin" || access === "unit";
 
-  // TA/student candidates are no longer preloaded here (#1042) — the platform-wide
-  // STUDENT list used to grow unbounded with total user count. The manager view's
-  // Candidates are searched on demand through the bounded, paginated users
-  // API; do not preload the platform-wide STUDENT list here.
-  const instructors = canManageStaff
-    ? await prisma.user.findMany({
-        where: { role: "INSTRUCTOR", isActive: true },
-        select: { id: true, name: true, email: true },
-        orderBy: { name: "asc" },
-      })
+  // TA/student/instructor candidates are not preloaded here (#1042) — the
+  // platform-wide lists grow unbounded with total user count. Candidates are
+  // searched on demand through the bounded, paginated users API.
+  //
+  // #1840: what IS loaded is the course's own instructors — every active
+  // INSTRUCTOR enrollment, not the single `Course.instructorId`. A course may
+  // have several, and the staff tab has to list all of them to offer a
+  // per-instructor remove. Bounded by the course's own staff count, and add/
+  // remove revalidate this loader rather than keeping a second client cache.
+  const courseInstructors = canManageStaff
+    ? (
+        await prisma.enrollment.findMany({
+          where: { courseId, role: "INSTRUCTOR", isActive: true },
+          select: {
+            id: true,
+            userId: true,
+            user: { select: { name: true, email: true, role: true } },
+          },
+          orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
+        })
+      ).map((row) => ({
+        enrollmentId: row.id,
+        id: row.userId,
+        name: row.user.name,
+        email: row.user.email,
+        platformRole: row.user.role,
+        isPrimary: row.userId === course.instructorId,
+      }))
     : [];
 
   const isStudent = access === "student";
 
   const audience = isStudent ? "student" : "staff";
+
+  // #1841: every active instructor, so the detail header stops rendering one of
+  // three. The serializer redacts their emails for the student audience.
+  const instructorSummaries = (await getCourseInstructors([course.id])).get(course.id) ?? [];
 
   return {
     // SAFETY: the serializer adds audience-specific fields on top of the
@@ -98,17 +121,46 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     course: serializeCourseForApi(course, {
       audience,
       detail: true,
+      instructors: instructorSummaries,
     }) as CourseDetail & JsonObject,
     // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
     // role=TA); the course query no longer includes a CourseTA relation.
     user,
     access,
-    instructors,
+    courseInstructors,
+  };
+}
+
+/**
+ * Narrow a materials-list row to the shape the upload/manager list draws.
+ *
+ * #1749: `duplicateOfId` and `hasExtractedText` are the only two fields the
+ * failure popover has to tell "already on the course" and "we read it but
+ * couldn't index it" apart from "we couldn't read it" — and they are what
+ * decides whether **Try again** is offered at all. Dropping them here made
+ * every FAILED row fall through to the unreadable-file copy with no retry,
+ * which is the one outcome the instructor cannot act on. Both stay optional:
+ * the list only resolves them for FAILED rows.
+ */
+export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
+  return {
+    id: m.id,
+    title: m.title,
+    mimeType: m.mimeType,
+    fileSize: m.fileSize,
+    status: m.status,
+    createdAt: m.createdAt,
+    chunkCount: m.chunkCount,
+    uploadedBy: m.uploadedBy ?? null,
+    visibleToStudents: m.visibleToStudents,
+    availableAt: m.availableAt ?? null,
+    duplicateOfId: m.duplicateOfId ?? null,
+    hasExtractedText: m.hasExtractedText,
   };
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access, instructors } = useLoaderData<typeof loader>();
+  const { course, user, access, courseInstructors } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const {
     topics,
@@ -136,6 +188,7 @@ export default function CourseDetailPage() {
     materials,
     uploadMaterial,
     deleteMaterial,
+    reprocessMaterial,
     hasMore: hasMoreMaterials,
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
@@ -146,7 +199,57 @@ export default function CourseDetailPage() {
   const [materialsError, setMaterialsError] = useState<string | null>(null);
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null);
 
-  const handleAssignInstructor = useCallback(
+  /**
+   * #1840: add an instructor WITHOUT touching anyone else's enrollment. This is
+   * the plain enrollments POST — `addEnrollment` creates an additional active
+   * INSTRUCTOR row and leaves `Course.instructorId` and every other enrollment
+   * alone. Contrast `handleSetPrimaryInstructor` below, which only moves the
+   * course-head column.
+   */
+  const handleAddInstructor = useCallback(
+    async (userId: string) => {
+      const res = await fetch(`/api/courses/${course.id}/enrollments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role: "INSTRUCTOR" }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "ADD_INSTRUCTOR_FAILED");
+      }
+      revalidator.revalidate();
+      await refetchEnrollments();
+    },
+    [course.id, revalidator, refetchEnrollments],
+  );
+
+  /**
+   * Remove one instructor. The server enforces the instructor floor, so the
+   * last one comes back as `409 INSTRUCTOR_FLOOR_VIOLATION`; the error code is
+   * passed through verbatim so the view can render a specific message instead
+   * of a generic failure.
+   */
+  const handleRemoveInstructor = useCallback(
+    async (enrollmentId: string) => {
+      const res = await fetch(`/api/courses/${course.id}/enrollments/${enrollmentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "REMOVE_INSTRUCTOR_FAILED");
+      }
+      revalidator.revalidate();
+      await refetchEnrollments();
+    },
+    [course.id, revalidator, refetchEnrollments],
+  );
+
+  /**
+   * Name the course head. Since #1840 this PATCH no longer deactivates the
+   * previous instructor — it only moves `Course.instructorId` (and enrolls the
+   * new head if they were not already an instructor).
+   */
+  const handleSetPrimaryInstructor = useCallback(
     async (instructorId: string) => {
       const res = await fetch(`/api/courses/${course.id}`, {
         method: "PATCH",
@@ -155,7 +258,7 @@ export default function CourseDetailPage() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to assign instructor");
+        throw new Error(body.error ?? "SET_PRIMARY_INSTRUCTOR_FAILED");
       }
       revalidator.revalidate();
       await refetchEnrollments();
@@ -177,18 +280,7 @@ export default function CourseDetailPage() {
     [removeEnrollment],
   );
 
-  const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
-    id: m.id,
-    title: m.title,
-    mimeType: m.mimeType,
-    fileSize: m.fileSize,
-    status: m.status,
-    createdAt: m.createdAt,
-    chunkCount: m.chunkCount,
-    uploadedBy: m.uploadedBy ?? null,
-    visibleToStudents: m.visibleToStudents,
-    availableAt: m.availableAt ?? null,
-  }));
+  const uploadMaterials: UploadMaterial[] = materials.map(toUploadMaterial);
 
   const handleFileSelect = async (file: File) => {
     setIsUploading(true);
@@ -277,9 +369,10 @@ export default function CourseDetailPage() {
               materialsLoadingMore={materialsLoadingMore}
               onLoadMoreMaterials={loadMoreMaterials}
               tas={tas}
-              instructors={instructors}
+              courseInstructors={courseInstructors}
               onEnrollStudent={handleEnrollStudent}
               onRemoveEnrollment={handleRemoveEnrollment}
+              onRefreshEnrollments={refetchEnrollments}
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
@@ -294,11 +387,14 @@ export default function CourseDetailPage() {
                 await editTopic(id, name);
               }}
               onRefreshTopics={refetchTopics}
-              onAssignInstructor={handleAssignInstructor}
+              onAddInstructor={handleAddInstructor}
+              onRemoveInstructor={handleRemoveInstructor}
+              onSetPrimaryInstructor={handleSetPrimaryInstructor}
               onAddTA={addTA}
               onRemoveTA={removeTA}
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
+              onReprocessMaterial={reprocessMaterial}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={

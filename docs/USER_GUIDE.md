@@ -111,6 +111,27 @@ Do not put passwords, API keys, private student information, or other secrets in
 
 You can sync only courses you are authorized to teach or administer. Canvas credentials are personal and should never be shared.
 
+### Instructor: add students in bulk or by link
+
+Two ways to enroll people beyond adding them one at a time, both on a course's **Enrollments** tab.
+
+**Upload a roster CSV.** The file needs a header row. Only one column is required:
+
+| Column | Required | Values |
+|---|---|---|
+| `email` | yes | the person's EduAI account email |
+| `role` | no | `STUDENT`, `TA` or `INSTRUCTOR` — defaults to `STUDENT` |
+
+Any other columns (`name`, `student_id`, and so on) are ignored, so a roster exported from elsewhere usually works unchanged. Headers are matched case-insensitively, and Excel's byte-order mark, Windows line endings and quoted fields are all handled.
+
+Limits are **500 rows** and **256 KiB** per upload; split a larger roster into batches.
+
+The import is **not all-or-nothing**. Each row is processed on its own and you get a summary naming the line number of anything that failed — so a 100-row file with three bad addresses enrolls 97 people and tells you about the other three. Someone already enrolled is reported as already enrolled rather than as an error, so re-uploading last week's roster is safe. A row is rejected if the email has no EduAI account yet, or if it asks for a role you cannot grant: instructors may add students and TAs, but only administrators may add another instructor.
+
+**Share a self-enrollment link.** Generate a link and students who open it join the course themselves. The link is scoped to that one course, expires, can be revoked at any time, and can carry a maximum number of uses. It only ever enrolls people as **students** — there is no way to grant staff access through a link, however it is shared.
+
+The full link is shown **once**, when you create it. Copy it then; EduAI stores only a hash afterwards and cannot show it again. Treat it like a password: anyone holding it can join the course. If it leaks, revoke it and generate a new one.
+
 ### Instructor: the Course Assistant
 
 Instructors see a second chat entry, **Course Assistant**, below Course Chat in the sidebar.

@@ -66,8 +66,10 @@ const NOOP = async () => {};
 const onFileSelect = vi.fn();
 const STAFF_PROPS = {
   tas: [],
-  instructors: [],
-  onAssignInstructor: NOOP,
+  courseInstructors: [],
+  onAddInstructor: NOOP,
+  onRemoveInstructor: NOOP,
+  onSetPrimaryInstructor: NOOP,
   onAddTA: NOOP,
   onRemoveTA: NOOP,
   onEnrollStudent: NOOP,

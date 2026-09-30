@@ -76,6 +76,10 @@ function uploadArgs(user: { id: string; role: string }, marker = "lecture notes 
   form.append("file", new File([marker], "lecture-notes.txt"));
   form.append("apiKeys", "{}");
   const request = {
+    // The collection URL a real upload arrives on. The action reads the matched
+    // path to tell an upload from a `/reprocess` retry (#1749), and
+    // `withErrorResponse` reads it when logging a 500.
+    url: `http://localhost/api/courses/${courseId}/materials`,
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(form),

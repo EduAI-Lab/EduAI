@@ -38,6 +38,11 @@ export interface Course {
   responseStyleTags?: string[];
   /** Staff-only detail/list field; absent from student responses. */
   instructorId?: string | null;
+  /**
+   * #1841: every active instructor of record. Present on list and detail
+   * responses; `email` is null for student audiences.
+   */
+  instructors?: { id: string; name: string; email: string | null; isPrimary: boolean }[];
   department: string | null;
   startDate: string | null;
   endDate: string | null;
