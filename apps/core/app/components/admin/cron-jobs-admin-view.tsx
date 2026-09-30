@@ -496,6 +496,8 @@ function EditSettingsDialog({ job, open, onClose, onSaved }: EditSettingsDialogP
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    // SAFETY: /api/admin/cron-jobs answers every settings intent with either
+    // `{ jobs }` (from listCronJobStatuses) or `{ error }`; both fields are optional here.
     const body = (await res.json()) as { jobs?: CronJobEntry[]; error?: string };
     if (!res.ok || body.error) {
       setError(body.error ?? "Failed to save");
