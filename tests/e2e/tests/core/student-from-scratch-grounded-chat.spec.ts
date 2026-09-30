@@ -10,10 +10,11 @@
  * not READY (#949). This spec polls GET materials until READY or FAILED and
  * never stubs that status.
  *
- * The docker e2e stack has no embedding or LLM provider, so a live `/api/chat`
- * reply cannot cite **Source** from the planted phrase in CI. The chat step
- * therefore mocks `/api/chat` only to prove the student composer works.
- * Grounding is not asserted in CI; see #1799.
+ * The docker e2e stack embeds with a real Ollama (`e2e-ollama`, mxbai-embed-large,
+ * 1024 dims — as in prod), which is what lets the upload above reach READY. It has
+ * no chat LLM, so a live `/api/chat` reply cannot cite **Source** from the planted
+ * phrase in CI. The chat step therefore mocks `/api/chat` only to prove the student
+ * composer works. Grounding is not asserted in CI; see #1799.
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";

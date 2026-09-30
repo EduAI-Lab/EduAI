@@ -49,6 +49,34 @@ services:
       retries: 12
 
   # ──────────────────────────────────────────────────────────────────────
+  # Embedding provider
+  # ──────────────────────────────────────────────────────────────────────
+
+  # Real embedding provider so a material can reach READY (extraction -> chunks ->
+  # vectors). Same model and 1024 dims as prod (Ollama mxbai-embed-large). Started only
+  # for suites that ingest materials (see scripts/e2e-in-docker.sh); the model pull is
+  # the slow part, so the AI Tutor / Question Maker suites do not pay for it.
+  e2e-ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        server=$$!
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        ollama pull mxbai-embed-large
+        wait $$server
+    volumes:
+      - e2e_ollama_models:/root/.ollama
+    healthcheck:
+      # `ollama list` only names the model once the pull has finished.
+      test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large"]
+      interval: 5s
+      timeout: 5s
+      retries: 90
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────────────────
   # Application services
   # ──────────────────────────────────────────────────────────────────────
 
@@ -75,6 +103,11 @@ services:
       # full-suite run, cascading 429→401s. Raised for e2e only.
       SESSION_VALIDATE_RATE_LIMIT: "5000"
       GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+      # Local (Ollama) embeddings, as in prod. Without a provider every upload goes
+      # FAILED instantly. No depends_on: the app must still boot for suites that skip
+      # e2e-ollama; only uploads need it.
+      EMBEDDING_PROVIDER: local
+      OLLAMA_BASE_URL: http://e2e-ollama:11434
       NODE_ENV: test
       PORT: "3000"
       E2E_SEED_SECRET: e2e-seed-secret
@@ -238,6 +271,7 @@ volumes:
   e2e_eduai_db_data:
   e2e_ai_tutor_db_data:
   e2e_qm_db_data:
+  e2e_ollama_models:
 
 networks:
   default:
