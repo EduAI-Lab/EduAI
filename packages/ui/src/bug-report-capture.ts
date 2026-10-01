@@ -15,8 +15,9 @@
  *   - Buffers are bounded: `MAX_CONSOLE_ENTRIES = 200`,
  *     `MAX_NETWORK_ENTRIES = 100`. Older entries fall off the front.
  *   - No screenshot is taken until `captureScreenshot()` is called (the dialog
- *     does so when the reporter opts in). `clearScreenshot()` drops it and
- *     invalidates any capture still in flight.
+ *     does so when the reporter opts in, and again on submit to wait for it).
+ *     Repeat calls join the capture in flight or return the cached shot.
+ *     `clearScreenshot()` drops it and invalidates any capture still in flight.
  *   - `html2canvas` is imported lazily on first screenshot request so it
  *     never lands in the main JS chunk. This is a subpath export, not part of
  *     the `@eduai/ui` barrel, for the same reason.
@@ -190,6 +191,9 @@ export function useBugReportCapture(enabled = true) {
   const captureScreenshot = useCallback(async (): Promise<string | null> => {
     if (!enabled || !isBrowser()) return null;
     if (capturePromiseRef.current) return capturePromiseRef.current;
+    // The dialog calls this again on submit to wait for the shot; a cached one
+    // answers that without a second html2canvas pass.
+    if (screenshotRef.current) return screenshotRef.current;
 
     const generation = captureGenerationRef.current;
     let promise!: Promise<string | null>;

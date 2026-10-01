@@ -138,6 +138,20 @@ describe("useBugReportCapture", () => {
     unmount();
   });
 
+  it("reuses the cached screenshot instead of capturing again", async () => {
+    const { result, unmount } = renderHook(() => useBugReportCapture());
+    await act(async () => {
+      await result.current.captureScreenshot();
+    });
+    let second: string | null = null;
+    await act(async () => {
+      second = await result.current.captureScreenshot();
+    });
+    expect(second).toBe("data:image/jpeg;base64,xyz");
+    expect(html2canvas).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
   it("does not resurrect a screenshot cleared while the capture was in flight", async () => {
     let finish!: (canvas: { toDataURL: () => string }) => void;
     vi.mocked(html2canvas).mockImplementationOnce(
