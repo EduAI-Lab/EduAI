@@ -1,10 +1,11 @@
+import { RETAINED_ASSIST_MODEL_ID } from "~/lib/ai/campus-model-catalog";
 import type { SupportedProvider } from "~/lib/ai/provider-types";
 import { runCompletion } from "~/lib/ai/completion.server";
 import { asFiniteNumber } from "~/lib/json-value";
 import type { RunTopicCompletion } from "~/lib/topics/provision.server";
 
-/** Model used when nothing else is configured — matches the async-worker default. */
-const DEFAULT_TOPIC_ANALYSIS_MODEL = "vllm:qwen2.5-32b-instruct";
+/** Model used when nothing else is configured — the cmps02 Assist model. */
+const DEFAULT_TOPIC_ANALYSIS_MODEL = `vllm:${RETAINED_ASSIST_MODEL_ID}`;
 
 /** Topic lists are short; a low cap also bounds how much a runaway model can cost. */
 const TOPIC_ANALYSIS_MAX_TOKENS = 1024;

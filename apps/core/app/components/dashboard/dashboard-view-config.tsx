@@ -82,6 +82,14 @@ export type DashboardRoleConfig = {
    * course id rather than `?courseCode=`).
    */
   chatHref?: string;
+  /**
+   * What the course panel says when this role has no courses. Only STUDENT
+   * sets it: registration no longer requires an instructor to have synced you
+   * into a course first, so an empty student dashboard is a normal waiting
+   * state that needs to say what it is waiting for. Roles without it keep the
+   * generic "No courses found." + "Browse courses" state.
+   */
+  emptyCoursesMessage?: string;
 };
 
 const ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
@@ -161,6 +169,7 @@ export const DASHBOARD_CONFIG = {
       subheading: "EduAI platform health and usage at a glance.",
     }),
     chatHref: undefined,
+    emptyCoursesMessage: undefined,
   },
   UNIT_ADMIN: {
     statBuilder: ({
@@ -187,6 +196,7 @@ export const DASHBOARD_CONFIG = {
       subheading: "Your unit courses and administration.",
     }),
     chatHref: undefined,
+    emptyCoursesMessage: undefined,
   },
   INSTRUCTOR: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
@@ -205,6 +215,7 @@ export const DASHBOARD_CONFIG = {
       subheading: "Your courses and teaching activity.",
     }),
     chatHref: "/instructor/chat",
+    emptyCoursesMessage: undefined,
   },
   TA: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
@@ -220,6 +231,7 @@ export const DASHBOARD_CONFIG = {
       subheading: "Your assigned courses and student activity.",
     }),
     chatHref: undefined,
+    emptyCoursesMessage: undefined,
   },
   STUDENT: {
     statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
@@ -241,6 +253,10 @@ export const DASHBOARD_CONFIG = {
       subheading: "Your AI-powered learning companion.",
     }),
     chatHref: undefined,
+    // A student can finish registration before any instructor has added them to
+    // a course, so zero courses is a waiting state, not an error or a mystery.
+    emptyCoursesMessage:
+      "Your professor hasn't added you to their course yet. Contact them to add you to it.",
   },
 } satisfies Record<EffectiveRole, DashboardRoleConfig>;
 
@@ -279,6 +295,7 @@ export function DashboardBody({
       courses={config.leftPanel === "courses" ? data.courses : undefined}
       quickActions={config.leftPanel === "quickActions" ? config.quickActions : undefined}
       leftPanelTitle={config.leftPanelTitle}
+      emptyCoursesMessage={config.emptyCoursesMessage}
       recentChats={data.recentChats}
       analytics={<DashboardAnalytics stats={data.stats} loading={false} />}
       chatHref={config.chatHref}

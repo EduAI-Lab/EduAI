@@ -3,6 +3,7 @@ import cron from "node-cron";
 import { z } from "zod";
 
 import type { RbacUser } from "~/lib/auth/course-access.server";
+import { INSTRUCTOR_CANDIDATE_ROLES } from "~/lib/rbac/instructor-candidates";
 import {
   CreateAIProviderSchema,
   CreateAIModelSchema,
@@ -106,7 +107,10 @@ export async function createAdminCourse(actor: RbacUser, input: ToolInput) {
   }
 
   const instructors = await prisma.user.findMany({
-    where: { id: { in: parsed.data.instructorUserIds }, role: "INSTRUCTOR" },
+    where: {
+      id: { in: parsed.data.instructorUserIds },
+      role: { in: [...INSTRUCTOR_CANDIDATE_ROLES] },
+    },
     select: { id: true },
   });
   if (instructors.length !== parsed.data.instructorUserIds.length) {

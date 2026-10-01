@@ -19,6 +19,7 @@ import {
   ConfirmDialog,
 } from "@eduai/ui";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { INSTRUCTOR_CANDIDATE_ROLES } from "~/lib/rbac/instructor-candidates";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -27,7 +28,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // These three reads are independent — run them in parallel instead of serially.
   //  - authorizedUnits: read directly from DB (Better Auth session may not include
   //    custom array fields reliably across all environments); UNIT_ADMIN only.
-  //  - instructors: for course-creation forms; ADMIN and UNIT_ADMIN only.
+  //  - instructors: for course-creation forms; ADMIN and UNIT_ADMIN only. Any
+  //    staff account can be picked, not just platform-role INSTRUCTOR (#1840).
   //  - enrollmentRows: scope the list to enrollment assignments (#499) — never
   //    hardcode course ids; read active Enrollment rows and split by role (§5 list
   //    gate). A TA is an Enrollment with role=TA; STUDENT-platform users may hold
@@ -43,7 +45,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : Promise.resolve(null),
     canListInstructors
       ? prisma.user.findMany({
-          where: { role: "INSTRUCTOR", isActive: true },
+          where: { role: { in: [...INSTRUCTOR_CANDIDATE_ROLES] }, isActive: true },
           select: { id: true, name: true, email: true },
           orderBy: { name: "asc" },
         })
