@@ -3,8 +3,8 @@
  *
  * Covers: the shared trigger, the "Include diagnostics" toggle (present and off
  * by default), diagnostics reaching the submit hook only after opt-in, the
- * server's error message surfacing in the dialog, and the screenshot being
- * dropped when the dialog closes.
+ * submit hook's readable error surfacing in the dialog, the screenshot being
+ * dropped when the dialog closes, and no toggle outside the capture provider.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,12 +93,13 @@ describe("BugReportSubmitDialog", () => {
     });
   });
 
-  it("shows the server's reason when the submit fails", async () => {
-    submitBugReport.mockResolvedValue({ ok: false, error: "VALIDATION_ERROR" });
+  it("shows the submit hook's readable reason when the submit fails", async () => {
+    const reason = "Some details were invalid. Please check your description and bug type.";
+    submitBugReport.mockResolvedValue({ ok: false, error: reason });
     await openAndFill();
     fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
 
-    expect(await screen.findByText("VALIDATION_ERROR")).toBeInTheDocument();
+    expect(await screen.findByText(reason)).toBeInTheDocument();
   });
 
   it("offers no diagnostics toggle outside the capture provider", async () => {

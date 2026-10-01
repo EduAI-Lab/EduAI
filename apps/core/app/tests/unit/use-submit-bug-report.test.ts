@@ -2,7 +2,8 @@
  * Unit tests for useSubmitBugReport — the POST /api/bug-reports hook.
  *
  * Covers the success path (201 with no body), the server-error path (error
- * message read from the JSON body and returned to the caller), the non-JSON
+ * message read from the JSON body and returned to the caller, with known codes
+ * turned into readable text and unknown codes hidden), the non-JSON
  * error-body fallback, the thrown/rejected fetch fallback message, diagnostics
  * forwarding (only when supplied, #1752), and the isSubmitting transitions.
  */
@@ -94,6 +95,56 @@ describe("useSubmitBugReport", () => {
     expect(outcome).toEqual({ ok: false, error: "description required" });
     expect(result.current.error).toBe("description required");
     expect(result.current.isSubmitting).toBe(false);
+  });
+
+  it("shows readable text for a validation error and logs only the raw code", async () => {
+    const body = { error: "VALIDATION_ERROR", fields: { description: "too short" } };
+    mockFetch.mockResolvedValue(res({ ok: false, status: 422, json: () => Promise.resolve(body) }));
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    let outcome: Awaited<ReturnType<typeof result.current.submitBugReport>> | undefined;
+    await act(async () => {
+      outcome = await result.current.submitBugReport({ description: "x" });
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: "Some details were invalid. Please check your description and bug type.",
+    });
+    expect(console.error).toHaveBeenCalledWith("Failed to submit bug report:", body);
+  });
+
+  it("asks the reporter to sign in again when the session has expired", async () => {
+    mockFetch.mockResolvedValue(
+      res({ ok: false, status: 401, json: () => Promise.resolve({ error: "Unauthorized" }) }),
+    );
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    await act(async () => {
+      await result.current.submitBugReport({ description: "x" });
+    });
+
+    expect(result.current.error).toBe("Your session has expired. Please sign in and try again.");
+  });
+
+  it("does not show an unrecognised error code to the reporter", async () => {
+    mockFetch.mockResolvedValue(
+      res({
+        ok: false,
+        status: 403,
+        json: () => Promise.resolve({ error: "CROSS_ORIGIN_MUTATION" }),
+      }),
+    );
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    await act(async () => {
+      await result.current.submitBugReport({ description: "x" });
+    });
+
+    expect(result.current.error).toBe("Failed to submit bug report");
   });
 
   it("falls back to a generic message when the error body has no error field", async () => {

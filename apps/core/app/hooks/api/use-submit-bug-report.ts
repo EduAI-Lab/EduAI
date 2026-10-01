@@ -4,6 +4,24 @@ import type { SubmitBugReportInput } from "~/hooks/api/types";
 
 type SubmitBugReportResult = { ok: true } | { ok: false; error: string };
 
+const GENERIC_ERROR = "Failed to submit bug report";
+
+// `/api/bug-reports` answers with machine codes, which the dialog would show
+// verbatim. A `Map` because the key is whatever string the server sent.
+const ERROR_MESSAGES = new Map<string, string>([
+  ["VALIDATION_ERROR", "Some details were invalid. Please check your description and bug type."],
+  ["USER_NOT_FOUND", "We couldn't find your account. Please sign in and try again."],
+  ["Unauthorized", "Your session has expired. Please sign in and try again."],
+]);
+
+const ERROR_CODE = /^[A-Z][A-Z0-9_]*$/;
+
+/** Known codes get readable text, other codes the generic message; prose passes through. */
+function toReadableError(error: string | undefined) {
+  if (!error) return GENERIC_ERROR;
+  return ERROR_MESSAGES.get(error) ?? (ERROR_CODE.test(error) ? GENERIC_ERROR : error);
+}
+
 export function useSubmitBugReport() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,14 +53,18 @@ export function useSubmitBugReport() {
           // SAFETY: Core's API errors are `{ error: string }`; a missing or non-JSON
           // body falls back to `{}`, and `error` is only read as an optional string.
           const data = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(data.error ?? "Failed to submit bug report");
+          // The raw code and fields go to the console; the reporter reads text.
+          console.error("Failed to submit bug report:", data);
+          const message = toReadableError(data.error);
+          setError(message);
+          return { ok: false, error: message };
         }
 
         // Backend returns 201 with no body — success is indicated by status alone.
         return { ok: true };
       } catch (err) {
         console.error("Failed to submit bug report:", err);
-        const message = err instanceof Error ? err.message : "Failed to submit bug report";
+        const message = err instanceof Error ? err.message : GENERIC_ERROR;
         setError(message);
         return { ok: false, error: message };
       } finally {
