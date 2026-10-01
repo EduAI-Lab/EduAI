@@ -83,6 +83,14 @@ export interface KnownCronJob {
 
 export const KNOWN_CRON_JOBS: KnownCronJob[] = [
   {
+    name: "ai-status-probe",
+    description: "Sample UBC fleet health per model and persist a status history point",
+    schedule: cronEvery(pollMinutes()),
+    scheduleLabel: `Every ${pollMinutes()} minutes`,
+    script: "Core handler",
+    execution: "CORE",
+  },
+  {
     name: "backup-nightly",
     description: "Full pg_dump of all three EduAI databases",
     schedule: "0 2 * * *",
@@ -104,6 +112,14 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     script: "backup-rotate.sh",
   },
   {
+    name: "notify-invitation-expiry",
+    description: "Email invitees whose pending invitation is close to expiring",
+    schedule: "30 4 * * *",
+    scheduleLabel: "Daily at 04:30 UTC",
+    script: "Core handler",
+    execution: "CORE",
+  },
+  {
     name: "cleanup-invitations",
     description: "Delete revoked/expired invitations past a 30-day grace period",
     schedule: "30 3 * * *",
@@ -119,17 +135,8 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
-    name: "notify-invitation-expiry",
-    description: "Email invitees whose pending invitation is close to expiring",
-    schedule: "30 4 * * *",
-    scheduleLabel: "Daily at 04:30 UTC",
-    script: "Core handler",
-    execution: "CORE",
-  },
-  {
     name: "purge-deleted-materials",
     description: "Permanently delete course materials soft-deleted more than N days ago",
-    // After backup-nightly (02:00) so a purged material is still in that night's dump.
     schedule: "0 5 * * *",
     scheduleLabel: "Daily at 05:00 UTC",
     script: "Core handler",
@@ -163,14 +170,6 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     scheduleLabel: "Daily at 02:00 UTC (QM server)",
     script: "",
     triggerEnabled: false,
-  },
-  {
-    name: "ai-status-probe",
-    description: "Sample UBC fleet health per model and persist a status history point",
-    schedule: cronEvery(pollMinutes()),
-    scheduleLabel: `Every ${pollMinutes()} minutes`,
-    script: "Core handler",
-    execution: "CORE",
   },
 ];
 
