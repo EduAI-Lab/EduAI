@@ -193,7 +193,7 @@ describe("listCronJobStatuses", () => {
     const result = await listCronJobStatuses();
     expect(result).toHaveLength(KNOWN_CRON_JOBS.length);
     expect(result.every((j) => j.lastRun === null)).toBe(true);
-    expect(result[0].name).toBe("backup-nightly");
+    expect(result[0].name).toBe("ai-status-probe");
   });
 
   it("attaches the most recent run to the matching job", async () => {

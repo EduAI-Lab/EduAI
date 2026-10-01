@@ -137,6 +137,7 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
   {
     name: "purge-deleted-materials",
     description: "Permanently delete course materials soft-deleted more than N days ago",
+    // After backup-nightly (02:00) so a purged material is still in that night's dump.
     schedule: "0 5 * * *",
     scheduleLabel: "Daily at 05:00 UTC",
     script: "Core handler",
