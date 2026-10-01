@@ -4,9 +4,9 @@
  *
  * Responsibility: Owns the rolling diagnostic buffers and exposes
  *   `{ captureScreenshot, getCapturedData, clearScreenshot }` to the bug-report UI.
- * Callers: Core's `BugReportSubmitDialog`, AI Tutor's `BugReportProvider`, and
- *   QM's `BugReportProvider` — each mounts it once and hands the callbacks to
- *   `BugReportDialog` (#1752).
+ * Callers: Core's `BugReportCaptureProvider` (root.tsx), AI Tutor's
+ *   `BugReportProvider`, and QM's `BugReportProvider` — each mounts it once at
+ *   the app root and hands the callbacks to `BugReportDialog` (#1752).
  * Gotchas:
  *   - While enabled this hook **monkey-patches `console.{log, warn, error}` and
  *     `window.fetch` globally** and restores the originals on unmount or when

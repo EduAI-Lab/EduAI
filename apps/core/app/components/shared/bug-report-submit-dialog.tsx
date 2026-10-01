@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { BugReportDialog, BugReportTriggerButton } from "@eduai/ui";
 import type { BugReportSubmitData } from "@eduai/ui";
-import { useBugReportCapture } from "@eduai/ui/bug-report-capture";
+import { useBugReportCaptureContext } from "~/contexts/bug-report-capture";
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
 
 type BugReportSubmitDialogProps = {
@@ -12,11 +12,12 @@ type BugReportSubmitDialogProps = {
 export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialogProps) {
   const [open, setOpen] = useState(false);
   const { submitBugReport } = useSubmitBugReport();
-  // Mounted once, via CoreAppShell; a second mount would double-patch console/fetch.
-  const { captureScreenshot, getCapturedData, clearScreenshot } = useBugReportCapture();
+  // The capture hook lives in root.tsx's provider so its buffers survive
+  // client-side navigation; this header remounts with every route's shell.
+  const capture = useBugReportCaptureContext();
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) clearScreenshot();
+    if (!next) capture?.clearScreenshot();
     setOpen(next);
   };
 
@@ -34,8 +35,8 @@ export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialo
         open={open}
         onOpenChange={handleOpenChange}
         onSubmit={handleSubmit}
-        captureScreenshot={captureScreenshot}
-        getCapturedData={getCapturedData}
+        captureScreenshot={capture?.captureScreenshot}
+        getCapturedData={capture?.getCapturedData}
       />
     </>
   );

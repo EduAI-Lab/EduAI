@@ -24,6 +24,15 @@ vi.mock("~/hooks/api/use-submit-bug-report", () => ({
 }));
 
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
+import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
+
+function renderDialog() {
+  return render(
+    <BugReportCaptureProvider>
+      <BugReportSubmitDialog />
+    </BugReportCaptureProvider>,
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -37,7 +46,7 @@ beforeEach(() => {
 });
 
 async function openAndFill() {
-  render(<BugReportSubmitDialog />);
+  renderDialog();
   fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
   fireEvent.change(await screen.findByTestId("bug-description"), {
     target: { value: "Steps to reproduce it" },
@@ -48,7 +57,7 @@ async function openAndFill() {
 
 describe("BugReportSubmitDialog", () => {
   it("offers the Include diagnostics toggle, off by default", async () => {
-    render(<BugReportSubmitDialog />);
+    renderDialog();
     fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
     const toggle = await screen.findByRole("switch", { name: /include diagnostics/i });
     expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -90,6 +99,13 @@ describe("BugReportSubmitDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
 
     expect(await screen.findByText("VALIDATION_ERROR")).toBeInTheDocument();
+  });
+
+  it("offers no diagnostics toggle outside the capture provider", async () => {
+    render(<BugReportSubmitDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
+    await screen.findByTestId("bug-description");
+    expect(screen.queryByRole("switch", { name: /include diagnostics/i })).not.toBeInTheDocument();
   });
 
   it("drops the captured screenshot when the dialog closes", async () => {
