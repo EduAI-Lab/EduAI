@@ -1,6 +1,6 @@
 /**
- * @file The generic 404 Core shows for an unknown URL, a missing record, and a
- * page the viewer may not open — matching AI Tutor's NotFoundState. A 404 thrown
+ * @file Core's route boundary around the shared `@eduai/ui` 404 (whose own copy
+ * and layout are tested in packages/ui). A 404 thrown
  * through `notFound(user)` renders inside the app shell; a bare 404 (no viewer
  * attached) renders standalone; any other error is a load failure, not a 404.
  */
@@ -16,7 +16,6 @@ vi.mock("~/components/layout/core-app-shell", () => ({
   ),
 }));
 
-import { NotFoundState } from "~/components/shared/not-found-state";
 import { RouteErrorState } from "~/components/shared/route-error-state";
 import { notFound } from "~/lib/not-found.server";
 import type { User } from "~/lib/auth/types";
@@ -41,34 +40,6 @@ function renderThrowing(thrown: Response | ReturnType<typeof data> | Error) {
   return render(<RouterProvider router={router} />);
 }
 
-describe("NotFoundState", () => {
-  it("names the status, never confirms the page exists, and links to the dashboard", () => {
-    render(
-      <RouterProvider
-        router={createMemoryRouter([{ path: "/", Component: () => <NotFoundState /> }])}
-      />,
-    );
-
-    expect(screen.getByText(TITLE)).toBeInTheDocument();
-    expect(screen.getByText(/doesn't exist, or you don't have access to it/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /go to dashboard/i })).toHaveAttribute(
-      "href",
-      "/dashboard",
-    );
-    expect(screen.queryByRole("main")).toBeNull();
-  });
-
-  it("centres itself on a bare page when standalone", () => {
-    render(
-      <RouterProvider
-        router={createMemoryRouter([{ path: "/", Component: () => <NotFoundState standalone /> }])}
-      />,
-    );
-
-    expect(screen.getByRole("main").className).toContain("min-h-dvh");
-  });
-});
-
 describe("RouteErrorState", () => {
   it("renders notFound(user) inside the app shell without naming the forbidden page", async () => {
     renderThrowing(notFound(USER));
@@ -76,6 +47,10 @@ describe("RouteErrorState", () => {
     expect(await screen.findByText(TITLE)).toBeInTheDocument();
     const shell = screen.getByTestId("core-app-shell");
     expect(shell).toHaveAttribute("data-title", "Page not found");
+    expect(screen.getByRole("link", { name: /go to dashboard/i })).toHaveAttribute(
+      "href",
+      "/dashboard",
+    );
     expect(screen.queryByText("course page")).toBeNull();
   });
 

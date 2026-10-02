@@ -1,5 +1,6 @@
 import {
   isRouteErrorResponse,
+  Link,
   Links,
   Meta,
   Outlet,
@@ -22,7 +23,7 @@ import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provide
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui/sonner";
 import { PageLoader } from "@eduai/ui/page-loader";
-import { NotFoundState } from "~/components/shared/not-found-state";
+import { NotFoundState } from "@eduai/ui/not-found-state";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
@@ -358,7 +359,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   // An unmatched URL lands here; it gets the same 404 page as a missing or
   // forbidden record (see RouteErrorState), just without the app shell.
   if (isRouteErrorResponse(error) && error.status === 404) {
-    return <NotFoundState standalone />;
+    return <NotFoundState standalone LinkComponent={Link} />;
   }
 
   let message = "Oops!";

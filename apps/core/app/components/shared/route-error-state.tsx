@@ -3,7 +3,7 @@
  *
  * It sorts a thrown route error into one of two answers, mirroring AI Tutor:
  *
- *   - "not found" (404) → the generic {@link NotFoundState}. When the loader
+ *   - "not found" (404) → the shared `@eduai/ui` NotFoundState. When the loader
  *     threw via `notFound(user)` the 404 renders inside `CoreAppShell`, so the
  *     reader keeps the sidebar and can navigate onwards.
  *   - anything else → a "couldn't load this" state, which is a real failure and
@@ -13,12 +13,11 @@
  * lets the shell render: root's boundary replaces the whole app, providers
  * included.
  */
-import { isRouteErrorResponse, useRouteError } from "react-router";
-import { Button, Card, EmptyState } from "@eduai/ui";
+import { isRouteErrorResponse, Link, useRouteError } from "react-router";
+import { Button, Card, EmptyState, NotFoundState } from "@eduai/ui";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
-import { NotFoundState } from "~/components/shared/not-found-state";
 import type { NotFoundErrorData } from "~/lib/not-found.server";
 
 export function RouteErrorState() {
@@ -27,12 +26,12 @@ export function RouteErrorState() {
   if (isRouteErrorResponse(error) && error.status === 404) {
     // A 404 from `notFound(user)` carries the viewer; any other 404 does not.
     const user: NotFoundErrorData["user"] | undefined = error.data?.user;
-    if (!user) return <NotFoundState standalone />;
+    if (!user) return <NotFoundState standalone LinkComponent={Link} />;
     // Explicit title: the route-derived one would name the page the reader
     // cannot open.
     return (
       <CoreAppShell user={user} title="Page not found">
-        <NotFoundState />
+        <NotFoundState LinkComponent={Link} />
       </CoreAppShell>
     );
   }

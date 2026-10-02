@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   PageTabs,
   PageTabsList,
@@ -19,6 +19,7 @@ import {
   PageTabsContent,
   CourseHeroCard,
   DetailPageScaffold,
+  NotFoundState,
   Alert,
   AlertDescription,
   resolvePaletteAccent,
@@ -66,7 +67,6 @@ import { CanvasExportDialog } from "../components/canvas/CanvasExportDialog";
 import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
 import { CanvasBankSyncDialog } from "../components/canvas/CanvasBankSyncDialog";
 import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
-import { NotFoundState } from "../components/common/NotFoundState";
 import {
   assessmentBlocksToDocxBlob,
   assessmentBlocksToPlainText,
@@ -989,7 +989,7 @@ export const CourseDetailPage = () => {
   // Same generic 404 as an unknown URL, AI Tutor and Core: a missing course and
   // one outside the viewer's list look identical.
   if (notFound || !course) {
-    return <NotFoundState />;
+    return <NotFoundState LinkComponent={Link} />;
   }
 
   const writesDisabled = !canCreateQuestion || !hasCourseAccess;

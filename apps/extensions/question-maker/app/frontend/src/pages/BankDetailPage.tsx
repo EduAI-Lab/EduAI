@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
-import { useNavigate, useParams } from "react-router";
-import { Button, Badge, Alert, AlertDescription } from "@eduai/ui";
+import { Link, useNavigate, useParams } from "react-router";
+import { Button, Badge, Alert, AlertDescription, NotFoundState } from "@eduai/ui";
 import { IconArrowLeft, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
@@ -17,7 +17,6 @@ import { QuestionBank as QuestionBankGrid } from "../components/question-bank/Qu
 import { AddQuestionsToBankDialog } from "../components/question-bank/AddQuestionsToBankDialog";
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
-import { NotFoundState } from "../components/common/NotFoundState";
 import { ListPaginationBar, DEFAULT_LIST_PAGE_SIZE } from "../components/shared/ListPaginationBar";
 import type { Question, QuestionVariantEntry } from "../types/question";
 import { Topic } from "../types/topic";
@@ -170,7 +169,7 @@ export function BankDetailPage() {
   }
 
   if (notFound || !course || !courseId) {
-    return <NotFoundState />;
+    return <NotFoundState LinkComponent={Link} />;
   }
 
   if (!hasCourseAccess) {
