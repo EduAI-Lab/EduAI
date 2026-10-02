@@ -12,10 +12,14 @@ import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import {
   ACCEPTED_MATERIAL_MIME_TYPES,
+  ACCEPTED_MATERIAL_TYPES,
+  ACCEPTED_MATERIAL_TYPE_LABELS,
   MATERIAL_INPUT_ACCEPT,
+  MATERIAL_MIME_BY_EXTENSION,
+  resolveMaterialMimeType,
   type AcceptedMaterialMimeType,
 } from "~/lib/materials/accepted-types";
-import { extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { extractUploadedFileContent, validateFile } from "~/lib/ai/file-processing";
 import {
   EMPTY_COURSE_RAG_INSTRUCTION,
   RAG_ANSWER_RULES,
@@ -158,7 +162,7 @@ const ROUND_TRIP_CASES: RoundTripCase[] = [
 describe("accepted course-material types → RAG path (#1785)", () => {
   it("advertises exactly pdf, docx, pptx, txt, and md on the upload input", () => {
     const extensions = MATERIAL_INPUT_ACCEPT.split(",").filter((token) => token.startsWith("."));
-    expect(extensions).toEqual([".pdf", ".docx", ".pptx", ".txt", ".md"]);
+    expect(extensions).toEqual([".pdf", ".txt", ".md", ".docx", ".pptx"]);
     expect(MATERIAL_INPUT_ACCEPT).toContain("application/pdf");
     expect(MATERIAL_INPUT_ACCEPT).toContain(DOCX_MIME);
     expect(MATERIAL_INPUT_ACCEPT).toContain(PPTX_MIME);
@@ -184,6 +188,40 @@ describe("accepted course-material types → RAG path (#1785)", () => {
     },
     30_000,
   );
+
+  it("derives the Canvas importer's MIME set and extension map from the shared list (N1)", async () => {
+    expect([...MATERIAL_MIME_BY_EXTENSION]).toEqual(
+      ACCEPTED_MATERIAL_TYPES.map((type) => [type.extension, type.mimeType]),
+    );
+    // Canvas builds its allow-list from these exports; a type added to the
+    // shared list is importable from Canvas with no second edit.
+    const canvasSource = (await import("node:fs")).readFileSync(
+      new URL("../../lib/canvas/materials.server.ts", import.meta.url),
+      "utf8",
+    );
+    expect(canvasSource).toContain("new Set(ACCEPTED_MATERIAL_MIME_TYPES)");
+    expect(canvasSource).toContain("= MATERIAL_MIME_BY_EXTENSION");
+    expect(ACCEPTED_MATERIAL_TYPE_LABELS).toBe("PDF, TXT, MD, DOCX, PPTX");
+  });
+
+  it("resolves an empty browser-reported type from the extension (N2)", () => {
+    expect(resolveMaterialMimeType({ name: "Notes.MD", type: "" })).toBe("text/markdown");
+    expect(resolveMaterialMimeType({ name: "a.txt", type: "" })).toBe("text/plain");
+    expect(resolveMaterialMimeType({ name: "a.bin", type: "" })).toBe("");
+    // A declared type is never overridden.
+    expect(resolveMaterialMimeType({ name: "a.md", type: "application/zip" })).toBe(
+      "application/zip",
+    );
+    expect(validateFile({ name: "notes.md", type: "", size: 10 }).isValid).toBe(true);
+    expect(validateFile({ name: "x.bin", type: "", size: 10 }).isValid).toBe(false);
+  });
+
+  it("extracts a .md upload whose browser-reported type is empty (N2)", async () => {
+    const file = fileFromBytes(Buffer.from(`# T\n\n${MD_PHRASE} here.`), "notes.md", "");
+    const info = await extractUploadedFileContent(file);
+    expect(info.content).toContain(MD_PHRASE);
+    expect(info.mimeType).toBe("text/markdown");
+  });
 
   it("uses EMPTY_COURSE_RAG_INSTRUCTION when retrieval returns no excerpts, forbidding world knowledge", () => {
     expect(buildCappedRagContextText([], 4, 1000)).toBe("");
