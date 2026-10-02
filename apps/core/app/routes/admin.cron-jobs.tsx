@@ -13,6 +13,7 @@ import {
 } from "@eduai/ui";
 import { listCronJobStatuses } from "~/lib/db.cron-jobs.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -21,7 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
   if (session.user.role !== "ADMIN") {
-    return redirect("/dashboard");
+    throw notFound(session.user);
   }
 
   const jobs = await listCronJobStatuses();
@@ -58,3 +59,5 @@ export default function AdminCronJobsRoute() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

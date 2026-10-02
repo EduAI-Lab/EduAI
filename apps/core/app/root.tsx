@@ -22,6 +22,7 @@ import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provide
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui/sonner";
 import { PageLoader } from "@eduai/ui/page-loader";
+import { NotFoundState } from "~/components/shared/not-found-state";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
@@ -354,14 +355,19 @@ export default function App({ loaderData }: Route.ComponentProps) {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  // An unmatched URL lands here; it gets the same 404 page as a missing or
+  // forbidden record (see RouteErrorState), just without the app shell.
+  if (isRouteErrorResponse(error) && error.status === 404) {
+    return <NotFoundState standalone />;
+  }
+
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404 ? "The requested page could not be found." : error.statusText || details;
+    message = "Error";
+    details = error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

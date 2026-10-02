@@ -23,6 +23,7 @@ import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 import { getAuthorizedUnits, type RbacUser } from "~/lib/auth/course-access.server";
 
 /**
@@ -132,8 +133,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const courses = await listMyPublishedInstructorCourses(session.user);
   if (courses.length === 0) {
     // Not an instructor of any published course — nothing for this page to
-    // show. Redirect rather than render an empty/broken chat shell.
-    return redirect("/dashboard");
+    // show. 404 rather than render an empty/broken chat shell.
+    throw notFound(session.user);
   }
 
   const dbModels = await prisma.aIModel.findMany({
@@ -463,3 +464,5 @@ export default function InstructorChatPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

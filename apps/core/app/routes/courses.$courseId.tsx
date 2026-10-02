@@ -31,20 +31,21 @@ import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
 
   const courseId = params.courseId;
-  if (!courseId) return redirect("/courses");
+  if (!courseId) throw notFound(session.user);
 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     select: COURSE_STAFF_SELECT,
   });
 
-  if (!course) return redirect("/courses");
+  if (!course) throw notFound(session.user);
 
   const user = session.user;
   let authorizedUnits: string[] = [];
@@ -67,11 +68,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     department: course.department,
   });
 
-  // No access at all — redirect (e.g. TA opened a course they do not assist)
-  if (!access) return redirect("/courses?access=denied");
+  // No access at all — the same 404 as a missing course, so the page never
+  // confirms the course exists (e.g. TA opened a course they do not assist).
+  if (!access) throw notFound(user);
 
-  // Students cannot view unpublished courses by direct URL
-  if (access === "student" && !course.isPublished) return redirect("/courses?access=unpublished");
+  // Students cannot view unpublished courses by direct URL — also a 404.
+  if (access === "student" && !course.isPublished) throw notFound(user);
 
   // Managing course staff is ADMIN/UNIT_ADMIN only.
   const canManageStaff = access === "admin" || access === "unit";
@@ -448,3 +450,5 @@ export default function CourseDetailPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";
