@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 
 const mockSpawn = vi.hoisted(() => vi.fn());
@@ -11,8 +11,13 @@ const mockTransaction = vi.hoisted(() => vi.fn());
 const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
+const mockSettingFindMany = vi.hoisted(() => vi.fn());
+const mockSettingFindUnique = vi.hoisted(() => vi.fn());
+const mockSettingUpsert = vi.hoisted(() => vi.fn());
+const mockSettingDeleteMany = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
 const mockNotifyExpiringInvitations = vi.hoisted(() => vi.fn());
+const mockPurgeDeletedMaterials = vi.hoisted(() => vi.fn());
 
 const runAiStatusProbeMock = vi.hoisted(() => vi.fn());
 
@@ -30,6 +35,12 @@ vi.mock("~/lib/prisma.server", () => ({
       upsert: mockOverrideUpsert,
       deleteMany: mockOverrideDeleteMany,
     },
+    cronJobSetting: {
+      findMany: mockSettingFindMany,
+      findUnique: mockSettingFindUnique,
+      upsert: mockSettingUpsert,
+      deleteMany: mockSettingDeleteMany,
+    },
   },
 }));
 
@@ -39,6 +50,11 @@ vi.mock("~/lib/cron-notify-api-key-expiry.server", () => ({
 
 vi.mock("~/lib/cron-notify-invitation-expiry.server", () => ({
   notifyExpiringInvitations: mockNotifyExpiringInvitations,
+}));
+
+vi.mock("~/lib/cron-purge-deleted-materials.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/cron-purge-deleted-materials.server")>()),
+  purgeDeletedMaterials: mockPurgeDeletedMaterials,
 }));
 
 const {
@@ -53,6 +69,10 @@ const {
   resolveCronOutputMaxBytes,
   triggerCronJobAsync,
   dispatchManualCronRuns,
+  getCronJobSetting,
+  updateCronJobSetting,
+  resetCronJobSetting,
+  CronJobSettingError,
   KNOWN_CRON_JOBS,
 } = await import("~/lib/db.cron-jobs.server");
 
@@ -149,8 +169,22 @@ beforeEach(() => {
   mockOverrideFindMany.mockResolvedValue([]);
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
+  mockSettingFindMany.mockReset();
+  mockSettingFindUnique.mockReset();
+  mockSettingUpsert.mockReset();
+  mockSettingDeleteMany.mockReset();
+  mockSettingFindMany.mockResolvedValue([]);
+  mockSettingFindUnique.mockResolvedValue(null);
+  mockSettingUpsert.mockResolvedValue({});
+  mockSettingDeleteMany.mockResolvedValue({ count: 0 });
   mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
   mockNotifyExpiringInvitations.mockResolvedValue({ notified: 0 });
+  mockPurgeDeletedMaterials.mockResolvedValue({
+    purged: 0,
+    truncated: false,
+    cutoff: new Date("2026-07-02T05:00:00.000Z"),
+    retainDays: 90,
+  });
   delete globalThis.__manualCronRunIds;
 });
 
@@ -159,7 +193,7 @@ describe("listCronJobStatuses", () => {
     const result = await listCronJobStatuses();
     expect(result).toHaveLength(KNOWN_CRON_JOBS.length);
     expect(result.every((j) => j.lastRun === null)).toBe(true);
-    expect(result[0].name).toBe("backup-nightly");
+    expect(result[0].name).toBe("ai-status-probe");
   });
 
   it("attaches the most recent run to the matching job", async () => {
@@ -455,6 +489,39 @@ describe("KNOWN_CRON_JOBS registry", () => {
     );
     expect(slots).not.toContain(invitationJob()!.schedule);
   });
+
+  describe("purge-deleted-materials", () => {
+    const purgeJob = () => KNOWN_CRON_JOBS.find((j) => j.name === "purge-deleted-materials");
+
+    it("is a daily Core-handler job at 05:00 UTC", () => {
+      expect(purgeJob()).toMatchObject({
+        schedule: "0 5 * * *",
+        scheduleLabel: "Daily at 05:00 UTC",
+        script: "Core handler",
+        execution: "CORE",
+      });
+    });
+
+    it("declares the retainDays setting with a 90-day default", () => {
+      expect(purgeJob()!.settings).toEqual([
+        {
+          key: "retainDays",
+          label: "Delete after (days)",
+          description:
+            "Materials soft-deleted longer than this are permanently removed along with their embeddings and cannot be restored.",
+          type: "int",
+          min: 1,
+          max: 3650,
+          default: 90,
+        },
+      ]);
+    });
+
+    it("runs after backup-nightly and does not share a slot with another job", () => {
+      const others = KNOWN_CRON_JOBS.filter((j) => j.name !== "purge-deleted-materials");
+      expect(others.map((j) => j.schedule)).not.toContain(purgeJob()!.schedule);
+    });
+  });
 });
 
 describe("triggerCronJobAsync", () => {
@@ -485,6 +552,27 @@ describe("triggerCronJobAsync", () => {
     await vi.waitFor(() => {
       expect(mockExecuteRaw).toHaveBeenCalledOnce();
     });
+  });
+
+  it("routes purge-deleted-materials to the purge handler and records its summary", async () => {
+    mockPurgeDeletedMaterials.mockResolvedValue({
+      purged: 3,
+      truncated: false,
+      cutoff: new Date("2026-07-02T05:00:00.000Z"),
+      retainDays: 90,
+    });
+    triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-p", "owner-p", "CORE");
+
+    await vi.waitFor(() => {
+      expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce();
+    });
+    expect(mockSpawn).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    });
+    expect(JSON.stringify(mockExecuteRaw.mock.calls[0])).toContain(
+      "Purged 3 material(s) soft-deleted before 2026-07-02",
+    );
   });
 
   it("reports an unknown Core job as an error instead of running the wrong handler", async () => {
@@ -625,6 +713,117 @@ describe("triggerCronJobAsync", () => {
   });
 });
 
+describe("triggerCronJobAsync CORE lease heartbeat", () => {
+  const PURGE_RESULT = {
+    purged: 5,
+    truncated: false,
+    cutoff: new Date("2026-07-02T05:00:00.000Z"),
+    retainDays: 90,
+  };
+  let originalLeaseMs: string | undefined;
+
+  function renewCalls(): unknown[][] {
+    return mockExecuteRaw.mock.calls.filter((call) =>
+      sqlTextOf(call).includes('SET "leaseHeartbeatAt" = statement_timestamp()'),
+    );
+  }
+
+  function finishCalls(): unknown[][] {
+    return mockExecuteRaw.mock.calls.filter((call) =>
+      sqlTextOf(call).includes('"finishedAt" = statement_timestamp()'),
+    );
+  }
+
+  /** A handler that stays in flight until the test settles it. */
+  function deferredPurge() {
+    let resolvePurge: (value: typeof PURGE_RESULT) => void = () => {};
+    let rejectPurge: (reason: Error) => void = () => {};
+    mockPurgeDeletedMaterials.mockReturnValue(
+      new Promise<typeof PURGE_RESULT>((resolve, reject) => {
+        resolvePurge = resolve;
+        rejectPurge = reject;
+      }),
+    );
+    return {
+      resolve: () => resolvePurge(PURGE_RESULT),
+      reject: (reason: Error) => rejectPurge(reason),
+    };
+  }
+
+  beforeEach(() => {
+    originalLeaseMs = process.env.CRON_RUN_LEASE_MS;
+    // A 15s lease heartbeats every 5s (a third of the lease).
+    process.env.CRON_RUN_LEASE_MS = "15000";
+    // Fake only the interval so the dynamic handler import and vi.waitFor keep real timeouts.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalLeaseMs === undefined) delete process.env.CRON_RUN_LEASE_MS;
+    else process.env.CRON_RUN_LEASE_MS = originalLeaseMs;
+  });
+
+  it("renews the lease while a long Core handler runs and stops once it succeeds", async () => {
+    const purge = deferredPurge();
+    triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-h", "owner-h", "CORE");
+    await vi.waitFor(() => expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce());
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(renewCalls()).toHaveLength(1);
+    expect(renewCalls()[0]).toEqual(expect.arrayContaining(["run-h", "owner-h"]));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(renewCalls()).toHaveLength(2);
+    expect(finishCalls()).toHaveLength(0);
+
+    purge.resolve();
+    await vi.waitFor(() => expect(finishCalls()).toHaveLength(1));
+    expect(finishCalls()[0][1]).toBe("SUCCESS");
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(renewCalls()).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops renewing once a long Core handler fails", async () => {
+    const purge = deferredPurge();
+    triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-f", "owner-f", "CORE");
+    await vi.waitFor(() => expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce());
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(renewCalls()).toHaveLength(1);
+
+    purge.reject(new Error("database went away"));
+    await vi.waitFor(() => expect(finishCalls()).toHaveLength(1));
+    const [, status, message] = finishCalls()[0];
+    expect(status).toBe("ERROR");
+    expect(message).toContain("database went away");
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(renewCalls()).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("logs a warning when the run's lease was lost so its result was not recorded", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockPurgeDeletedMaterials.mockResolvedValue(PURGE_RESULT);
+    // The finishing UPDATE matched no row: the lease expired and was reaped or taken over.
+    mockExecuteRaw.mockResolvedValue(0);
+
+    try {
+      triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-l", "owner-l", "CORE");
+
+      await vi.waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("result was not recorded")),
+      );
+      expect(finishCalls()).toHaveLength(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("purge-deleted-materials"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe("KNOWN_CRON_JOBS ai-status-probe entry", () => {
   it("registers ai-status-probe as a CORE job on the configured cadence", () => {
     const job = KNOWN_CRON_JOBS.find((j) => j.name === "ai-status-probe");
@@ -718,5 +917,167 @@ describe("dispatchManualCronRuns", () => {
     expect(wasClaimed("run-unknown")).toBe(false);
     expect(mockNotifyExpiringApiKeys).not.toHaveBeenCalled();
     expect(mockSpawn).not.toHaveBeenCalled();
+  });
+});
+
+describe("cron job settings", () => {
+  const JOB = "test-settings-job";
+
+  beforeEach(() => {
+    if (!KNOWN_CRON_JOBS.some((j) => j.name === JOB)) {
+      KNOWN_CRON_JOBS.push({
+        name: JOB,
+        description: "Settings fixture",
+        schedule: "7 7 * * *",
+        scheduleLabel: "Daily at 07:07 UTC",
+        script: "Core handler",
+        execution: "CORE",
+        settings: [
+          {
+            key: "retainDays",
+            label: "Delete after (days)",
+            type: "int",
+            min: 1,
+            max: 3650,
+            default: 90,
+          },
+        ],
+      });
+    }
+  });
+
+  afterAll(() => {
+    const i = KNOWN_CRON_JOBS.findIndex((j) => j.name === JOB);
+    if (i >= 0) KNOWN_CRON_JOBS.splice(i, 1);
+  });
+
+  describe("getCronJobSetting", () => {
+    it("returns the declared default when no override is stored", async () => {
+      await expect(getCronJobSetting(JOB, "retainDays")).resolves.toBe(90);
+      expect(mockSettingFindUnique).toHaveBeenCalledWith({
+        where: { jobName_key: { jobName: JOB, key: "retainDays" } },
+      });
+    });
+
+    it("returns a valid stored override", async () => {
+      mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: "30" });
+      await expect(getCronJobSetting(JOB, "retainDays")).resolves.toBe(30);
+    });
+
+    it.each(["0", "3651", "abc", "1.5", "", " "])(
+      "falls back to the default for an invalid stored value %j",
+      async (stored) => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: stored });
+        await expect(getCronJobSetting(JOB, "retainDays")).resolves.toBe(90);
+        expect(warn).toHaveBeenCalled();
+      },
+    );
+
+    it("throws for a setting the job does not declare", async () => {
+      await expect(getCronJobSetting(JOB, "nope")).rejects.toThrow(/Unknown cron job setting/);
+      await expect(getCronJobSetting("ghost-job", "retainDays")).rejects.toThrow(
+        /Unknown cron job setting/,
+      );
+    });
+  });
+
+  describe("updateCronJobSetting", () => {
+    it("upserts a valid value and returns the previous and new values", async () => {
+      mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: "60" });
+      await expect(updateCronJobSetting(JOB, "retainDays", 30, "admin-1")).resolves.toEqual({
+        previous: 60,
+        value: 30,
+      });
+      expect(mockSettingUpsert).toHaveBeenCalledWith({
+        where: { jobName_key: { jobName: JOB, key: "retainDays" } },
+        create: { jobName: JOB, key: "retainDays", value: "30", updatedBy: "admin-1" },
+        update: { value: "30", updatedBy: "admin-1" },
+      });
+    });
+
+    it("reports the default as the previous value when nothing was stored", async () => {
+      await expect(updateCronJobSetting(JOB, "retainDays", 30, "admin-1")).resolves.toEqual({
+        previous: 90,
+        value: 30,
+      });
+    });
+
+    it.each([
+      [0, /between 1 and 3650/],
+      [3651, /between 1 and 3650/],
+      [1.5, /whole number/],
+      [Number.NaN, /whole number/],
+    ])("rejects %s without writing", async (value, message) => {
+      const error = await updateCronJobSetting(JOB, "retainDays", value, "admin-1").catch(
+        (e: Error) => e,
+      );
+      expect(error).toBeInstanceOf(CronJobSettingError);
+      expect((error as Error).message).toMatch(message);
+      expect((error as Error).message).toContain("Delete after (days)");
+      expect(mockSettingUpsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects an unknown job or key", async () => {
+      await expect(updateCronJobSetting("ghost-job", "retainDays", 30, "a")).rejects.toThrow(
+        "Unknown job: ghost-job",
+      );
+      await expect(updateCronJobSetting(JOB, "nope", 30, "a")).rejects.toThrow(
+        `Unknown setting "nope" for job ${JOB}`,
+      );
+      expect(mockSettingUpsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resetCronJobSetting", () => {
+    it("deletes the override and returns the previous value and the default", async () => {
+      mockSettingFindUnique.mockResolvedValue({ jobName: JOB, key: "retainDays", value: "30" });
+      await expect(resetCronJobSetting(JOB, "retainDays")).resolves.toEqual({
+        previous: 30,
+        value: 90,
+      });
+      expect(mockSettingDeleteMany).toHaveBeenCalledWith({
+        where: { jobName: JOB, key: "retainDays" },
+      });
+    });
+
+    it("rejects an unknown key without deleting", async () => {
+      await expect(resetCronJobSetting(JOB, "nope")).rejects.toBeInstanceOf(CronJobSettingError);
+      expect(mockSettingDeleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("listCronJobStatuses settings", () => {
+    it("attaches default settings with overridden:false", async () => {
+      const jobs = await listCronJobStatuses();
+      const entry = jobs.find((j) => j.name === JOB)!;
+      expect(entry.settings).toEqual([
+        expect.objectContaining({ key: "retainDays", value: 90, default: 90, overridden: false }),
+      ]);
+    });
+
+    it("applies a stored override with overridden:true", async () => {
+      mockSettingFindMany.mockResolvedValue([{ jobName: JOB, key: "retainDays", value: "30" }]);
+      const jobs = await listCronJobStatuses();
+      expect(jobs.find((j) => j.name === JOB)!.settings![0]).toMatchObject({
+        value: 30,
+        overridden: true,
+      });
+    });
+
+    it("treats an invalid stored override as the default, not overridden", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockSettingFindMany.mockResolvedValue([{ jobName: JOB, key: "retainDays", value: "0" }]);
+      const jobs = await listCronJobStatuses();
+      expect(jobs.find((j) => j.name === JOB)!.settings![0]).toMatchObject({
+        value: 90,
+        overridden: false,
+      });
+    });
+
+    it("leaves settings undefined on jobs that declare none", async () => {
+      const jobs = await listCronJobStatuses();
+      expect(jobs.find((j) => j.name === "backup-nightly")!.settings).toBeUndefined();
+    });
   });
 });

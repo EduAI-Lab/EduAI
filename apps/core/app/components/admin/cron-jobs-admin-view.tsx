@@ -468,6 +468,148 @@ function EditScheduleDialog({
   );
 }
 
+// ── Edit settings dialog ──────────────────────────────────────────────────────
+
+interface EditSettingsDialogProps {
+  job: CronJobEntry | null;
+  open: boolean;
+  onClose: () => void;
+  onSaved: (jobs: CronJobEntry[]) => void;
+}
+
+function EditSettingsDialog({ job, open, onClose, onSaved }: EditSettingsDialogProps) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (job) {
+      setValues(Object.fromEntries((job.settings ?? []).map((s) => [s.key, String(s.value)])));
+      setError(null);
+    }
+  }, [job]);
+
+  /** POSTs one settings intent; returns the refreshed jobs, or null after showing the error. */
+  async function post(payload: Record<string, string | number>): Promise<CronJobEntry[] | null> {
+    const res = await fetch("/api/admin/cron-jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    // SAFETY: /api/admin/cron-jobs answers every settings intent with either
+    // `{ jobs }` (from listCronJobStatuses) or `{ error }`; both fields are optional here.
+    const body = (await res.json()) as { jobs?: CronJobEntry[]; error?: string };
+    if (!res.ok || body.error) {
+      setError(body.error ?? "Failed to save");
+      return null;
+    }
+    return body.jobs ?? [];
+  }
+
+  async function save() {
+    if (!job) return;
+    setSaving(true);
+    setError(null);
+    try {
+      let latest: CronJobEntry[] | null = null;
+      for (const setting of job.settings ?? []) {
+        const raw = (values[setting.key] ?? "").trim();
+        if (raw === String(setting.value)) continue;
+        latest = await post({
+          intent: "update-setting",
+          jobName: job.name,
+          key: setting.key,
+          value: Number(raw),
+        });
+        if (!latest) return;
+      }
+      if (latest) onSaved(latest);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reset(key: string) {
+    if (!job) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const latest = await post({ intent: "reset-setting", jobName: job.name, key });
+      if (!latest) return;
+      onSaved(latest);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v: boolean) => {
+        if (!v) onClose();
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit settings — {job?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 py-2">
+          {(job?.settings ?? []).map((setting) => (
+            <div key={setting.key} className="flex flex-col gap-1.5">
+              <Label htmlFor={`cron-setting-${setting.key}`}>{setting.label}</Label>
+              <Input
+                id={`cron-setting-${setting.key}`}
+                type="number"
+                inputMode="numeric"
+                min={setting.min}
+                max={setting.max}
+                step={1}
+                value={values[setting.key] ?? ""}
+                onChange={(e) => {
+                  setValues((prev) => ({ ...prev, [setting.key]: e.target.value }));
+                  setError(null);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                {setting.min}–{setting.max}, default {setting.default}
+              </p>
+              {setting.description && (
+                <p className="text-xs text-muted-foreground">{setting.description}</p>
+              )}
+              {setting.overridden && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="self-start"
+                  onClick={() => reset(setting.key)}
+                  disabled={saving}
+                >
+                  Reset to default
+                </Button>
+              )}
+            </div>
+          ))}
+          {error && (
+            <p className="text-sm" style={{ color: "var(--destructive)" }}>
+              {error}
+            </p>
+          )}
+        </div>
+        <DialogFooter className="flex items-center gap-2">
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export interface CronJobsAdminViewProps {
@@ -479,6 +621,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<string | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
+  const [editSettingsJob, setEditSettingsJob] = useState<CronJobEntry | null>(null);
   const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
 
   async function triggerJob(jobName: string) {
@@ -610,6 +753,11 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                           </button>
                         )}
                       </div>
+                      {job.settings?.map((setting) => (
+                        <div key={setting.key} className="text-xs text-muted-foreground mt-1">
+                          {`${setting.label}: ${setting.value} (${setting.overridden ? "overridden" : "default"})`}
+                        </div>
+                      ))}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {job.script}
@@ -639,6 +787,14 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         >
                           History
                         </button>
+                        {job.triggerEnabled !== false && (job.settings?.length ?? 0) > 0 && (
+                          <button
+                            onClick={() => setEditSettingsJob(job)}
+                            className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
+                          >
+                            Edit settings
+                          </button>
+                        )}
                         {job.triggerEnabled !== false && (
                           <Button
                             size="sm"
@@ -674,6 +830,16 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
           setEditScheduleJob(null);
         }}
         triggerEnabled={editScheduleJob?.triggerEnabled !== false}
+      />
+
+      <EditSettingsDialog
+        job={editSettingsJob}
+        open={editSettingsJob !== null}
+        onClose={() => setEditSettingsJob(null)}
+        onSaved={(updated) => {
+          setJobs(updated);
+          setEditSettingsJob(null);
+        }}
       />
     </div>
   );

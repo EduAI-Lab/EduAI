@@ -49,6 +49,27 @@ export type CronJobStatusValue = "RUNNING" | "SUCCESS" | "ERROR";
 export type CronJobTriggerSource = "SCHEDULE" | "ADMIN_UI" | "ADMIN_CHAT" | "UNKNOWN";
 export type CronJobExecution = "SCRIPT" | "CORE";
 
+/**
+ * A per-job tunable declared in code. `default` applies until an admin saves an
+ * override in `cron_job_settings`; every read re-validates the stored value
+ * against `min`/`max`, so a bad row falls back to `default` instead of reaching
+ * the handler.
+ */
+export type CronJobSettingDef = {
+  key: string;
+  label: string;
+  description?: string;
+  type: "int";
+  min: number;
+  max: number;
+  default: number;
+};
+
+export interface CronJobSettingEntry extends CronJobSettingDef {
+  value: number;
+  overridden: boolean;
+}
+
 export interface KnownCronJob {
   name: string;
   description: string;
@@ -57,9 +78,18 @@ export interface KnownCronJob {
   script: string;
   execution?: CronJobExecution;
   triggerEnabled?: boolean;
+  settings?: CronJobSettingDef[];
 }
 
 export const KNOWN_CRON_JOBS: KnownCronJob[] = [
+  {
+    name: "ai-status-probe",
+    description: "Sample UBC fleet health per model and persist a status history point",
+    schedule: cronEvery(pollMinutes()),
+    scheduleLabel: `Every ${pollMinutes()} minutes`,
+    script: "Core handler",
+    execution: "CORE",
+  },
   {
     name: "backup-nightly",
     description: "Full pg_dump of all three EduAI databases",
@@ -82,6 +112,14 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     script: "backup-rotate.sh",
   },
   {
+    name: "notify-invitation-expiry",
+    description: "Email invitees whose pending invitation is close to expiring",
+    schedule: "30 4 * * *",
+    scheduleLabel: "Daily at 04:30 UTC",
+    script: "Core handler",
+    execution: "CORE",
+  },
+  {
     name: "cleanup-invitations",
     description: "Delete revoked/expired invitations past a 30-day grace period",
     schedule: "30 3 * * *",
@@ -97,12 +135,25 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
-    name: "notify-invitation-expiry",
-    description: "Email invitees whose pending invitation is close to expiring",
-    schedule: "30 4 * * *",
-    scheduleLabel: "Daily at 04:30 UTC",
+    name: "purge-deleted-materials",
+    description: "Permanently delete course materials soft-deleted more than N days ago",
+    // After backup-nightly (02:00) so a purged material is still in that night's dump.
+    schedule: "0 5 * * *",
+    scheduleLabel: "Daily at 05:00 UTC",
     script: "Core handler",
     execution: "CORE",
+    settings: [
+      {
+        key: "retainDays",
+        label: "Delete after (days)",
+        description:
+          "Materials soft-deleted longer than this are permanently removed along with their embeddings and cannot be restored.",
+        type: "int",
+        min: 1,
+        max: 3650,
+        default: 90,
+      },
+    ],
   },
   {
     name: "ai-tutor-reconcile",
@@ -121,14 +172,6 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     script: "",
     triggerEnabled: false,
   },
-  {
-    name: "ai-status-probe",
-    description: "Sample UBC fleet health per model and persist a status history point",
-    schedule: cronEvery(pollMinutes()),
-    scheduleLabel: `Every ${pollMinutes()} minutes`,
-    script: "Core handler",
-    execution: "CORE",
-  },
 ];
 
 export interface CronJobRunRow {
@@ -146,10 +189,15 @@ export interface CronJobRunRow {
 export interface CronJobEntry extends KnownCronJob {
   lastRun: CronJobRunRow | null;
   scheduleOverridden?: boolean;
+  settings?: CronJobSettingEntry[];
+}
+
+function settingMapKey(jobName: string, key: string): string {
+  return `${jobName}\u0000${key}`;
 }
 
 export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
-  const [latestRuns, overrides] = await Promise.all([
+  const [latestRuns, overrides, settingRows] = await Promise.all([
     prisma.$queryRaw<
       Array<{
         id: string;
@@ -169,6 +217,7 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
       ORDER BY "jobName", "startedAt" DESC
     `,
     prisma.cronJobScheduleOverride.findMany(),
+    prisma.cronJobSetting.findMany(),
   ]);
 
   const runByName = new Map(
@@ -189,16 +238,29 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
   );
 
   const overrideByName = new Map(overrides.map((o) => [o.jobName, o]));
+  const settingByKey = new Map(settingRows.map((s) => [settingMapKey(s.jobName, s.key), s]));
 
   return KNOWN_CRON_JOBS.map((job) => {
     const override = overrideByName.get(job.name);
-    return {
-      ...job,
+    const { settings: settingDefs, ...jobFields } = job;
+    const entry: CronJobEntry = {
+      ...jobFields,
       schedule: override?.schedule ?? job.schedule,
       scheduleLabel: override?.scheduleLabel ?? job.scheduleLabel,
       scheduleOverridden: override != null,
       lastRun: runByName.get(job.name) ?? null,
     };
+    if (settingDefs) {
+      entry.settings = settingDefs.map((def) => {
+        const row = settingByKey.get(settingMapKey(job.name, def.key));
+        return {
+          ...def,
+          value: effectiveSettingValue(job.name, def, row),
+          overridden: row !== undefined && parseSettingValue(def, row.value) !== null,
+        };
+      });
+    }
+    return entry;
   });
 }
 
@@ -216,6 +278,97 @@ export async function updateCronSchedule(
 
 export async function resetCronSchedule(jobName: string): Promise<void> {
   await prisma.cronJobScheduleOverride.deleteMany({ where: { jobName } });
+}
+
+/** A rejected admin settings write; the message is shown to the admin verbatim. */
+export class CronJobSettingError extends Error {
+  readonly status = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "CronJobSettingError";
+  }
+}
+
+function findSettingDef(jobName: string, key: string): CronJobSettingDef | undefined {
+  return KNOWN_CRON_JOBS.find((j) => j.name === jobName)?.settings?.find((s) => s.key === key);
+}
+
+/** The stored text as a value inside the declared range, or null if unusable. */
+function parseSettingValue(def: CronJobSettingDef, raw: string): number | null {
+  if (!/^-?\d+$/.test(raw.trim())) return null;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < def.min || parsed > def.max) return null;
+  return parsed;
+}
+
+function effectiveSettingValue(
+  jobName: string,
+  def: CronJobSettingDef,
+  row: { value: string } | null | undefined,
+): number {
+  if (!row) return def.default;
+  const parsed = parseSettingValue(def, row.value);
+  if (parsed === null) {
+    console.warn(
+      `[cron] Ignoring invalid stored setting ${jobName}.${def.key}=${JSON.stringify(row.value)}; using default ${def.default}`,
+    );
+    return def.default;
+  }
+  return parsed;
+}
+
+function requireSettingDef(jobName: string, key: string): CronJobSettingDef {
+  if (!KNOWN_CRON_JOBS.some((j) => j.name === jobName)) {
+    throw new CronJobSettingError(`Unknown job: ${jobName}`);
+  }
+  const def = findSettingDef(jobName, key);
+  if (!def) throw new CronJobSettingError(`Unknown setting "${key}" for job ${jobName}`);
+  return def;
+}
+
+async function readSettingRow(jobName: string, key: string) {
+  return prisma.cronJobSetting.findUnique({ where: { jobName_key: { jobName, key } } });
+}
+
+/** The value a handler should use right now: a valid admin override, else the code default. */
+export async function getCronJobSetting(jobName: string, key: string): Promise<number> {
+  const def = findSettingDef(jobName, key);
+  if (!def) throw new Error(`Unknown cron job setting ${jobName}.${key}`);
+  return effectiveSettingValue(jobName, def, await readSettingRow(jobName, key));
+}
+
+export async function updateCronJobSetting(
+  jobName: string,
+  key: string,
+  value: number,
+  userId: string,
+): Promise<{ previous: number; value: number }> {
+  const def = requireSettingDef(jobName, key);
+  if (!Number.isSafeInteger(value)) {
+    throw new CronJobSettingError(`"${def.label}" must be a whole number`);
+  }
+  if (value < def.min || value > def.max) {
+    throw new CronJobSettingError(`"${def.label}" must be between ${def.min} and ${def.max}`);
+  }
+  const previous = effectiveSettingValue(jobName, def, await readSettingRow(jobName, key));
+  const stored = String(value);
+  await prisma.cronJobSetting.upsert({
+    where: { jobName_key: { jobName, key } },
+    create: { jobName, key, value: stored, updatedBy: userId },
+    update: { value: stored, updatedBy: userId },
+  });
+  return { previous, value };
+}
+
+export async function resetCronJobSetting(
+  jobName: string,
+  key: string,
+): Promise<{ previous: number; value: number }> {
+  const def = requireSettingDef(jobName, key);
+  const previous = effectiveSettingValue(jobName, def, await readSettingRow(jobName, key));
+  await prisma.cronJobSetting.deleteMany({ where: { jobName, key } });
+  return { previous, value: def.default };
 }
 
 export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise<CronJobRunRow[]> {
@@ -478,11 +631,59 @@ const CORE_JOB_HANDLERS = {
       return { message: `Sent ${notified} invitation expiry reminder(s)` };
     };
   },
+  "purge-deleted-materials": async () => {
+    const { purgeDeletedMaterials, formatPurgeMessage } =
+      await import("~/lib/cron-purge-deleted-materials.server");
+    return async () => ({ message: formatPurgeMessage(await purgeDeletedMaterials()) });
+  },
   "ai-status-probe": async () => {
     const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");
     return runAiStatusProbe;
   },
 } satisfies Record<string, () => Promise<CoreJobHandler>>;
+
+type CronLeaseLossReason = "lost" | "renewal-failed";
+
+/**
+ * Keep a run's lease alive while its work is in flight. Every execution path
+ * (spawned SCRIPT jobs and in-process CORE handlers) shares this heartbeat so a
+ * run that outlives one lease period is not reaped mid-flight, which would drop
+ * its recorded outcome and let a second run of the same job start. Returns a
+ * stop function; `onLeaseLost` fires when the database no longer confirms the
+ * lease (ownership changed or the renewal query failed).
+ */
+function startCronRunLeaseHeartbeat(
+  jobName: string,
+  runId: string,
+  leaseOwner: string,
+  onLeaseLost: (reason: CronLeaseLossReason) => void,
+): () => void {
+  let stopped = false;
+  let leaseRenewalInFlight = false;
+  const leaseHeartbeatMs = Math.max(5_000, Math.floor(resolveCronRunLeaseMs() / 3));
+  const heartbeatTimer = setInterval(() => {
+    if (stopped || leaseRenewalInFlight) return;
+    leaseRenewalInFlight = true;
+    void renewCronRunLease(runId, leaseOwner)
+      .then((renewed) => {
+        if (!renewed) {
+          onLeaseLost("lost");
+        }
+      })
+      .catch((cause: unknown) => {
+        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(cause));
+        onLeaseLost("renewal-failed");
+      })
+      .finally(() => {
+        leaseRenewalInFlight = false;
+      });
+  }, leaseHeartbeatMs);
+  heartbeatTimer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(heartbeatTimer);
+  };
+}
 
 export function triggerCronJobAsync(
   jobName: string,
@@ -506,8 +707,19 @@ export function triggerCronJobAsync(
       return;
     }
 
+    // An in-process handler cannot be killed, so a lost lease is only reported;
+    // the finish below is then fenced out and logged rather than recorded.
+    const stopHeartbeat = startCronRunLeaseHeartbeat(jobName, runId, leaseOwner, (reason) =>
+      console.warn(
+        reason === "lost"
+          ? `[cron] ${jobName} lease ownership was lost while its Core handler was running`
+          : `[cron] ${jobName} lease could not be renewed while its Core handler was running`,
+      ),
+    );
+
     void resolve()
       .then((handler) => handler())
+      .finally(stopHeartbeat)
       .then(({ message }) => finishCronRun(runId, leaseOwner, "SUCCESS", message, 0))
       .catch((cause: unknown) =>
         finishCronRun(
@@ -522,7 +734,14 @@ export function triggerCronJobAsync(
         ).catch((cause: unknown) =>
           console.error("[cron] finishCronRun failed:", redactErrorForConsole(cause)),
         ),
-      );
+      )
+      .then((finished) => {
+        if (finished === false) {
+          console.warn(
+            `[cron] ${jobName} run lease was lost before completion; its result was not recorded`,
+          );
+        }
+      });
     return;
   }
 
@@ -553,7 +772,6 @@ export function triggerCronJobAsync(
   let exceededOutputLimit = false;
   let finalized = false;
   let terminating = false;
-  let leaseRenewalInFlight = false;
   let forcedMessage: string | undefined;
   let killTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -596,32 +814,20 @@ export function triggerCronJobAsync(
   child.stdout?.on("data", capture);
   child.stderr?.on("data", capture);
 
-  const leaseHeartbeatMs = Math.max(5_000, Math.floor(resolveCronRunLeaseMs() / 3));
-  const heartbeatTimer = setInterval(() => {
-    if (finalized || leaseRenewalInFlight) return;
-    leaseRenewalInFlight = true;
-    void renewCronRunLease(runId, leaseOwner)
-      .then((renewed) => {
-        if (!renewed) {
-          terminate("Cron run lease ownership was lost; process terminated");
-        }
-      })
-      .catch((cause: unknown) => {
-        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(cause));
-        // Continuing after the database can no longer confirm our lease risks
-        // overlapping external side effects with a successor after expiry.
-        terminate("Cron run lease could not be renewed; process terminated");
-      })
-      .finally(() => {
-        leaseRenewalInFlight = false;
-      });
-  }, leaseHeartbeatMs);
-  heartbeatTimer.unref?.();
+  const stopHeartbeat = startCronRunLeaseHeartbeat(jobName, runId, leaseOwner, (reason) => {
+    if (reason === "lost") {
+      terminate("Cron run lease ownership was lost; process terminated");
+      return;
+    }
+    // Continuing after the database can no longer confirm our lease risks
+    // overlapping external side effects with a successor after expiry.
+    terminate("Cron run lease could not be renewed; process terminated");
+  });
 
   const finalize = (code: number | null, overrideMessage?: string): void => {
     if (finalized) return;
     finalized = true;
-    clearInterval(heartbeatTimer);
+    stopHeartbeat();
     if (killTimer) clearTimeout(killTimer);
 
     const rawExitCode = code ?? 1;
