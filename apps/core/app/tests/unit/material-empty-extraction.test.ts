@@ -53,6 +53,7 @@ import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { extractUploadedFileContent, generateChecksum } from "~/lib/ai/file-processing";
 import { runMaterialExtraction } from "~/lib/materials/extraction-job.server";
 
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /** SHA-256 of the empty string — what every text-free extraction currently hashes to. */
@@ -101,6 +102,16 @@ async function buildImageOnlyDocx(): Promise<Buffer> {
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+/** A real PPTX container with one slide holding only a picture — no <a:t> runs. */
+async function buildImageOnlyPptx(): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    "ppt/slides/slide1.xml",
+    '<?xml version="1.0"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:pic/></p:spTree></p:cSld></p:sld>',
+  );
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
 function uploadFile(bytes: Buffer, name: string, mimeType: string): File {
   return new File([new Uint8Array(bytes)], name, { type: mimeType });
 }
@@ -142,6 +153,14 @@ describe("#1781 upload of a file with no extractable text", () => {
     );
   });
 
+  it("rejects an image-only PPTX instead of embedding a placeholder string", async () => {
+    const deck = uploadFile(await buildImageOnlyPptx(), "figures.pptx", PPTX_MIME);
+
+    await expect(extractUploadedFileContent(deck)).rejects.toThrow(
+      /figures\.pptx.*No readable text could be extracted/,
+    );
+  });
+
   it("never lets a text-free upload of any format reach the pipeline as the empty-string checksum", async () => {
     // The dedupe index is (courseId, checksum). If a scanned PDF, a figures-only
     // DOCX and a blank text file all hash to SHA-256("") then the second one
@@ -151,6 +170,7 @@ describe("#1781 upload of a file with no extractable text", () => {
       ["pdf", uploadFile(buildScannedPdf(), "scan.pdf", "application/pdf")],
       ["docx", uploadFile(await buildImageOnlyDocx(), "figures.docx", DOCX_MIME)],
       ["txt", uploadFile(Buffer.from("   \n\n\t \n"), "blank.txt", "text/plain")],
+      ["pptx", uploadFile(await buildImageOnlyPptx(), "figures.pptx", PPTX_MIME)],
     ];
 
     for (const [label, file] of candidates) {

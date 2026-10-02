@@ -153,7 +153,7 @@ describe("PDF text-layer extraction (#1787)", () => {
     expect(outcome).toMatchObject({ message: expect.stringMatching(/no extractable text layer/i) });
   });
 
-  it("never checksums two different image-only PDFs to the same empty-content hash", async () => {
+  it("rejects every image-only PDF, so none reaches the empty-content checksum", async () => {
     // sha256(""), the value `generateChecksum` returns for empty extracted text. It is a
     // constant, so every scanned PDF that extracts to nothing writes the *same* value to
     // CourseMaterial.checksum — the `(courseId, checksum)` dedup index then reports the

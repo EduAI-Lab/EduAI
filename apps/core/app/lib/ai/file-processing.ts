@@ -1056,9 +1056,11 @@ function buildPdfExtractionWorkerSource(maxOutputBytes: number): string {
       // BaseExceptionClosure (…)" for a password-protected PDF (#1787).
       const name = (error && error.name) || "Error";
       const message = (error && error.message) || "";
-      process.stderr.write(
-        name + (message ? ": " + message : "") + "\\n" + String((error && error.stack) || error),
-      );
+      // Ordinary Errors already start their stack with "Name: message";
+      // only prefix when it doesn't, so the line isn't duplicated.
+      const head = name + (message ? ": " + message : "");
+      const stack = String((error && error.stack) || error);
+      process.stderr.write(stack.startsWith(head) ? stack : head + "\\n" + stack);
       process.exit(1);
     });
 `;
@@ -1471,9 +1473,9 @@ export async function extractPptxText(
     });
 
     return {
-      content: sanitizeTextContent(
-        textContent.join("\n\n") || "No text content found in presentation",
-      ),
+      // No placeholder when no slide has text: an empty string lets
+      // `assertExtractedContentNotEmpty` reject image-only decks (#1781).
+      content: sanitizeTextContent(textContent.join("\n\n")),
       pageCount: slideCount,
       metadata: {
         slideCount,

@@ -943,7 +943,7 @@ describe("extractPptxText", () => {
     expect(order).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
   });
 
-  it("falls back to a placeholder message when the presentation has no slides", async () => {
+  it("returns empty content when the presentation has no slides", async () => {
     const buffer = await buildZipArrayBuffer({ "docProps/core.xml": "<core/>" });
     const file = {
       name: "empty.pptx",
@@ -954,10 +954,10 @@ describe("extractPptxText", () => {
 
     const result = await extractPptxText(file as any);
     expect(result.pageCount).toBe(0);
-    expect(result.content).toBe("No text content found in presentation");
+    expect(result.content).toBe("");
   });
 
-  it("falls back to the placeholder when slides exist but contain no <a:t> runs", async () => {
+  it("returns empty content (no placeholder) when slides exist but contain no <a:t> runs", async () => {
     const buffer = await buildPptxZipArrayBuffer(["<p:noText/>"]);
     const file = {
       name: "blank.pptx",
@@ -968,7 +968,7 @@ describe("extractPptxText", () => {
 
     const result = await extractPptxText(file as any);
     expect(result.pageCount).toBe(1);
-    expect(result.content).toBe("No text content found in presentation");
+    expect(result.content).toBe("");
   });
 
   it("wraps errors when the uploaded bytes are not a valid ZIP container", async () => {
