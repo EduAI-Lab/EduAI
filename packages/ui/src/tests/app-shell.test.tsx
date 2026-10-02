@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { describe, expect, it } from "vitest";
 
 import { AppShell, type AppShellProps } from "../app-shell";
@@ -21,6 +22,35 @@ function renderShell(overrides: Partial<Omit<AppShellProps, "sidebar">> = {}) {
 }
 
 describe("AppShell", () => {
+  it("renders navFooter links in the footer without the nav group's extra padding", () => {
+    render(
+      <AppShell
+        sidebar={{
+          ...sidebar,
+          navFooter: [
+            {
+              title: "Back to EduAI",
+              url: "https://core.example/dashboard",
+              icon: IconArrowLeft,
+              external: true,
+            },
+          ],
+        }}
+      >
+        <div>Page content</div>
+      </AppShell>,
+    );
+
+    const link = screen.getByRole("link", { name: "Back to EduAI" });
+    expect(link).toHaveAttribute("href", "https://core.example/dashboard");
+    expect(link.closest("[data-sidebar='footer']")).not.toBeNull();
+    // The footer already pads by p-2; a second p-2 from the group indented this
+    // row past every other sidebar row.
+    const group = link.closest("[data-sidebar='group']");
+    expect(group).toHaveClass("p-0");
+    expect(group).not.toHaveClass("p-2");
+  });
+
   it("renders the sidebar slot (logo and nav items)", () => {
     renderShell();
     expect(screen.getByText("Test App")).toBeInTheDocument();

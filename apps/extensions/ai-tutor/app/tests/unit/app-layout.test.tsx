@@ -105,7 +105,10 @@ vi.mock("@eduai/ui", async (importOriginal) => {
       commandPalette,
       children,
     }: {
-      sidebar: { navUser: { onLogout: () => void } };
+      sidebar: {
+        navUser: { onLogout: () => void };
+        navFooter?: { title: string; url: string }[];
+      };
       headerActions: React.ReactNode;
       commandPalette: React.ReactNode;
       children: React.ReactNode;
@@ -114,6 +117,11 @@ vi.mock("@eduai/ui", async (importOriginal) => {
         <button type="button" onClick={() => void sidebar.navUser.onLogout()}>
           Log out
         </button>
+        {sidebar.navFooter?.map((item) => (
+          <a key={item.title} href={item.url}>
+            {item.title}
+          </a>
+        ))}
         <div>{headerActions}</div>
         <div>{commandPalette}</div>
         <div>{children}</div>
@@ -224,6 +232,20 @@ describe("_app layout — authenticated shell", () => {
 
     expect(mockLogout).toHaveBeenCalled();
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+  });
+
+  it("offers a Back to EduAI footer link to Core's dashboard, like Question Maker", () => {
+    mockUser = { id: "u1", name: "Ada", role: "STUDENT" };
+    render(
+      <MemoryRouter>
+        <AppLayout />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "Back to EduAI" })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/dashboard",
+    );
   });
 
   it("sends the user to Core for the full status page, in a new tab", () => {
