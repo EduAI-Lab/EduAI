@@ -498,8 +498,10 @@ jobs:
           docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}" "${targets[@]}"
 
       - name: Restore Ollama embedding model cache
-        # Saved by this step's post action once the job ends (on success only).
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: ollama-cache
+        # Only the Core / all suites start e2e-ollama; other suites never touch the model.
+        if: contains(steps.select.outputs.suites, 'core') || contains(steps.select.outputs.suites, 'all')
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/e2e-ollama-models
           key: e2e-ollama-0.12.6-mxbai-embed-large-335m
@@ -511,12 +513,28 @@ jobs:
           E2E_OLLAMA_MODELS_DIR: ${{ runner.temp }}/e2e-ollama-models
         run: bash scripts/e2e-in-docker.sh
 
-      - name: Make Ollama model cache readable for cache save
-        # The container writes as root; the cache action runs as the runner user.
-        if: success()
+      - name: Verify Ollama model cache is complete
+        id: ollama-verify
+        # Cache keys are immutable, so never save an empty or partial directory: it would
+        # win every later exact-hit restore and the model would be re-pulled forever.
+        if: success() && steps.ollama-cache.outputs.cache-hit != 'true' && (contains(steps.select.outputs.suites, 'core') || contains(steps.select.outputs.suites, 'all'))
         run: |
-          mkdir -p "${{ runner.temp }}/e2e-ollama-models"
-          sudo chown -R "$(id -u):$(id -g)" "${{ runner.temp }}/e2e-ollama-models"
+          dir="${{ runner.temp }}/e2e-ollama-models"
+          # The container writes as root; the cache action runs as the runner user.
+          sudo chown -R "$(id -u):$(id -g)" "$dir"
+          if [ -s "$dir/models/manifests/registry.ollama.ai/library/mxbai-embed-large/335m" ] \
+            && [ -n "$(ls -A "$dir/models/blobs" 2>/dev/null)" ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Ollama model dir incomplete; not saving the cache."
+          fi
+
+      - name: Save Ollama embedding model cache
+        if: steps.ollama-verify.outputs.complete == 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/e2e-ollama-models
+          key: e2e-ollama-0.12.6-mxbai-embed-large-335m
 
       - name: Warm affected E2E caches
         # Cache export is intentionally separate from the loaded test build:

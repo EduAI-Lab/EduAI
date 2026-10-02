@@ -74,8 +74,9 @@ services:
       # ~670MB model is not re-pulled every run; locally it stays a named volume.
       - ${E2E_OLLAMA_MODELS_DIR:-e2e_ollama_models}:/root/.ollama
     healthcheck:
-      # `ollama list` only names the model once the pull has finished.
-      test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large"]
+      # `show` on the bare name only succeeds once `ollama cp` has created the alias the
+      # app requests (a pulled `:335m` row alone is not enough).
+      test: ["CMD-SHELL", "ollama show mxbai-embed-large >/dev/null 2>&1"]
       interval: 5s
       timeout: 5s
       retries: 90
