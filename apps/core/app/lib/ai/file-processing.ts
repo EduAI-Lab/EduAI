@@ -699,7 +699,7 @@ export async function validateFileSignature(
       if (!looksLikeZipContainer(head)) {
         return {
           isValid: false,
-          error: `File declared as ${file.type} is not a valid ZIP/Office container`,
+          error: `File declared as ${resolveMaterialMimeType(file)} is not a valid ZIP/Office container`,
         };
       }
       return { isValid: true };
