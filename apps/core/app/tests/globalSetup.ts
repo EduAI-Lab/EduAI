@@ -154,34 +154,29 @@ export async function setup() {
     },
   );
 
-  // #1842: the course identity slot is a PARTIAL unique index, which Prisma
-  // cannot express, so it is absent from schema.prisma and `db push` never
-  // creates it. Apply the raw migration here — otherwise integration databases
-  // would carry NO uniqueness on (code, startDate, section) at all, and the
-  // duplicate-course guard would silently pass untested.
-  const partialCourseIdentityMigration = resolve(
-    appRoot,
-    "prisma",
-    "migrations",
+  // #1842/#1811: the course identity slot is a PARTIAL unique index, which Prisma
+  // cannot express, so `db push` never creates it. Apply the raw migrations in order.
+  for (const migration of [
     "20260922000000_partial_unique_course_identity",
-    "migration.sql",
-  );
-  execBin(
-    prismaBin,
-    [
-      "db",
-      "execute",
-      "--file",
-      partialCourseIdentityMigration,
-      "--schema",
-      resolve(appRoot, "prisma", "schema.prisma"),
-    ],
-    {
-      cwd: appRoot,
-      env: { ...process.env, DATABASE_URL: dbUrl },
-      stdio: "pipe",
-    },
-  );
+    "20261002000000_course_identity_term_year",
+  ]) {
+    execBin(
+      prismaBin,
+      [
+        "db",
+        "execute",
+        "--file",
+        resolve(appRoot, "prisma", "migrations", migration, "migration.sql"),
+        "--schema",
+        resolve(appRoot, "prisma", "schema.prisma"),
+      ],
+      {
+        cwd: appRoot,
+        env: { ...process.env, DATABASE_URL: dbUrl },
+        stdio: "pipe",
+      },
+    );
+  }
 
   // Prisma cannot represent an ivfflat index on Unsupported(vector), and
   // db push intentionally ignores the raw-SQL migration. Recreate it for the
