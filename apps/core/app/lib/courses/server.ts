@@ -25,6 +25,12 @@ import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { INSTRUCTOR_CANDIDATE_ROLES } from "~/lib/rbac/instructor-candidates";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
+import {
+  canRestoreCourse,
+  findDuplicateWarnings,
+  identityWhere,
+  type CourseIdentity,
+} from "./duplicates.server";
 import { getCourseInstructors } from "./instructors.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
 import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
@@ -40,6 +46,7 @@ import {
   CreateCourseTopicSchema,
   UpdateCourseTopicSchema,
   DeleteCourseTopicSchema,
+  type CreateCourseInput,
   type CreateCourseTopicInput,
   type UpdateCourseTopicInput,
   type DeleteCourseTopicInput,
@@ -119,6 +126,8 @@ async function parseCreateCourseBody(
     isPublished: formData.get("isPublished") ?? undefined,
     aiInstructions: formData.get("aiInstructions") || "",
     instructorUserIds,
+    duplicateResolution: formData.get("duplicateResolution") || undefined,
+    restoreCourseId: formData.get("restoreCourseId") || undefined,
   };
 
   const parsed = CreateCourseSchema.safeParse(data);
@@ -570,6 +579,28 @@ export async function createCourse(request: Request) {
     return apiError(422, "INVALID_INSTRUCTOR");
   }
 
+  // SAFETY: same session shape canCreateCourse already accepted above.
+  const user = session.user as RbacUser;
+  const identity = result.data;
+  const live = await prisma.course.findFirst({
+    where: { ...identityWhere(identity), deletedAt: null },
+    select: { name: true },
+  });
+  if (live) return identityTakenError(identity, live.name);
+
+  if (result.data.duplicateResolution === "restore") {
+    return restoreDeletedCourse(user, result.data);
+  }
+
+  // #1811: a soft-deleted copy or a near-duplicate needs an explicit answer
+  // (restore it, or `duplicateResolution: "create"`) before a new row is inserted.
+  if (result.data.duplicateResolution !== "create") {
+    const warnings = await findDuplicateWarnings(user, identity, result.data.instructorUserIds);
+    if (warnings.deletedMatches.length > 0 || warnings.similarCourses.length > 0) {
+      return jsonResponse(409, { error: "COURSE_POSSIBLE_DUPLICATE", ...warnings });
+    }
+  }
+
   let course;
   try {
     course = await prisma.$transaction(async (tx) => {
@@ -607,26 +638,7 @@ export async function createCourse(request: Request) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
       throw error;
     }
-    // #1842: the identity slot is now partial on `deletedAt`, so a collision
-    // here can only be a LIVE course — a tombstone no longer blocks
-    // re-creation. This used to escape as an unexplained 500. Name the row that
-    // is actually in the way rather than guessing from `error.meta`; if no live
-    // row matches, the P2002 belongs to another constraint (e.g. the external
-    // identity) and must stay visible.
-    const blocking = await prisma.course.findFirst({
-      where: {
-        code: result.data.code,
-        startDate: result.data.startDate,
-        section: result.data.section,
-        deletedAt: null,
-      },
-      select: { name: true },
-    });
-    if (!blocking) throw error;
-    const startsOn = result.data.startDate.toISOString().slice(0, 10);
-    return apiError(409, "COURSE_IDENTITY_TAKEN", {
-      code: `${result.data.code} section ${result.data.section} starting ${startsOn} is already used by "${blocking.name}"`,
-    });
+    return identityTakenOrRethrow(error, identity);
   }
 
   // #1624: a course must never exist with zero topics — Question Maker requires
@@ -636,6 +648,91 @@ export async function createCourse(request: Request) {
   await ensureCourseHasTopic(course.id);
 
   return jsonResponse(201, serializeCourseForApi(course, { audience: "staff", detail: true }));
+}
+
+/**
+ * #1811: bring a soft-deleted course back in place of creating a second row,
+ * keeping its materials and enrollments and applying the submitted details.
+ */
+async function restoreDeletedCourse(user: RbacUser, data: CreateCourseInput) {
+  if (!data.restoreCourseId) {
+    return apiError(422, "VALIDATION_ERROR", { restoreCourseId: "Required when restoring" });
+  }
+  const target = await prisma.course.findFirst({
+    where: { id: data.restoreCourseId, ...identityWhere(data), deletedAt: { not: null } },
+    select: { id: true, department: true },
+  });
+  if (!target) return apiError(404, "COURSE_NOT_FOUND");
+  if (!(await canRestoreCourse(user, target))) return apiError(403, "Forbidden");
+
+  let course;
+  try {
+    course = await prisma.$transaction(async (tx) => {
+      const restored = await tx.course.update({
+        where: { id: target.id },
+        data: {
+          deletedAt: null,
+          isActive: true,
+          name: data.name,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          department: data.department,
+          description: data.description,
+          isPublished: data.isPublished,
+          // Empty means "not filled in" on the create form; keep the old instructions.
+          aiInstructions: data.aiInstructions || undefined,
+          instructorId: data.instructorUserIds[0],
+        },
+      });
+      for (const userId of data.instructorUserIds) {
+        await tx.enrollment.upsert({
+          where: { courseId_userId: { courseId: target.id, userId } },
+          create: { courseId: target.id, userId, role: "INSTRUCTOR", isActive: true },
+          update: { role: "INSTRUCTOR", isActive: true },
+        });
+      }
+      await ensureDefaultBank(target.id, tx);
+      return restored;
+    });
+  } catch (error: unknown) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+    return identityTakenOrRethrow(error, data);
+  }
+
+  await ensureCourseHasTopic(course.id);
+  return jsonResponse(200, serializeCourseForApi(course, { audience: "staff", detail: true }));
+}
+
+function pickIdentity(data: Partial<CourseIdentity>): Partial<CourseIdentity> {
+  return Object.fromEntries(
+    (["code", "section", "year", "term"] as const)
+      .filter((key) => data[key] !== undefined)
+      .map((key) => [key, data[key]]),
+  );
+}
+
+function identityTakenError(identity: CourseIdentity, blockingName: string) {
+  return apiError(409, "COURSE_IDENTITY_TAKEN", {
+    code: `${identity.code} section ${identity.section} (${identity.term} ${identity.year}) is already used by "${blockingName}"`,
+  });
+}
+
+/**
+ * Map a P2002 on the partial identity index to COURSE_IDENTITY_TAKEN. Looks the
+ * live row up rather than parsing `error.meta`; a P2002 on another constraint is rethrown.
+ */
+async function identityTakenOrRethrow(
+  error: Prisma.PrismaClientKnownRequestError,
+  identity: CourseIdentity,
+) {
+  const blocking = await prisma.course.findFirst({
+    where: { ...identityWhere(identity), deletedAt: null },
+    select: { name: true },
+  });
+  if (!blocking) throw error;
+  return identityTakenError(identity, blocking.name);
 }
 
 /**
@@ -741,33 +838,45 @@ export async function updateCourse(request: Request, courseId: string) {
   const instructorChanging =
     newInstructorId !== undefined && newInstructorId !== course.instructorId;
 
-  const updated = await prisma.$transaction(async (tx) => {
-    if (instructorChanging) {
-      // #1840: naming a primary instructor is NOT a move. This used to
-      // deactivate the sitting instructor's enrollment first, so the only
-      // control the UI offered was a silent demotion — assigning Dr. Mostafa
-      // would have stripped Dr. Abdallah. A course may hold any number of
-      // active INSTRUCTOR enrollments, so the previous instructor keeps theirs;
-      // `Course.instructorId` only records which of them is the course head.
-      // Removing an instructor is a separate, explicit action through
-      // DELETE /api/courses/:id/enrollments/:enrollmentId, which is where the
-      // instructor-floor invariant is enforced.
-      await tx.enrollment.upsert({
-        where: { courseId_userId: { courseId, userId: newInstructorId! } },
-        create: {
-          courseId,
-          userId: newInstructorId!,
-          role: "INSTRUCTOR",
-          isActive: true,
-        },
-        update: { role: "INSTRUCTOR", isActive: true },
+  let updated;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      if (instructorChanging) {
+        // #1840: naming a primary instructor is NOT a move. This used to
+        // deactivate the sitting instructor's enrollment first, so the only
+        // control the UI offered was a silent demotion — assigning Dr. Mostafa
+        // would have stripped Dr. Abdallah. A course may hold any number of
+        // active INSTRUCTOR enrollments, so the previous instructor keeps theirs;
+        // `Course.instructorId` only records which of them is the course head.
+        // Removing an instructor is a separate, explicit action through
+        // DELETE /api/courses/:id/enrollments/:enrollmentId, which is where the
+        // instructor-floor invariant is enforced.
+        await tx.enrollment.upsert({
+          where: { courseId_userId: { courseId, userId: newInstructorId! } },
+          create: {
+            courseId,
+            userId: newInstructorId!,
+            role: "INSTRUCTOR",
+            isActive: true,
+          },
+          update: { role: "INSTRUCTOR", isActive: true },
+        });
+      }
+      return tx.course.update({
+        where: { id: courseId },
+        data: updateData,
       });
-    }
-    return tx.course.update({
-      where: { id: courseId },
-      data: updateData,
     });
-  });
+  } catch (error: unknown) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+    const current = await prisma.course.findUniqueOrThrow({
+      where: { id: courseId },
+      select: { code: true, section: true, year: true, term: true },
+    });
+    return identityTakenOrRethrow(error, { ...current, ...pickIdentity(updateData) });
+  }
 
   return new Response(
     JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
