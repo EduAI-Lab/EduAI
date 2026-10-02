@@ -24,6 +24,7 @@ import { Toaster } from "@eduai/ui/sonner";
 import { PageLoader } from "@eduai/ui/page-loader";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { PolicyProvider } from "~/components/policy/policy-gate";
+import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
@@ -343,7 +344,9 @@ export default function App({ loaderData }: Route.ComponentProps) {
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
         <PolicyProvider policies={loaderData?.policies ?? {}}>
           <ThemeSyncInitializer />
-          <Outlet />
+          <BugReportCaptureProvider>
+            <Outlet />
+          </BugReportCaptureProvider>
         </PolicyProvider>
       </AssistiveUiProvider>
     </UiPreferencesProvider>

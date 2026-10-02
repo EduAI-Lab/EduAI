@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { BugReportDialog } from "../bug-report-dialog";
+import { BugReportTriggerButton } from "../bug-report-trigger-button";
 
 describe("BugReportDialog", () => {
   it("does not render dialog content when closed", () => {
@@ -112,11 +113,64 @@ describe("BugReportDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
 
     await waitFor(() => {
-      expect(captureScreenshot).toHaveBeenCalledTimes(1);
+      expect(captureScreenshot).toHaveBeenCalled();
       expect(getCapturedData).toHaveBeenCalled();
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ consoleLogs: "[]", networkLogs: "[]", screenshot: null }),
       );
     });
+  });
+
+  it("waits for a screenshot still in flight before submitting", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    let screenshot: string | null = null;
+    let finishCapture!: () => void;
+    const captureScreenshot = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishCapture = () => {
+            screenshot = "data:image/jpeg;base64,late";
+            resolve(screenshot);
+          };
+        }),
+    );
+    const getCapturedData = vi.fn(() => ({ consoleLogs: "[]", networkLogs: "[]", screenshot }));
+    render(
+      <BugReportDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        onSubmit={onSubmit}
+        captureScreenshot={captureScreenshot}
+        getCapturedData={getCapturedData}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("bug-description"), {
+      target: { value: "Steps to reproduce the issue in detail." },
+    });
+    fireEvent.click(screen.getByTestId("bug-type"));
+    fireEvent.click(await screen.findByText("Other"));
+    fireEvent.click(screen.getByRole("switch", { name: /include diagnostics/i }));
+    fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
+
+    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(2));
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    finishCapture();
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ screenshot: "data:image/jpeg;base64,late" }),
+      ),
+    );
+  });
+});
+
+describe("BugReportTriggerButton", () => {
+  it("is named 'Report a bug' even when the text label is hidden", () => {
+    const onClick = vi.fn();
+    render(<BugReportTriggerButton onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });

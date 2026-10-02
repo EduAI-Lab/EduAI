@@ -9,6 +9,7 @@ export { ThemeSyncInitializer } from "./theme-sync-initializer";
 
 // ── Bug report ─────────────────────────────────────────────────────────────
 export { BugReportDialog } from "./bug-report-dialog";
+export { BugReportTriggerButton } from "./bug-report-trigger-button";
 export type { BugReportType, BugReportSubmitData } from "./bug-report-dialog";
 
 // ── Domain components ──────────────────────────────────────────────────────
