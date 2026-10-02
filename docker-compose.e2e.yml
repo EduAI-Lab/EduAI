@@ -57,17 +57,22 @@ services:
   # for suites that ingest materials (see scripts/e2e-in-docker.sh); the model pull is
   # the slow part, so the AI Tutor / Question Maker suites do not pay for it.
   e2e-ollama:
-    image: ollama/ollama:latest
+    # Pinned: a floating tag lets an Ollama release change embeddings or `ollama list` output.
+    image: ollama/ollama:0.12.6
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         ollama serve &
         server=$$!
         until ollama list >/dev/null 2>&1; do sleep 1; done
-        ollama pull mxbai-embed-large
+        # Pin the model build, then alias it to the bare name the app requests.
+        ollama pull mxbai-embed-large:335m
+        ollama cp mxbai-embed-large:335m mxbai-embed-large
         wait $$server
     volumes:
-      - e2e_ollama_models:/root/.ollama
+      # CI sets E2E_OLLAMA_MODELS_DIR to a host dir restored by actions/cache so the
+      # ~670MB model is not re-pulled every run; locally it stays a named volume.
+      - ${E2E_OLLAMA_MODELS_DIR:-e2e_ollama_models}:/root/.ollama
     healthcheck:
       # `ollama list` only names the model once the pull has finished.
       test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large"]

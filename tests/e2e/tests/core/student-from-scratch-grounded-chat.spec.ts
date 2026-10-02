@@ -56,6 +56,7 @@ interface CourseCreateResponse {
 
 async function getMyId(ctx: APIRequestContext): Promise<string> {
   const res = await ctx.get(`${CORE_URL}/api/me`);
+  expect(res.status(), await res.text()).toBe(200);
   const profile = (await res.json()) as MeProfile;
   return profile.id;
 }
@@ -154,6 +155,7 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
       await registerUser(studentCtx, { prefix: "fs-student" });
 
       const meRes = await studentCtx.get(`${CORE_URL}/api/me`);
+      expect(meRes.status(), await meRes.text()).toBe(200);
       const studentProfile = (await meRes.json()) as MeProfile;
       const studentId = studentProfile.id;
 
@@ -218,11 +220,17 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
         `**Source**: ${MATERIAL_TITLE}`,
         `The official quokka relocation window is ${PLANTED_PHRASE}.`,
       ].join("\n\n");
+      interface ChatRequestBody {
+        courseId?: string;
+        courseCode?: string;
+      }
+      const chatBodies: ChatRequestBody[] = [];
       await page.route("**/api/chat", async (route) => {
         if (route.request().method() !== "POST") {
           await route.continue();
           return;
         }
+        chatBodies.push(route.request().postDataJSON() as ChatRequestBody);
         await route.fulfill({
           status: 200,
           headers: {
@@ -245,6 +253,11 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
         timeout: 20_000,
       });
       await expect(page.getByText(PLANTED_PHRASE)).toBeVisible();
+
+      // The mock proves nothing about scoping unless the request really carried this course.
+      expect(chatBodies.length).toBeGreaterThan(0);
+      const sent = chatBodies[0];
+      expect(sent?.courseId === courseId || sent?.courseCode === courseCode).toBe(true);
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
