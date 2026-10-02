@@ -75,6 +75,10 @@ vi.mock("react-router", () => ({
   useSearchParams: () => [searchParamsBox.current, setSearchParamsMock],
 }));
 
+vi.mock("@/components/common/NotFoundState", () => ({
+  NotFoundState: () => <div>404 — Page not found</div>,
+}));
+
 // ── sonner ───────────────────────────────────────────────────────────────────
 vi.mock("sonner", () => ({ toast: toastFn }));
 
@@ -424,7 +428,7 @@ describe("CourseDetailPage gate states", () => {
     expect(screen.getByRole("status", { name: /Loading course detail/i })).toBeInTheDocument();
   });
 
-  it("shows not-found card when the course does not exist", () => {
+  it("shows the shared 404 page when the course does not exist", () => {
     useCourseFromRouteMock.mockReturnValue({
       course: null,
       courseId: 5,
@@ -432,9 +436,9 @@ describe("CourseDetailPage gate states", () => {
       notFound: true,
     });
     render(<CourseDetailPage />);
-    expect(screen.getByText("Course not found")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Back to Courses" }));
-    expect(navigateMock).toHaveBeenCalledWith("/courses");
+    expect(screen.getByText("404 — Page not found")).toBeInTheDocument();
+    expect(screen.queryByText("Course not found")).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
 

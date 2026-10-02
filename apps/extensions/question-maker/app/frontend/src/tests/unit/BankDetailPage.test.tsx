@@ -126,7 +126,7 @@ describe("BankDetailPage", () => {
     expect(container.querySelector(".animate-spin")).toBeTruthy();
   });
 
-  it("shows a no-access alert when the course is not found", async () => {
+  it("shows the shared 404 page when the course is not found", async () => {
     useCourseFromRouteMock.mockReturnValue({
       course: null,
       courseId: null,
@@ -134,9 +134,8 @@ describe("BankDetailPage", () => {
       notFound: true,
     });
     renderPage();
-    await waitFor(() =>
-      expect(screen.getByText(/do not have access to this course/i)).toBeInTheDocument(),
-    );
+    expect(await screen.findByText("404 — Page not found")).toBeInTheDocument();
+    expect(screen.queryByText(/do not have access to this course/i)).toBeNull();
   });
 
   it("shows a no-access alert when the user lacks course access", async () => {
