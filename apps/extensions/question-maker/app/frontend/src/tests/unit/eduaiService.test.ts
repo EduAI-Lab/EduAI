@@ -60,6 +60,23 @@ describe("eduaiService.generateQuestions", () => {
     expect(post).toHaveBeenCalledWith("/api/eduai/generate-questions", request);
     expect(result.success).toBe(true);
   });
+
+  // A prior version of this task-15 work invalidated the cached save-time
+  // verdict here, directly in generateQuestions's own catch block. Fix round
+  // 1 centralized that into the shared `api` client's response interceptor
+  // (services/api.ts, `invalidateProviderKeyOnAuthFailure`) instead, because
+  // the original per-call-site approach missed OCR extraction
+  // (`questionService.extractQuestionsFromText`), which never routed through
+  // `eduaiService` at all. That behaviour — and its tests — now lives in
+  // `api.test.ts`'s "provider-key invalidation" describe block, which covers
+  // this endpoint's request shape alongside extraction's.
+  it("re-throws a provider-auth failure without special-casing it here", async () => {
+    const authError = { response: { status: 401, data: { error: "revoked" } } };
+    post.mockRejectedValue(authError);
+    const request = { prompt: "p", courseCode: "C1", model: "google:gemini-2.5-flash" };
+
+    await expect(eduaiService.generateQuestions(request as any)).rejects.toBe(authError);
+  });
 });
 
 describe("eduaiService.testApiKey", () => {
@@ -127,17 +144,36 @@ describe("eduaiService.testApiKey", () => {
       response: { status: 400, data: { success: false, error: "bad key" } },
     });
     const result = await eduaiService.testApiKey({});
-    expect(result).toEqual({ success: false, error: "bad key", configured: true });
+    expect(result).toEqual({ success: false, error: "bad key", configured: true, statusCode: 400 });
   });
 
-  it("rethrows a non-400 error", async () => {
-    post.mockRejectedValue({ response: { status: 500, data: {} } });
-    await expect(eduaiService.testApiKey({})).rejects.toBeDefined();
+  // Superseded by "returns the server's error body for any status, not only
+  // 400" below (#task-15): a 500 with a server-supplied body is now returned,
+  // not rethrown, because save-time validation needs the real reason a key
+  // was rejected regardless of status code. This case now covers the one
+  // situation that must still throw — no server response at all.
+  it("rethrows when the failure has no server response (network failure)", async () => {
+    post.mockRejectedValue(new Error("Network Error"));
+    await expect(eduaiService.testApiKey({})).rejects.toThrow("Network Error");
   });
 
   it("rethrows when there is no response body on a 400", async () => {
     post.mockRejectedValue({ response: { status: 400, data: null } });
     await expect(eduaiService.testApiKey({})).rejects.toBeDefined();
+  });
+
+  it("returns the server's error body for any status, not only 400", async () => {
+    for (const status of [400, 401, 403, 422, 429, 503]) {
+      post.mockRejectedValueOnce({
+        response: { status, data: { success: false, error: `failed-${status}` } },
+      });
+
+      const res = await eduaiService.testApiKey({ google: { apiKey: "k", isEnabled: true } });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toBe(`failed-${status}`);
+      expect(res.statusCode).toBe(status);
+    }
   });
 });
 

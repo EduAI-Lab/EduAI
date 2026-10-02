@@ -900,3 +900,59 @@ describe("response shapes match what the routes actually send", () => {
     expect(rows[0]).toMatchObject({ difficultyScore: 42, difficultyLabel: "MEDIUM" });
   });
 });
+
+/** A minimal history payload carrying one model's `uptimePct`. */
+function historyPayload(uptimePct: number | null) {
+  return {
+    windowHours: 72,
+    bucketMinutes: 60,
+    generatedAt: "2026-09-21T00:00:00.000Z",
+    servers: [
+      {
+        key: "cmps01",
+        label: "cmps01",
+        waiting: null,
+        cacheUsage: null,
+        models: [
+          {
+            key: "m",
+            label: "m",
+            uptimePct,
+            buckets: [{ t: "2026-09-21T00:00:00.000Z", state: "unknown" }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("api.aiStatusHistory()", () => {
+  it("accepts a null uptimePct — a model with no judgeable buckets has none", async () => {
+    // Core emits null here whenever every bucket was `unknown`. Rejecting it
+    // threw inside decode() and collapsed the whole popover into a generic
+    // load error, hiding every other server's history along with it.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(historyPayload(null)),
+    });
+
+    const { api } = await import("~/lib/api");
+    const result = await api.aiStatusHistory();
+
+    expect(result.servers[0].models[0].uptimePct).toBeNull();
+  });
+
+  it("still accepts a numeric uptimePct", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(historyPayload(99.5)),
+    });
+
+    const { api } = await import("~/lib/api");
+    const result = await api.aiStatusHistory();
+
+    expect(result.servers[0].models[0].uptimePct).toBe(99.5);
+  });
+});

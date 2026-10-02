@@ -1,9 +1,9 @@
 # CMPS02 host
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 CMPS02 is a heterogeneous inference host. Its current large-model backend is
-Qwen 2.5 32B for the Assist Auto capability, not the standard Qwen 3.5 9B tier.
+Qwen 3.8 27B for the Assist Auto capability, not the standard Qwen 3.5 9B tier.
 This file is a host snapshot and role boundary; the shared implementation
 procedure is [`../cmps01/README.md`](../cmps01/README.md).
 
@@ -17,9 +17,9 @@ procedure is [`../cmps01/README.md`](../cmps01/README.md).
 | nginx edge | host `:8001` | Authenticated public inference edge |
 | Ollama | no listener observed on `11434` | Not currently available on this host |
 
-The direct backends returned HTTP 200 and the authenticated port-8001 edge
-returned HTTP 200 during the 2026-08-31 audit. The edge advertised
-`qwen3.5-2b-instruct` and `qwen2.5-32b-instruct`.
+The direct backends and authenticated port-8001 edge returned HTTP 200 during
+the 2026-09-02 verification. The edge advertised `qwen3.5-2b-instruct` and
+`qwen3.8-27b-instruct`.
 
 ## Role boundary
 
@@ -27,6 +27,9 @@ returned HTTP 200 during the 2026-08-31 audit. The edge advertised
 - Treat `qwen3.8-27b-instruct` as the separate Assist Auto capability.
 - Do not label the 27B model as the standard large tier; that name is reserved
   for `qwen3.5-9b-instruct` where installed.
+- A fleet smoke warning that CMPS02 lacks `qwen3.5-9b-instruct` is expected; the
+  host-scoped configuration intentionally assigns CMPS02 the 27B Assist Auto
+  model instead.
 - Do not assume CMPS02 has an embedding backend or Ollama service; none was
   observed during the audit.
 - Keep backend ports `18001`, `18002`, and `18091` loopback-only.
@@ -41,4 +44,3 @@ Before changing CMPS02:
 4. Adapt the CMPS01 implementation procedure to this host and have the change
    reviewed before stopping a live backend.
 5. Verify the authenticated edge and the exact model IDs after the change.
-

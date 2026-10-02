@@ -4,11 +4,66 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
-> **Week numbering is inconsistent and has not been corrected here.** `August 10–16, 2026` is claimed by both Week 15 and Week 16; `August 17–23, 2026` is claimed by both Week 16 and Week 17. This predates the 2026-08-31 de-duplication pass, which merged sections by the week number each heading stated and never moved an entry between weeks — an entry's date is its commit date, not its sprint, so re-bucketing by date would have rewritten history. Renumbering is a maintainer call.
+## 2026.09.21
+
+- Review follow-up on #1809: `GET /api/models` now filters out any `AIModel` whose provider name isn't in `PROVIDER_CONFIGS` (an admin-renamed provider row was otherwise listed here as live while `/api/chat` 422s it as unparseable), adds a `requiresApiKey` flag per model so a caller can tell which ones work without a key, and is rate-limited under the shared chat limiter (`models:` prefix) instead of left uncached.
+
+## 2026.09.19
+
+- Add `GET /api/models`, returning the active chat models as `provider:modelId` strings — exactly what `POST /api/chat` and `POST /api/completion` will accept. There was previously no way to ask which models are live without an admin browser session: `/api/vllm-models` and `/api/ollama-models` are ADMIN cookie-session only, and `/api/ai-models` requires `page` and `pageSize` and answers `400 PAGINATION_REQUIRED` without them. An instructor writing a grading script had to guess a model id and read a `422` to find out it was wrong. PR: https://github.com/EduAI-Lab/EduAI/pull/1809. Closes #1805.
+- Share the activeness predicate with `resolveActiveChatModel` via a new `listActiveChatModels()` so the endpoint cannot advertise a model the completion endpoint then rejects — the exact confusion it exists to remove.
+- Mirror `/api/completion`'s auth ladder exactly (admin `x-api-key`, an ordinary session, or the `Bearer` service key): anyone who can call completion can discover what to pass it, and nobody else gains a view of the catalog. The response is `no-store` and carries ids, names and capability flags only — not the provider rows the admin list returns.
+## 2026.09.18
+
+- Give a failed course-material upload a reason and a way out. The badge said only **Failed**, so an instructor's only move was to re-upload the file and hope — even when the file was fine and the upload had simply landed while the embedding provider was down. A `(?)` beside the badge now explains which stage failed: the content is already on the course, the file could not be read, or the text was read but indexing it failed. Where the extracted text survived server-side, **Try again** re-runs indexing straight from the database, with no re-upload — `POST /api/courses/:courseId/materials/:materialId/reprocess`, which answers 202 and returns the row to PROCESSING so the list's existing poll reports the outcome. Retry is deliberately *not* offered for an extraction failure, a duplicate receipt, or a row whose stored text is empty or whitespace-only, where it could not succeed; a retry the server does refuse now says why instead of silently resetting the button. A retry whose worker dies mid-flight is resumed by the existing materials sweeper rather than leaving the material stuck in PROCESSING. The exact server-side message is still not shown, because the background job never persists it; that needs a schema change and is tracked as #1794. Closes #1749. (@Ayyhab, 2026-09-18) — [#1795](https://github.com/EduAI-Lab/EduAI/pull/1795)
+
+## 2026.09.17
+
+- Add two bulk enrollment paths to a course's Enrollments tab. **Roster CSV upload:** a header row plus a required `email` column and optional `role` (`STUDENT`/`TA`/`INSTRUCTOR`, default `STUDENT`), tolerating BOMs, CRLF, blank lines and quoted fields; capped at 500 rows / 256 KiB inside the pure parser so no caller can bypass it. The import is per-row rather than transactional and answers a summary naming the line number of every failure, so a partly-bad file still enrolls the good rows; an already-active enrollment counts as already-enrolled rather than a failure. Every row goes through the existing `addEnrollment` with the caller's own rank, so a bulk import cannot grant a role the actor could not grant individually, and the route writes one `ENROLLMENT_ADDED` audit entry per created row. **Revocable self-enrollment links:** a new `SelfEnrollmentLink` model scoped to one course, with expiry, explicit revocation and an optional redemption cap, storing only a sha256 of the token. The model carries no role column at all, so a forwarded link structurally cannot mint staff — redemption always enrols a STUDENT. The redemption slot is claimed under `SELECT … FOR UPDATE`, re-checking revocation and expiry inside the lock, and the preview page never enrols on load so a link-preview fetch cannot burn a slot. Closes #1756.
+
+## 2026.09.20
+
+- Review follow-up on #1807: the plugin stamps `rateLimitMax`/`rateLimitTimeWindow` onto each key row at creation, so #1807's config change only applied to new keys. Backfill migration `20260920180000_backfill_api_key_rate_limit` raises every existing key still on the plugin default (10/24h, or unset) to 1000/24h and resets its usage counter; a deliberately tighter per-key ceiling is left alone; the schema default is now 1000 too. Also fixed `parsePositiveInt` accepting `"0.5"` (it floored to 0 after the `<=0` check instead of before).
+
+## 2026.09.19
+
+- Fix EduAI API keys being capped at **10 requests per 24 hours**. The Better Auth api-key plugin rate-limits every key whether or not the host configures it, and its defaults are `maxRequests: 10` / `timeWindow: 24h`; Core passed only `apiKeyHeaders` and `keyExpiration`, so every key silently inherited that. Core now always passes an explicit `rateLimit`, defaulting to 1000 requests per 24h and tunable via `API_KEY_RATE_LIMIT_MAX`, `API_KEY_RATE_LIMIT_WINDOW_MS` and `API_KEY_RATE_LIMIT_ENABLED`. PR: https://github.com/EduAI-Lab/EduAI/pull/1807. Closes #1803.
+- Stop reporting a throttled API key as `401 Unauthorized`. `enforceAdminIfApiKey` discarded the plugin's error entirely, so a rate-limited key, a spent key, an expired key and a forged one were indistinguishable and no caller could tell a transient denial from a revocation — the "keys silently revoked server-side" symptom in the COSC 301 pilot report. A throttled key now answers `429 {"error":"RATE_LIMITED","retryAfter":<seconds>}` with a `Retry-After` header (derived from the plugin's `tryAgainIn`, clamped to 24h), a spent key answers `429 {"error":"USAGE_EXCEEDED"}` with no retry hint, and genuinely invalid credentials keep their existing `401`.
+- Audit throttled keys under a new `API_KEY_RATE_LIMITED` action code instead of `API_KEY_DENIED`, so exhausting a quota no longer reads as a credential failure in the security log.
+- Document `API_KEY_RATE_LIMIT_*` in `docs/ENVIRONMENT.md` and `apps/core/.env.example`, including the warning that omitting the config does not mean "no limit".
+- Review follow-up on #1808: `admissionRetryAfterSeconds`'s jitter was half-open (`Math.random()` never returns 1), so the documented `base * (1 + jitterRatio)` upper bound was never actually emitted. Fixed to an inclusive `[base, base + floor(base * jitterRatio)]`.
+
+## 2026.09.19
+
+- Add `Retry-After` to the `503 AI_ADMISSION_TIMEOUT` returned when a request loses the local-GPU admission race. The 503 previously carried no retry hint at all — unlike the `429` on the same route — so a client had nothing to back off against and retried straight into the back of the same queue; the COSC 301 pilot report shows six consecutive 503s over 138s from exactly that loop. PR: https://github.com/EduAI-Lab/EduAI/pull/1808. Closes #1804.
+- Derive the advisory delay from `AI_ADMISSION_WAIT_MS` (the window the caller just lost), floor it at 1s so a sub-second window cannot emit `Retry-After: 0`, and jitter it across the window — a fixed delay would re-synchronize a class-sized burst (25 students against a default 8 slots) into the next window instead of spreading it.
+- Serve that 503 from one shared builder (`admissionTimeoutResponse` in `lib/ai/admission.server.ts`) used by both `POST /api/chat` and `POST /api/completion`. The two routes had duplicated the response literal, which is why only one of them was named in the original report though both behaved identically.
+- PR Link: https://github.com/EduAI-Lab/EduAICore/pull/1827
+- Add persisted **AI service status**: an `ai-status-probe` cron job samples each UBC fleet host's `/v1/models` and `/metrics` on a configurable cadence and writes one row per model into a new `ai_service_samples` table. `GET /api/ai-status` now reads that snapshot instead of probing the fleet live on every request, and reports `checkedAt` and `stale` so the UI can say how old the answer is rather than implying it is current.
+- Record a missing key or malformed config as **UNKNOWN, never OUTAGE** — "we could not tell" is not downtime, and `unknown` hours are excluded from the uptime denominator so a configuration fault is never reported to users as a service failure.
+- Add `GET /api/ai-status/history` and a 72-hour per-model history panel, opened from the UBC chip in Core, AI Tutor and Question Maker. A bucket with no samples renders grey, never green.
+- Add a full status page at **`/status`** in Core, linked from that panel. Server-rendered from its loader, so it arrives with data rather than spinning. AI Tutor and Question Maker link out to it rather than each building their own.
+- Fix CORE cron jobs being scheduled in web replicas, where the placeholder `script` would have failed the run — they now execute only in the dedicated cron worker. Manual triggers record their provenance so the worker actually dispatches them.
+- Question Maker now reads Core's shared status snapshot instead of running its own per-user live probe, so its chip agrees with Core's and AI Tutor's. Provider keys are validated once at save time and the verdict cached, replacing a live provider round-trip on every status poll; a revoked key is corrected by the API client's interceptor when a real rejection arrives. Closes #1779.
+- Drop the header status poll from 60s to 5 minutes in all three apps — the underlying value only changes when the cron probe runs.
+- Document `AI_STATUS_POLL_MINUTES` and `AI_STATUS_SAMPLE_RETENTION_DAYS`, and add preflight checks for the cron worker's `fleet.config.json` readability and `VLLM_API_KEY`.
+- Probe an **Ollama** host at its own `/api/tags` rather than through the vLLM fleet check, which requires `VLLM_API_KEY` and a bearer token it neither needs nor accepts. On an Ollama-only deployment that key is legitimately absent, so every sample was recorded `UNKNOWN` forever for a host that answers perfectly well — losing the reachability signal the previous live probe reported. Its load stays unknown, since Ollama serves no vLLM `/metrics`.
+- Report a fleet with **no hosts configured** as an outage again, rather than as `unknown`. "Nothing is configured" and "nothing has been sampled yet" both reach the reader as zero rows, but only the second is a cold start the next cron tick resolves; the first is a settled fact, and calling it `unknown` under-read a plainly absent service.
+- Fix the AI Tutor status popover collapsing into a generic "Could not load status history." whenever any one model had no judgeable buckets: its response schema rejected the `null` uptime Core emits for that case, so one such model hid every server's history behind a load error.
+- Stop re-querying a down host's last-known model list on every probe tick — the answer cannot change while the host is unreachable, so it is resolved once and dropped as soon as the host answers again.
+- Move the issue form to `.github/ISSUE_TEMPLATE/task.yml` and the PR template to `.github/pull_request_template.md`, the only paths GitHub reads — the form previously sat in `.github/eduai-issue-template/` and the PR template carried an `EDUAI_SUMMER_2026_` prefix, so neither ever loaded and nobody filing an issue had seen the form. Drops the form's `S: Week N - Task` title default so titles carry a description and nothing else, adds `config.yml` to disable blank issues, and adds `docs/ISSUE-CONVENTIONS.md`. Updates the PR checklist, which still asked for a `Week N` label and a board retired in August, and removes three checkboxes asking the author to attest to code quality rather than to a verifiable fact. Takes effect only once `development` reaches `main`. Closes #1832.
+- Fix the weekly team time report silently discarding almost every self-reported hours line. `parseIssueHours` required `Hours to complete:` immediately followed by a value, but the format documented in the issue form and `eduai-summer-2026/CONVENTIONS.md` carries a per-week scope — `Hours to complete (Week 2): 3 hours [handle]` — which the pattern rejected. Across the 313 open issues only 2 of 82 hours lines parsed; 28 now count, recovering 133.5 reported hours. Also stop flagging the same contributor twice on one issue as a duplicate when the lines name different weeks, which is the shape the form's own example demonstrates, and accept a bare hour count with no unit. Hours lines inside a fenced code block are ignored, so an issue that documents the format is not counted as reporting time. Lines that remain unparsed (a name in parentheses instead of a bracketed handle, `TBD`, `rolls up from sub-issues`, bare headings) are genuinely ambiguous and still surface as warnings for manual review. Closes #1830.
+
+## 2026.09.16
+
+- Rename the course-detail manager view's **Staff** tab to **TAs**, its section heading to **Instructor & TAs**, the Enrollments-tab hint that pointed at it, and the tab list in `docs/INSTRUCTOR_ONBOARDING.md` — instructors were reading "Staff" as the university/department staff directory rather than the course's own instructor + TA roster. Display strings only: the PageTabs `value="staff"`, `showStaffTab`, `canManageStaff`, `staffError`/`staffSuccess`, the `StaffUser` type and the `staff-tab` PICT capability id are all unchanged. Closes #1727.
+
+## 2026.09.15
+
+- Fix the student "Take a Tour" walkthrough stalling at step 2 of 10 for students enrolled in zero courses — tag the empty course-list state with the tour's `emptyTarget` anchor (`data-tour="student-courses-empty"`) so the student-journey tour's empty-state skip logic (built for #1572) detects and skips past it instead of timing out. Closes #1746.
 
 ## 2026.09.01
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1720
 - Add `docs/INSTRUCTOR_ONBOARDING.md`, a pilot instructor walkthrough covering sign-in, Canvas connection, Core course setup, AI Tutor, and Question Maker; register it in the root `README.md` documentation index.
 - Correct the guide against the current UI: the AI Tutor and Question Maker hostnames (`aitutor.` / `questionmaker.`, not `ai-tutor.` / `qm.`), Canvas course fetching (dashboard **Fetch from Canvas**, not a Courses-page sync), course publishing (the course card's ⋮ menu), and the app switcher (**Switch app** in the sidebar footer, not the header).
 - Drop the manual "import course from Core" steps for both extensions — AI Tutor and Question Maker auto-import taught courses on login — and describe Question Maker's real flow as generating an AI variant of an existing question rather than bulk generation from a topic.
@@ -19,7 +74,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.08.31
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1718
 - Refresh the root `README.md` against the current monorepo — corrected the `infra/` and `docs/` tree listings, the documentation index, and the fleet-testing and fleet-registry sections, using the code as the source of truth.
 - Refresh the platform guides in `docs/`: architecture, deployment, environment, logging, Canvas, cron jobs, developer guide, user guide, extension onboarding, agent readiness, and the PICT census.
 - Align `TESTS.md` with the tests that actually exist — remove 11 rows for deleted test files and document 10 suites that had no row in either this branch or `development`.
@@ -27,14 +81,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## 2026.08.31
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1707
 - Refresh deployment documentation from the repository implementation and read-only audits of eduai-dev, my-eduai, cmps01, cmps02, and cmps03.
 - Organize s378, production, provisioning, sudoers, cron/backups, inference-fleet, and AWS Bedrock guardrails runbooks around current service boundaries and operational procedures.
 - Record observed inference roles and model state, including CMPS03's unresolved readiness boundary, while separating deployed capacity from potential upgrades.
 - Restore the dated Fleet Router stress and data reports in `docs/rag-ai/latency/eduai-summer-2026/` as historical benchmark evidence; these numbers are not a current capacity guarantee.
 ## 2026.08.30
 
-- PR Link: https://github.com/EduAI-Lab/EduAI/pull/1705
 - Consolidate RAG/AI documentation around current EduAI Core behavior, including chat/RAG flow, embeddings, model routing, vLLM fleet operations, testing, performance, and s378 development operations.
 - Remove dated latency, sprint, routing, team-guide, and ingestion-test material while retaining maintainable future-developer guidance and relevant fixtures.
 - Reframe HELPME references as potential upgrades and document Qwen 3.5 2B/9B current tiers with Qwen 3.8 27B planned capacity.

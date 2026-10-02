@@ -24,6 +24,12 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
       script: "",
       triggerEnabled: false,
     },
+    {
+      name: "core-handler-job",
+      schedule: "*/15 * * * *",
+      script: "Core handler",
+      execution: "CORE",
+    },
   ],
   reapExpiredCronRuns: reapExpiredCronRunsMock,
   startCronRun: startCronRunMock,
@@ -36,7 +42,7 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
-const { ensureCronSchedulerRunning } = await import("~/lib/cron-scheduler.server");
+const { ensureCronSchedulerRunning, rescheduleJob } = await import("~/lib/cron-scheduler.server");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,7 +95,7 @@ describe("cron scheduler initialization", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(startCronRunMock).toHaveBeenCalledWith("backup-nightly");
+    expect(startCronRunMock).toHaveBeenCalledWith("backup-nightly", "SCHEDULE");
     expect(triggerCronJobAsyncMock).toHaveBeenCalledWith(
       "backup-nightly",
       "backup-nightly.sh",
@@ -111,5 +117,27 @@ describe("cron scheduler initialization", () => {
 
     expect(reapExpiredCronRunsMock).toHaveBeenCalledTimes(2);
     expect(scheduleMock).toHaveBeenCalledOnce();
+  });
+
+  it("never registers an in-process timer for an execution: CORE job", async () => {
+    scheduleMock.mockReturnValue({ stop: vi.fn() });
+
+    await ensureCronSchedulerRunning();
+
+    // Only the SCRIPT job is scheduled; the CORE job belongs to the worker.
+    expect(scheduleMock).toHaveBeenCalledOnce();
+    expect(scheduleMock).not.toHaveBeenCalledWith(
+      "*/15 * * * *",
+      expect.any(Function),
+      expect.anything(),
+    );
+  });
+
+  it("rescheduleJob ignores an execution: CORE job", () => {
+    scheduleMock.mockReturnValue({ stop: vi.fn() });
+
+    rescheduleJob("core-handler-job", "*/30 * * * *");
+
+    expect(scheduleMock).not.toHaveBeenCalled();
   });
 });

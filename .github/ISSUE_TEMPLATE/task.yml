@@ -1,28 +1,23 @@
-name: EduAI Task Issue
+name: EduAI Task
 description: Create a tracked EduAI implementation, documentation, research, or maintenance task.
-title: "S: Week N - Task"
+labels: []
 body:
   - type: markdown
     attributes:
       value: |
         Use this form for every EduAI work item.
 
-        Title format:
-        `Size: Week N - Task`
+        **The title is a plain description of the work.** Do not put a size or a week
+        number in it — those go in the fields below, where they can be filtered and
+        cannot go stale. See
+        [`docs/ISSUE-CONVENTIONS.md`](https://github.com/EduAI-Lab/EduAI/blob/main/docs/ISSUE-CONVENTIONS.md).
 
-        Size:
+        Size guide:
         - `S` = 0 to 4 hours
         - `M` = 4 to 8 hours
         - `L` = 8 to 16 hours
 
         Split the issue if the task exceeds 16 hours.
-
-        Week examples:
-        - `Week 1`
-        - `Week 2`
-        - `Week 1, Week 2`
-        - `Week 1-2`
-        - `Week 1-4`
 
         Hours format:
         `Hours to complete (Week N): X hours [github-handle]`
@@ -33,7 +28,7 @@ body:
     id: size
     attributes:
       label: Size
-      description: Estimated effort for this issue.
+      description: Estimated effort. Transcribed to the board's Size field, which is the source of truth.
       options:
         - S - 0 to 4 hours
         - M - 4 to 8 hours
@@ -45,8 +40,11 @@ body:
     id: week
     attributes:
       label: Week
-      description: Use `Week N`, `Week N, Week M`, or `Week N-M`. Add matching week labels after creating the issue.
-      placeholder: "Week 1-3"
+      description: |
+        Which week this work belongs to. Use `Week N`, `Week N, Week M`, or `Week N-M`.
+        This moves to the board's Iteration field once that is set up; until then this is
+        the field that says which week an issue is for.
+      placeholder: "Week 3"
     validations:
       required: true
 
@@ -112,9 +110,7 @@ body:
       options:
         - label: I will assign everyone working on this issue.
           required: true
-        - label: I will add the matching `Week N` label or labels.
-          required: true
-        - label: I will add this issue to the Edu AI Core Summer 2026 project board.
+        - label: I will set Size, Priority and Iteration on the Edu AI Core board.
           required: true
         - label: I confirm this issue is linked to an epic.
           required: true

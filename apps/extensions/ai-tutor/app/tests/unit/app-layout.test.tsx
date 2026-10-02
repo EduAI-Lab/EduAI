@@ -62,7 +62,11 @@ vi.mock("@eduai/ui", async (importOriginal) => {
   return {
     ...actual,
     useAiServiceStatus: (...args: unknown[]) => mockAiStatus(...args),
-    AIServiceIndicators: () => <div data-testid="ai-indicators" />,
+    // Renders `ubcHistory` so the REAL AIServiceHistoryPanel (spread in from
+    // `actual` above) mounts — the link under test is its own output, not a stub's.
+    AIServiceIndicators: (props: { ubcHistory?: React.ReactNode }) => (
+      <div data-testid="ai-indicators">{props.ubcHistory}</div>
+    ),
     ThemeToggle: () => <div data-testid="theme-toggle" />,
     CommandSearchButton: () => <div data-testid="command-search" />,
     BugReportDialog: ({
@@ -182,5 +186,19 @@ describe("_app layout — authenticated shell", () => {
 
     expect(mockLogout).toHaveBeenCalled();
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+  });
+
+  it("sends the user to Core for the full status page, in a new tab", () => {
+    mockUser = { id: "u1", name: "Ada", role: "STUDENT" };
+    render(
+      <MemoryRouter>
+        <AppLayout />
+      </MemoryRouter>,
+    );
+
+    const link = screen.getByRole("link", { name: /view full status/i });
+    // AI Tutor has no /status route of its own; the page lives in Core.
+    expect(link).toHaveAttribute("href", "http://localhost:3000/status");
+    expect(link).toHaveAttribute("target", "_blank");
   });
 });

@@ -10,6 +10,7 @@
     "./page-loader": "./src/page-loader.tsx",
     "./theme-provider": "./src/theme-provider.tsx",
     "./theme-sync": "./src/lib/theme-sync.ts",
+    "./core-url": "./src/lib/core-url.ts",
     "./theme-sync-initializer": "./src/theme-sync-initializer.tsx",
     "./tooltip": "./src/ui/tooltip.tsx",
     "./term": "./src/lib/term.ts",

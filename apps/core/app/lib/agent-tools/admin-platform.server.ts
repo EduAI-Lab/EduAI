@@ -3,6 +3,7 @@ import cron from "node-cron";
 import { z } from "zod";
 
 import type { RbacUser } from "~/lib/auth/course-access.server";
+import { INSTRUCTOR_CANDIDATE_ROLES } from "~/lib/rbac/instructor-candidates";
 import {
   CreateAIProviderSchema,
   CreateAIModelSchema,
@@ -43,7 +44,6 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
@@ -107,7 +107,10 @@ export async function createAdminCourse(actor: RbacUser, input: ToolInput) {
   }
 
   const instructors = await prisma.user.findMany({
-    where: { id: { in: parsed.data.instructorUserIds }, role: "INSTRUCTOR" },
+    where: {
+      id: { in: parsed.data.instructorUserIds },
+      role: { in: [...INSTRUCTOR_CANDIDATE_ROLES] },
+    },
     select: { id: true },
   });
   if (instructors.length !== parsed.data.instructorUserIds.length) {
@@ -762,10 +765,10 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { error: "CRON_JOB_NOT_TRIGGERABLE" };
   }
 
-  const result = await startCronRun(jobName);
-  if (result.created) {
-    triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
-  }
+  // Recording is all this does. The cron worker's dispatchManualCronRuns picks
+  // the row up on its next reconcile and dispatches it with the job's real
+  // `execution` mode. See docs/CRON_JOBS.md.
+  const result = await startCronRun(jobName, "ADMIN_CHAT");
   return { ok: true, runId: result.runId, jobName, reused: !result.created };
 }
 

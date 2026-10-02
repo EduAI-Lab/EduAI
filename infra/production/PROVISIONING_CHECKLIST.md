@@ -71,20 +71,23 @@ endpoint serves it.
 - [ ] Confirm the standard small tier is `qwen3.5-2b-instruct`.
 - [ ] Confirm the standard large tier is `qwen3.5-9b-instruct` only on hosts that
       actually advertise it.
-- [ ] Treat `qwen2.5-32b-instruct` on CMPS02 as the separate Assist Auto model,
+- [ ] Treat `qwen3.8-27b-instruct` on CMPS02 as the separate Assist Auto model,
       not as the standard large tier.
-- [ ] Keep the planned `qwen3.8-27b` capability disabled until it is deployed,
-      advertised, load-tested, and assigned an owner.
-- [ ] Do not enable CMPS03 in an approved production fleet while its authenticated
-      edge returns `no_db_connection`; direct backend responses do not clear the
-      edge failure.
+- [ ] Confirm CMPS03 advertises `qwen3.5-2b-instruct` and
+      `qwen3.5-9b-instruct` through its authenticated edge before enabling it in
+      the production fleet.
+- [ ] If an edge returns `no_db_connection` / `No connected db.`, first verify
+      that the proxy's LiteLLM `master_key` matches Core's `VLLM_API_KEY`. This
+      DB-less deployment can report an authentication mismatch with that
+      misleading database error; direct backend responses do not clear an edge
+      failure.
 - [ ] Record the host, edge status, model IDs, timestamp, and owner in the release
       handoff.
 
-The repository's current production Core template targets CMPS01/CMPS02 for the
-fleet and retains the Assist Auto model ID separately. Reconcile that template
-with the actual endpoint model lists before changing the fleet; do not silently
-add CMPS03 or assume CMPS02 has the standard 9B model.
+The repository's production Core template should be reconciled with the actual
+endpoint model lists before changing the fleet. Keep CMPS02's 27B assignment
+separate from the standard 9B tier, and do not assume every host advertises every
+model.
 
 ## 5. Core application
 

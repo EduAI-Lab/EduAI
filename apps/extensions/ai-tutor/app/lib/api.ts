@@ -36,6 +36,7 @@ import {
   adminEnrollmentDataSchema,
   adminUserPageSchema,
   aiModelSchema,
+  aiStatusHistorySchema,
   aiStatusSchema,
   aiTraceRowSchema,
   apiKeyValidationSchema,
@@ -622,6 +623,8 @@ export const api = {
     return meInFlight;
   },
   aiStatus: (signal?: AbortSignal) => decode(http("/api/ai-status", { signal }), aiStatusSchema),
+  aiStatusHistory: (signal?: AbortSignal) =>
+    decode(http("/api/ai-status/history", { signal }), aiStatusHistorySchema),
   listCourses: (params?: CourseListParams) =>
     decode(http(`/api/courses${courseListQuery(params)}`), paginatedSchema(courseSchema)),
   /**

@@ -362,10 +362,22 @@ function makeGetRequest(headers?: Record<string, string>) {
   });
 }
 
+/**
+ * `getCourses` issues two enrollment reads: the caller-role annotation (keyed
+ * on `userId`) and, since #1841, the per-course instructor lookup (keyed on
+ * `role: "INSTRUCTOR"`). They share one mock, so dispatch on the query rather
+ * than handing the instructor lookup rows shaped for the other one.
+ */
+function mockCallerEnrollments(rows: unknown[]) {
+  prismaMock.enrollment.findMany.mockImplementation(async (args: any) =>
+    args?.where?.userId ? rows : [],
+  );
+}
+
 describe("getCourses", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.enrollment.findMany.mockResolvedValue([]);
+    mockCallerEnrollments([]);
     prismaMock.course.count.mockResolvedValue(0);
     prismaMock.$transaction.mockImplementation(async (arg: any) =>
       Array.isArray(arg) ? Promise.all(arg) : arg(prismaMock),
@@ -381,13 +393,15 @@ describe("getCourses", () => {
   it("returns 200 with courses when ADMIN", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.course.findMany.mockResolvedValue([{ id: "c1", name: "Algorithms" }]);
-    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", role: "INSTRUCTOR" }]);
+    mockCallerEnrollments([{ courseId: "c1", role: "INSTRUCTOR" }]);
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
     // #1041: the unified `{ data, total, page, pageSize }` envelope.
     expect(body).toEqual({
-      data: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR" }],
+      // #1841: every list row carries its instructor set — an explicit empty
+      // array rather than an absent field, so a client can read `.length`.
+      data: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR", instructors: [] }],
       total: 0,
       page: 1,
       pageSize: 25,
@@ -432,7 +446,7 @@ describe("getCourses", () => {
         instructorId: "private-instructor",
       },
     ] as any);
-    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", role: "STUDENT" }] as any);
+    mockCallerEnrollments([{ courseId: "c1", role: "STUDENT" }]);
 
     const res = await getCourses(makeGetRequest());
     const body = await res.json();
@@ -474,9 +488,7 @@ describe("getCourses", () => {
         ragSimilarityThreshold: 0.8,
       },
     ] as any);
-    prismaMock.enrollment.findMany.mockResolvedValue([
-      { courseId: "student-course", role: "STUDENT" },
-    ] as any);
+    mockCallerEnrollments([{ courseId: "student-course", role: "STUDENT" }] as any);
 
     const body = await (await getCourses(makeGetRequest())).json();
     expect(body.data[0]).toMatchObject({
@@ -639,7 +651,7 @@ describe("createCourse", () => {
     expect(res.status).toBe(201);
     // Validation only ever queried the creator — the supplied victim id was dropped.
     expect(prismaMock.user.findMany).toHaveBeenCalledWith({
-      where: { id: { in: ["instr-1"] }, role: "INSTRUCTOR" },
+      where: { id: { in: ["instr-1"] }, role: { in: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] } },
       select: { id: true },
     });
     // The course's primary instructor (instructorUserIds[0]) is the creator.
@@ -703,7 +715,24 @@ describe("createCourse", () => {
     expect(body).toHaveProperty("error", "VALIDATION_ERROR");
   });
 
-  it("returns 422 when instructorUserIds do not map to INSTRUCTOR users", async () => {
+  it("accepts an ADMIN or UNIT_ADMIN account as the course instructor (#1840)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "user-1" }]);
+    prismaMock.course.create.mockResolvedValue({ id: "course-1" });
+    prismaMock.enrollment.createMany.mockResolvedValue({ count: 1 });
+    const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
+    expect(res.status).toBe(201);
+    // The instructor lookup admits the whole staff set, not platform-role INSTRUCTOR alone.
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          role: { in: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] },
+        }),
+      }),
+    );
+  });
+
+  it("returns 422 when instructorUserIds do not map to staff users", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.user.findMany.mockResolvedValue([]);
     const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));

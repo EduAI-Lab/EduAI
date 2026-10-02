@@ -95,7 +95,7 @@ Open the course you will teach.
 
 ## 4. Core course basics
 
-A course page has these tabs: **Overview**, **Materials**, **Topics**, **Enrollments**, **Staff**, **Settings**, and **Chat history**.
+A course page has these tabs: **Overview**, **Materials**, **Topics**, **Enrollments**, **TAs**, **Settings**, and **Chat history**.
 
 **Overview** summarises the course: student, material, and embedded-chunk counts, then course information (code, term, status, published state) and the assigned instructor and TAs.
 

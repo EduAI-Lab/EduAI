@@ -35,6 +35,7 @@ import {
 import apiKeyStorage, {
   CORE_STORED_KEY,
   type AIProvider,
+  type KeyValidation,
   type ProviderSettingStatus,
 } from "../services/apiKeyStorage";
 import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
@@ -42,8 +43,10 @@ import { canvasService, type CanvasIntegration } from "../services/canvasService
 import { getCanvasDefaultUrl } from "../services/canvasDefaults";
 import { useAuth } from "../contexts/AuthContext";
 import { useQmPermissions } from "../hooks/useQmPermissions";
+import { recordKeyVerdict } from "../hooks/useAiServicesStatus";
 import { toast } from "sonner";
 import { DEFAULT_GENERATION_MODEL_STORAGE_KEY } from "../utils/aiModels";
+import { daysAgoLabel } from "../utils/relativeTime";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -85,6 +88,21 @@ const DEFAULT_EXPORT_PREFS: ExportPrefs = {
 function maskKey(value: string): string {
   if (value === CORE_STORED_KEY) return "••••••••";
   return `${value.substring(0, 8)}${"•".repeat(Math.max(0, value.length - 8))}`;
+}
+
+/**
+ * Renders the cached save-time verdict inline next to a provider's key.
+ * `valid: null` (never validated — e.g. a key saved before this shipped)
+ * renders nothing here; the cloud status chip is what shows `unknown` for
+ * that case, not this per-field line.
+ */
+function formatValidation(validation?: KeyValidation): { text: string; ok: boolean } | null {
+  if (!validation || validation.valid === null) return null;
+  if (validation.valid) {
+    const suffix = validation.validatedAt ? `, ${daysAgoLabel(validation.validatedAt)}` : "";
+    return { text: `Valid — checked when saved${suffix}.`, ok: true };
+  }
+  return { text: validation.error || "Key was rejected.", ok: false };
 }
 
 function readExportPrefs(): ExportPrefs {
@@ -147,6 +165,7 @@ export default function SettingsPage() {
   const [storedKeys, setStoredKeys] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingProvider, setSavingProvider] = useState<AIProvider | null>(null);
+  const [validations, setValidations] = useState<Record<string, KeyValidation>>({});
 
   const [models, setModels] = useState<EduAIModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState<string>(
@@ -168,6 +187,11 @@ export default function SettingsPage() {
     } catch {
       setStoredKeys(await apiKeyStorage.getAllApiKeys());
     }
+    setValidations(
+      Object.fromEntries(
+        KEY_PROVIDERS.map((provider) => [provider, apiKeyStorage.getValidation(provider)]),
+      ),
+    );
   };
 
   useEffect(() => {
@@ -197,10 +221,33 @@ export default function SettingsPage() {
           ? `${PROVIDER_LABELS[provider]} API key saved`
           : `${PROVIDER_LABELS[provider]} API key saved locally (Core unavailable)`,
       );
+      // Validate once, here, at save time (task 15): Core never sees the raw
+      // key (it's either encrypted in the browser or opaque to Core once
+      // stored remotely), so it cannot tell a live key from a revoked one.
+      // This is the one round-trip that used to run on every status-chip
+      // poll; the cached verdict now replaces all of those.
+      void validateSavedKey(provider, draft);
     } catch {
       toast.error(`Could not save ${PROVIDER_LABELS[provider]} API key`);
     } finally {
       setSavingProvider(null);
+    }
+  };
+
+  const validateSavedKey = async (provider: AIProvider, apiKey: string): Promise<void> => {
+    try {
+      const result = await eduaiService.testApiKey({ [provider]: { apiKey, isEnabled: true } });
+      // Only a 400 from `test-api-key` is the provider refusing the key; a 401
+      // is a dead session and a 403 a role failure. `recordKeyVerdict` writes
+      // nothing for those, so the user is told the check was inconclusive
+      // instead of a good key being marked bad — see its doc comment.
+      if (!recordKeyVerdict(provider, result)) {
+        toast(`Could not verify the ${PROVIDER_LABELS[provider]} key — try again from Settings.`);
+      }
+    } catch {
+      toast(`Could not verify the ${PROVIDER_LABELS[provider]} key — try again from Settings.`);
+    } finally {
+      setValidations((prev) => ({ ...prev, [provider]: apiKeyStorage.getValidation(provider) }));
     }
   };
 
@@ -345,6 +392,7 @@ export default function SettingsPage() {
                   {KEY_PROVIDERS.map((provider) => {
                     const existing = storedKeys[provider];
                     const isSaving = savingProvider === provider;
+                    const verdict = formatValidation(validations[provider]);
                     return (
                       <div key={provider} className="space-y-2">
                         <Label className="mb-1">{PROVIDER_LABELS[provider]}</Label>
@@ -401,6 +449,13 @@ export default function SettingsPage() {
                               {isSaving ? "Saving…" : "Save"}
                             </Button>
                           </div>
+                        )}
+                        {existing && verdict && (
+                          <p
+                            className={`text-xs ${verdict.ok ? "text-muted-foreground" : "text-destructive"}`}
+                          >
+                            {verdict.text}
+                          </p>
                         )}
                       </div>
                     );

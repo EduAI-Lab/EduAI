@@ -1,6 +1,6 @@
 # s378 shared-development go-live
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 This is the canonical runbook for the shared development host, `s378.ok.ubc.ca`.
 It deploys the built Core, AI Tutor, and Question Maker applications plus the
@@ -34,10 +34,11 @@ this host. The current deployment is systemd plus built static assets.
 
 ## Current verified snapshot
 
-On 2026-08-31, the `development` checkout was at commit `5795f838f`. The four
-application units were running, the expected listeners were present, and the
-three public HTTPS roots returned HTTP 200. Treat this as a dated observation,
-not a permanent health guarantee. Re-run the checks below after every deployment.
+On 2026-09-02, after updating and rebuilding the `development` checkout, the
+three CMPS authenticated edges returned the expected model lists. The four
+application units and the three public HTTPS roots should still be checked after
+every deployment; treat this as a dated observation, not a permanent health
+guarantee.
 
 The checkout also contained untracked `.env` backup files. These are operational
 artifacts, not deployment inputs. Preserve them securely and keep them out of Git;
@@ -203,10 +204,13 @@ for host in cmps01.ok.ubc.ca cmps02.ok.ubc.ca cmps03.ok.ubc.ca; do
 done
 ```
 
-As of the last verification, CMPS01 and CMPS02 returned authenticated model lists;
-CMPS03 returned HTTP 400 with `no_db_connection`. Direct backend success does not
-clear an edge-proxy failure. See [`infra/cmps01/README.md`](../cmps01/README.md)
-for the inference-host contract.
+As of the 2026-09-02 verification, CMPS01, CMPS02, and CMPS03 all returned
+authenticated model lists. CMPS02 intentionally lacks the standard 9B model and
+serves `qwen3.8-27b-instruct` for Assist Auto. The former CMPS03
+`no_db_connection` response was an authentication mismatch: on this DB-less
+LiteLLM edge, the proxy's `master_key` must match Core's `VLLM_API_KEY`. See
+[`infra/inference/README.md`](../inference/README.md) for the current fleet
+contract and [`infra/cmps01/README.md`](../cmps01/README.md) for the proxy model.
 
 ## Service operations
 

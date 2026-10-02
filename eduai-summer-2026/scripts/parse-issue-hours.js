@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
+// The unit is optional: a bare `Hours to complete: 3` is unambiguous for a field
+// named in hours, and that shape predates the documented one.
+// The documented format carries a per-week scope: `Hours to complete (Week 2): 3 hours [handle]`.
+// The scope is optional so unscoped lines written before that convention still parse.
 const HOURS_LINE_PATTERN =
-  /^\s*(?:[-*+]\s*)?(?:\*\*)?\s*Hours\s+to\s+complete\s*(?::\s*(?:\*\*)?|(?:\*\*)?\s*:)\s*([0-9]+(?:\.[0-9]+)?|0?\.[0-9]+)\s*(hours?|hrs?|h)\b\s*(?:\[\s*@?([A-Za-z0-9-]+)\s*\])?\s*$/i;
+  /^\s*(?:[-*+]\s*)?(?:#{1,6}\s*)?(?:\*\*)?\s*Hours\s+to\s+complete\s*(?:\(\s*([^)]*?)\s*\))?\s*(?::\s*(?:\*\*)?|(?:\*\*)?\s*:)\s*([0-9]+(?:\.[0-9]+)?|0?\.[0-9]+)\s*(?:(hours?|hrs?|h)\b)?\s*(?:\[\s*@?([A-Za-z0-9-]+)\s*\])?\s*$/i;
 
 function normalizeUsername(username) {
   return String(username || "")
@@ -25,15 +29,28 @@ function parseIssueHours(body, issue = {}) {
   const invalidLines = [];
   const warnings = [];
 
+  // A fenced block documents the format rather than reporting time, so lines inside
+  // one are neither counted nor warned about.
+  let insideFence = false;
+
   lines.forEach((line, index) => {
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      insideFence = !insideFence;
+      return;
+    }
+    if (insideFence) {
+      return;
+    }
+
     const match = line.match(HOURS_LINE_PATTERN);
     if (match) {
       validLines.push({
         line,
         lineNumber: index + 1,
-        hours: Number(match[1]),
-        unit: match[2],
-        parsedPerson: normalizeUsername(match[3]),
+        scope: (match[1] || "").trim(),
+        hours: Number(match[2]),
+        unit: match[3],
+        parsedPerson: normalizeUsername(match[4]),
       });
       return;
     }
@@ -70,15 +87,17 @@ function parseIssueHours(body, issue = {}) {
   const countedEntries = [];
   const manualReviewRows = [];
 
+  // One line per week per contributor is the documented shape, so the same person
+  // reporting different weeks on one issue is expected, not a duplicate.
   const namedByUser = new Map();
   namedLines.forEach((entry) => {
-    const key = entry.parsedPerson.toLowerCase();
+    const key = `${entry.parsedPerson.toLowerCase()}|${entry.scope.toLowerCase()}`;
     const existing = namedByUser.get(key) || [];
     existing.push(entry);
     namedByUser.set(key, existing);
   });
 
-  namedByUser.forEach((entries, lowerUsername) => {
+  namedByUser.forEach((entries) => {
     if (entries.length > 1) {
       warnings.push({
         type: "duplicate-person-hours",

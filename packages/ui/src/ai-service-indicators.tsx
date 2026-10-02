@@ -18,7 +18,9 @@
 import * as React from "react";
 import { IconCloud } from "@tabler/icons-react";
 
+import { SHARED_STATE_CLASS, SHARED_STATE_WORD } from "./lib/service-state-display";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { cn } from "./utils";
 
 export type ServiceState = "operational" | "degraded" | "outage" | "loading" | "unknown";
@@ -41,40 +43,53 @@ export interface AIServiceIndicatorsProps {
   cloud: ServiceStatus;
   ubc: ServiceStatus;
   cloudLabel?: string;
+  /**
+   * When supplied, clicking the UBC chip opens this in a popover instead of
+   * calling onRefresh. onRefresh then applies to the cloud chip only; the panel
+   * carries its own refresh control. Omit it to keep the original behaviour.
+   */
+  ubcHistory?: React.ReactNode;
   /** Called when a chip is clicked — wire to a re-check. Omit for static display. */
   onRefresh?: () => void;
+  /**
+   * Called when the UBC history popover opens or closes. Only meaningful when
+   * `ubcHistory` is supplied — the component stays uncontrolled (no `open`
+   * prop); this is a notification of the Radix popover's own state change, not
+   * a way to drive it.
+   */
+  onUbcOpenChange?: (open: boolean) => void;
   className?: string;
 }
 
+// Shared with the history bars; only `loading`, which a history bucket can
+// never be, is added here. See `lib/service-state-display.ts`.
 const DOT_CLASS = {
-  operational: "bg-emerald-500",
-  // Steady amber, distinct from the pulsing amber `loading` dot below.
-  degraded: "bg-amber-500",
-  outage: "bg-red-500",
+  ...SHARED_STATE_CLASS,
   loading: "bg-amber-400 animate-pulse",
-  unknown: "bg-muted-foreground/40",
 } satisfies Record<ServiceState, string>;
 
 const STATE_WORD = {
-  operational: "Operational",
-  degraded: "Degraded",
-  outage: "Outage",
+  ...SHARED_STATE_WORD,
   loading: "Checking…",
-  unknown: "Unknown",
 } satisfies Record<ServiceState, string>;
 
+/**
+ * `buttonProps` (and `ref`) land on the real <button>, not on the Tooltip root.
+ * That matters when a Chip is used as a `PopoverTrigger asChild` child: Radix
+ * clones its ref and ARIA props onto this element, and the local `Tooltip` is a
+ * context-only provider that renders no DOM and would silently drop them.
+ */
 function Chip({
   label,
   status,
   active,
-  onClick,
+  className,
   children,
-}: {
+  ...buttonProps
+}: Omit<React.ComponentProps<"button">, "aria-label"> & {
   label: string;
   status: ServiceStatus;
   active: boolean;
-  onClick?: () => void;
-  children: React.ReactNode;
 }) {
   const tip = status.detail ?? `${label} · ${STATE_WORD[status.state]}`;
   return (
@@ -82,11 +97,12 @@ function Chip({
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={onClick}
+          {...buttonProps}
           aria-label={`${label}: ${STATE_WORD[status.state]}`}
           className={cn(
             "relative inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card align-middle shadow-sm transition-colors cursor-pointer hover:bg-muted",
             active ? "text-foreground" : "text-muted-foreground",
+            className,
           )}
         >
           {children}
@@ -108,19 +124,34 @@ export function AIServiceIndicators({
   cloud,
   ubc,
   cloudLabel = "Cloud AI",
+  ubcHistory,
   onRefresh,
+  onUbcOpenChange,
   className,
 }: AIServiceIndicatorsProps) {
+  const ubcChip = (
+    <Chip
+      label="UBC-hosted AI"
+      status={ubc}
+      active={isServiceActive(ubc.state)}
+      onClick={ubcHistory ? undefined : onRefresh}
+    >
+      <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
+    </Chip>
+  );
+
   return (
     <div className={cn("inline-flex items-center gap-1", className)}>
-      <Chip
-        label="UBC-hosted AI"
-        status={ubc}
-        active={isServiceActive(ubc.state)}
-        onClick={onRefresh}
-      >
-        <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
-      </Chip>
+      {ubcHistory ? (
+        <Popover onOpenChange={onUbcOpenChange}>
+          <PopoverTrigger asChild>{ubcChip}</PopoverTrigger>
+          <PopoverContent align="end" className="w-auto p-3">
+            {ubcHistory}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        ubcChip
+      )}
       <Chip
         label={cloudLabel}
         status={cloud}

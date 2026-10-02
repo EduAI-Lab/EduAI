@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
@@ -12,8 +12,11 @@ import {
   BreadcrumbSeparator,
   Button,
   CommandSearchButton,
+  AIServiceHistoryPanel,
+  useHistoryOnOpen,
   AIServiceIndicators,
   NavSecondary,
+  type HistoryPayload,
 } from "@eduai/ui";
 import {
   IconBooks,
@@ -25,11 +28,13 @@ import {
   IconRoute,
   type Icon,
 } from "@tabler/icons-react";
+import { getCoreStatusUrl } from "@/lib/coreUrl";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutContext";
 import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
 import { useCourses } from "@/hooks/useCourses";
-import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import { useAiServicesStatus, revalidateCloud } from "@/hooks/useAiServicesStatus";
+import eduaiService from "@/services/eduaiService";
 import { useGuidedTour } from "@/contexts/GuidedTourContext";
 import { useBugReport } from "@/contexts/BugReportContext";
 import { getFooterNavForUser, getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
@@ -163,6 +168,19 @@ function QmAppLayoutInner() {
   const questionMakerRole = navigationUser?.role;
   const attemptedCourseImport = useRef<string | null>(null);
 
+  const fetchAiHistory = useCallback(() => eduaiService.getAiStatusHistory(), []);
+
+  // One request per deliberate open, even when every one of them fails. The
+  // shared hook replaced three near-identical copies of this block that
+  // re-requested in a loop on a persistent 401/500 — see `useHistoryOnOpen`.
+  const {
+    data: aiHistory,
+    loading: aiHistoryLoading,
+    error: aiHistoryError,
+    onOpenChange: onAiHistoryOpenChange,
+    refresh: refreshAiHistory,
+  } = useHistoryOnOpen<HistoryPayload>(fetchAiHistory);
+
   useEffect(() => {
     if (!requestedCoreCourseId || isCoursesLoading || routeCourse) return;
     const course = courses.find((item) => item.coreCourseId === requestedCoreCourseId);
@@ -280,7 +298,31 @@ function QmAppLayoutInner() {
             <AIServiceIndicators
               cloud={aiStatus.cloud}
               ubc={aiStatus.ubc}
-              onRefresh={() => void aiStatus.refresh()}
+              ubcHistory={
+                <AIServiceHistoryPanel
+                  data={aiHistory}
+                  loading={aiHistoryLoading}
+                  error={aiHistoryError}
+                  stale={aiStatus.stale}
+                  checkedAt={aiStatus.checkedAt}
+                  current={aiStatus.ubc}
+                  statusPageHref={getCoreStatusUrl()}
+                  statusPageTarget="_blank"
+                  onRefresh={() => {
+                    aiStatus.refresh();
+                    refreshAiHistory();
+                  }}
+                />
+              }
+              onRefresh={() => {
+                // Clicking the cloud chip re-validates on demand (task 15) —
+                // the one live provider round-trip this hook otherwise
+                // avoids. revalidateCloud() caches the fresh verdict, then
+                // aiStatus.refresh() re-runs the (synchronous, cache-only)
+                // fetcher so the chip picks it up immediately.
+                void revalidateCloud().then(() => aiStatus.refresh());
+              }}
+              onUbcOpenChange={onAiHistoryOpenChange}
             />
           </div>
           <div className="relative">

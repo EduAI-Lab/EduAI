@@ -141,12 +141,31 @@ export type {
   ServiceStatus,
   ServiceState,
 } from "./ai-service-indicators";
+export { AIServiceHistoryPanel } from "./ai-service-history-panel";
+export type { AIServiceHistoryPanelProps } from "./ai-service-history-panel";
+export {
+  HistoryServerSection,
+  HistoryLegend,
+  HISTORY_STATE_CLASS,
+  HISTORY_STATE_WORD,
+} from "./ai-service-history-rows";
+export type {
+  HistoryServerSectionProps,
+  HistoryLegendProps,
+  HistoryPayload,
+  HistoryServer,
+  HistoryModel,
+  HistoryBucket,
+  HistoryBucketState,
+} from "./ai-service-history-rows";
 export { useAiServiceStatus } from "./hooks/use-ai-service-status";
 export type {
   AiServiceStatusPair,
   UseAiServiceStatusOptions,
   UseAiServiceStatusResult,
 } from "./hooks/use-ai-service-status";
+export { useHistoryOnOpen } from "./hooks/use-history-on-open";
+export type { UseHistoryOnOpenOptions, UseHistoryOnOpenResult } from "./hooks/use-history-on-open";
 export { AccessibilitySettings } from "./settings/accessibility-settings";
 export type {
   AccessibilitySettingsProps,

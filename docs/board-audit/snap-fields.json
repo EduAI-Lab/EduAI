@@ -1,0 +1,1208 @@
+[
+  {
+    "closed": false,
+    "fields": {
+      "nodes": [
+        {
+          "dataType": "TITLE",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A6g",
+          "name": "Title"
+        },
+        {
+          "dataType": "ASSIGNEES",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A6k",
+          "name": "Assignees"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLezhR5A6o",
+          "name": "Status",
+          "options": [
+            {
+              "color": "PINK",
+              "description": "",
+              "id": "c0ab49db",
+              "name": "Backlog Post MVP"
+            },
+            {
+              "color": "GREEN",
+              "description": "This item hasn't been started",
+              "id": "f75ad846",
+              "name": "Backlog"
+            },
+            {
+              "color": "PINK",
+              "description": "These items are parent issues",
+              "id": "d84ef3ce",
+              "name": "Parent Issues"
+            },
+            {
+              "color": "BLUE",
+              "description": "This item is in to do",
+              "id": "61e4505c",
+              "name": "To do"
+            },
+            {
+              "color": "GRAY",
+              "description": "This item is in blocked",
+              "id": "5480a87f",
+              "name": "Blocked"
+            },
+            {
+              "color": "YELLOW",
+              "description": "This is actively being worked on",
+              "id": "47fc9ee4",
+              "name": "In progress"
+            },
+            {
+              "color": "PURPLE",
+              "description": "This item is in review",
+              "id": "df73e18b",
+              "name": "In review"
+            },
+            {
+              "color": "ORANGE",
+              "description": "This has been completed",
+              "id": "98236657",
+              "name": "Done"
+            },
+            {
+              "color": "PURPLE",
+              "description": "Deferred epics not scheduled for the winter term",
+              "id": "ac6447b7",
+              "name": "Future Epics"
+            }
+          ]
+        },
+        {
+          "dataType": "LABELS",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A6s",
+          "name": "Labels"
+        },
+        {
+          "dataType": "LINKED_PULL_REQUESTS",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A6w",
+          "name": "Linked pull requests"
+        },
+        {
+          "dataType": "MILESTONE",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A60",
+          "name": "Milestone"
+        },
+        {
+          "dataType": "REPOSITORY",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A64",
+          "name": "Repository"
+        },
+        {
+          "dataType": "REVIEWERS",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A7A",
+          "name": "Reviewers"
+        },
+        {
+          "dataType": "PARENT_ISSUE",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A7E",
+          "name": "Parent issue"
+        },
+        {
+          "dataType": "SUB_ISSUES_PROGRESS",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A7I",
+          "name": "Sub-issues progress"
+        },
+        {
+          "dataType": "CREATED",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A7M",
+          "name": "Created"
+        },
+        {
+          "dataType": "UPDATED",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A7Q",
+          "name": "Updated"
+        },
+        {
+          "dataType": "CLOSED",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A7U",
+          "name": "Closed"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLezhR5A8M",
+          "name": "Priority",
+          "options": [
+            {
+              "color": "RED",
+              "description": "",
+              "id": "79628723",
+              "name": "P0"
+            },
+            {
+              "color": "ORANGE",
+              "description": "",
+              "id": "0a877460",
+              "name": "P1"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "da944a9c",
+              "name": "P2"
+            }
+          ]
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLezhR5A8Q",
+          "name": "Size",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "",
+              "id": "6c6483d2",
+              "name": "XS"
+            },
+            {
+              "color": "PURPLE",
+              "description": "",
+              "id": "f784b110",
+              "name": "S"
+            },
+            {
+              "color": "RED",
+              "description": "",
+              "id": "7515a9f1",
+              "name": "M"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "817d0097",
+              "name": "L"
+            },
+            {
+              "color": "PINK",
+              "description": "",
+              "id": "db339eb2",
+              "name": "XL"
+            }
+          ]
+        },
+        {
+          "dataType": "NUMBER",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A8U",
+          "name": "Estimate"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A8Y",
+          "name": "Start date"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLezhR5A8c",
+          "name": "Target date"
+        },
+        {
+          "dataType": "NUMBER",
+          "id": "PVTF_lADODgsi_s4BWmLezhTAz0c",
+          "name": "Implementation Hours"
+        },
+        {
+          "dataType": "TEXT",
+          "id": "PVTF_lADODgsi_s4BWmLezhTAz1U",
+          "name": "Linked PRs"
+        },
+        {
+          "dataType": "TEXT",
+          "id": "PVTF_lADODgsi_s4BWmLezhTAz2M",
+          "name": "PR Analytics Summary"
+        },
+        {
+          "dataType": "TEXT",
+          "id": "PVTF_lADODgsi_s4BWmLezhTAz2Q",
+          "name": "Needs Manual Review"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLezhTAz2U",
+          "name": "Last Report Updated"
+        }
+      ]
+    },
+    "number": 8,
+    "title": "Edu AI Core - EduAI 2026-2027",
+    "workflows": {
+      "nodes": [
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLezgWL-LA",
+          "name": "Auto-add sub-issues to project",
+          "number": 10
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLezgWL-K8",
+          "name": "Auto-close issue",
+          "number": 9
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLezgWL-LI",
+          "name": "Item added to project",
+          "number": 12
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLezgWL-K0",
+          "name": "Item closed",
+          "number": 7
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLezgWL-LE",
+          "name": "Pull request linked to issue",
+          "number": 11
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLezgWL-K4",
+          "name": "Pull request merged",
+          "number": 8
+        }
+      ]
+    }
+  },
+  {
+    "closed": false,
+    "fields": {
+      "nodes": [
+        {
+          "dataType": "TITLE",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5Blg",
+          "name": "Title"
+        },
+        {
+          "dataType": "ASSIGNEES",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5Blk",
+          "name": "Assignees"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmMPzhR5Blo",
+          "name": "Status",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "These items are epics",
+              "id": "f75ad846",
+              "name": "Epics"
+            },
+            {
+              "color": "BLUE",
+              "description": "This item is important to read",
+              "id": "61e4505c",
+              "name": "Important"
+            },
+            {
+              "color": "YELLOW",
+              "description": "These items are practices to follow",
+              "id": "47fc9ee4",
+              "name": "Practices"
+            },
+            {
+              "color": "PURPLE",
+              "description": "Future epics that aren't relevant to us yet",
+              "id": "5689d099",
+              "name": "Future Epics"
+            },
+            {
+              "color": "RED",
+              "description": "",
+              "id": "b5d81fb4",
+              "name": "Milestones"
+            },
+            {
+              "color": "PURPLE",
+              "description": "This is what everyone needs to do",
+              "id": "df73e18b",
+              "name": "To do"
+            },
+            {
+              "color": "ORANGE",
+              "description": "This has been completed",
+              "id": "98236657",
+              "name": "Done"
+            },
+            {
+              "color": "GRAY",
+              "description": "This item is in backlog",
+              "id": "96667cd5",
+              "name": "Backlog"
+            },
+            {
+              "color": "GRAY",
+              "description": "",
+              "id": "0b97944f",
+              "name": "Finished Epics"
+            }
+          ]
+        },
+        {
+          "dataType": "LABELS",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5Bls",
+          "name": "Labels"
+        },
+        {
+          "dataType": "LINKED_PULL_REQUESTS",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5Blw",
+          "name": "Linked pull requests"
+        },
+        {
+          "dataType": "MILESTONE",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5Bl0",
+          "name": "Milestone"
+        },
+        {
+          "dataType": "REPOSITORY",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5Bl4",
+          "name": "Repository"
+        },
+        {
+          "dataType": "REVIEWERS",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BmA",
+          "name": "Reviewers"
+        },
+        {
+          "dataType": "PARENT_ISSUE",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BmE",
+          "name": "Parent issue"
+        },
+        {
+          "dataType": "SUB_ISSUES_PROGRESS",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BmI",
+          "name": "Sub-issues progress"
+        },
+        {
+          "dataType": "CREATED",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BmM",
+          "name": "Created"
+        },
+        {
+          "dataType": "UPDATED",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BmQ",
+          "name": "Updated"
+        },
+        {
+          "dataType": "CLOSED",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BmU",
+          "name": "Closed"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmMPzhR5BoE",
+          "name": "Priority",
+          "options": [
+            {
+              "color": "RED",
+              "description": "",
+              "id": "79628723",
+              "name": "P0"
+            },
+            {
+              "color": "ORANGE",
+              "description": "",
+              "id": "0a877460",
+              "name": "P1"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "da944a9c",
+              "name": "P2"
+            }
+          ]
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmMPzhR5BoI",
+          "name": "Size",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "",
+              "id": "6c6483d2",
+              "name": "XS"
+            },
+            {
+              "color": "PURPLE",
+              "description": "",
+              "id": "f784b110",
+              "name": "S"
+            },
+            {
+              "color": "RED",
+              "description": "",
+              "id": "7515a9f1",
+              "name": "M"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "817d0097",
+              "name": "L"
+            },
+            {
+              "color": "PINK",
+              "description": "",
+              "id": "db339eb2",
+              "name": "XL"
+            }
+          ]
+        },
+        {
+          "dataType": "NUMBER",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BoM",
+          "name": "Estimate"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BoQ",
+          "name": "Start date"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmMPzhR5BoU",
+          "name": "Target date"
+        }
+      ]
+    },
+    "number": 11,
+    "title": "EduAI 2026-2027",
+    "workflows": {
+      "nodes": [
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmMPzgWL-hc",
+          "name": "Auto-close issue",
+          "number": 9
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmMPzgWL-ho",
+          "name": "Item added to project",
+          "number": 12
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmMPzgWL-hU",
+          "name": "Item closed",
+          "number": 7
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmMPzgWL-hk",
+          "name": "Pull request linked to issue",
+          "number": 11
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmMPzgWL-hY",
+          "name": "Pull request merged",
+          "number": 8
+        }
+      ]
+    }
+  },
+  {
+    "closed": false,
+    "fields": {
+      "nodes": [
+        {
+          "dataType": "TITLE",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BHg",
+          "name": "Title"
+        },
+        {
+          "dataType": "ASSIGNEES",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BHk",
+          "name": "Assignees"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLszhR5BHo",
+          "name": "Status",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "This item hasn't been started",
+              "id": "f75ad846",
+              "name": "Backlog"
+            },
+            {
+              "color": "BLUE",
+              "description": "This item is in to do",
+              "id": "61e4505c",
+              "name": "To do"
+            },
+            {
+              "color": "GRAY",
+              "description": "This item is in blocked",
+              "id": "aed39d61",
+              "name": "Blocked"
+            },
+            {
+              "color": "YELLOW",
+              "description": "This is actively being worked on",
+              "id": "47fc9ee4",
+              "name": "In progress"
+            },
+            {
+              "color": "PURPLE",
+              "description": "This item is in review",
+              "id": "df73e18b",
+              "name": "In review"
+            },
+            {
+              "color": "ORANGE",
+              "description": "This has been completed",
+              "id": "98236657",
+              "name": "Done"
+            }
+          ]
+        },
+        {
+          "dataType": "LABELS",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BHs",
+          "name": "Labels"
+        },
+        {
+          "dataType": "LINKED_PULL_REQUESTS",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BHw",
+          "name": "Linked pull requests"
+        },
+        {
+          "dataType": "MILESTONE",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BH0",
+          "name": "Milestone"
+        },
+        {
+          "dataType": "REPOSITORY",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BH4",
+          "name": "Repository"
+        },
+        {
+          "dataType": "REVIEWERS",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BIA",
+          "name": "Reviewers"
+        },
+        {
+          "dataType": "PARENT_ISSUE",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BIE",
+          "name": "Parent issue"
+        },
+        {
+          "dataType": "SUB_ISSUES_PROGRESS",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BII",
+          "name": "Sub-issues progress"
+        },
+        {
+          "dataType": "CREATED",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BIM",
+          "name": "Created"
+        },
+        {
+          "dataType": "UPDATED",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BIQ",
+          "name": "Updated"
+        },
+        {
+          "dataType": "CLOSED",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BIU",
+          "name": "Closed"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLszhR5BMk",
+          "name": "Priority",
+          "options": [
+            {
+              "color": "RED",
+              "description": "",
+              "id": "79628723",
+              "name": "P0"
+            },
+            {
+              "color": "ORANGE",
+              "description": "",
+              "id": "0a877460",
+              "name": "P1"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "da944a9c",
+              "name": "P2"
+            }
+          ]
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLszhR5BMo",
+          "name": "Size",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "",
+              "id": "6c6483d2",
+              "name": "XS"
+            },
+            {
+              "color": "PURPLE",
+              "description": "",
+              "id": "f784b110",
+              "name": "S"
+            },
+            {
+              "color": "RED",
+              "description": "",
+              "id": "7515a9f1",
+              "name": "M"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "817d0097",
+              "name": "L"
+            },
+            {
+              "color": "PINK",
+              "description": "",
+              "id": "db339eb2",
+              "name": "XL"
+            }
+          ]
+        },
+        {
+          "dataType": "NUMBER",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BMs",
+          "name": "Estimate"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BMw",
+          "name": "Start date"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLszhR5BM0",
+          "name": "Target date"
+        }
+      ]
+    },
+    "number": 9,
+    "title": "Question Maker - EduAI Summer 2026",
+    "workflows": {
+      "nodes": [
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLszgWL-Tc",
+          "name": "Auto-add sub-issues to project",
+          "number": 10
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLszgWL-TY",
+          "name": "Auto-close issue",
+          "number": 9
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLszgWL-Tk",
+          "name": "Item added to project",
+          "number": 12
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLszgWL-TQ",
+          "name": "Item closed",
+          "number": 7
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLszgWL-Tg",
+          "name": "Pull request linked to issue",
+          "number": 11
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLszgWL-TU",
+          "name": "Pull request merged",
+          "number": 8
+        }
+      ]
+    }
+  },
+  {
+    "closed": false,
+    "fields": {
+      "nodes": [
+        {
+          "dataType": "TITLE",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5ApQ",
+          "name": "Title"
+        },
+        {
+          "dataType": "ASSIGNEES",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5ApU",
+          "name": "Assignees"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLLzhR5ApY",
+          "name": "Status",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "This item hasn't been started",
+              "id": "f75ad846",
+              "name": "Backlog"
+            },
+            {
+              "color": "BLUE",
+              "description": "This item is in to do",
+              "id": "61e4505c",
+              "name": "To do"
+            },
+            {
+              "color": "GRAY",
+              "description": "This item is in blocked",
+              "id": "5d5b33ed",
+              "name": "Blocked"
+            },
+            {
+              "color": "YELLOW",
+              "description": "This is actively being worked on",
+              "id": "47fc9ee4",
+              "name": "In progress"
+            },
+            {
+              "color": "PURPLE",
+              "description": "This item is in review",
+              "id": "df73e18b",
+              "name": "In review"
+            },
+            {
+              "color": "ORANGE",
+              "description": "This has been completed",
+              "id": "98236657",
+              "name": "Done"
+            }
+          ]
+        },
+        {
+          "dataType": "LABELS",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Apc",
+          "name": "Labels"
+        },
+        {
+          "dataType": "LINKED_PULL_REQUESTS",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Apg",
+          "name": "Linked pull requests"
+        },
+        {
+          "dataType": "MILESTONE",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Apk",
+          "name": "Milestone"
+        },
+        {
+          "dataType": "REPOSITORY",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Apo",
+          "name": "Repository"
+        },
+        {
+          "dataType": "REVIEWERS",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Apw",
+          "name": "Reviewers"
+        },
+        {
+          "dataType": "PARENT_ISSUE",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Ap0",
+          "name": "Parent issue"
+        },
+        {
+          "dataType": "SUB_ISSUES_PROGRESS",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Ap4",
+          "name": "Sub-issues progress"
+        },
+        {
+          "dataType": "CREATED",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5Ap8",
+          "name": "Created"
+        },
+        {
+          "dataType": "UPDATED",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5AqA",
+          "name": "Updated"
+        },
+        {
+          "dataType": "CLOSED",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5AqE",
+          "name": "Closed"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLLzhR5ArA",
+          "name": "Priority",
+          "options": [
+            {
+              "color": "RED",
+              "description": "",
+              "id": "79628723",
+              "name": "P0"
+            },
+            {
+              "color": "ORANGE",
+              "description": "",
+              "id": "0a877460",
+              "name": "P1"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "da944a9c",
+              "name": "P2"
+            }
+          ]
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmLLzhR5ArE",
+          "name": "Size",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "",
+              "id": "6c6483d2",
+              "name": "XS"
+            },
+            {
+              "color": "PURPLE",
+              "description": "",
+              "id": "f784b110",
+              "name": "S"
+            },
+            {
+              "color": "RED",
+              "description": "",
+              "id": "7515a9f1",
+              "name": "M"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "817d0097",
+              "name": "L"
+            },
+            {
+              "color": "PINK",
+              "description": "",
+              "id": "db339eb2",
+              "name": "XL"
+            }
+          ]
+        },
+        {
+          "dataType": "NUMBER",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5ArI",
+          "name": "Estimate"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5ArM",
+          "name": "Start date"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmLLzhR5ArQ",
+          "name": "Target date"
+        }
+      ]
+    },
+    "number": 7,
+    "title": "Edu AI Website - EduAI Summer 2026",
+    "workflows": {
+      "nodes": [
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLLzgWL-Cg",
+          "name": "Auto-add sub-issues to project",
+          "number": 10
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLLzgWL-Cc",
+          "name": "Auto-close issue",
+          "number": 9
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLLzgWL-Co",
+          "name": "Item added to project",
+          "number": 12
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLLzgWL-CU",
+          "name": "Item closed",
+          "number": 7
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLLzgWL-Ck",
+          "name": "Pull request linked to issue",
+          "number": 11
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmLLzgWL-CY",
+          "name": "Pull request merged",
+          "number": 8
+        }
+      ]
+    }
+  },
+  {
+    "closed": false,
+    "fields": {
+      "nodes": [
+        {
+          "dataType": "TITLE",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4-_8",
+          "name": "Title"
+        },
+        {
+          "dataType": "ASSIGNEES",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_AA",
+          "name": "Assignees"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmJWzhR4_AE",
+          "name": "Status",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "This item hasn't been started",
+              "id": "f75ad846",
+              "name": "Backlog"
+            },
+            {
+              "color": "BLUE",
+              "description": "This item is in to do",
+              "id": "61e4505c",
+              "name": "To do"
+            },
+            {
+              "color": "GRAY",
+              "description": "This item is blocked",
+              "id": "4a54b7fd",
+              "name": "Blocked"
+            },
+            {
+              "color": "YELLOW",
+              "description": "This is actively being worked on",
+              "id": "47fc9ee4",
+              "name": "In progress"
+            },
+            {
+              "color": "PURPLE",
+              "description": "This item is in review",
+              "id": "df73e18b",
+              "name": "In review"
+            },
+            {
+              "color": "ORANGE",
+              "description": "This has been completed",
+              "id": "98236657",
+              "name": "Done"
+            }
+          ]
+        },
+        {
+          "dataType": "LABELS",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_AI",
+          "name": "Labels"
+        },
+        {
+          "dataType": "LINKED_PULL_REQUESTS",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_AM",
+          "name": "Linked pull requests"
+        },
+        {
+          "dataType": "MILESTONE",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_AQ",
+          "name": "Milestone"
+        },
+        {
+          "dataType": "REPOSITORY",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_AU",
+          "name": "Repository"
+        },
+        {
+          "dataType": "REVIEWERS",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_Ac",
+          "name": "Reviewers"
+        },
+        {
+          "dataType": "PARENT_ISSUE",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_Ag",
+          "name": "Parent issue"
+        },
+        {
+          "dataType": "SUB_ISSUES_PROGRESS",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_Ak",
+          "name": "Sub-issues progress"
+        },
+        {
+          "dataType": "CREATED",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_Ao",
+          "name": "Created"
+        },
+        {
+          "dataType": "UPDATED",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_As",
+          "name": "Updated"
+        },
+        {
+          "dataType": "CLOSED",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_Aw",
+          "name": "Closed"
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmJWzhR4_FA",
+          "name": "Priority",
+          "options": [
+            {
+              "color": "RED",
+              "description": "",
+              "id": "79628723",
+              "name": "P0"
+            },
+            {
+              "color": "ORANGE",
+              "description": "",
+              "id": "0a877460",
+              "name": "P1"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "da944a9c",
+              "name": "P2"
+            }
+          ]
+        },
+        {
+          "dataType": "SINGLE_SELECT",
+          "id": "PVTSSF_lADODgsi_s4BWmJWzhR4_FE",
+          "name": "Size",
+          "options": [
+            {
+              "color": "GREEN",
+              "description": "",
+              "id": "6c6483d2",
+              "name": "XS"
+            },
+            {
+              "color": "PURPLE",
+              "description": "",
+              "id": "f784b110",
+              "name": "S"
+            },
+            {
+              "color": "RED",
+              "description": "",
+              "id": "7515a9f1",
+              "name": "M"
+            },
+            {
+              "color": "YELLOW",
+              "description": "",
+              "id": "817d0097",
+              "name": "L"
+            },
+            {
+              "color": "PINK",
+              "description": "",
+              "id": "db339eb2",
+              "name": "XL"
+            }
+          ]
+        },
+        {
+          "dataType": "NUMBER",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_FI",
+          "name": "Estimate"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_FM",
+          "name": "Start date"
+        },
+        {
+          "dataType": "DATE",
+          "id": "PVTF_lADODgsi_s4BWmJWzhR4_FQ",
+          "name": "Target date"
+        }
+      ]
+    },
+    "number": 5,
+    "title": "AI Tutor - EduAI Summer 2026",
+    "workflows": {
+      "nodes": [
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OM",
+          "name": "Auto-add sub-issues to project",
+          "number": 10
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OY",
+          "name": "Auto-add to project",
+          "number": 13
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OI",
+          "name": "Auto-close issue",
+          "number": 9
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OU",
+          "name": "Item added to project",
+          "number": 12
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OA",
+          "name": "Item closed",
+          "number": 7
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OQ",
+          "name": "Pull request linked to issue",
+          "number": 11
+        },
+        {
+          "enabled": true,
+          "id": "PWF_lADODgsi_s4BWmJWzgWL9OE",
+          "name": "Pull request merged",
+          "number": 8
+        }
+      ]
+    }
+  }
+]

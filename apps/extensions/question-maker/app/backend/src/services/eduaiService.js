@@ -781,6 +781,14 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       stableError.name = "EduAIQuestionGenerationError";
       const statusCode = error?.statusCode;
       if (Number.isInteger(statusCode)) stableError.statusCode = statusCode;
+      // Carry the "the caller's own provider key was refused" marker across the
+      // re-wrap. Dropping it is what made a live key rejection indistinguishable
+      // from a generic fault at the route, so the route answered 500 and the
+      // browser never invalidated its cached verdict. It is a fixed enum value,
+      // never upstream text, so nothing leaks with it.
+      if (error?.reasonCode === "PROVIDER_API_KEY_REQUIRED") {
+        stableError.reasonCode = error.reasonCode;
+      }
       throw stableError;
     }
   }
@@ -1030,6 +1038,41 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           statusCode: error.statusCode,
         };
       }
+    }
+  }
+
+  /**
+   * Reads Core's shared AI fleet status (issue #764 §QM). Forwards ONLY the
+   * caller's session cookie — Core's `/api/ai-status` authenticates by session
+   * alone, and attaching the service key here would contradict the BOLA
+   * reasoning in `listCourses` above (a scoped read has no business carrying
+   * the platform-wide credential). Never throws: callers get back whatever
+   * status Core answered with (including 401), or a synthesized failure if
+   * Core itself is unreachable, so the route can forward it verbatim.
+   */
+  async getAiStatus({ cookie } = {}) {
+    return this.#fetchAiStatusPath("/api/ai-status", cookie);
+  }
+
+  /** Same contract as `getAiStatus`, for the 72h history panel. */
+  async getAiStatusHistory({ cookie } = {}) {
+    return this.#fetchAiStatusPath("/api/ai-status/history?hours=72", cookie);
+  }
+
+  async #fetchAiStatusPath(path, cookie) {
+    if (!this.isConfigured()) {
+      return { status: 503, body: { error: "EduAI service is not configured" } };
+    }
+    try {
+      const response = await fetch(`${this.baseURL}${path}`, {
+        headers: { cookie: typeof cookie === "string" ? cookie : "" },
+        signal: AbortSignal.timeout(5000),
+      });
+      const body = await response.json().catch(() => ({}));
+      return { status: response.status, body };
+    } catch (error) {
+      console.error(`${DEBUG_PREFIX} ai-status request failed`, safeRequestLogFields(error));
+      return { status: 502, body: { error: "Upstream AI status unreachable" } };
     }
   }
 }

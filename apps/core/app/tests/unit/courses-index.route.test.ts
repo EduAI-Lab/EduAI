@@ -105,4 +105,18 @@ describe("courses loader", () => {
     expect(result.instructors).toHaveLength(1);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
+
+  it("offers every staff role in the create-course instructor list (#1840)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "admin-1", role: "ADMIN" },
+    } as never);
+
+    await loader(makeArgs());
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { role: { in: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] }, isActive: true },
+      }),
+    );
+  });
 });

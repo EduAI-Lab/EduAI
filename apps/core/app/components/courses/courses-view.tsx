@@ -32,6 +32,7 @@ import { DatePickerField, termInfoFromDateInput, termLabelLong } from "@eduai/ui
 import type { CourseListSection } from "@eduai/ui";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 import { DepartmentCombobox } from "~/components/courses/department-combobox";
+import { instructorsBadgeLabel } from "~/components/courses/course-instructors-panel";
 import type {
   Course,
   CreateCourseInput,
@@ -1363,11 +1364,15 @@ function MixedCoursesBody({
         const preference = getCoursePreference(course.id);
         const accentColor = resolveCourseAccentColor(course.id, preference);
         const displayName = getCourseDisplayName(course.name, preference);
-        const extraBadges = instructorCourseIds.includes(course.id)
-          ? ["Instructor"]
+        const roleBadge = instructorCourseIds.includes(course.id)
+          ? "Instructor"
           : taCourseIds.includes(course.id)
-            ? ["TA"]
-            : ["Enrolled"];
+            ? "TA"
+            : "Enrolled";
+        // #1841: name the teaching team on the card. A course with three
+        // instructors reads "3 instructors" rather than silently showing one.
+        const instructorsBadge = instructorsBadgeLabel(course.instructors ?? []);
+        const extraBadges = instructorsBadge ? [roleBadge, instructorsBadge] : [roleBadge];
         return (
           <CourseCard
             id={course.id}

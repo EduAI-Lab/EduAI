@@ -17,8 +17,10 @@ const { apiKeyStorage, eduaiService, canvasService, useAuthMock, setThemeMock, t
         setApiKey: vi.fn(async () => ({ storedRemotely: true })),
         removeApiKey: vi.fn(),
         removeProviderSetting: vi.fn(async () => undefined),
+        getValidation: vi.fn(() => ({ valid: null, validatedAt: null, error: null })),
+        setValidation: vi.fn(),
       },
-      eduaiService: { listModels: vi.fn() },
+      eduaiService: { listModels: vi.fn(), testApiKey: vi.fn() },
       canvasService: {
         getIntegration: vi.fn(),
         prefersTestMode: vi.fn(() => false),
@@ -36,6 +38,12 @@ vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
 vi.mock("@/services/apiKeyStorage", () => ({
   CORE_STORED_KEY: "__core_stored__",
   default: apiKeyStorage,
+  // Named exports too: save-time validation now goes through `recordKeyVerdict`
+  // (hooks/useAiServicesStatus), which imports this module by name.
+  apiKeyStorage,
+  CLOUD_PROVIDERS: ["google", "openai", "deepseek", "anthropic", "opencode"],
+  isCloudProvider: (value: string) =>
+    ["google", "openai", "deepseek", "anthropic", "opencode"].includes(value),
 }));
 vi.mock("@/services/eduaiService", () => ({ eduaiService }));
 vi.mock("@/services/canvasService", () => ({ canvasService }));
@@ -76,7 +84,10 @@ beforeEach(() => {
     logout: vi.fn(),
   });
   apiKeyStorage.getAllApiKeys.mockResolvedValue({});
+  apiKeyStorage.getValidation.mockReturnValue({ valid: null, validatedAt: null, error: null });
+  apiKeyStorage.setValidation.mockReset();
   eduaiService.listModels.mockResolvedValue([]);
+  eduaiService.testApiKey.mockResolvedValue({ success: true, configured: true });
   canvasService.getIntegration.mockResolvedValue({ isConnected: false });
   localStorage.clear();
 });
@@ -119,6 +130,116 @@ describe("SettingsPage", () => {
     );
     await waitFor(() => expect(screen.getByText(/Configured/)).toBeInTheDocument());
     expect(toastFn).toHaveBeenCalledWith("Google AI (Gemini) API key saved");
+  });
+
+  // Task 15: save-time validation replaces the per-poll cloud round-trip.
+  // Saving a key now also runs one testApiKey check and caches the verdict —
+  // these cases are new, not replacements of prior coverage (there was none
+  // before this task, since save previously did not validate at all).
+  it("validates the key once at save time and caches a passing verdict", async () => {
+    apiKeyStorage.getAllApiKeys
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ google: "AIzaSyABCDEFGH1234" });
+    apiKeyStorage.setApiKey.mockResolvedValue({ storedRemotely: true });
+    eduaiService.testApiKey.mockResolvedValue({ success: true, configured: true });
+    apiKeyStorage.getValidation
+      .mockReturnValueOnce({ valid: null, validatedAt: null, error: null }) // initial refreshKeys
+      .mockReturnValue({
+        valid: true,
+        validatedAt: "2026-09-19T00:00:00.000Z",
+        error: null,
+      });
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByText("Google AI (Gemini)")).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText("AIza-..."), {
+      target: { value: "AIzaSyABCDEFGH1234" },
+    });
+    fireEvent.click(screen.getAllByText("Save")[0]);
+
+    await waitFor(() =>
+      expect(eduaiService.testApiKey).toHaveBeenCalledWith({
+        google: { apiKey: "AIzaSyABCDEFGH1234", isEnabled: true },
+      }),
+    );
+    await waitFor(() =>
+      expect(apiKeyStorage.setValidation).toHaveBeenCalledWith(
+        "google",
+        expect.objectContaining({ valid: true, error: null }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText(/Valid — checked when saved/)).toBeInTheDocument());
+  });
+
+  // CORRECTED (review round 2): this mocked `statusCode: 401`, a response
+  // `test-api-key` cannot produce for a rejected key — it answers
+  // `Number(result.statusCode) === 429 ? 429 : 400`, so a genuine rejection is
+  // a 400 and a 401 there is only ever a dead session. Same assertions, real
+  // response shape.
+  it("caches and renders a rejected verdict with the server's reason", async () => {
+    apiKeyStorage.getAllApiKeys
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ openai: "sk-bad" });
+    apiKeyStorage.setApiKey.mockResolvedValue({ storedRemotely: true });
+    eduaiService.testApiKey.mockResolvedValue({
+      success: false,
+      error: "Invalid API key",
+      configured: true,
+      statusCode: 400,
+    });
+    apiKeyStorage.getValidation
+      .mockReturnValueOnce({ valid: null, validatedAt: null, error: null })
+      .mockReturnValue({
+        valid: false,
+        validatedAt: "2026-09-19T00:00:00.000Z",
+        error: "Invalid API key",
+      });
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByText("OpenAI")).toBeInTheDocument());
+    // "sk-..." is also DeepSeek's placeholder; OpenAI is first in KEY_PROVIDERS order.
+    fireEvent.change(screen.getAllByPlaceholderText("sk-...")[0], {
+      target: { value: "sk-bad" },
+    });
+    fireEvent.click(screen.getAllByText("Save")[1]);
+
+    await waitFor(() =>
+      expect(apiKeyStorage.setValidation).toHaveBeenCalledWith(
+        "openai",
+        expect.objectContaining({ valid: false, error: "Invalid API key" }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText("Invalid API key")).toBeInTheDocument());
+  });
+
+  it("does not mark a key invalid when the save-time check hits a session 401", async () => {
+    // A 401 from `test-api-key` is a dead session or a role failure, never the
+    // provider refusing the key. Caching `valid: false` from it left the cloud
+    // chip red after re-login until the key was saved again.
+    apiKeyStorage.getAllApiKeys
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ openai: "sk-good" });
+    apiKeyStorage.setApiKey.mockResolvedValue({ storedRemotely: true });
+    eduaiService.testApiKey.mockResolvedValue({
+      success: false,
+      error: "Authentication required",
+      configured: true,
+      statusCode: 401,
+    });
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByText("OpenAI")).toBeInTheDocument());
+    fireEvent.change(screen.getAllByPlaceholderText("sk-...")[0], {
+      target: { value: "sk-good" },
+    });
+    fireEvent.click(screen.getAllByText("Save")[1]);
+
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith(
+        expect.stringMatching(/could not verify the openai key/i),
+      ),
+    );
+    expect(apiKeyStorage.setValidation).not.toHaveBeenCalled();
   });
 
   it("removes an existing API key", async () => {

@@ -86,6 +86,12 @@ Auth: Better Auth session cookie. Roles: `INSTRUCTOR`, `ADMIN`. Set `ENCRYPTION_
 - A user enrolled as **Teacher** on at least one course (for course list + roster/quiz APIs).
 - Ability to create **Approved Integrations** access token (Settings → New Access Token).
 
+For UBC-hosted Canvas development or sandbox access, email the UBC LT Hub to
+request the appropriate developer access or token-creation instructions. After
+access is granted, generate a personal token, add it to your own EduAI account
+under **Settings → Canvas**, and test the connection. Keep personal tokens out
+of source control and environment files.
+
 ### 3.2 EduAI / Question Maker
 
 - Monorepo cloned; `npm install` at `EduAICore` root.
@@ -357,4 +363,3 @@ For UI/dev without Canvas:
 4. **LTI:** Only if in-Canvas launch becomes a requirement — not blocking API key MVP.
 
 ---
-

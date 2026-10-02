@@ -19,6 +19,17 @@ vi.mock("~/lib/courses/server", () => ({
   deleteCourse: vi.fn(),
 }));
 
+// #1841: this route now resolves every active instructor. That lookup is a
+// database read with its own integration coverage
+// (courses.all-instructors.integration.test.ts); this file exercises the
+// route's auth and serialization branches, which have no database at all.
+vi.mock("~/lib/courses/instructors.server", async (importOriginal) => ({
+  // Keep the pure helpers (the serializer calls `redactInstructorEmails`);
+  // only the database read is replaced.
+  ...(await importOriginal<typeof import("~/lib/courses/instructors.server")>()),
+  getCourseInstructors: vi.fn(async () => new Map()),
+}));
+
 import { loader, action } from "~/routes/api/courses.id";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
@@ -143,7 +154,12 @@ describe("GET /api/courses/:id loader", () => {
     } as never);
     const res = await loader(makeArgs("course-1"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(COURSE);
+    // #1841: the payload now names the teaching team. `instructor` is the
+    // course head (null here — the fixture has no instructorId) and
+    // `instructors` is the full set, so a client can read `.length` without
+    // guarding for an absent field. The service-key case above keeps neither:
+    // that audience returns before the instructor fields are attached.
+    expect(await res.json()).toEqual({ ...COURSE, instructor: null, instructors: [] });
     expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
       { id: "u1", role: "STUDENT" },
       "course-1",

@@ -1,6 +1,6 @@
 # Production deployment
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 This directory describes the production release contract for `s348.ok.ubc.ca`.
 The production host is separate from shared development and uses a release
@@ -137,6 +137,20 @@ workspace client required by systemd exists.
 
 Use a new release directory for every production change:
 
+0. **Check the inference fleet from s348 and update the fleet config first.**
+   - Run the authenticated edge check **on s348** (a check from s378 does not
+     count) for every host you intend to put in `VLLM_FLEET_CHAT_URLS`, and
+     compare the model IDs with the list in "Inference configuration":
+     ```bash
+     KEY=$(sudo sed -n 's/^VLLM_API_KEY=//p' /etc/eduai/eduai-core.env | tr -d '"')
+     for h in cmps01 cmps02 cmps03; do
+       echo "== $h"; curl -fsS -m 10 -H "Authorization: Bearer $KEY" "http://$h.ok.ubc.ca:8001/v1/models" | grep -oE '"id":"[^"]+"' || echo "EDGE CHECK FAILED"
+     done; unset KEY
+     ```
+     If a host fails, **leave it out** of `VLLM_FLEET_CHAT_URLS` and
+     `fleet.config.json` for this release.
+   - Update `/etc/eduai/fleet/fleet.config.json` (see "Fleet config") so each
+     server lists what it actually serves.
 1. Create or obtain the reviewed release checkout under
    `/srv/www/eduai-production/releases/<release-id>`.
 2. Confirm the intended branch/commit and keep the release checkout clean.
@@ -162,6 +176,54 @@ The exact package scripts can change with the code. Read the package manifests a
 the deployment helper in the release you are deploying instead of copying an old
 command sequence.
 
+### Frontend routing environment (important)
+
+AI Tutor and Question Maker are static browser frontends. Their public `VITE_*`
+URLs are compiled into the bundles at build time; they are not read from the
+server environment when Apache serves the files. If the production env files are
+not loaded before the build, the bundles can fall back to localhost URLs even
+though the backend services and Apache vhosts are configured correctly.
+
+For every production release that changes either frontend, load the reviewed
+public-only env file immediately before its build:
+
+```bash
+cd /srv/www/eduai-production/releases/<release-id>
+
+set -a
+. infra/production/ai-tutor-frontend.env
+set +a
+npm run build --workspace ai-tutor
+
+set -a
+. infra/production/question-maker-frontend.env
+set +a
+npm run build --workspace question-maker-frontend
+```
+
+Then activate the release and reload Apache:
+
+```bash
+sudo -n /usr/local/sbin/eduai-production-admin activate-release <release-id>
+sudo systemctl reload apache2
+```
+
+Before declaring the release live, check the built assets for accidental local
+URLs and confirm the public hosts respond:
+
+```bash
+cd /srv/www/eduai-production/current
+rg -n 'localhost:(3000|3001|4000|5173)' \
+  apps/extensions/ai-tutor/build/client \
+  apps/extensions/question-maker/app/frontend/dist
+curl -fsSI https://aitutor.eduai.ok.ubc.ca/
+curl -fsSI https://questionmaker.eduai.ok.ubc.ca/
+```
+
+The env files above contain routing values intended for the browser. Never place
+API keys, database credentials, or other secrets in a `VITE_*` variable or in a
+frontend bundle.
+
 ## Health checks
 
 Use the service-specific paths:
@@ -183,17 +245,42 @@ connectivity, migrations, browser asset markers, and approved inference model ID
 ## Inference configuration
 
 Production should use only endpoints that pass the authenticated port-8001 edge
-check and have an operational owner. The standard Qwen tier IDs are:
+check and have an operational owner. The current fleet model IDs are:
 
 - small: `qwen3.5-2b-instruct`;
 - large: `qwen3.5-9b-instruct` where installed;
-- planned future capacity: `qwen3.8-27b`, not currently deployed.
+- Assist Auto: `qwen3.8-27b-instruct` on CMPS02.
 
-CMPS02 may expose `qwen2.5-32b-instruct` for the Assist Auto capability; that is
-not the standard large tier. CMPS03 must remain out of an approved production
-fleet until its edge readiness is confirmed. See
+CMPS02 intentionally does not expose the standard 9B model; its 27B model is a
+separate Assist Auto capability. CMPS03 has the standard small/large pair and
+may be used in production after the authenticated edge check succeeds on the
+production host. See
 [`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
+
+### Fleet config
+
+`fleet.config.json` maps each inference server to the models it serves. It is
+gitignored and host-specific, so it must **not** live in a release directory:
+each release is a fresh checkout, and `activate-release` does not copy it
+forward. Keep it at `FLEET_CONFIG_PATH=/etc/eduai/fleet/fleet.config.json`
+(set in `/etc/eduai/eduai-core.env`). Install the directory once, group-writable
+so Admin → AI Management → Servers can save the file (it writes a temp file and
+renames it):
+
+```bash
+sudo install -d -o root -g eduai -m 2770 /etc/eduai/fleet
+sudo cp -n /srv/www/eduai-production/current/apps/core/fleet.config.json /etc/eduai/fleet/ 2>/dev/null \
+  || sudo cp /srv/www/eduai-production/current/apps/core/fleet.config.example.json /etc/eduai/fleet/fleet.config.json
+sudo chown root:eduai /etc/eduai/fleet/fleet.config.json && sudo chmod 0660 /etc/eduai/fleet/fleet.config.json
+```
+
+Then edit it to match the edge check. As of the Weeks 1–3 release: cmps01
+`qwen3.5-2b-instruct` + `qwen3.5-9b-instruct`; **cmps02 `qwen3.5-2b-instruct` +
+`qwen3.8-27b-instruct`** (was `qwen2.5-32b-instruct`); cmps03 the 2b/9b pair,
+only if its edge check passed. Without this file the registry assumes every
+fleet URL serves `VLLM_FLEET_DEFAULT_MODELS` (2b + 9b), which is wrong for
+cmps02, and the AI status probe samples hosts from it.
 
 **Auto routing tier assignment is a manual step on production.** Unlike
 `eduai-dev`/s378 (`infra/s378/go-live-build.sh` runs

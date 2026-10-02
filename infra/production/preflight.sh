@@ -123,6 +123,21 @@ check_service eduai-core.service
 check_service eduai-aitutor-server.service
 check_service eduai-qm-backend.service
 check_service eduai-cron-worker.service
+# fleet.config.json is gitignored and deployed out of band, so it must live
+# outside the release dirs (FLEET_CONFIG_PATH) or activate-release drops it.
+# Without it the registry assumes every fleet URL serves
+# VLLM_FLEET_DEFAULT_MODELS, and the AI status probe (which runs inside Core
+# on this host) samples the wrong hosts. Check it as Core's service user.
+FLEET_CONFIG=$(sudo sed -n 's/^FLEET_CONFIG_PATH=//p' /etc/eduai/eduai-core.env | tail -1)
+FLEET_CONFIG=${FLEET_CONFIG:-/srv/www/eduai-production/current/apps/core/fleet.config.json}
+CORE_USER=$(systemctl show -p User --value eduai-core.service 2>/dev/null)
+if [ -z "$(sudo sed -n 's/^FLEET_CONFIG_PATH=//p' /etc/eduai/eduai-core.env)" ]; then
+  warn "FLEET_CONFIG_PATH unset; fleet.config.json is read from the release dir and is lost on every activate-release"
+fi
+sudo -u "${CORE_USER:-root}" test -r "$FLEET_CONFIG" \
+  || warn "fleet.config.json not readable by ${CORE_USER:-the Core service user} at $FLEET_CONFIG"
+grep -q '^VLLM_API_KEY=' /etc/eduai/eduai-core.env \
+  || warn "VLLM_API_KEY missing; the status probe will record UNKNOWN for every host"
 ss -ltn 2>/dev/null | grep -E ':(80|443|3000|4000|5432|6379|8000|8001)\b' || true
 
 echo

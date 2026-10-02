@@ -40,6 +40,49 @@ function abortError(): Error {
   return err;
 }
 
+/**
+ * The admission wait window in seconds, as an advisory retry delay.
+ *
+ * A caller that just timed out waited the whole window and lost, so the window
+ * is the natural timescale to suggest. `jitterRatio` spreads the suggestion
+ * across [base, base + floor(base * jitterRatio)] — with a classful 25 clients hitting
+ * a gate of 8, a fixed delay would simply re-synchronize the same stampede one
+ * window later (#1804).
+ */
+export function admissionRetryAfterSeconds(
+  jitterRatio = 0.5,
+  random: () => number = Math.random,
+): number {
+  const base = Math.max(1, Math.ceil(waitMs() / 1000));
+  const maxJitter = Math.floor(base * jitterRatio);
+  return base + Math.floor(random() * (maxJitter + 1));
+}
+
+/**
+ * The single 503 for a lost admission race, shared by `/api/chat` and
+ * `/api/completion` so the two cannot drift apart. Carries `Retry-After`:
+ * without it a client has nothing to back off against and retries straight
+ * back into the queue, which is what turned one busy moment into six
+ * consecutive 503s over 138s in the COSC 301 pilot report.
+ */
+export function admissionTimeoutResponse(): Response {
+  const retryAfter = admissionRetryAfterSeconds();
+  return new Response(
+    JSON.stringify({
+      error: "Server busy — too many concurrent AI requests. Try again shortly.",
+      code: "AI_ADMISSION_TIMEOUT",
+      retryAfter,
+    }),
+    {
+      status: 503,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfter),
+      },
+    },
+  );
+}
+
 /** Unit tests / process reset. */
 export function resetAiAdmission(): void {
   while (waiters.length > 0) {

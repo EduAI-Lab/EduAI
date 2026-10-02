@@ -107,6 +107,24 @@ describe("createAdminCourse", () => {
     expect(result).toEqual({ error: "INVALID_INSTRUCTOR" });
   });
 
+  it("looks instructors up across every staff role (#1840)", async () => {
+    prismaMock.user.findMany.mockResolvedValue([]);
+    await createAdminCourse(ADMIN, {
+      name: "Intro to CS",
+      code: "COSC 111",
+      section: "001",
+      term: "W1",
+      year: 2026,
+      startDate: "2026-01-01",
+      department: "COSC",
+      instructorUserIds: ["u1"],
+    });
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["u1"] }, role: { in: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] } },
+      select: { id: true },
+    });
+  });
+
   it("creates a course for admin with valid input", async () => {
     prismaMock.user.findMany.mockResolvedValue([{ id: "u1" }]);
     const tx = {

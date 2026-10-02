@@ -37,6 +37,14 @@ import { hasDocument } from "../lib/runtime-env";
 export interface AiServiceStatusPair {
   cloud: ServiceStatus;
   ubc: ServiceStatus;
+  /**
+   * When the underlying data was observed, or null when the source cannot say.
+   * A source that cannot supply it must return null rather than a guess — the
+   * UI omits the "checked N ago" line instead of rendering a wrong one.
+   */
+  checkedAt?: string | null;
+  /** True when the data is too old to be trusted as current. */
+  stale?: boolean;
 }
 
 export interface UseAiServiceStatusOptions {
@@ -68,6 +76,8 @@ export interface UseAiServiceStatusOptions {
 }
 
 export interface UseAiServiceStatusResult extends AiServiceStatusPair {
+  checkedAt: string | null;
+  stale: boolean;
   /** Re-checks both services now. Safe to pass directly as `onRefresh`. */
   refresh: () => void;
 }
@@ -87,6 +97,8 @@ async function defaultFetcher(endpoint: string, signal: AbortSignal): Promise<Ai
   return {
     cloud: data.cloud ?? LOADING,
     ubc: data.ubc ?? LOADING,
+    checkedAt: data.checkedAt ?? null,
+    stale: data.stale ?? false,
   };
 }
 
@@ -106,6 +118,8 @@ export function useAiServiceStatus(
 
   const [cloud, setCloud] = React.useState<ServiceStatus>(LOADING);
   const [ubc, setUbc] = React.useState<ServiceStatus>(LOADING);
+  const [checkedAt, setCheckedAt] = React.useState<string | null>(null);
+  const [stale, setStale] = React.useState(false);
 
   // Refs so `load` always reads the latest options without forcing the
   // polling effect to restart when a caller passes a fresh inline fetcher.
@@ -155,6 +169,8 @@ export function useAiServiceStatus(
         if (!cancelled && !controller.signal.aborted) {
           setCloud(result.cloud);
           setUbc(result.ubc);
+          setCheckedAt(result.checkedAt ?? null);
+          setStale(result.stale ?? false);
         }
       } catch {
         // Transient / aborted — keep the last known status until the next poll.
@@ -188,5 +204,5 @@ export function useAiServiceStatus(
 
   const refresh = React.useCallback(() => refreshRef.current(), []);
 
-  return { cloud, ubc, refresh };
+  return { cloud, ubc, checkedAt, stale, refresh };
 }
