@@ -37,25 +37,21 @@ describe("unit-admin.invitations loader", () => {
     expect(getPolicy).not.toHaveBeenCalled();
   });
 
-  it("redirects an ADMIN (not UNIT_ADMIN) to /dashboard", async () => {
+  it("404s an ADMIN (not UNIT_ADMIN) instead of redirecting", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
     expect(getPolicy).not.toHaveBeenCalled();
   });
 
-  it("redirects a UNIT_ADMIN to /dashboard when the invite policy is off", async () => {
+  it("404s a UNIT_ADMIN instead of redirecting when the invite policy is off", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "ua-1", role: "UNIT_ADMIN" },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(false);
 
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
     expect(getPolicy).toHaveBeenCalledWith("unitAdmins.canInvite");
   });
 

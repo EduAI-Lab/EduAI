@@ -74,37 +74,31 @@ describe("courses.$courseId loader", () => {
     expect(res.headers.get("Location")).toBe("/auth/login");
   });
 
-  it("redirects to /courses when the :courseId param is missing", async () => {
+  it("404s when the :courseId param is missing", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    const res = (await loader(makeArgs(""))) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses");
+    await expect(loader(makeArgs(""))).rejects.toMatchObject({ init: { status: 404 } });
   });
 
-  it("redirects to /courses when the course does not exist", async () => {
+  it("404s when the course does not exist", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
     vi.mocked(prisma.course.findUnique).mockResolvedValue(null);
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
-  it("redirects to /courses?access=denied when the user has no access", async () => {
+  it("404s when the user has no access", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
     vi.mocked(prisma.course.findUnique).mockResolvedValue(BASE_COURSE as never);
     vi.mocked(resolveCourseAccess).mockResolvedValue(null);
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses?access=denied");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
-  it("redirects a student to /courses?access=unpublished for an unpublished course", async () => {
+  it("404s a student for an unpublished course", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
@@ -113,9 +107,7 @@ describe("courses.$courseId loader", () => {
       isPublished: false,
     } as never);
     vi.mocked(resolveCourseAccess).mockResolvedValue("student");
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses?access=unpublished");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
   it("returns course data with hasAiConfig (not aiInstructions) for a student", async () => {
