@@ -597,7 +597,7 @@ export function validateFile(file: File | any): ValidationResult {
   const maxSize = 50 * 1024 * 1024; // 50MB - increased for presentations
 
   const mimeType = resolveMaterialMimeType(file);
-  if (!ACCEPTED_MATERIAL_MIME_TYPES.includes(mimeType)) {
+  if (!(ACCEPTED_MATERIAL_MIME_TYPES as readonly string[]).includes(mimeType)) {
     return {
       isValid: false,
       error: `File type ${mimeType} is not supported. Supported types: ${ACCEPTED_MATERIAL_TYPE_LABELS}`,
