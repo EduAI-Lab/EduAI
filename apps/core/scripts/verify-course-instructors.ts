@@ -129,6 +129,8 @@ export function normalizeCode(code: string): string {
   return code.replace(/\s+/g, "").toLowerCase();
 }
 
+const MAX_SEARCH_PAGES = 20;
+
 /**
  * The `?search=` term for a code: only the alphabetic prefix ("DATA 301" and
  * "DATA301" both give "DATA"), because a `contains` match on "DATA 301" would
@@ -309,12 +311,25 @@ export async function main(): Promise<void> {
     courses = listed.data;
   } else {
     const search = encodeURIComponent(codeSearchTerm(options.code ?? ""));
-    const listed = await getCourseList(
-      `${options.baseUrl}/api/courses?search=${search}&page=1&pageSize=100`,
-      options.apiKey,
-    );
-    if (!listed) process.exit(1);
-    courses = exactCodeMatches(listed.data, options.code ?? "");
+    // A short prefix like "CS" also matches names ("Physics"), so walk every page:
+    // a duplicate cut off by the page size would hide exactly what this step looks for.
+    const found: CourseRow[] = [];
+    for (let page = 1; page <= MAX_SEARCH_PAGES; page++) {
+      const listed = await getCourseList(
+        `${options.baseUrl}/api/courses?search=${search}&page=${page}&pageSize=100`,
+        options.apiKey,
+      );
+      if (!listed) process.exit(1);
+      found.push(...listed.data);
+      if (listed.data.length === 0 || found.length >= listed.total) break;
+      if (page === MAX_SEARCH_PAGES) {
+        console.error(
+          `Search "${decodeURIComponent(search)}" has more than ${MAX_SEARCH_PAGES * 100} results; refusing to guess. Pass --course <id>.`,
+        );
+        process.exit(2);
+      }
+    }
+    courses = exactCodeMatches(found, options.code ?? "");
   }
 
   if (courses.length === 0) {

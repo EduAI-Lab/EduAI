@@ -228,7 +228,7 @@ const sameCode = (a, b) => a.replace(/\s+/g, "").toUpperCase() === b.replace(/\s
 
 // STEP 1 (read-only) — which offering is the real one?
 async function auditCourses(code = "DATA 301") {
-  const { body } = await api(`/api/courses?search=${encodeURIComponent(code.split(/\s+/)[0])}&page=1&pageSize=200`);
+  const { body } = await api(`/api/courses?search=${encodeURIComponent(/^\s*([A-Za-z]+)/.exec(code)?.[1] ?? code.trim())}&page=1&pageSize=200`);
   const matches = (body?.data ?? []).filter((c) => sameCode(c.code, code));
   if (matches.length === 0) return console.warn(`No live course matched ${code}.`);
 
