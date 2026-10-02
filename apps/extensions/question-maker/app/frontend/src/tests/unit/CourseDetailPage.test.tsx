@@ -71,12 +71,9 @@ const {
 
 // ── react-router ─────────────────────────────────────────────────────────────
 vi.mock("react-router", () => ({
+  Link: ({ children }: any) => <a>{children}</a>,
   useNavigate: () => navigateMock,
   useSearchParams: () => [searchParamsBox.current, setSearchParamsMock],
-}));
-
-vi.mock("@/components/common/NotFoundState", () => ({
-  NotFoundState: () => <div>404 — Page not found</div>,
 }));
 
 // ── sonner ───────────────────────────────────────────────────────────────────
@@ -155,6 +152,7 @@ vi.mock("@eduai/ui", () => ({
   Alert: ({ children }: any) => <div role="alert">{children}</div>,
   AlertDescription: ({ children }: any) => <div>{children}</div>,
   Skeleton: () => <div data-testid="skeleton" />,
+  NotFoundState: () => <div>404 — Page not found</div>,
   cn: (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" "),
   resolvePaletteAccent: () => "#000",
   ConfirmDialog: ({ open, onConfirm, title, description, confirmLabel, isLoading }: any) =>

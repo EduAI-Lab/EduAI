@@ -13,6 +13,7 @@ vi.mock("@eduai/ui", () => ({
   Toaster: () => <div data-testid="toaster" />,
   ThemeProvider: ({ children }: any) => <>{children}</>,
   ThemeSyncInitializer: () => null,
+  NotFoundState: () => <div data-testid="not-found-state" />,
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -27,9 +28,6 @@ vi.mock("@/components/layout/QmAppLayout", () => ({
       <Outlet />
     </div>
   ),
-}));
-vi.mock("@/components/common/NotFoundState", () => ({
-  NotFoundState: () => <div data-testid="not-found-state" />,
 }));
 vi.mock("@/contexts/GuidedTourContext", () => ({
   GuidedTourProvider: ({ children }: any) => <>{children}</>,
