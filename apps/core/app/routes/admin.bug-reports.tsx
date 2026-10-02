@@ -13,6 +13,7 @@ import {
   BugReportsAdminView,
 } from "@eduai/ui";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -22,7 +23,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   if (session.user.role !== "ADMIN") {
-    return redirect("/dashboard");
+    throw notFound(session.user);
   }
 
   return {
@@ -72,3 +73,5 @@ export default function BugReportsPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

@@ -30,13 +30,11 @@ describe("admin.users loader", () => {
     expect(res.headers.get("Location")).toBe("/auth/login");
   });
 
-  it("redirects a non-admin (e.g. INSTRUCTOR) to /dashboard", async () => {
+  it("404s a non-admin (e.g. INSTRUCTOR) instead of redirecting", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
   it("returns the session user for an ADMIN", async () => {

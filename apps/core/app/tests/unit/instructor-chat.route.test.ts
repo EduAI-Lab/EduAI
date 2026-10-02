@@ -65,10 +65,7 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
 
-    const res = (await loader(makeArgs())) as Response;
-
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
     // The ADMIN short-circuit must never even issue the enrollment query.
     expect(prisma.course.findMany).not.toHaveBeenCalled();
   });
@@ -79,10 +76,7 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
     } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([COURSE_ROW] as never);
 
-    const res = (await loader(makeArgs())) as Response;
-
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
   it("still lists a UNIT_ADMIN's course OUTSIDE their authorized units — resolveAccess falls through to their real INSTRUCTOR enrollment there", async () => {

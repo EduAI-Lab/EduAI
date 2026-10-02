@@ -5,7 +5,7 @@
  * build-time value. The route shapes come from `@eduai/ui/core-url`, shared with
  * Question Maker so the two apps cannot drift on how Core is addressed.
  */
-import { coreLoginUrl, coreStatusUrl } from "@eduai/ui/core-url";
+import { coreDashboardUrl, coreLoginUrl, coreStatusUrl } from "@eduai/ui/core-url";
 
 /** EduAI Core base URL for cross-app navigation (login, dashboard). */
 export function getCoreUrl(): string {
@@ -15,6 +15,11 @@ export function getCoreUrl(): string {
 /** Core login URL that breaks the cross-subdomain session redirect loop. */
 export function getCoreLoginUrl(returnUrl = window.location.href): string {
   return coreLoginUrl(getCoreUrl(), returnUrl);
+}
+
+/** Core's dashboard — the sidebar's "Back to EduAI" destination. */
+export function getCoreDashboardUrl(): string {
+  return coreDashboardUrl(getCoreUrl());
 }
 
 /** Core's AI service status page — the extensions have no such route of their own. */

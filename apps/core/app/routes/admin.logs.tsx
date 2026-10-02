@@ -32,6 +32,7 @@ import {
 } from "~/lib/db.ai-interaction-stats.server";
 import type { Route } from "./+types/admin.logs";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 import { asText } from "~/lib/json-value";
 
 const DEFAULT_PAGE = 1;
@@ -68,7 +69,7 @@ async function requireAdminUser(request: Request) {
     throw redirect("/auth/login");
   }
   if (session.user.role !== "ADMIN") {
-    throw redirect("/dashboard");
+    throw notFound(session.user);
   }
   return session.user;
 }
@@ -495,3 +496,5 @@ export default function AdminLogsRoute() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";
