@@ -17,6 +17,7 @@ import { QuestionBank as QuestionBankGrid } from "../components/question-bank/Qu
 import { AddQuestionsToBankDialog } from "../components/question-bank/AddQuestionsToBankDialog";
 import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
+import { NotFoundState } from "../components/common/NotFoundState";
 import { ListPaginationBar, DEFAULT_LIST_PAGE_SIZE } from "../components/shared/ListPaginationBar";
 import type { Question, QuestionVariantEntry } from "../types/question";
 import { Topic } from "../types/topic";
@@ -169,11 +170,7 @@ export function BankDetailPage() {
   }
 
   if (notFound || !course || !courseId) {
-    return (
-      <div className="p-6">
-        <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
-      </div>
-    );
+    return <NotFoundState />;
   }
 
   if (!hasCourseAccess) {

@@ -8,6 +8,7 @@ import { Toaster, ThemeProvider, ThemeSyncInitializer } from "@eduai/ui";
 import { AuthProvider } from "./contexts/AuthContext";
 import { QmAppGate } from "./components/auth/QmAppGate";
 import { QmAppLayout } from "./components/layout/QmAppLayout";
+import { NotFoundState } from "./components/common/NotFoundState";
 import { GuidedTourProvider } from "./contexts/GuidedTourContext";
 import { BugReportProvider } from "./contexts/BugReportContext";
 
@@ -195,7 +196,7 @@ function App() {
                           path="/assessment-variant"
                           element={<RedirectLegacyVariantRoute />}
                         />
-                        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="*" element={<NotFoundState />} />
                       </Route>
                       <Route path="/landing" element={<Navigate to="/dashboard" replace />} />
                       {import.meta.env.DEV && <Route path="/api-test" element={<ApiTestPage />} />}
