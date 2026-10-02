@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  codeSearchTerm,
   describeCourse,
   exactCodeMatches,
+  expectationAmbiguity,
+  flagValue,
   missingExpectations,
   parseEmailList,
   summarizeRoster,
@@ -144,6 +147,12 @@ describe("exactCodeMatches", () => {
     expect(exactCodeMatches([course({ code: " data 301 " })], "DATA 301")).toHaveLength(1);
   });
 
+  it("treats DATA301 and DATA 301 as the same code, in both directions", () => {
+    const rows = [course({ id: "a", code: "DATA301" }), course({ id: "b", code: "DATA 301" })];
+    expect(exactCodeMatches(rows, "DATA 301").map((row) => row.id)).toEqual(["a", "b"]);
+    expect(exactCodeMatches(rows, "data301").map((row) => row.id)).toEqual(["a", "b"]);
+  });
+
   it("drops a name-only hit, since ?search= also matches the course name", () => {
     const rows = [course({ id: "named", code: "COSC 111", name: "Intro to DATA 301 topics" })];
     expect(exactCodeMatches(rows, "DATA 301")).toEqual([]);
@@ -159,5 +168,36 @@ describe("describeCourse", () => {
     expect(
       describeCourse(course({ section: null, term: null, year: null, isPublished: false })),
     ).toBe("DATA 301 — Data Science (no term, draft)");
+  });
+});
+
+describe("codeSearchTerm", () => {
+  it("searches on the alphabetic prefix so both spellings are returned", () => {
+    expect(codeSearchTerm("DATA 301")).toBe("DATA");
+    expect(codeSearchTerm("DATA301")).toBe("DATA");
+  });
+});
+
+describe("expectationAmbiguity", () => {
+  it("refuses --expect-* when more than one course matched", () => {
+    expect(expectationAmbiguity(2, ["a@ubc.ca"], [])).toContain("--course <id>");
+    expect(expectationAmbiguity(2, [], ["t@ubc.ca"])).toContain("ambiguous");
+  });
+
+  it("allows a single match, or duplicates with nothing expected", () => {
+    expect(expectationAmbiguity(1, ["a@ubc.ca"], [])).toBeNull();
+    expect(expectationAmbiguity(3, [], [])).toBeNull();
+  });
+});
+
+describe("flagValue", () => {
+  it("returns the value after the flag", () => {
+    expect(flagValue(["--code", "DATA 301"], "code")).toBe("DATA 301");
+  });
+
+  it("returns null when the flag is absent, last, or followed by another flag", () => {
+    expect(flagValue(["--course", "x"], "code")).toBeNull();
+    expect(flagValue(["--code"], "code")).toBeNull();
+    expect(flagValue(["--code", "--course", "abc"], "code")).toBeNull();
   });
 });

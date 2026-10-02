@@ -324,9 +324,22 @@ the service key, from outside the browser.
 
 A user who was previously **removed** (an inactive row) is reactivated rather than
 409'd — `addEnrollment` catches the `P2002` and flips `isActive` back on with the
-requested role. A user who already holds a `TA` or `STUDENT` enrollment on the course
-is **promoted** in place, because `@@unique([courseId, userId])` allows one role per
-course per user.
+requested role. A user who already holds an **active** `TA` or `STUDENT` enrollment is *not* promoted by
+a second `POST`: `@@unique([courseId, userId])` allows one row per user per course, so
+the insert hits `P2002`, the row is active, and you get `409 ALREADY_ENROLLED`. Change
+the role of that row instead with the role-change route, which ADMIN and in-unit
+UNIT_ADMIN may use to promote to `INSTRUCTOR`:
+
+```js
+// enrollmentId is the `id` of the row in GET /api/courses/<courseId>/enrollments
+await api(`/api/courses/${courseId}/enrollments/${enrollmentId}`, {
+  method: "PATCH",
+  body: JSON.stringify({ role: "INSTRUCTOR" }),
+});
+```
+
+It returns `200` with the updated enrollment, or `404` if the enrollment id is not on
+that course.
 
 ---
 

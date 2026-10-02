@@ -120,8 +120,34 @@ export function missingExpectations(
  * finding the duplicate *offerings* is the point, not fuzzy neighbours.
  */
 export function exactCodeMatches(rows: CourseRow[], code: string): CourseRow[] {
-  const wanted = code.trim().toLowerCase();
-  return rows.filter((row) => row.code.trim().toLowerCase() === wanted);
+  const wanted = normalizeCode(code);
+  return rows.filter((row) => normalizeCode(row.code) === wanted);
+}
+
+/** Codes are written both "DATA301" and "DATA 301"; compare with all whitespace removed. */
+export function normalizeCode(code: string): string {
+  return code.replace(/\s+/g, "").toLowerCase();
+}
+
+/**
+ * The `?search=` term for a code: only the alphabetic prefix ("DATA 301" and
+ * "DATA301" both give "DATA"), because a `contains` match on "DATA 301" would
+ * miss the "DATA301" spelling.
+ */
+export function codeSearchTerm(code: string): string {
+  return /^\s*([A-Za-z]+)/.exec(code)?.[1] ?? code.trim();
+}
+
+/** `--expect-*` is only meaningful against one course; null means it is allowed. */
+export function expectationAmbiguity(
+  matchCount: number,
+  expectInstructors: string[],
+  expectTas: string[],
+): string | null {
+  if (matchCount > 1 && expectInstructors.length + expectTas.length > 0) {
+    return `ambiguous: ${matchCount} courses match this code, so --expect-* cannot say which one it applies to. Pass --course <id> for the real offering.`;
+  }
+  return null;
 }
 
 export function describeCourse(course: CourseRow): string {
@@ -154,10 +180,17 @@ function loadEnvFile(): void {
   }
 }
 
-function flag(name: string): string | null {
-  const index = process.argv.indexOf(`--${name}`);
+/** Value following `--name` in argv, or null when absent or when the next token is another flag. */
+export function flagValue(argv: string[], name: string): string | null {
+  const index = argv.indexOf(`--${name}`);
   if (index === -1) return null;
-  return process.argv[index + 1] ?? null;
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("--")) return null;
+  return value;
+}
+
+function flag(name: string): string | null {
+  return flagValue(process.argv, name);
 }
 
 function parseOptions(): Options {
@@ -257,6 +290,13 @@ export async function main(): Promise<void> {
     process.exit(2);
   }
 
+  for (const name of ["code", "course", "expect-instructors", "expect-tas"]) {
+    if (process.argv.includes(`--${name}`) && flag(name) === null) {
+      console.error(`--${name} needs a value.`);
+      process.exit(2);
+    }
+  }
+
   console.log(`Environment: ${options.baseUrl}`);
 
   let courses: CourseRow[];
@@ -268,7 +308,7 @@ export async function main(): Promise<void> {
     if (!listed) process.exit(1);
     courses = listed.data;
   } else {
-    const search = encodeURIComponent(options.code ?? "");
+    const search = encodeURIComponent(codeSearchTerm(options.code ?? ""));
     const listed = await getCourseList(
       `${options.baseUrl}/api/courses?search=${search}&page=1&pageSize=100`,
       options.apiKey,
@@ -288,6 +328,16 @@ export async function main(): Promise<void> {
     console.log(
       `\n⚠ ${courses.length} live courses share this code. Confirm which one is the real offering before enrolling anyone.`,
     );
+  }
+
+  const ambiguity = expectationAmbiguity(
+    courses.length,
+    options.expectInstructors,
+    options.expectTas,
+  );
+  if (ambiguity) {
+    console.error(`\n✗ ${ambiguity}`);
+    process.exit(2);
   }
 
   let allOk = true;
