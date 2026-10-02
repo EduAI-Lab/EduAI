@@ -60,6 +60,12 @@ interface Props {
   /** Per-file progress of the current batch upload (#1748). */
   uploads?: UploadItem[];
   onFilesSelect: (files: File[]) => void;
+  /**
+   * Called as the upload dialog opens (#1748 review), so the page can drop the
+   * previous batch's list and messages instead of showing them over an idle
+   * drop zone.
+   */
+  onUploadDialogOpen?: () => void;
   courseId?: string;
   /** Current viewer's user id — TAs may delete only their OWN uploads (§7). */
   currentUserId?: string;
@@ -96,6 +102,7 @@ export function CourseDetailTaView({
   materialsSuccess = null,
   uploads,
   onFilesSelect,
+  onUploadDialogOpen,
   courseId,
   currentUserId,
   onRefreshMaterials,
@@ -120,6 +127,10 @@ export function CourseDetailTaView({
   const canManageTopics = isEnabled("tas.canManageTopics");
 
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUploadDialog = () => {
+    onUploadDialogOpen?.();
+    setUploadOpen(true);
+  };
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState(false);
   const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
@@ -480,7 +491,7 @@ export function CourseDetailTaView({
               // manage-materials policy is off.
               <>
                 <PolicyTooltip flag="tas.canManageMaterials">
-                  <Button size="sm" onClick={() => setUploadOpen(true)}>
+                  <Button size="sm" onClick={openUploadDialog}>
                     <IconUpload className="h-4 w-4 mr-1.5" />
                     Upload material
                   </Button>
@@ -498,7 +509,7 @@ export function CourseDetailTaView({
                 }
                 action={
                   canManageMaterials ? (
-                    <Button size="sm" onClick={() => setUploadOpen(true)}>
+                    <Button size="sm" onClick={openUploadDialog}>
                       <IconUpload className="h-4 w-4 mr-1.5" />
                       Upload material
                     </Button>

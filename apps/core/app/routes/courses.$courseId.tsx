@@ -1,5 +1,5 @@
 import type { JsonObject } from "~/lib/json-value";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -215,6 +215,40 @@ export default function CourseDetailPage() {
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
 
+  // Read by a batch long after the render that started it (#1748 review): the
+  // course switcher keeps this page mounted, so `course.id` and `materials`
+  // in that render's closure go stale while the batch is still running.
+  // `courseVisitRef` counts course changes rather than holding the id, so a
+  // batch from course A stays stale even after the user switches back to A.
+  const courseVisitRef = useRef(0);
+  const materialsRef = useRef(materials);
+  useEffect(() => {
+    materialsRef.current = materials;
+  }, [materials]);
+
+  // A batch started on the previous course keeps uploading there, but its
+  // progress and summary belong to that course, not this one.
+  useEffect(() => {
+    courseVisitRef.current += 1;
+    setIsUploading(false);
+    setMaterialsError(null);
+    setMaterialsSuccess(null);
+    setUploads([]);
+  }, [course.id]);
+
+  /**
+   * Forget the last batch as the upload dialog reopens (#1748 review), so the
+   * instructor sees an idle drop zone rather than the previous batch's list,
+   * which read as files about to be uploaded again. A batch still running
+   * keeps its progress.
+   */
+  const clearUploadFeedback = useCallback(() => {
+    if (isUploading) return;
+    setMaterialsError(null);
+    setMaterialsSuccess(null);
+    setUploads([]);
+  }, [isUploading]);
+
   /**
    * #1840: add an instructor WITHOUT touching anyone else's enrollment. This is
    * the plain enrollments POST — `addEnrollment` creates an additional active
@@ -298,13 +332,27 @@ export default function CourseDetailPage() {
 
   const uploadMaterials: UploadMaterial[] = materials.map(toUploadMaterial);
 
-  /** One file's outcome in the words the instructor reads. */
-  const describeUpload = (outcome: UploadOutcome): UploadResult => {
+  /**
+   * One file's outcome in the words the instructor reads. `batchNames` maps the
+   * material ids of this batch's own files to their names, so a duplicate of a
+   * sibling says so instead of pointing at an older material.
+   */
+  const describeUpload = (
+    outcome: UploadOutcome,
+    batchNames: Map<string, string>,
+  ): UploadResult => {
     switch (outcome.status) {
       case "ready":
         return { status: "ready" };
       case "duplicate": {
-        const existing = materials.find((m) => m.id === outcome.duplicateOfId);
+        const sibling = batchNames.get(outcome.duplicateOfId);
+        if (sibling) {
+          return {
+            status: "duplicate",
+            message: `Identical to "${sibling}" in this batch — nothing was added`,
+          };
+        }
+        const existing = materialsRef.current.find((m) => m.id === outcome.duplicateOfId);
         return {
           status: "duplicate",
           message: existing
@@ -329,59 +377,71 @@ export default function CourseDetailPage() {
    */
   const handleFilesSelect = async (files: File[]) => {
     if (files.length === 0) return;
+    const visit = courseVisitRef.current;
+    // Once the user switches course the batch keeps uploading to this one, but
+    // stops writing into page state that now belongs to the other.
+    const isCurrent = () => courseVisitRef.current === visit;
     setIsUploading(true);
-    setMaterialsError(null);
-    setMaterialsSuccess(null);
+    try {
+      setMaterialsError(null);
+      setMaterialsSuccess(null);
 
-    const results: UploadItem[] = files.map((f) => ({ name: f.name, status: "queued" }));
-    setUploads([...results]);
-    const settle = (i: number, item: UploadResult) => {
-      results[i] = { ...item, name: files[i].name };
+      const results: UploadItem[] = files.map((f) => ({ name: f.name, status: "queued" }));
+      const batchNames = new Map<string, string>();
       setUploads([...results]);
-    };
+      const settle = (i: number, item: UploadResult) => {
+        results[i] = { ...item, name: files[i].name };
+        if (isCurrent()) setUploads([...results]);
+      };
 
-    let next = 0;
-    const worker = async () => {
-      while (next < files.length) {
-        const i = next++;
-        settle(i, { status: "uploading" });
-        try {
-          // The upload endpoint returns 202 and processes in the background (#949),
-          // so the outcome arrives from polling rather than from the POST status.
-          settle(i, describeUpload(await uploadMaterial(files[i])));
-        } catch (e) {
-          settle(i, {
-            status: "failed",
-            message: e instanceof Error ? e.message : "Upload failed",
-          });
+      let next = 0;
+      const worker = async () => {
+        while (next < files.length) {
+          const i = next++;
+          settle(i, { status: "uploading" });
+          try {
+            // The upload endpoint returns 202 and processes in the background (#949),
+            // so the outcome arrives from polling rather than from the POST status.
+            const outcome = await uploadMaterial(files[i], {
+              onAccepted: (id) => batchNames.set(id, files[i].name),
+            });
+            settle(i, describeUpload(outcome, batchNames));
+          } catch (e) {
+            settle(i, {
+              status: "failed",
+              message: e instanceof Error ? e.message : "Upload failed",
+            });
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, worker));
+      if (!isCurrent()) return;
+
+      if (files.length === 1) {
+        const [only] = results;
+        if (only.message) setMaterialsError(only.message);
+        else
+          setMaterialsSuccess(
+            only.status === "processing" ? UPLOAD_PROCESSING_MESSAGE : UPLOAD_READY_MESSAGE,
+          );
+      } else {
+        const rejected = results.filter((r) => r.status === "failed" || r.status === "duplicate");
+        const stillProcessing = results.some((r) => r.status === "processing");
+        if (rejected.length > 0) {
+          setMaterialsError(
+            `${rejected.length} of ${files.length} files couldn't be added — see the list below.`,
+          );
+        } else if (stillProcessing) {
+          setMaterialsSuccess(
+            `All ${files.length} files accepted. Some are still processing — the list will update when they finish.`,
+          );
+        } else {
+          setMaterialsSuccess(`All ${files.length} files uploaded and processed successfully`);
         }
       }
-    };
-    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, worker));
-
-    if (files.length === 1) {
-      const [only] = results;
-      if (only.message) setMaterialsError(only.message);
-      else
-        setMaterialsSuccess(
-          only.status === "processing" ? UPLOAD_PROCESSING_MESSAGE : UPLOAD_READY_MESSAGE,
-        );
-    } else {
-      const rejected = results.filter((r) => r.status === "failed" || r.status === "duplicate");
-      const stillProcessing = results.some((r) => r.status === "processing");
-      if (rejected.length > 0) {
-        setMaterialsError(
-          `${rejected.length} of ${files.length} files couldn't be added — see the list below.`,
-        );
-      } else if (stillProcessing) {
-        setMaterialsSuccess(
-          `All ${files.length} files accepted. Some are still processing — the list will update when they finish.`,
-        );
-      } else {
-        setMaterialsSuccess(`All ${files.length} files uploaded and processed successfully`);
-      }
+    } finally {
+      if (isCurrent()) setIsUploading(false);
     }
-    setIsUploading(false);
   };
 
   return (
@@ -443,6 +503,7 @@ export default function CourseDetailPage() {
               materialsSuccess={materialsSuccess}
               uploads={uploads}
               onFilesSelect={handleFilesSelect}
+              onUploadDialogOpen={clearUploadFeedback}
               onCreateTopic={async (name) => {
                 await createTopic(name);
               }}
@@ -483,6 +544,7 @@ export default function CourseDetailPage() {
               materialsSuccess={materialsSuccess}
               uploads={uploads}
               onFilesSelect={handleFilesSelect}
+              onUploadDialogOpen={clearUploadFeedback}
               courseId={course.id}
               currentUserId={user.id}
               onRefreshMaterials={refetchMaterials}
