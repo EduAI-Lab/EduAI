@@ -250,17 +250,22 @@ function AdminCoursesBody({
     const fd = new FormData(e.currentTarget);
     const codeSuffix = (fd.get("codeSuffix") as string).trim();
     const code = `${createDept} ${codeSuffix}`;
-    await onCreateCourse({
-      name: fd.get("name") as string,
-      code,
-      section: fd.get("section") as string,
-      term: termInfo.term,
-      year: termInfo.year,
-      startDate,
-      department: createDept,
-      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
-      instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
-    });
+    try {
+      await onCreateCourse({
+        name: fd.get("name") as string,
+        code,
+        section: fd.get("section") as string,
+        term: termInfo.term,
+        year: termInfo.year,
+        startDate,
+        department: createDept,
+        aiInstructions: (fd.get("aiInstructions") as string) || undefined,
+        instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
+      });
+    } catch {
+      // The route reports the failure; keep the form open with its input.
+      return;
+    }
     setCreateDept("");
     setStartDate("");
     setSelectedInstructor("");
@@ -611,17 +616,22 @@ function UnitAdminCoursesBody({
     const dept = selectedDept;
     const codeSuffix = (fd.get("codeSuffix") as string).trim();
     const code = dept ? `${dept} ${codeSuffix}` : codeSuffix;
-    await onCreateCourse({
-      name: fd.get("name") as string,
-      code,
-      section: fd.get("section") as string,
-      term: termInfo.term,
-      year: termInfo.year,
-      startDate,
-      department: dept || undefined,
-      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
-      instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
-    });
+    try {
+      await onCreateCourse({
+        name: fd.get("name") as string,
+        code,
+        section: fd.get("section") as string,
+        term: termInfo.term,
+        year: termInfo.year,
+        startDate,
+        department: dept || undefined,
+        aiInstructions: (fd.get("aiInstructions") as string) || undefined,
+        instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
+      });
+    } catch {
+      // The route reports the failure; keep the form open with its input.
+      return;
+    }
     setStartDate("");
     setSelectedInstructor("");
     setCreateOpen(false);
@@ -979,19 +989,24 @@ function InstructorCoursesBody({
     const fd = new FormData(e.currentTarget);
     const codeSuffix = (fd.get("codeSuffix") as string).trim();
     const code = selectedDept ? `${selectedDept} ${codeSuffix}` : codeSuffix;
-    await onCreateCourse({
-      name: fd.get("name") as string,
-      code,
-      section: fd.get("section") as string,
-      term: termInfo.term,
-      year: termInfo.year,
-      startDate,
-      department: selectedDept || undefined,
-      aiInstructions: (fd.get("aiInstructions") as string) || undefined,
-      // The server auto-enrolls the requesting instructor as the course
-      // instructor, so no explicit assignment is needed here.
-      instructorUserIds: [],
-    });
+    try {
+      await onCreateCourse({
+        name: fd.get("name") as string,
+        code,
+        section: fd.get("section") as string,
+        term: termInfo.term,
+        year: termInfo.year,
+        startDate,
+        department: selectedDept || undefined,
+        aiInstructions: (fd.get("aiInstructions") as string) || undefined,
+        // The server auto-enrolls the requesting instructor as the course
+        // instructor, so no explicit assignment is needed here.
+        instructorUserIds: [],
+      });
+    } catch {
+      // The route reports the failure; keep the form open with its input.
+      return;
+    }
     setSelectedDept("");
     setStartDate("");
     setCreateOpen(false);
