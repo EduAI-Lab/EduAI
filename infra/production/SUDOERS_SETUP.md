@@ -71,10 +71,25 @@ sudo install -o root -g root -m 0755 \
   /usr/local/sbin/eduai-production-admin
 ```
 
-Create `/etc/sudoers.d/eduai-production` with `visudo`:
+Create `/etc/sudoers.d/eduai-production` with `visudo`, naming the person (CWL)
+who deploys production:
 
 ```text
-ssaada08 ALL=(root) NOPASSWD: /usr/local/sbin/eduai-production-admin
+<deployer-cwl> ALL=(root) NOPASSWD: /usr/local/sbin/eduai-production-admin
+```
+
+Grant this to the deploying **person**, never to `service_eduai`: the service
+account runs the application and has no login shell (#1872). Update the rule
+when the deployer changes, and remove it when they leave the project.
+
+The services themselves run as `service_eduai` (a `--system` account with
+`/sbin/nologin` and a locked password, member of `eduai`), which also owns the
+release directories. Create it before installing the units:
+
+```bash
+sudo useradd --system --user-group --home-dir /var/lib/service_eduai --create-home --shell /sbin/nologin service_eduai
+sudo usermod -aG eduai service_eduai
+sudo passwd -l service_eduai
 ```
 
 Validate both files:

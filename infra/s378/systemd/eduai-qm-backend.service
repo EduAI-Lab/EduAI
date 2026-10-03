@@ -7,7 +7,9 @@ PartOf=eduai-dev.target
 
 [Service]
 Type=simple
-User=ssaada08
+# #1872: a dedicated, locked, no-login service account, not a person's
+# account, so nothing breaks when someone leaves the project.
+User=service_eduai
 Group=eduai-dev
 UMask=0002
 
@@ -19,7 +21,7 @@ WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/extension
 # The EnvironmentFile below still wins when it is present.
 Environment=NODE_ENV=development
 EnvironmentFile=-/etc/eduai/eduai-dev.env
-Environment=HOME=/home/ssaada08
+Environment=HOME=/var/lib/service_eduai
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=PORT=8000
 
