@@ -1,4 +1,4 @@
-const { chmodSync } = require("fs");
+const { chmodSync, statSync } = require("fs");
 
 /**
  * #1881: permission bits setup-env.js applies to every generated .env / .env.test.
@@ -29,30 +29,63 @@ function resolveEnvFileMode(raw) {
   return mode;
 }
 
+/** Why chmod was refused, in terms an operator can act on. */
+const CHMOD_FAILURE_REASON = {
+  EPERM: "not the file owner",
+  EACCES: "a parent directory is not searchable",
+};
+
 /**
- * chmod each env file, but never abort the install over it. Only the owner (or
- * root) may chmod, so on a shared checkout another group member running
- * `npm install` gets EPERM; that used to kill the whole postinstall. Warn and
- * leave the existing mode in place instead. Any other error still throws.
+ * Set each env file's mode, but never abort the install over it.
+ *
+ * - `explicit` (EDUAI_ENV_FILE_MODE was set): every file gets `mode`.
+ * - otherwise a file is only chmodded when this run `created` it or its current
+ *   mode is not an allowed secret mode (e.g. world-readable 0644). An existing
+ *   0600/0640/0660 file is left alone, so a shared host's group-readable files
+ *   (s378: 0660 for the eduai-cron worker) survive a plain `npm install` that
+ *   didn't go through go-live-build.sh (#1886 review).
+ *
+ * Only the owner (or root) may chmod, so a non-owner gets EPERM; that used to
+ * kill the whole postinstall. Warn and leave the current mode instead. Any
+ * other error still throws.
  */
-function applyEnvFileMode(paths, mode, { chmod = chmodSync, warn = console.warn } = {}) {
+function applyEnvFileMode(
+  paths,
+  mode,
+  {
+    explicit = false,
+    created = new Set(),
+    chmod = chmodSync,
+    stat = statSync,
+    warn = console.warn,
+  } = {},
+) {
   const skipped = [];
+  const kept = [];
   for (const path of paths) {
+    if (!explicit && !created.has(path)) {
+      const current = stat(path).mode & 0o777;
+      if (ALLOWED_ENV_FILE_MODES.has(current)) {
+        kept.push(path);
+        continue;
+      }
+    }
     try {
       chmod(path, mode);
     } catch (error) {
-      if (error && (error.code === "EPERM" || error.code === "EACCES")) {
+      const reason = error && CHMOD_FAILURE_REASON[error.code];
+      if (reason) {
         skipped.push(path);
         warn(
           `  warning: could not chmod ${path} to ${mode.toString(8).padStart(4, "0")} ` +
-            `(${error.code}: not the file owner); leaving its current mode`,
+            `(${error.code}: ${reason}); leaving its current mode`,
         );
         continue;
       }
       throw error;
     }
   }
-  return { skipped };
+  return { skipped, kept };
 }
 
 module.exports = {

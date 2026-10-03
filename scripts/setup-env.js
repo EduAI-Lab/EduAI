@@ -31,12 +31,15 @@ function parsedKeys(filePath) {
   return keys;
 }
 
+const createdEnvPaths = new Set();
+
 for (const [src, dest] of envPairs) {
   const srcPath = resolve(root, src);
   const destPath = resolve(root, dest);
 
   if (!existsSync(destPath)) {
     copyFileSync(srcPath, destPath);
+    createdEnvPaths.add(destPath);
     console.log(`  created ${dest}`);
   } else {
     // Merge any keys present in .env.example but missing from the existing .env
@@ -86,6 +89,10 @@ for (const envPath of serviceEnvPaths) {
 applyEnvFileMode(
   envPairs.map(([, dest]) => resolve(root, dest)),
   resolveEnvFileMode(process.env.EDUAI_ENV_FILE_MODE),
+  {
+    explicit: Boolean(process.env.EDUAI_ENV_FILE_MODE?.trim()),
+    created: createdEnvPaths,
+  },
 );
 
 // CI generates each workspace client explicitly in the job that consumes it. Skipping
