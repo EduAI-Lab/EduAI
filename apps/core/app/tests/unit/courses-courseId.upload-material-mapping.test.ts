@@ -62,6 +62,20 @@ describe("toUploadMaterial (#1749)", () => {
     expect(mapped.hasExtractedText).toBeUndefined();
   });
 
+  it("carries failureCode through so the popover can pick a more specific message (#1791)", () => {
+    const mapped = toUploadMaterial(
+      row({ status: "FAILED", failureCode: "MATERIAL_EMBED_RATE_LIMITED" }),
+    );
+
+    expect(mapped.failureCode).toBe("MATERIAL_EMBED_RATE_LIMITED");
+  });
+
+  it("normalises a missing failureCode to null, not undefined", () => {
+    const mapped = toUploadMaterial(row({ status: "FAILED" }));
+
+    expect(mapped.failureCode).toBeNull();
+  });
+
   it("still maps the fields the list already drew", () => {
     const mapped = toUploadMaterial(
       row({ uploadedBy: "user-7", visibleToStudents: false, availableAt: null }),
