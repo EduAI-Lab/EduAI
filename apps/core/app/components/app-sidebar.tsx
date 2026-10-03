@@ -145,7 +145,7 @@ export function useCoreSidebarProps({
     toNavSecondaryItems(
       getNavSecondaryForUser({
         ...user,
-        hasInstructorEnrollment: rootData?.hasInstructorEnrollment,
+        canUseCourseAssistant: rootData?.canUseCourseAssistant,
       }),
     );
 
