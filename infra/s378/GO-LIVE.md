@@ -133,9 +133,13 @@ The implementation owns the order:
 In the two-step deploy, steps 1–6 run in `eduai-dev-build` and steps 7–8 in
 `--restart-only`; a one-shot `bash infra/s378/go-live-build.sh` still does all eight.
 
-The Core restart is part of the build sequence so an old server process does not
-continue serving assets from the previous build. Do not manually reorder these
-steps around a migration or frontend build.
+In a one-shot deploy the Core restart happens right after the Core build, so an
+old server process does not keep serving assets the build just replaced. **In the
+two-step deploy that early restart is skipped:** the service account cannot
+restart units, so Core keeps running the previous process until
+`--restart-only`, and dev.eduai can render unstyled while the AI Tutor and
+Question Maker builds finish (1–3 min). Run step 2 as soon as step 1 prints
+`BUILD_OK`. Do not manually reorder these steps around a migration or frontend build.
 
 Supported scoped options include:
 

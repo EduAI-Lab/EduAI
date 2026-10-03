@@ -70,7 +70,12 @@ if [ "$(stat -c %U "$REPO")" != "service_eduai" ] \
   sudo find "$REPO/apps" -maxdepth 5 \( -name .env -o -name .env.test \) \
     -not -path '*/node_modules/*' -exec chmod 0660 {} +
 fi
-echo "  $REPO owned by service_eduai:eduai-dev"
+# Deploys run as service_eduai, whose primary group is service_eduai. setgid on
+# every directory makes new files inherit eduai-dev instead (#1888 review), so
+# eduai-cron and teammates can still read and write what a deploy creates.
+# Idempotent, so it runs on every install, not only during the handover.
+sudo find "$REPO" -xdev -type d ! -perm -2000 -exec chmod g+s {} +
+echo "  $REPO owned by service_eduai:eduai-dev (directories setgid)"
 
 # The worker executes the shell jobs as the dedicated account. Keep this
 # separate from service_eduai (the account used by the web services) so the cron
@@ -246,5 +251,5 @@ Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
 If the restart does prompt, the polkit rule is not taking effect; fix the
 polkit installation rather than adding a broad sudoers wildcard. The only
 sudoers grants installed here are the argument-less, fixed-path cron sync helper
-# (as root) and deploy wrapper (as service_eduai only).
+(as root) and deploy wrapper (as service_eduai only).
 EOF
