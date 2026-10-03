@@ -84,6 +84,15 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
   const [statuses, setStatuses] = useState<Record<number, VariantStatus>>({});
   const [hydrating, setHydrating] = useState(false);
   const failures = result?.errors ?? [];
+  // Failed questions still appear in `results`, so label them by description like the
+  // success groups; the raw metadata id means nothing to an instructor.
+  const descriptionByQuestionId = useMemo(
+    () =>
+      new Map(
+        (result?.results ?? []).map((r) => [r.questionId, r.questionDescription?.trim() || null]),
+      ),
+    [result],
+  );
 
   const groups = useMemo<ReviewGroup[]>(() => {
     if (!result) return [];
@@ -300,7 +309,9 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                     key={`${f.questionId}-${f.iteration ?? i}`}
                     className="flex flex-wrap gap-x-2 text-sm"
                   >
-                    <span className="font-medium text-foreground">Question {f.questionId}</span>
+                    <span className="font-medium text-foreground">
+                      {descriptionByQuestionId.get(f.questionId) ?? `Question ${f.questionId}`}
+                    </span>
                     <span className="text-muted-foreground">{f.error}</span>
                   </li>
                 ))}
