@@ -53,6 +53,18 @@ Unit test for the denylist: `bash infra/cmps01/tests/check-example-secrets.test.
 
 ---
 
+## Fleet inventory
+
+What each host serves through its authenticated `:8001` edge, as last verified
+from s348 on 2026-10-02. Keep `/etc/eduai/fleet/fleet.config.json` on s348 in
+line with this table.
+
+| Host | Model IDs |
+| --- | --- |
+| cmps01 | `qwen3.5-2b-instruct`, `qwen3.5-9b-instruct`, `mxbai-embed-large` |
+| cmps02 | `qwen3.5-2b-instruct`, `qwen3.8-27b-instruct` (Assist Auto) |
+| cmps03 | `qwen3.5-2b-instruct`, `qwen3.5-9b-instruct` |
+
 ## Current inventory (cmps01, deployed)
 
 | Docker name | Host bind | Served model (`/v1/models` → `id`) | Notes |
