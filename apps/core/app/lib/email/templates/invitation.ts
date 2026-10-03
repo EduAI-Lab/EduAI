@@ -1,9 +1,14 @@
 import type { EmailMessage } from "~/lib/email/mailer.server";
 import { escapeHtml } from "~/lib/email/templates/escape-html";
 
-// A `Map` because the key is a caller-supplied string, not a union this
-// file owns: an unrecognised one has to be able to miss.
-const ROLE_LABELS = new Map<string, string>([
+/**
+ * Shared by every invitation-related email so the reminder can never show a
+ * different label than the original invite for the same role.
+ *
+ * A `Map` because the key is a caller-supplied string, not a union this file
+ * owns: an unrecognised one has to be able to miss.
+ */
+export const ROLE_LABELS = new Map<string, string>([
   ["ADMIN", "Administrator"],
   ["UNIT_ADMIN", "Unit Administrator"],
   ["INSTRUCTOR", "Instructor"],

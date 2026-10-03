@@ -13,6 +13,7 @@ import {
 import {
   acquireAiAdmission,
   AdmissionTimeoutError,
+  admissionTimeoutResponse,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { isClientRequestedBedrockModel } from "~/lib/ai/routing/bedrock/overflow.server";
@@ -146,13 +147,7 @@ export async function action({ request }: ActionFunctionArgs) {
           admissionWaitedMs = admission.waitedMs;
         } catch (error) {
           if (error instanceof AdmissionTimeoutError) {
-            return new Response(
-              JSON.stringify({
-                error: "Server busy — too many concurrent AI requests. Try again shortly.",
-                code: "AI_ADMISSION_TIMEOUT",
-              }),
-              { status: 503, headers: JSON_HEADERS },
-            );
+            return admissionTimeoutResponse();
           }
           if (request.signal.aborted) {
             return jsonError("Request aborted", 499);

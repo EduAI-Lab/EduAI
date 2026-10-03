@@ -3,26 +3,10 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
-import { checkRateLimit, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { forgotPasswordSchema, PASSWORD_RESET_OTP_LENGTH } from "~/lib/auth/schemas";
 import { auth } from "~/lib/auth/server";
-import { getRequestContext } from "~/lib/request-context.server";
 
 const MAX_EMAIL_LENGTH = 320;
-
-/**
- * #1728: this action makes the server send mail to an address the caller
- * names, so it is throttled on both sides of that pair — the IP doing the
- * asking, and the mailbox being aimed at. Better Auth's own limiter only
- * covers the former. Defaults are per 15 minutes; overridable per deployment.
- */
-function passwordResetRequestLimits() {
-  return {
-    windowMs: parseEnvInt(process.env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MS, 15 * 60_000),
-    perEmail: parseEnvInt(process.env.PASSWORD_RESET_RATE_LIMIT_PER_EMAIL, 3),
-    perIp: parseEnvInt(process.env.PASSWORD_RESET_RATE_LIMIT_PER_IP, 10),
-  };
-}
 
 export async function action({ request }: ActionFunctionArgs) {
   let formData: FormData;
@@ -45,25 +29,25 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const email = result.data.email.toLowerCase();
 
-  // Charged before anything looks the address up, so the throttle can never
-  // become the thing that tells an attacker an account exists.
-  const { windowMs, perEmail, perIp } = passwordResetRequestLimits();
-  const ipAddress = getRequestContext(request).ipAddress ?? "unknown";
-  const byIp = await checkRateLimit(`password-reset-request:ip:${ipAddress}`, perIp, windowMs);
-  if (byIp.limited) return { retryAfter: byIp.retryAfter };
-  const byEmail = await checkRateLimit(`password-reset-request:email:${email}`, perEmail, windowMs);
-  if (byEmail.limited) return { retryAfter: byEmail.retryAfter };
-
   const otpRequest = buildAuthSubRequest("/api/auth/email-otp/request-password-reset", request, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
 
+  // The per-IP and per-mailbox throttle is enforced in Better Auth's `before`
+  // hook (`chargePasswordResetRequest`) so the endpoint is covered however it
+  // is reached; a limit hit comes back here as a 429. It is charged before any
+  // account lookup, so surfacing it reveals nothing about the address.
+  //
   // Better Auth deliberately gives the same response for unknown and known
-  // addresses. Keep transport and rate-limit failures generic here too so this
-  // public form cannot become an account-enumeration oracle.
-  await auth.handler(otpRequest).catch(() => null);
+  // addresses. Keep every other failure generic here too so this public form
+  // cannot become an account-enumeration oracle.
+  const response = await auth.handler(otpRequest).catch(() => null);
+  if (response?.status === 429) {
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    return { retryAfter: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60 };
+  }
 
   // Always the same redirect, for every address. The reset page phrases it as
   // a conditional ("if an account exists"), because that is all we may say.

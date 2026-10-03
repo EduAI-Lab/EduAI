@@ -123,7 +123,7 @@ describe("resolveEffectiveAdhdAssist", () => {
 });
 
 describe("Assist Auto model contract", () => {
-  it("defaults to the retained Qwen2.5 32B model", () => {
+  it("defaults to the cmps02 Qwen3.8 27B model", () => {
     const original = process.env.ADHD_ASSIST_AUTO_MODEL;
     delete process.env.ADHD_ASSIST_AUTO_MODEL;
     expect(resolveAdhdAssistAutoModelId()).toBe(ADHD_ASSIST_AUTO_MODEL_ID);

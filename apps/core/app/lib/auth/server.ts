@@ -22,11 +22,13 @@ import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
+import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asJsonObject, asText } from "~/lib/json-value";
 import { fireAndForget } from "~/lib/logging.server";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
 import { buildEmailVerificationEmail } from "../email/templates/email-verification";
 import { buildPasswordResetOtpEmail } from "../email/templates/password-reset-otp";
+import { chargePasswordResetRequest } from "./password-reset-throttle.server";
 import { PASSWORD_RESET_OTP_LENGTH } from "./schemas";
 
 export const authBaseURL =
@@ -188,6 +190,10 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     requireEmailVerification: !EMAIL_VERIFICATION_DISABLED,
+    // #1728: a reset is what someone does after a compromise, so a session an
+    // attacker already holds must not outlive it. Only the OTP reset path
+    // reads this; `/change-password` has its own `revokeOtherSessions`.
+    revokeSessionsOnPasswordReset: true,
   },
   emailVerification: {
     // All three flags only matter when verification is enforceable; in
@@ -220,6 +226,10 @@ export const auth = betterAuth({
       keyExpiration: {
         maxExpiresIn: MAX_API_KEY_EXPIRATION_DAYS,
       },
+      // #1803: never omit this. The plugin rate-limits keys whether or not it is
+      // configured, and its own defaults are 10 requests per 24 hours — which is
+      // what every EduAI key was silently getting.
+      rateLimit: getApiKeyRateLimitConfig(),
     }),
     // #1728: password reset by emailed one-time code. Only the two
     // password-reset endpoints of this plugin are reachable — see
@@ -270,6 +280,23 @@ export const auth = betterAuth({
       // #1728: shut the emailOTP endpoints this deployment does not use.
       if (isDisabledEmailOtpPath(ctx.path)) {
         throw new APIError("NOT_FOUND", { message: "Not found" });
+      }
+
+      // #1728: the throttle lives here, not in the forgot-password action —
+      // `/api/auth/*` forwards straight to this handler, so a limit enforced
+      // only in the form would be skipped by posting to the endpoint directly.
+      if (ctx.path === "/email-otp/request-password-reset") {
+        // SAFETY: better-auth types `ctx.body` as `any`; `asJsonObject`
+        // re-validates that it is an object and the field goes through `asText`.
+        const body = asJsonObject(ctx.body as JsonObject | undefined) ?? {};
+        const throttle = await chargePasswordResetRequest(ctx.request, asText(body.email));
+        if (throttle.limited) {
+          throw new APIError(
+            "TOO_MANY_REQUESTS",
+            { message: "Too many reset requests" },
+            { "Retry-After": String(throttle.retryAfter) },
+          );
+        }
       }
 
       if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
@@ -375,8 +402,8 @@ export const auth = betterAuth({
         // it verifies, and the plugin's only post-verification hook
         // (`onPasswordReset`) runs after the new password is already written.
         // A reuse check has to answer before that, so it needs its own
-        // read-only pass. Costs one extra indexed `verification` read on an
-        // endpoint already capped at 3 requests / 15 min per address.
+        // read-only pass. Costs one extra indexed `verification` read, bounded by
+        // the plugin's per-IP limit and the per-code attempt budget.
         const otpUserId = await resolvePasswordResetOtpUserId(
           { email: asText(body.email) ?? "", otp: asText(body.otp) ?? "" },
           {

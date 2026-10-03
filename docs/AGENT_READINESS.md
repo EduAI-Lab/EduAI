@@ -155,6 +155,7 @@ See `manifest.ts` for the authoritative per-method list. Highlights:
 | GET | `/api/courses/:id/topics/:topicId` | `getCourseTopic` | Ready |
 | — | `findRelevantContent()` | `getInformation` (learning) | Ready — in-process only |
 | GET | `/api/ai-models` | — | Ready — ADMIN read |
+| GET | `/api/models` | — | Ready — the active chat models `/api/chat` and `/api/completion` accept, in `provider:modelId` form. Unpaginated; same auth ladder as `/api/completion` (admin `x-api-key`, session, or service key) |
 
 ### Ready for agents (admin operations)
 

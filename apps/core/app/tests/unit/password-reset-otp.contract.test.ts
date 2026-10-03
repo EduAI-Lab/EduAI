@@ -19,6 +19,7 @@ import { emailOTP } from "better-auth/plugins/email-otp";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  auth as appAuth,
   hashPasswordResetOtp,
   passwordResetOtpIdentifier,
   PASSWORD_RESET_OTP_ALLOWED_ATTEMPTS,
@@ -53,7 +54,7 @@ function buildHarness() {
     baseURL: "http://localhost:3000",
     secret: "contract-test-secret-contract-test-secret",
     database: memoryAdapter(db as never),
-    emailAndPassword: { enabled: true },
+    emailAndPassword: { enabled: true, revokeSessionsOnPasswordReset: true },
     plugins: [
       emailOTP({
         otpLength: PASSWORD_RESET_OTP_LENGTH,
@@ -189,5 +190,28 @@ describe("emailOTP attempt budget (installed better-auth)", () => {
         { ...harness.deps(), findOtpRecord: async () => spent },
       ),
     ).resolves.toBeNull();
+  });
+});
+
+describe("session revocation on reset (installed better-auth)", () => {
+  it("is switched on in the app's real auth config", async () => {
+    // The harness above mirrors the option; this is what proves the app sets it.
+    const context = await appAuth.$context;
+    expect(context.options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
+  });
+
+  it("drops a session created before the reset", async () => {
+    const harness = buildHarness();
+    // `autoSignIn` is on by default, so sign-up leaves a live session behind —
+    // the one an attacker who already got in would be holding.
+    await harness.auth.api.signUpEmail({
+      body: { email: EMAIL, password: OLD_PASSWORD, name: "Student" },
+    });
+    expect(harness.db.session).toHaveLength(1);
+
+    await harness.auth.api.requestPasswordResetEmailOTP({ body: { email: EMAIL } });
+    await resetPassword(harness, harness.otp() as string);
+
+    expect(harness.db.session).toHaveLength(0);
   });
 });
