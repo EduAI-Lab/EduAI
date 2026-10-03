@@ -52,8 +52,21 @@ export async function canRestoreCourse(
   return enrollment != null;
 }
 
+/** Deleted courses the user may hear about: all for ADMIN, their units for UNIT_ADMIN, else ones they were on. */
+async function deletedVisibilityWhere(user: RbacUser): Promise<Prisma.CourseWhereInput> {
+  if (user.role === "ADMIN") return {};
+  const own: Prisma.CourseWhereInput[] = [
+    { instructorId: user.id },
+    { enrollments: { some: { userId: user.id } } },
+  ];
+  if (user.role === "UNIT_ADMIN") {
+    own.push({ department: { in: await getAuthorizedUnits(user) } });
+  }
+  return { OR: own };
+}
+
 /**
- * Soft-deleted rows at the exact identity, plus live rows taught by one of
+ * Soft-deleted rows at the exact identity that `user` can see, plus live rows taught by one of
  * `instructorUserIds` that share the code and differ in exactly one of
  * section / year / term (likely a typo or a re-offering worth confirming).
  */
@@ -62,9 +75,10 @@ export async function findDuplicateWarnings(
   identity: CourseIdentity,
   instructorUserIds: string[],
 ) {
+  const visible = await deletedVisibilityWhere(user);
   const [deleted, similar] = await Promise.all([
     prisma.course.findMany({
-      where: { ...identityWhere(identity), deletedAt: { not: null } },
+      where: { ...identityWhere(identity), deletedAt: { not: null }, AND: visible },
       orderBy: { deletedAt: "desc" },
       take: MATCH_LIMIT,
       select: DUPLICATE_SUMMARY_SELECT,

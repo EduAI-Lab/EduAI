@@ -181,12 +181,6 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
     };
     const asOutsider = { department: "MATH", instructorUserIds: otherInstructorId };
 
-    const warned = await createCourseAs(coursePayload(code, asOutsider), outsider);
-    expect(warned.status).toBe(409);
-    expect(warned.body.deletedMatches).toEqual([
-      expect.objectContaining({ id: first.body.id, canRestore: false }),
-    ]);
-
     const restore = await createCourseAs(
       coursePayload(code, {
         ...asOutsider,
@@ -196,6 +190,11 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
       outsider,
     );
     expect(restore.status).toBe(403);
+
+    // Nor do they hear about it: the deleted course is outside their scope, so creation goes through.
+    const created = await createCourseAs(coursePayload(code, asOutsider), outsider);
+    expect(created.status).toBe(201);
+    expect(created.body.id).not.toBe(first.body.id);
   });
 
   it("refuses a restore by an instructor whose enrollment was deactivated", async () => {
