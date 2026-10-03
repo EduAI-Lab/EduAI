@@ -4,6 +4,7 @@ import {
   signUpSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  resetPasswordOtpSchema,
   changePasswordSchema,
   updateProfileSchema,
   createUserSchema,
@@ -123,6 +124,65 @@ describe("resetPasswordSchema", () => {
         token: "tok",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("resetPasswordOtpSchema (#1728)", () => {
+  const valid = {
+    email: "ada@ubc.ca",
+    otp: "123456",
+    password: "Abcdef1!",
+    confirmPassword: "Abcdef1!",
+  };
+
+  it("accepts an email, a six-digit code and a policy-compliant password", () => {
+    expect(resetPasswordOtpSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("forgives space around the typed code and address", () => {
+    const parsed = resetPasswordOtpSchema.safeParse({
+      ...valid,
+      email: " ada@ubc.ca ",
+      otp: " 123456 ",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.otp).toBe("123456");
+      expect(parsed.data.email).toBe("ada@ubc.ca");
+    }
+  });
+
+  it("rejects a code of the wrong length or shape", () => {
+    for (const otp of ["", "12345", "1234567", "12345a", "12 34 56"]) {
+      const parsed = resetPasswordOtpSchema.safeParse({ ...valid, otp });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((issue) => issue.path[0] === "otp")).toBe(true);
+      }
+    }
+  });
+
+  it("holds the new password to the same strength policy as every other path", () => {
+    expect(
+      resetPasswordOtpSchema.safeParse({
+        ...valid,
+        password: "weakpass",
+        confirmPassword: "weakpass",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("reports a mismatched confirmation on the confirmation field", () => {
+    const parsed = resetPasswordOtpSchema.safeParse({ ...valid, confirmPassword: "Abcdef2!" });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const mismatch = parsed.error.issues.find((issue) => issue.path[0] === "confirmPassword");
+      expect(mismatch?.message).toBe("Passwords don't match");
+    }
+  });
+
+  it("rejects an invalid email address", () => {
+    expect(resetPasswordOtpSchema.safeParse({ ...valid, email: "nope" }).success).toBe(false);
   });
 });
 

@@ -2,8 +2,10 @@
  * Unit tests for useSubmitBugReport — the POST /api/bug-reports hook.
  *
  * Covers the success path (201 with no body), the server-error path (error
- * message read from the JSON body), the non-JSON error-body fallback, the
- * thrown/rejected fetch fallback message, and the isSubmitting transitions.
+ * message read from the JSON body and returned to the caller, with known codes
+ * turned into readable text and unknown codes hidden), the non-JSON
+ * error-body fallback, the thrown/rejected fetch fallback message, diagnostics
+ * forwarding (only when supplied, #1752), and the isSubmitting transitions.
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,12 +40,12 @@ describe("useSubmitBugReport", () => {
 
     const { result } = renderHook(() => useSubmitBugReport());
 
-    let success: boolean | undefined;
+    let outcome: Awaited<ReturnType<typeof result.current.submitBugReport>> | undefined;
     await act(async () => {
-      success = await result.current.submitBugReport({ description: "  it broke  " });
+      outcome = await result.current.submitBugReport({ description: "  it broke  " });
     });
 
-    expect(success).toBe(true);
+    expect(outcome).toEqual({ ok: true });
     expect(result.current.error).toBeNull();
     expect(result.current.isSubmitting).toBe(false);
     expect(mockFetch).toHaveBeenCalledWith("/api/bug-reports", {
@@ -74,7 +76,7 @@ describe("useSubmitBugReport", () => {
     });
   });
 
-  it("returns false and surfaces the server error message on failure", async () => {
+  it("returns and surfaces the server error message on failure", async () => {
     mockFetch.mockResolvedValue(
       res({
         ok: false,
@@ -85,14 +87,64 @@ describe("useSubmitBugReport", () => {
 
     const { result } = renderHook(() => useSubmitBugReport());
 
-    let success: boolean | undefined;
+    let outcome: Awaited<ReturnType<typeof result.current.submitBugReport>> | undefined;
     await act(async () => {
-      success = await result.current.submitBugReport({ description: "" });
+      outcome = await result.current.submitBugReport({ description: "" });
     });
 
-    expect(success).toBe(false);
+    expect(outcome).toEqual({ ok: false, error: "description required" });
     expect(result.current.error).toBe("description required");
     expect(result.current.isSubmitting).toBe(false);
+  });
+
+  it("shows readable text for a validation error and logs only the raw code", async () => {
+    const body = { error: "VALIDATION_ERROR", fields: { description: "too short" } };
+    mockFetch.mockResolvedValue(res({ ok: false, status: 422, json: () => Promise.resolve(body) }));
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    let outcome: Awaited<ReturnType<typeof result.current.submitBugReport>> | undefined;
+    await act(async () => {
+      outcome = await result.current.submitBugReport({ description: "x" });
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: "Some details were invalid. Please check your description and bug type.",
+    });
+    expect(console.error).toHaveBeenCalledWith("Failed to submit bug report:", body);
+  });
+
+  it("asks the reporter to sign in again when the session has expired", async () => {
+    mockFetch.mockResolvedValue(
+      res({ ok: false, status: 401, json: () => Promise.resolve({ error: "Unauthorized" }) }),
+    );
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    await act(async () => {
+      await result.current.submitBugReport({ description: "x" });
+    });
+
+    expect(result.current.error).toBe("Your session has expired. Please sign in and try again.");
+  });
+
+  it("does not show an unrecognised error code to the reporter", async () => {
+    mockFetch.mockResolvedValue(
+      res({
+        ok: false,
+        status: 403,
+        json: () => Promise.resolve({ error: "CROSS_ORIGIN_MUTATION" }),
+      }),
+    );
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    await act(async () => {
+      await result.current.submitBugReport({ description: "x" });
+    });
+
+    expect(result.current.error).toBe("Failed to submit bug report");
   });
 
   it("falls back to a generic message when the error body has no error field", async () => {
@@ -126,13 +178,63 @@ describe("useSubmitBugReport", () => {
 
     const { result } = renderHook(() => useSubmitBugReport());
 
-    let success: boolean | undefined;
+    let outcome: Awaited<ReturnType<typeof result.current.submitBugReport>> | undefined;
     await act(async () => {
-      success = await result.current.submitBugReport({ description: "x" });
+      outcome = await result.current.submitBugReport({ description: "x" });
     });
 
-    expect(success).toBe(false);
+    expect(outcome).toEqual({ ok: false, error: "Failed to submit bug report" });
     expect(result.current.error).toBe("Failed to submit bug report");
+  });
+
+  it("sends no diagnostics fields when none are supplied", async () => {
+    mockFetch.mockResolvedValue(res({ ok: true, status: 201 }));
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    await act(async () => {
+      await result.current.submitBugReport({
+        description: "Steps to reproduce it",
+        bugType: "OTHER",
+        consoleLogs: null,
+        screenshot: null,
+      });
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    for (const key of ["consoleLogs", "networkLogs", "screenshot", "pageUrl", "userAgent"]) {
+      expect(body).not.toHaveProperty(key);
+    }
+  });
+
+  it("forwards diagnostics when supplied", async () => {
+    mockFetch.mockResolvedValue(res({ ok: true, status: 201 }));
+
+    const { result } = renderHook(() => useSubmitBugReport());
+
+    await act(async () => {
+      await result.current.submitBugReport({
+        description: "Steps to reproduce it",
+        bugType: "OTHER",
+        consoleLogs: "[]",
+        networkLogs: "[]",
+        screenshot: "data:image/jpeg;base64,a",
+        pageUrl: "http://localhost/x",
+        userAgent: "ua",
+      });
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({
+      description: "Steps to reproduce it",
+      bugType: "OTHER",
+      isAnonymous: false,
+      consoleLogs: "[]",
+      networkLogs: "[]",
+      screenshot: "data:image/jpeg;base64,a",
+      pageUrl: "http://localhost/x",
+      userAgent: "ua",
+    });
   });
 
   it("sets isSubmitting true while the request is in flight", async () => {
@@ -147,7 +249,7 @@ describe("useSubmitBugReport", () => {
     const { result } = renderHook(() => useSubmitBugReport());
     expect(result.current.isSubmitting).toBe(false);
 
-    let submitPromise!: Promise<boolean>;
+    let submitPromise!: ReturnType<typeof result.current.submitBugReport>;
     act(() => {
       submitPromise = result.current.submitBugReport({ description: "x" });
     });

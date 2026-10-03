@@ -157,7 +157,7 @@ export function CommandPalette({ user }: { user: User }) {
   // /dashboard — sourced from the root loader (every route shares it) rather
   // than the raw session `user`, which has no notion of course enrollment.
   const rootData = useRouteLoaderData<typeof rootLoader>("root");
-  const navUser = { ...user, hasInstructorEnrollment: rootData?.hasInstructorEnrollment };
+  const navUser = { ...user, canUseCourseAssistant: rootData?.canUseCourseAssistant };
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
   const [query, setQuery] = React.useState("");
   const coursesLoaded = React.useRef(false);

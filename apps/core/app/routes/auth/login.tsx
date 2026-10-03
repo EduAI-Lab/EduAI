@@ -336,6 +336,12 @@ export default function LoginPage() {
             allowRegistration={allowRegistration}
           />
         </form>
+        {/* #1728: outside the form — a GET link must not submit the credentials. */}
+        <p className="mt-4 text-center text-sm">
+          <a href="/auth/forgot-password" className="underline underline-offset-4">
+            Forgot your password?
+          </a>
+        </p>
 
         {showDemoLogin && demoPassword && (
           <DemoLoginButtons redirectTo={redirectTo} password={demoPassword} />

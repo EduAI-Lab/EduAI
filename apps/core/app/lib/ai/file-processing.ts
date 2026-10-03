@@ -1,4 +1,9 @@
 import type { ValidationResult } from "~/lib/validation-result";
+import {
+  ACCEPTED_MATERIAL_MIME_TYPES,
+  ACCEPTED_MATERIAL_TYPE_LABELS,
+  resolveMaterialMimeType,
+} from "~/lib/materials/accepted-types";
 import { z } from "zod";
 import { hasFileReader } from "@eduai/ui/runtime-env";
 import { createHash } from "crypto";
@@ -602,7 +607,7 @@ export function generateChecksum(content: string): string {
  */
 export async function extractTextFromFile(file: File | any, content: string): Promise<FileInfo> {
   const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-  const mimeType = file.type;
+  const mimeType = resolveMaterialMimeType(file);
   const fileSize = file.size;
 
   // Sanitize content before processing
@@ -622,20 +627,13 @@ export async function extractTextFromFile(file: File | any, content: string): Pr
  * Validate file type and size
  */
 export function validateFile(file: File | any): ValidationResult {
-  const allowedTypes = [
-    "text/plain",
-    "text/markdown",
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ];
-
   const maxSize = 50 * 1024 * 1024; // 50MB - increased for presentations
 
-  if (!allowedTypes.includes(file.type)) {
+  const mimeType = resolveMaterialMimeType(file);
+  if (!(ACCEPTED_MATERIAL_MIME_TYPES as readonly string[]).includes(mimeType)) {
     return {
       isValid: false,
-      error: `File type ${file.type} is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX`,
+      error: `File type ${mimeType} is not supported. Supported types: ${ACCEPTED_MATERIAL_TYPE_LABELS}`,
     };
   }
 
@@ -719,7 +717,7 @@ export async function validateFileSignature(
   const buffer = await file.arrayBuffer();
   const head = new Uint8Array(buffer.slice(0, MAGIC_BYTE_SNIFF_LENGTH));
 
-  switch (file.type) {
+  switch (resolveMaterialMimeType(file)) {
     case "application/pdf":
       if (!looksLikePdf(head)) {
         return {
@@ -734,7 +732,7 @@ export async function validateFileSignature(
       if (!looksLikeZipContainer(head)) {
         return {
           isValid: false,
-          error: `File declared as ${file.type} is not a valid ZIP/Office container`,
+          error: `File declared as ${resolveMaterialMimeType(file)} is not a valid ZIP/Office container`,
         };
       }
       return { isValid: true };
@@ -744,7 +742,7 @@ export async function validateFileSignature(
       if (looksLikePdf(head) || looksLikeZipContainer(head) || looksLikeBinaryNoise(head)) {
         return {
           isValid: false,
-          error: `File declared as ${file.type} looks like binary content, not plain text`,
+          error: `File declared as ${resolveMaterialMimeType(file)} looks like binary content, not plain text`,
         };
       }
       return { isValid: true };
@@ -1669,7 +1667,7 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
   let metadata: any = {};
 
   try {
-    switch (file.type) {
+    switch (resolveMaterialMimeType(file)) {
       case "text/plain":
       case "text/markdown":
         content = sanitizeTextContent(await readFileAsText(file));
@@ -1709,7 +1707,7 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
       }
 
       default:
-        throw new Error(`Unsupported file type: ${file.type}`);
+        throw new Error(`Unsupported file type: ${resolveMaterialMimeType(file)}`);
     }
 
     // Defense-in-depth: bound the extracted text length before chunking, so an
