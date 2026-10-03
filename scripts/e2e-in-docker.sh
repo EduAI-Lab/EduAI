@@ -69,6 +69,7 @@ IFS=',' read -ra requested_suites <<< "$E2E_SUITES"
 for suite in "${requested_suites[@]}"; do
   case "$suite" in
     core)
+      services+=(e2e-ollama)
       test_paths+=(tests/core)
       ;;
     ai-tutor)
@@ -80,6 +81,9 @@ for suite in "${requested_suites[@]}"; do
       test_paths+=(tests/question-maker)
       ;;
     cross-service|all)
+      if [ "$suite" = "all" ]; then
+        services+=(e2e-ollama)
+      fi
       services+=(
         e2e-ai-tutor-db e2e-ai-tutor-server e2e-ai-tutor-app
         e2e-qm-db e2e-qm-server e2e-qm-app

@@ -4,6 +4,7 @@
  * Extensions may rely on deletedAt being set to detect EduAI-side removals.
  */
 
+import { resolveMaterialMimeType } from "~/lib/materials/accepted-types";
 import type { Prisma } from "@prisma/client";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { createHash } from "crypto";
@@ -683,7 +684,7 @@ async function uploadMaterial(
       data: {
         courseId,
         title,
-        mimeType: file.type || "application/octet-stream",
+        mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
         fileSize: file.size || bytes.length,
         checksum: provisionalChecksum,
         rawText: null,
@@ -693,7 +694,7 @@ async function uploadMaterial(
           create: {
             bytes: toBytesColumn(bytes),
             fileName: file.name || "upload",
-            mimeType: file.type || "application/octet-stream",
+            mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
           },
         },
       },
@@ -711,7 +712,7 @@ async function uploadMaterial(
         {
           bytes,
           fileName: file.name || "upload",
-          mimeType: file.type || "application/octet-stream",
+          mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
         },
       );
       if (resolution?.outcome === "conflict") {
@@ -756,7 +757,7 @@ async function uploadMaterial(
         courseId,
         actorEmail: user.email,
         actorName: user.name,
-        mimeType: file.type || "application/octet-stream",
+        mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
         fileSize: file.size || bytes.length,
       },
     }),
