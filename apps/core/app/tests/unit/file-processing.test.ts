@@ -216,6 +216,18 @@ describe("validateFile", () => {
     expect(result.error).toContain("image/png");
   });
 
+  it("accepts an empty type when the .md extension identifies it (Windows browsers)", () => {
+    expect(validateFile({ name: "notes.md", type: "", size: 100 }).isValid).toBe(true);
+  });
+
+  it("still rejects an empty type with an unknown extension", () => {
+    const result = validateFile({ name: "notes.xyz", type: "", size: 100 });
+    expect(result.isValid).toBe(false);
+    expect(result.error).toBe(
+      "File type  is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX",
+    );
+  });
+
   it("rejects files larger than 50 MB", () => {
     const tooBig = 50 * 1024 * 1024 + 1;
     const result = validateFile(makeFile("text/plain", tooBig));
