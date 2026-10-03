@@ -137,6 +137,19 @@ workspace client required by systemd exists.
 
 Use a new release directory for every production change:
 
+0. **Check the inference fleet from s348 and update the fleet config first.**
+   - Run the authenticated edge check **on s348** (a check from s378 does not
+     count) for every host you intend to put in `VLLM_FLEET_CHAT_URLS`, and
+     compare the model IDs with the list in "Inference configuration":
+     ```bash
+     KEY=$(sudo sed -n 's/^VLLM_API_KEY=//p' /etc/eduai/eduai-core.env | tr -d '"')
+     for h in cmps01 cmps02 cmps03; do
+       echo "== $h"; curl -fsS -m 10 -H "Authorization: Bearer $KEY" "http://$h.ok.ubc.ca:8001/v1/models" | grep -oE '"id":"[^"]+"' || echo "EDGE CHECK FAILED"
+     done; unset KEY
+     ```
+     If a host fails, **leave it out** of `VLLM_FLEET_CHAT_URLS` and
+     `fleet.config.json` for this release.
+   - Update `/etc/eduai/fleet/fleet.config.json` (see "Fleet config").
 1. Create or obtain the reviewed release checkout under
    `/srv/www/eduai-production/releases/<release-id>`.
 2. Confirm the intended branch/commit and keep the release checkout clean.
@@ -243,6 +256,32 @@ may be used in production after the authenticated edge check succeeds on the
 production host. See
 [`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
+
+### Fleet config
+
+`fleet.config.json` maps each inference server to the models it serves. It is
+gitignored and host-specific, so it must **not** live in a release directory:
+each release is a fresh checkout, and `activate-release` does not copy it
+forward. Keep it at `FLEET_CONFIG_PATH=/etc/eduai/fleet/fleet.config.json`
+(set in `/etc/eduai/eduai-core.env`). Install the directory once, group-writable
+so Admin → AI Management → Servers can save the file (it writes a temp file and
+renames it):
+
+```bash
+sudo install -d -o root -g eduai -m 2770 /etc/eduai/fleet
+[ -e /etc/eduai/fleet/fleet.config.json ] || sudo install -o root -g eduai -m 0660 \
+  /srv/www/eduai-production/current/apps/core/fleet.config.example.json /etc/eduai/fleet/fleet.config.json
+```
+
+The guard makes this safe to re-run: an existing config is never overwritten.
+After the first save from the Servers tab the file is recreated as `0640`, owned
+by Core's service user, so don't rely on the initial `0660`.
+
+Then edit it to match the edge check (step 0); the current per-host model list
+is in [`../cmps01/README.md`](../cmps01/README.md#fleet-inventory). Routing reads
+each server's live `/v1/models` first and falls back to the file's `models` only
+when that probe fails; the AI status probe also takes its host list from this
+file.
 
 **Auto routing tier assignment is a manual step on production.** Unlike
 `eduai-dev`/s378 (`infra/s378/go-live-build.sh` runs
