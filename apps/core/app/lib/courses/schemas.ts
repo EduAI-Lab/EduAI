@@ -39,7 +39,13 @@ export const CreateCourseSchema = z.object({
   isPublished: z.coerce.boolean().optional().default(false),
   aiInstructions: z.string().optional().default(""),
   instructorUserIds: z.array(z.string().min(1)).min(1),
+  // #1811: answer to a COURSE_POSSIBLE_DUPLICATE warning — restore a soft-deleted
+  // copy (`restoreCourseId`) or create a new course anyway.
+  duplicateResolution: z.enum(["restore", "create"]).optional(),
+  restoreCourseId: z.string().min(1).optional(),
 });
+
+export type CreateCourseInput = z.infer<typeof CreateCourseSchema>;
 
 export const UpdateCourseSchema = z.object({
   name: z.string().min(1).optional(),

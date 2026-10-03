@@ -388,9 +388,9 @@ migration to that file in the same change**, or the object is silently missing f
 every integration run and any test meant to prove it is enforced passes for the wrong
 reason. Current entries: the `material_chunks.content_tsv` generated column, the
 `material_embeddings` ivfflat index, and the partial unique index
-`courses_code_startDate_section_active_key` (`#1842`), which lets a soft-deleted
-course release its `(code, startDate, section)` identity so the same course can be
-created again.
+`courses_code_section_year_term_active_key` (`#1842`, re-keyed in `#1811`), which lets
+a soft-deleted course release its `(code, section, year, term)` identity so the same
+course can be created again (or restored).
 
 ### Inspecting the database
 
