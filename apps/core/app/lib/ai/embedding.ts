@@ -196,6 +196,40 @@ const REINDEX_TRANSACTION_MAX_WAIT_MS = 10_000;
 const REINDEX_TRANSACTION_TIMEOUT_MS = 60_000;
 const MAX_TRANSIENT_EMBED_ATTEMPTS = 3;
 const TRANSIENT_EMBED_RETRY_DELAY_MS = 500;
+
+/**
+ * How hard to retry a transient (429/503/timeout) provider failure (#1791).
+ *
+ * The default is sized for the *request* path — a chat turn embedding its query
+ * cannot make a student wait out a rate limit, so three attempts over ~1.5s and
+ * then a visible error is the right trade.
+ *
+ * Indexing is the opposite trade and used to inherit the request budget anyway.
+ * A material embedding runs inside a background job holding a 15-minute
+ * extraction lease with nobody waiting on it, so giving up after ~1.5s of 429s
+ * turned an ordinary rate limit into a terminally FAILED material — the failure
+ * an instructor then could not retry (#1791). `INDEXING_RETRY_BUDGET` spends a
+ * minute of that lease instead, which outlasts the bursts that actually occur.
+ */
+export type TransientRetryBudget = {
+  maxAttempts: number;
+  baseDelayMs: number;
+  /** Ceiling per wait, so doubling cannot run past the caller's deadline. */
+  maxDelayMs: number;
+};
+
+export const REQUEST_RETRY_BUDGET: TransientRetryBudget = {
+  maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
+  baseDelayMs: TRANSIENT_EMBED_RETRY_DELAY_MS,
+  maxDelayMs: 4_000,
+};
+
+/** 1s, 2s, 4s, 8s, 15s, 15s, 15s ≈ 60s of waiting across 8 attempts. */
+export const INDEXING_RETRY_BUDGET: TransientRetryBudget = {
+  maxAttempts: 8,
+  baseDelayMs: 1_000,
+  maxDelayMs: 15_000,
+};
 export const DEFAULT_EMBEDDING_REQUEST_TIMEOUT_MS = 30_000;
 const MIN_EMBEDDING_REQUEST_TIMEOUT_MS = 100;
 const MAX_EMBEDDING_REQUEST_TIMEOUT_MS = 120_000;
@@ -203,6 +237,11 @@ const MAX_EMBEDDING_REQUEST_TIMEOUT_MS = 120_000;
 export type EmbeddingRequestOptions = {
   /** Cancels the provider call when the originating request/job is no longer useful. */
   signal?: AbortSignal;
+  /**
+   * How long to keep retrying transient provider failures. Defaults to
+   * `REQUEST_RETRY_BUDGET`; background indexing passes `INDEXING_RETRY_BUDGET`.
+   */
+  retryBudget?: TransientRetryBudget;
 };
 
 export class EmbeddingRequestTimeoutError extends Error {
@@ -320,7 +359,13 @@ function reindexConcurrency(): number {
   return Math.min(configured, MAX_REINDEX_CONCURRENCY);
 }
 
-function isTransientEmbeddingError(cause: unknown): boolean {
+/**
+ * Exported for the material extraction job (#1791): a material that died on a
+ * transient provider failure is recorded as `MATERIAL_EMBED_RATE_LIMITED` rather
+ * than a flat `MATERIAL_EMBED_FAILED`, which is the difference between "try this
+ * again shortly" and "this file cannot be indexed".
+ */
+export function isTransientEmbeddingError(cause: unknown): boolean {
   if (isEmbeddingTimeoutError(cause)) return true;
 
   const status =
@@ -355,26 +400,26 @@ async function waitForEmbeddingRetry(delayMs: number, signal?: AbortSignal): Pro
 async function retryTransientEmbeddingError<T>(
   run: () => Promise<T>,
   signal?: AbortSignal,
+  budget: TransientRetryBudget = REQUEST_RETRY_BUDGET,
 ): Promise<T> {
+  const { maxAttempts, baseDelayMs, maxDelayMs } = budget;
   let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_TRANSIENT_EMBED_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await run();
     } catch (err) {
       lastError = err;
-      if (
-        signal?.aborted ||
-        !isTransientEmbeddingError(err) ||
-        attempt === MAX_TRANSIENT_EMBED_ATTEMPTS
-      ) {
+      if (signal?.aborted || !isTransientEmbeddingError(err) || attempt === maxAttempts) {
         throw err;
       }
 
-      const exponentialDelayMs = TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      // Capped exponential backoff: without the cap a long budget's last waits
+      // would dwarf the whole window they are meant to fit inside.
+      const exponentialDelayMs = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
       const delayMs = Math.round(exponentialDelayMs * (0.75 + Math.random() * 0.5));
       console.warn("[embeddings] transient provider failure; retrying", {
         attempt,
-        maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
+        maxAttempts,
         delayMs,
         error: providerErrorDiagnostic(err),
       });
@@ -457,8 +502,9 @@ function ollamaEmbedEndpoint(): string {
 async function fetchOllamaEmbeddings(
   modelId: string,
   values: string[],
-  upstreamSignal?: AbortSignal,
+  requestOptions?: EmbeddingRequestOptions,
 ): Promise<number[][]> {
+  const upstreamSignal = requestOptions?.signal;
   return retryTransientEmbeddingError(
     () =>
       withEmbeddingRequestDeadline(async (signal) => {
@@ -490,6 +536,7 @@ async function fetchOllamaEmbeddings(
         return embeddings;
       }, upstreamSignal),
     upstreamSignal,
+    requestOptions?.retryBudget,
   );
 }
 
@@ -501,20 +548,20 @@ function sanitizeTextForOllamaEmbed(text: string): string {
 async function embedManyOllamaNative(
   modelId: string,
   values: string[],
-  upstreamSignal?: AbortSignal,
+  requestOptions?: EmbeddingRequestOptions,
 ): Promise<number[][]> {
   if (values.length === 0) return [];
   const sanitized = values.map(sanitizeTextForOllamaEmbed);
 
   try {
-    return await fetchOllamaEmbeddings(modelId, sanitized, upstreamSignal);
+    return await fetchOllamaEmbeddings(modelId, sanitized, requestOptions);
   } catch (err) {
     if (values.length <= 1 || !isOllamaSplittableError(err)) {
       throw err;
     }
     const mid = Math.floor(values.length / 2);
-    const left = await embedManyOllamaNative(modelId, values.slice(0, mid), upstreamSignal);
-    const right = await embedManyOllamaNative(modelId, values.slice(mid), upstreamSignal);
+    const left = await embedManyOllamaNative(modelId, values.slice(0, mid), requestOptions);
+    const right = await embedManyOllamaNative(modelId, values.slice(mid), requestOptions);
     return [...left, ...right];
   }
 }
@@ -971,6 +1018,7 @@ async function embedWithConfiguredProvider<T>(
     return await retryTransientEmbeddingError(
       () => withEmbeddingRequestDeadline((signal) => run(model, signal), requestOptions?.signal),
       requestOptions?.signal,
+      requestOptions?.retryBudget,
     );
   } catch (err) {
     if (settings.wantsLocal) {
@@ -1002,14 +1050,12 @@ export async function generateEmbeddings(
     const batch = chunks.slice(i, i + batchSize);
     const embeddings =
       settings.wantsLocal && !usesVllmEmbeddingEndpoint()
-        ? await embedManyOllamaNative(settings.model, batch, requestOptions?.signal).catch(
-            (err) => {
-              if (requestOptions?.signal?.aborted) {
-                throw abortSignalReason(requestOptions.signal);
-              }
-              throw wrapLocalEmbeddingError(settings.model, err);
-            },
-          )
+        ? await embedManyOllamaNative(settings.model, batch, requestOptions).catch((err) => {
+            if (requestOptions?.signal?.aborted) {
+              throw abortSignalReason(requestOptions.signal);
+            }
+            throw wrapLocalEmbeddingError(settings.model, err);
+          })
         : await embedWithConfiguredProvider(
             async (model, abortSignal) => {
               const result = await embedMany({
@@ -1059,14 +1105,12 @@ export async function generateEmbedding(
   const embedding =
     settings.wantsLocal && !usesVllmEmbeddingEndpoint()
       ? (
-          await embedManyOllamaNative(settings.model, [query], requestOptions?.signal).catch(
-            (err) => {
-              if (requestOptions?.signal?.aborted) {
-                throw abortSignalReason(requestOptions.signal);
-              }
-              throw wrapLocalEmbeddingError(settings.model, err);
-            },
-          )
+          await embedManyOllamaNative(settings.model, [query], requestOptions).catch((err) => {
+            if (requestOptions?.signal?.aborted) {
+              throw abortSignalReason(requestOptions.signal);
+            }
+            throw wrapLocalEmbeddingError(settings.model, err);
+          })
         )[0]
       : settings.wantsLocal
         ? (await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId))
@@ -1660,6 +1704,10 @@ export async function processMaterialEmbeddings(
 
   const embeddings = await generateEmbeddings(chunks, material.courseId, settings, {
     signal: options?.signal,
+    // Indexing always runs in a background job, never on a request (#1791), so
+    // it can afford to wait out a provider rate limit instead of failing the
+    // material terminally after ~1.5s.
+    retryBudget: INDEXING_RETRY_BUDGET,
   });
 
   await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);

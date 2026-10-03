@@ -162,6 +162,7 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
     availableAt: m.availableAt ?? null,
     duplicateOfId: m.duplicateOfId ?? null,
     hasExtractedText: m.hasExtractedText,
+    failureCode: m.failureCode ?? null,
   };
 }
 
@@ -343,6 +344,9 @@ export default function CourseDetailPage() {
   ): UploadResult => {
     switch (outcome.status) {
       case "ready":
+      // #1791: this upload is why the material is on the course, so a restore is
+      // reported as added, not as "already exists".
+      case "restored":
         return { status: "ready" };
       case "duplicate": {
         const sibling = batchNames.get(outcome.duplicateOfId);
@@ -360,6 +364,7 @@ export default function CourseDetailPage() {
             : "A file with identical content already exists in this course",
         };
       }
+      // The specific reason (#1791) shows on the settled row's failure popover.
       case "failed":
         return {
           status: "failed",

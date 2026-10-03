@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -20,10 +21,21 @@ vi.mock("~/lib/prisma.server", () => ({
 
 vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn().mockResolvedValue(undefined),
+  // #1791: the job asks whether a dead embedding was transient, to record
+  // MATERIAL_EMBED_RATE_LIMITED rather than a flat MATERIAL_EMBED_FAILED.
+  isTransientEmbeddingError: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
   extractUploadedFileContent: vi.fn(),
+  // A real class, not a stub: the job distinguishes capacity failures with
+  // `instanceof` so it can release the row for a retry instead of failing it.
+  PdfExtractionBusyError: class PdfExtractionBusyError extends Error {
+    constructor(message = "PDF extraction busy") {
+      super(message);
+      this.name = "PdfExtractionBusyError";
+    }
+  },
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -37,8 +49,8 @@ vi.mock("~/lib/topics/job.server", () => ({
 }));
 
 import prisma from "~/lib/prisma.server";
-import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { isTransientEmbeddingError, processMaterialEmbeddings } from "~/lib/ai/embedding";
+import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
 import {
   EXTRACTION_LEASE_MS,
@@ -48,9 +60,35 @@ import {
   classifyRestoreTarget,
   ensureMaterialSweeperRunning,
   persistUploadBlob,
+  resolveFailureCode,
+  runMaterialExtraction,
   sweepStrandedMaterialExtractions,
   toBytesColumn,
 } from "~/lib/materials/extraction-job.server";
+
+/** The `File` the job hands the extractor; contents are irrelevant to it. */
+function uploadFile(): File {
+  return new File([new Uint8Array([1, 2, 3])], "L3.pdf", { type: "application/pdf" });
+}
+
+/**
+ * Every `courseMaterial.update` call's `data`, for one row. The job settles
+ * several rows per run — a receipt and the material it points at — so assertions
+ * have to say which one they mean.
+ */
+type MaterialUpdateData = Prisma.CourseMaterialUpdateInput;
+
+function updatesFor(materialId: string): MaterialUpdateData[] {
+  return (
+    vi
+      .mocked(prisma.courseMaterial.update)
+      // SAFETY: every call in this suite passes `where.id`; the mock is untyped,
+      // so this names the shape the module actually sends.
+      .mock.calls.map(([args]) => args as { where: { id: string }; data: MaterialUpdateData })
+      .filter((args) => args.where.id === materialId)
+      .map((args) => args.data)
+  );
+}
 
 const CTX = { requestId: "req-1" } as never;
 
@@ -69,8 +107,9 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.courseMaterial.update).mockResolvedValue({} as never);
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null as never);
-  vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue(null as never);
+  vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({ failureCode: null } as never);
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
+  vi.mocked(isTransientEmbeddingError).mockReturnValue(false);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
     bytes: Buffer.from("hello"),
@@ -732,12 +771,33 @@ describe("classifyRestoreTarget", () => {
     ).toBe("settled");
   });
 
-  it("treats a live READY or FAILED target as settled", () => {
-    for (const status of ["READY", "FAILED"]) {
-      expect(
-        classifyRestoreTarget({ status, deletedAt: null, extractionLeaseUntil: null }, NOW),
-      ).toBe("settled");
-    }
+  it("treats a live READY target as settled", () => {
+    expect(
+      classifyRestoreTarget({ status: "READY", deletedAt: null, extractionLeaseUntil: null }, NOW),
+    ).toBe("settled");
+  });
+
+  it("reclaims a live FAILED target instead of calling it settled (#1791)", () => {
+    // The bug behind the COSC 111 report. A material that died *after*
+    // extraction holds the course's (courseId, checksum) slot with the real
+    // content hash, so every re-upload of the file found it — and `settled`
+    // turned that into "a file with identical content already exists", a
+    // permanent refusal protecting a row that contains nothing. Re-uploading a
+    // failed file means retry it.
+    expect(
+      classifyRestoreTarget({ status: "FAILED", deletedAt: null, extractionLeaseUntil: null }, NOW),
+    ).toBe("restore");
+  });
+
+  it("reclaims a FAILED target whether or not it was also deleted", () => {
+    // Deleting the failed row was the instructor's workaround, and it must not
+    // change the answer: both shapes are a retry.
+    expect(
+      classifyRestoreTarget(
+        { status: "FAILED", deletedAt: new Date(), extractionLeaseUntil: null },
+        NOW,
+      ),
+    ).toBe("restore");
   });
 });
 
@@ -752,11 +812,17 @@ describe("claimRestoreTarget", () => {
         // Soft-deleted is not on its own enough (#1494 review): a DELETE landing
         // mid-restore must not re-open a target whose worker is still running.
         { deletedAt: { not: null }, status: { not: "PROCESSING" } },
+        // #1791: a live FAILED row is terminal, so nothing owns it — re-uploading
+        // the file is a retry, not a duplicate.
+        { deletedAt: null, status: "FAILED" },
         // An expired lease only — a PROCESSING row with a null lease is a
         // Canvas import, not an abandoned restore.
         { status: "PROCESSING", extractionLeaseUntil: { lt: expect.any(Date) } },
       ],
     });
+    // The row is leaving FAILED, so the reason it failed goes with it (#1791).
+    expect(args.data.failureCode).toBeNull();
+    expect(args.data.duplicateResolution).toBeNull();
     // The un-delete and the lease are the same write, so there is no window in
     // which the target is PROCESSING with nothing claiming it.
     expect(args.data.deletedAt).toBeNull();
@@ -769,5 +835,207 @@ describe("claimRestoreTarget", () => {
     vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 0 } as never);
 
     expect(await claimRestoreTarget("target-1", "user-1", "restored text")).toBe(false);
+  });
+});
+
+// ── #1791: a failed upload must stay retryable, and say why it failed ─────────
+//
+// The instructor-reported loop: L3 fails to process ("Processing failed for this
+// file"), the second attempt is refused as a duplicate, deleting the file does
+// not help, and the third attempt is refused again. Each test below pins one
+// link in that chain.
+
+describe("resolveFailureCode", () => {
+  it("names a capacity failure rather than blaming the file", () => {
+    expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new PdfExtractionBusyError())).toBe(
+      "MATERIAL_EXTRACT_BUSY",
+    );
+  });
+
+  it("distinguishes a rate-limited embedding from an unindexable one", () => {
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("429"))).toBe(
+      "MATERIAL_EMBED_RATE_LIMITED",
+    );
+  });
+
+  it("passes the stage code through when nothing refines it", () => {
+    expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("boom"))).toBe(
+      "MATERIAL_EMBED_FAILED",
+    );
+    expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new Error("boom"))).toBe(
+      "MATERIAL_EXTRACT_FAILED",
+    );
+    expect(resolveFailureCode("MATERIAL_EXTRACT_ABANDONED", new Error("boom"))).toBe(
+      "MATERIAL_EXTRACT_ABANDONED",
+    );
+  });
+
+  it("only refines the stage it belongs to", () => {
+    // A transient *extraction* error is not an embedding rate limit: the
+    // refinement is scoped to the stage that produced the failure.
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new Error("429"))).toBe(
+      "MATERIAL_EXTRACT_FAILED",
+    );
+  });
+});
+
+describe("runMaterialExtraction failure recording (#1791)", () => {
+  it("records why a material failed, so the UI is not left guessing", async () => {
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("429 rate limit"));
+
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(updatesFor("mat-1")).toContainEqual(
+      expect.objectContaining({
+        status: "FAILED",
+        failureCode: "MATERIAL_EMBED_RATE_LIMITED",
+      }),
+    );
+  });
+
+  it("clears a stale reason when a row lands READY", async () => {
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    // A resumed run may be re-finalizing a row an earlier attempt failed; the
+    // old reason must not outlive the failure it described.
+    expect(updatesFor("mat-1")).toContainEqual(
+      expect.objectContaining({ status: "READY", failureCode: null }),
+    );
+  });
+
+  it("releases a capacity failure for a later sweep instead of failing it", async () => {
+    vi.mocked(extractUploadedFileContent).mockRejectedValue(new PdfExtractionBusyError());
+
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    const [data] = updatesFor("mat-1");
+    // Still PROCESSING with an already-expired lease: the next sweep (<=5 min)
+    // picks it up, rather than the 15 minutes a null lease would cost. Failing
+    // it here is what turned a burst of uploads into broken materials.
+    expect(data.status).toBe("PROCESSING");
+    expect(data.extractionLeaseUntil).toBeInstanceOf(Date);
+    expect((data.extractionLeaseUntil as Date).getTime()).toBeLessThan(Date.now());
+    expect(updatesFor("mat-1")).not.toContainEqual(expect.objectContaining({ status: "FAILED" }));
+  });
+});
+
+describe("runMaterialExtraction duplicate resolution (#1791)", () => {
+  /**
+   * A settled row the re-upload's content checksum collides with. Only the four
+   * fields `classifyRestoreTarget` reads matter, so this names exactly those.
+   */
+  type DuplicateRow = {
+    id: string;
+    status: string;
+    deletedAt: Date | null;
+    extractionLeaseUntil: Date | null;
+  };
+
+  function duplicateRow(overrides: Partial<DuplicateRow> = {}): DuplicateRow {
+    return {
+      id: "winner-1",
+      status: "FAILED",
+      deletedAt: null,
+      extractionLeaseUntil: null,
+      ...overrides,
+    };
+  }
+
+  it("retries a FAILED twin rather than refusing the upload as a duplicate", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(duplicateRow() as never);
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    // The whole point: the second upload of a failed file re-embeds it.
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("winner-1", "text", {
+      replace: true,
+    });
+    expect(updatesFor("winner-1")).toContainEqual(
+      expect.objectContaining({ status: "READY", failureCode: null }),
+    );
+  });
+
+  it("marks the receipt RESTORED so a successful retry reads as a success", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(duplicateRow() as never);
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(updatesFor("receipt-1")).toContainEqual(
+      expect.objectContaining({
+        duplicateOfId: "winner-1",
+        duplicateResolution: "RESTORED",
+      }),
+    );
+  });
+
+  it("marks an untouched winner EXISTING - nothing was added", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY" }) as never,
+    );
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+    expect(updatesFor("receipt-1")).toContainEqual(
+      expect.objectContaining({
+        duplicateOfId: "winner-1",
+        duplicateResolution: "EXISTING",
+      }),
+    );
+  });
+
+  it("reports a failed restore as a failure, not as an existing duplicate", async () => {
+    // Attempt 3 of the original report. The restore's embedding failed, and the
+    // code then fell through to the duplicate receipt anyway - so the client was
+    // told the content was already there while the only copy of it sat FAILED,
+    // and it deleted the receipt, erasing the attempt. There was no way out.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ deletedAt: new Date() }) as never,
+    );
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("429 rate limit"));
+    vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
+      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
+    } as never);
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    // A receipt carrying a reason is how the client tells a failed restore from
+    // a duplicate; without the code it would report "already exists" again.
+    expect(updatesFor("receipt-1")).toContainEqual(
+      expect.objectContaining({
+        status: "FAILED",
+        duplicateOfId: "winner-1",
+        failureCode: "MATERIAL_EMBED_RATE_LIMITED",
+      }),
+    );
+  });
+
+  it("falls back to a generic embed failure when the target's code is unreadable", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(duplicateRow() as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("boom"));
+    vi.mocked(prisma.courseMaterial.findUnique).mockRejectedValue(new Error("db down"));
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(updatesFor("receipt-1")).toContainEqual(
+      expect.objectContaining({ status: "FAILED", failureCode: "MATERIAL_EMBED_FAILED" }),
+    );
+  });
+
+  it("still waits rather than resolving a receipt against a live restore", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({
+        status: "PROCESSING",
+        extractionLeaseUntil: new Date(Date.now() + 60_000),
+      }) as never,
+    );
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(updatesFor("receipt-1")).toEqual([]);
   });
 });

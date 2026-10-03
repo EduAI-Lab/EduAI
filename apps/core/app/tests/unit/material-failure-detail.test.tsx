@@ -12,11 +12,13 @@ const indexingFailure = describeMaterialFailure({
   status: "FAILED",
   duplicateOfId: null,
   hasExtractedText: true,
+  failureCode: null,
 })!;
 const unreadableFailure = describeMaterialFailure({
   status: "FAILED",
   duplicateOfId: null,
   hasExtractedText: false,
+  failureCode: null,
 })!;
 
 beforeEach(() => {
