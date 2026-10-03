@@ -35,7 +35,7 @@ export function identityWhere(identity: CourseIdentity) {
   };
 }
 
-/** Who may bring a soft-deleted course back: admins, its unit's admins, or one of its instructors. */
+/** Who may bring a soft-deleted course back: admins, its unit's admins, or one of its active instructors. */
 export async function canRestoreCourse(
   user: RbacUser,
   course: { id: string; department: string | null },
@@ -46,7 +46,7 @@ export async function canRestoreCourse(
     if (course.department && units.includes(course.department)) return true;
   }
   const enrollment = await prisma.enrollment.findFirst({
-    where: { courseId: course.id, userId: user.id, role: "INSTRUCTOR" },
+    where: { courseId: course.id, userId: user.id, role: "INSTRUCTOR", isActive: true },
     select: { id: true },
   });
   return enrollment != null;

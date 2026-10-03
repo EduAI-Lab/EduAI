@@ -664,6 +664,12 @@ async function restoreDeletedCourse(user: RbacUser, data: CreateCourseInput) {
   });
   if (!target) return apiError(404, "COURSE_NOT_FOUND");
   if (!(await canRestoreCourse(user, target))) return apiError(403, "Forbidden");
+  // §6, as in updateCourse: only ADMIN or the course's own UNIT_ADMIN may move it to another unit.
+  const canChangeDepartment =
+    user.role === "ADMIN" ||
+    (user.role === "UNIT_ADMIN" &&
+      target.department != null &&
+      (await getAuthorizedUnits(user)).includes(target.department));
 
   let course;
   try {
@@ -676,7 +682,7 @@ async function restoreDeletedCourse(user: RbacUser, data: CreateCourseInput) {
           name: data.name,
           startDate: data.startDate,
           endDate: data.endDate,
-          department: data.department,
+          department: canChangeDepartment ? data.department : undefined,
           description: data.description,
           isPublished: data.isPublished,
           // Empty means "not filled in" on the create form; keep the old instructions.

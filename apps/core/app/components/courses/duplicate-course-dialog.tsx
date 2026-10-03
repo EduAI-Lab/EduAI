@@ -57,8 +57,8 @@ export function DuplicateCourseDialog({
           <DialogTitle>This course may already exist</DialogTitle>
           <DialogDescription>
             {deleted.length > 0
-              ? "A deleted course has the same code, section and term. Restoring it brings back its materials and enrollments."
-              : "You already teach a course that differs from this one by only its section, term or year."}
+              ? "A deleted course has the same code, section, term and year. Restoring it brings back its materials and enrollments."
+              : "The selected instructor already teaches a course that differs from this one by only its section, term or year."}
           </DialogDescription>
         </DialogHeader>
 

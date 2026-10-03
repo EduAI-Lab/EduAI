@@ -178,7 +178,8 @@ model Course {
   selfEnrollmentLinks         SelfEnrollmentLink[]
 
   // #1842/#1811: the course identity slot is a PARTIAL unique index —
-  // `courses_code_section_year_term_active_key ... WHERE "deletedAt" IS NULL`.
+  // `courses_code_section_year_term_active_key ... WHERE "deletedAt" IS NULL
+  // AND "externalSource" IS NULL` (Canvas rows are keyed by their external identity).
   // Prisma cannot express a `WHERE` predicate on a unique index, so it is NOT
   // declared here; it lives in migrations/20261002000000_course_identity_term_year
   // and is re-applied to integration databases by app/tests/globalSetup.ts.

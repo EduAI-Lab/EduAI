@@ -198,6 +198,49 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
     expect(restore.status).toBe(403);
   });
 
+  it("refuses a restore by an instructor whose enrollment was deactivated", async () => {
+    const code = `SD ${randomUUID().slice(0, 6)}`;
+    const first = await createCourseAs(coursePayload(code));
+    expect(first.status).toBe(201);
+    await prisma.enrollment.updateMany({
+      where: { courseId: first.body.id, userId: instructorId },
+      data: { isActive: false },
+    });
+    await softDelete(first.body.id);
+
+    const removed: SessionUser = { id: instructorId, role: "INSTRUCTOR" };
+    const warned = await createCourseAs(coursePayload(code), removed);
+    expect(warned.status).toBe(409);
+    expect(warned.body.deletedMatches).toEqual([
+      expect.objectContaining({ id: first.body.id, canRestore: false }),
+    ]);
+
+    const restore = await createCourseAs(
+      coursePayload(code, { duplicateResolution: "restore", restoreCourseId: first.body.id }),
+      removed,
+    );
+    expect(restore.status).toBe(403);
+  });
+
+  it("keeps the stored department when an instructor restores", async () => {
+    const code = `SD ${randomUUID().slice(0, 6)}`;
+    const first = await createCourseAs(coursePayload(code));
+    expect(first.status).toBe(201);
+    await softDelete(first.body.id);
+
+    const restored = await createCourseAs(
+      coursePayload(code, {
+        department: "MATH",
+        duplicateResolution: "restore",
+        restoreCourseId: first.body.id,
+      }),
+      { id: instructorId, role: "INSTRUCTOR" },
+    );
+    expect(restored.status).toBe(200);
+    const row = await prisma.course.findUnique({ where: { id: first.body.id } });
+    expect(row?.department).toBe("COSC");
+  });
+
   it("warns when the same instructor already teaches the course in another section", async () => {
     const code = `SD ${randomUUID().slice(0, 6)}`;
     expect((await createCourseAs(coursePayload(code))).status).toBe(201);
@@ -275,6 +318,28 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
     ).rejects.toMatchObject({ code: "P2002" });
   });
 
+  it("lets two live Canvas shells share a code in one term", async () => {
+    // The Canvas import hardcodes section "001"; its rows are keyed by external identity.
+    const code = `SD ${randomUUID().slice(0, 6)}`;
+    const base = {
+      code,
+      section: "001",
+      term: "W1",
+      year: 2026,
+      externalSource: "canvas",
+    };
+    for (const [externalId, startDate] of [
+      [randomUUID(), "2026-09-01"],
+      [randomUUID(), "2026-09-08"],
+    ]) {
+      const row = await prisma.course.create({
+        data: { ...base, name: `Canvas ${code}`, externalId, startDate: new Date(startDate) },
+      });
+      createdCourseIds.push(row.id);
+    }
+    expect(await prisma.course.count({ where: { code, deletedAt: null } })).toBe(2);
+  });
+
   it("declares the slot index as partial on deletedAt so tombstones do not hold it", async () => {
     // Prisma cannot express a partial unique index, so it lives in a raw
     // migration and is re-applied to the integration database by globalSetup.
@@ -286,7 +351,8 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
     `;
     expect(rows).toHaveLength(1);
     expect(rows[0].indexdef).toMatch(/UNIQUE INDEX/i);
-    expect(rows[0].indexdef).toMatch(/WHERE \("deletedAt" IS NULL\)/i);
+    expect(rows[0].indexdef).toMatch(/"deletedAt" IS NULL/i);
+    expect(rows[0].indexdef).toMatch(/"externalSource" IS NULL/i);
 
     // The superseded startDate-keyed indexes must be gone, or they still own a slot.
     const legacy = await prisma.$queryRaw<{ indexname: string }[]>`
