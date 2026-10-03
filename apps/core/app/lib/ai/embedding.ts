@@ -283,7 +283,7 @@ function abortSignalReason(signal: AbortSignal): Error {
   return error;
 }
 
-function isEmbeddingTimeoutError(cause: unknown): boolean {
+export function isEmbeddingTimeoutError(cause: unknown): boolean {
   const seen = new Set<unknown>();
   let current = cause;
 
@@ -361,9 +361,8 @@ function reindexConcurrency(): number {
 
 /**
  * Exported for the material extraction job (#1791): a material that died on a
- * transient provider failure is recorded as `MATERIAL_EMBED_RATE_LIMITED` rather
- * than a flat `MATERIAL_EMBED_FAILED`, which is the difference between "try this
- * again shortly" and "this file cannot be indexed".
+ * transient provider failure is recorded as rate-limited or provider-unavailable
+ * rather than a flat `MATERIAL_EMBED_FAILED`.
  */
 export function isTransientEmbeddingError(cause: unknown): boolean {
   if (isEmbeddingTimeoutError(cause)) return true;

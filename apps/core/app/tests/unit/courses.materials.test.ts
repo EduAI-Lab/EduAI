@@ -49,6 +49,7 @@ vi.mock("~/lib/ai/embedding", () => ({
   // #1791: the extraction job asks whether a dead embedding was transient, so it
   // can record MATERIAL_EMBED_RATE_LIMITED instead of a flat embed failure.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
+  isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
 }));
 
 // #1624: every material that reaches READY gets topic analysis, including one

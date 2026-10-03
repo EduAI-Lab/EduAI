@@ -23,7 +23,11 @@
  */
 import type { MaterialFailureCode } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { isTransientEmbeddingError, processMaterialEmbeddings } from "~/lib/ai/embedding";
+import {
+  isEmbeddingTimeoutError,
+  isTransientEmbeddingError,
+  processMaterialEmbeddings,
+} from "~/lib/ai/embedding";
 import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { hasIndexableText } from "~/lib/materials/indexable-text.server";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
@@ -73,8 +77,10 @@ export function resolveFailureCode(
   if (code === "MATERIAL_EXTRACT_FAILED" && cause instanceof PdfExtractionBusyError) {
     return "MATERIAL_EXTRACT_BUSY";
   }
-  if (code === "MATERIAL_EMBED_FAILED" && isTransientEmbeddingError(cause)) {
-    return "MATERIAL_EMBED_RATE_LIMITED";
+  if (code === "MATERIAL_EMBED_FAILED") {
+    // Checked first: a timeout is transient too, but means unreachable, not throttled.
+    if (isEmbeddingTimeoutError(cause)) return "MATERIAL_EMBED_PROVIDER_UNAVAILABLE";
+    if (isTransientEmbeddingError(cause)) return "MATERIAL_EMBED_RATE_LIMITED";
   }
   return code;
 }
