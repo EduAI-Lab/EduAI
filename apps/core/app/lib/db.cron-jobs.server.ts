@@ -97,6 +97,14 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
+    name: "notify-invitation-expiry",
+    description: "Email invitees whose pending invitation is close to expiring",
+    schedule: "30 4 * * *",
+    scheduleLabel: "Daily at 04:30 UTC",
+    script: "Core handler",
+    execution: "CORE",
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
@@ -460,6 +468,14 @@ const CORE_JOB_HANDLERS = {
     return async () => {
       const { notified } = await notifyExpiringApiKeys();
       return { message: `Sent ${notified} API key expiry notification(s)` };
+    };
+  },
+  "notify-invitation-expiry": async () => {
+    const { notifyExpiringInvitations } =
+      await import("~/lib/cron-notify-invitation-expiry.server");
+    return async () => {
+      const { notified } = await notifyExpiringInvitations();
+      return { message: `Sent ${notified} invitation expiry reminder(s)` };
     };
   },
   "ai-status-probe": async () => {

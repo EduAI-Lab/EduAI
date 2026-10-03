@@ -15,10 +15,12 @@ import {
   assertLocalDemoEnvironment,
   getLocalSeedPassword,
 } from "../app/lib/deployment-safety.server";
+import { DIRECT_ADDRESSED_MODEL_IDS } from "~/lib/ai/campus-model-catalog";
 import {
   VLLM_MODELS,
   VLLM_RETIRED_MODEL_IDS,
   VLLM_ROUTING_TIER_ASSIGNMENTS,
+  VLLM_UNTIERED_ENERGY_ESTIMATES,
 } from "./ai-model-catalog";
 
 export const prisma = new PrismaClient();
@@ -1184,7 +1186,8 @@ export async function applyRoutingTierAssignments() {
 
   // Clear only IDs from a known retired fleet generation. Do not clear every
   // non-catalog row: an administrator may have added an active vLLM model and
-  // intentionally assigned it a tier through the admin UI.
+  // intentionally assigned it a tier through the admin UI. Retired rows are
+  // deactivated only while they still hold a tier, so an admin re-enable sticks.
   const vllm =
     providerByName.get("vllm") ??
     (await prisma.aIProvider.findUnique({
@@ -1197,8 +1200,29 @@ export async function applyRoutingTierAssignments() {
         routerTier: { not: null },
         modelId: { in: [...VLLM_RETIRED_MODEL_IDS] },
       },
+      data: { routerTier: null, isActive: false },
+    });
+
+    // Direct-addressed models stay active but must not carry a stale tier.
+    await prisma.aIModel.updateMany({
+      where: {
+        providerId: vllm.id,
+        routerTier: { not: null },
+        modelId: { in: [...DIRECT_ADDRESSED_MODEL_IDS] },
+      },
       data: { routerTier: null },
     });
+
+    // Untiered models still need energy figures, or their turns report none.
+    for (const row of VLLM_UNTIERED_ENERGY_ESTIMATES) {
+      await prisma.aIModel.updateMany({
+        where: { providerId: vllm.id, modelId: row.modelId },
+        data: {
+          estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+          averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+        },
+      });
+    }
   }
 }
 
@@ -1356,6 +1380,8 @@ async function seedAIProvidersAndModels() {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
       update: {
+        name: m.name,
+        description: m.description,
         isActive: true,
         maxTokens: m.maxTokens,
         supportsTools: m.supportsTools,

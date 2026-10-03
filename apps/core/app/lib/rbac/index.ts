@@ -30,3 +30,4 @@ export {
 } from "./permissions";
 export type { ChatViewGate } from "./permissions";
 export { getNavForUser, getNavSecondaryForUser } from "./nav";
+export { INSTRUCTOR_CANDIDATE_ROLES } from "./instructor-candidates";

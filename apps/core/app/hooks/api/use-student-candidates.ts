@@ -9,11 +9,26 @@ export interface StudentCandidate {
 const SEARCH_DEBOUNCE_MS = 250;
 
 /**
- * Search-select backend for the "add student" / "add TA" pickers. It uses
- * the paginated users API rather than preloading the platform-wide STUDENT
- * list in the course loader.
+ * The role set each picker asks for. #1840: the instructor picker asks for the
+ * whole STAFF set, not platform-role INSTRUCTOR alone — an ADMIN account can
+ * hold an INSTRUCTOR enrollment, and the INSTRUCTOR-only list is exactly why
+ * Dr. Abdallah ended up running two accounts (#1782). The server pins each
+ * mode to its own role set and gates the instructor mode at rank >= 3.
  */
-export function useStudentCandidates(courseId: string | undefined, exclude: "enrolled" | "ta") {
+const CANDIDATE_ROLES = {
+  enrolled: "STUDENT",
+  ta: "STUDENT",
+  instructor: "ADMIN,UNIT_ADMIN,INSTRUCTOR",
+} as const;
+
+export type CandidateExclude = keyof typeof CANDIDATE_ROLES;
+
+/**
+ * Search-select backend for the "add student" / "add TA" / "add instructor"
+ * pickers. It uses the paginated users API rather than preloading a
+ * platform-wide user list in the course loader.
+ */
+export function useStudentCandidates(courseId: string | undefined, exclude: CandidateExclude) {
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<StudentCandidate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,7 +54,7 @@ export function useStudentCandidates(courseId: string | undefined, exclude: "enr
           exclude,
           page: "1",
           pageSize: "25",
-          role: "STUDENT",
+          role: CANDIDATE_ROLES[exclude],
           isActive: "true",
         });
         if (query.trim()) params.set("search", query.trim());

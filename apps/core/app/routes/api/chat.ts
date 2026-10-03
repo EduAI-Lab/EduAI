@@ -39,6 +39,7 @@ import {
 import {
   AdmissionTimeoutError,
   acquireAiAdmission,
+  admissionTimeoutResponse,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
@@ -2885,16 +2886,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 });
               } else {
                 releaseAdmission();
-                return new Response(
-                  JSON.stringify({
-                    error: "Server busy — too many concurrent AI requests. Try again shortly.",
-                    code: "AI_ADMISSION_TIMEOUT",
-                  }),
-                  {
-                    status: 503,
-                    headers: { "Content-Type": "application/json" },
-                  },
-                );
+                return admissionTimeoutResponse();
               }
             } else {
               releaseAdmission();

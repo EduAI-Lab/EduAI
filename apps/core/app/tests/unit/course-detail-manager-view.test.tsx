@@ -57,8 +57,15 @@ let candidatesReturn = {
   loading: false,
   search: searchCandidates,
 };
+// Records every (courseId, exclude) pair the view asks for, so a test can
+// assert the instructor picker is not wired up for callers who may not use it
+// (#1840 review — an unconditional fetch logged a security event per load).
+const candidatesCalls = vi.hoisted(() => vi.fn());
 vi.mock("~/hooks/api/use-student-candidates", () => ({
-  useStudentCandidates: (...args: unknown[]) => candidatesReturnFn(...args),
+  useStudentCandidates: (...args: unknown[]) => {
+    candidatesCalls(...args);
+    return candidatesReturnFn(...args);
+  },
 }));
 // Indirection so each test can swap the return value without re-mocking the module.
 function candidatesReturnFn(..._args: unknown[]) {
@@ -127,6 +134,16 @@ const STUDENT_ENROLLMENT: CourseEnrollment = {
   enrolledAt: null,
 };
 
+/** The course's sitting instructor — the one a second add must never displace. */
+const INSTRUCTOR_ENROLLMENT = {
+  enrollmentId: "enr-instructor",
+  id: "user-instructor",
+  name: "Dr. Instructor",
+  email: "inst@test.com",
+  platformRole: "INSTRUCTOR",
+  isPrimary: true,
+};
+
 function baseProps(overrides: Partial<React.ComponentProps<typeof CourseDetailManagerView>> = {}) {
   return {
     course: COURSE,
@@ -135,11 +152,13 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof CourseDetailMa
     enrollments: [STUDENT_ENROLLMENT],
     materials: [MATERIAL],
     tas: [TA],
-    instructors: [{ id: "user-other", name: "Other Prof", email: "other@test.com" }],
+    courseInstructors: [INSTRUCTOR_ENROLLMENT],
     onFileSelect: vi.fn(),
     onCreateTopic: vi.fn().mockResolvedValue(undefined),
     onDeleteTopic: vi.fn().mockResolvedValue(undefined),
-    onAssignInstructor: vi.fn().mockResolvedValue(undefined),
+    onAddInstructor: vi.fn().mockResolvedValue(undefined),
+    onRemoveInstructor: vi.fn().mockResolvedValue(undefined),
+    onSetPrimaryInstructor: vi.fn().mockResolvedValue(undefined),
     onAddTA: vi.fn().mockResolvedValue(undefined),
     onRemoveTA: vi.fn().mockResolvedValue(undefined),
     onEnrollStudent: vi.fn().mockResolvedValue(undefined),
@@ -171,6 +190,7 @@ let mockFetch: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   candidatesReturn = { candidates: [], loading: false, search: searchCandidates };
+  candidatesCalls.mockClear();
   mockFetch = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -560,57 +580,144 @@ describe("CourseDetailManagerView — TA tab wording (#1727)", () => {
 });
 
 describe("CourseDetailManagerView — TAs tab", () => {
-  it("replaces the current instructor via the combobox", async () => {
+  // ── #1840: adding an instructor must never remove one ────────────────────
+
+  it("lists every instructor on the course, not just the primary", () => {
+    renderView({
+      courseInstructors: [
+        INSTRUCTOR_ENROLLMENT,
+        {
+          enrollmentId: "enr-mostafa",
+          id: "user-mostafa",
+          name: "Dr. Mostafa",
+          email: "mostafa@test.com",
+          platformRole: "ADMIN",
+          isPrimary: false,
+        },
+      ],
+    });
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+
+    expect(panel.getByText("Dr. Instructor")).toBeInTheDocument();
+    expect(panel.getByText("Dr. Mostafa")).toBeInTheDocument();
+    // Exactly one of them is the course head.
+    expect(panel.getAllByText("Primary")).toHaveLength(1);
+  });
+
+  it("offers no Replace control at all — the regression this issue exists for", () => {
+    renderView();
+    clickTab(/^TAs$/);
+    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+
+    expect(panel.queryByRole("button", { name: /replace/i })).not.toBeInTheDocument();
+    expect(panel.queryByText(/will replace the current one/i)).not.toBeInTheDocument();
+    expect(panel.getByText(/adding an instructor does not remove anyone/i)).toBeInTheDocument();
+  });
+
+  it("adds a selected instructor and says nobody was removed", async () => {
+    candidatesReturn = {
+      candidates: [{ id: "user-mostafa", name: "Dr. Mostafa", email: "mostafa@test.com" }],
+      loading: false,
+      search: searchCandidates,
+    };
     const props = renderView();
     clickTab(/^TAs$/);
     const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
-    expect(panel.getByText("Current")).toBeInTheDocument();
 
-    const combos = panel.getAllByRole("combobox");
-    fireEvent.click(combos[0]);
-    fireEvent.mouseDown(panel.getByText("Other Prof"));
-    fireEvent.click(panel.getByRole("button", { name: /replace/i }));
-
-    await waitFor(() => expect(props.onAssignInstructor).toHaveBeenCalledWith("user-other"));
-    await waitFor(() =>
-      expect(screen.getByText(/instructor replaced successfully/i)).toBeInTheDocument(),
-    );
-  });
-
-  it("assigns an instructor when none is currently assigned", async () => {
-    const props = renderView({ course: { ...COURSE, instructor: null } });
-    clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
-    expect(panel.getByText(/no instructor assigned yet/i)).toBeInTheDocument();
-
+    // The instructor picker is the first combobox on the tab; its dropdown
+    // portals outside the panel, so the option is matched on `screen`.
     fireEvent.click(panel.getAllByRole("combobox")[0]);
-    fireEvent.mouseDown(panel.getByText("Other Prof"));
-    fireEvent.click(panel.getByRole("button", { name: "Assign" }));
+    fireEvent.click(screen.getByText("Dr. Mostafa"));
+    fireEvent.click(panel.getByRole("button", { name: /add 1 instructor/i }));
 
-    await waitFor(() => expect(props.onAssignInstructor).toHaveBeenCalledWith("user-other"));
+    await waitFor(() => expect(props.onAddInstructor).toHaveBeenCalledWith("user-mostafa"));
     await waitFor(() =>
-      expect(screen.getByText(/instructor assigned successfully/i)).toBeInTheDocument(),
+      expect(screen.getByText(/no existing instructor was removed/i)).toBeInTheDocument(),
     );
   });
 
-  it("shows an error message when assigning an instructor fails", async () => {
-    const onAssignInstructor = vi.fn().mockRejectedValue(new Error("fail"));
-    renderView({ onAssignInstructor });
+  it("removes one instructor by enrollment id", async () => {
+    const props = renderView({
+      courseInstructors: [
+        INSTRUCTOR_ENROLLMENT,
+        {
+          enrollmentId: "enr-mostafa",
+          id: "user-mostafa",
+          name: "Dr. Mostafa",
+          email: "mostafa@test.com",
+          platformRole: "ADMIN",
+          isPrimary: false,
+        },
+      ],
+    });
     clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
-    const combos = panel.getAllByRole("combobox");
-    fireEvent.click(combos[0]);
-    fireEvent.mouseDown(panel.getByText("Other Prof"));
-    fireEvent.click(panel.getByRole("button", { name: /replace/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /remove instructor dr\. mostafa/i }));
+
+    await waitFor(() => expect(props.onRemoveInstructor).toHaveBeenCalledWith("enr-mostafa"));
+  });
+
+  it("explains the instructor floor rather than telling the admin to try again", async () => {
+    // A 409 here can never succeed on retry, so "Please try again" would be a lie.
+    const onRemoveInstructor = vi.fn().mockRejectedValue(new Error("INSTRUCTOR_FLOOR_VIOLATION"));
+    renderView({ onRemoveInstructor });
+    clickTab(/^TAs$/);
+
+    fireEvent.click(screen.getByRole("button", { name: /remove instructor dr\. instructor/i }));
+
     await waitFor(() =>
-      expect(panel.getByText(/could not assign instructor/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/must keep at least one instructor\. add another instructor before/i),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/please try again/i)).not.toBeInTheDocument();
+  });
+
+  it("falls back to a generic message for an unrecognised failure", async () => {
+    const onRemoveInstructor = vi.fn().mockRejectedValue(new Error("SOMETHING_ELSE"));
+    renderView({ onRemoveInstructor });
+    clickTab(/^TAs$/);
+
+    fireEvent.click(screen.getByRole("button", { name: /remove instructor dr\. instructor/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/could not remove instructor\. please try again/i),
+      ).toBeInTheDocument(),
     );
   });
 
-  it("says no other instructors are available when none exist", () => {
-    renderView({ instructors: [] });
+  it("sets a non-primary instructor as primary without touching enrollments", async () => {
+    const props = renderView({
+      courseInstructors: [
+        INSTRUCTOR_ENROLLMENT,
+        {
+          enrollmentId: "enr-mostafa",
+          id: "user-mostafa",
+          name: "Dr. Mostafa",
+          email: "mostafa@test.com",
+          platformRole: "ADMIN",
+          isPrimary: false,
+        },
+      ],
+    });
     clickTab(/^TAs$/);
-    expect(screen.getByText(/no other instructors available/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /make primary/i }));
+
+    await waitFor(() => expect(props.onSetPrimaryInstructor).toHaveBeenCalledWith("user-mostafa"));
+    await waitFor(() =>
+      expect(screen.getByText(/every instructor keeps their access/i)).toBeInTheDocument(),
+    );
+    // Setting primary is not a removal.
+    expect(props.onRemoveInstructor).not.toHaveBeenCalled();
+  });
+
+  it("shows the empty state when the course has no instructor yet", () => {
+    renderView({ courseInstructors: [] });
+    clickTab(/^TAs$/);
+    expect(screen.getByText(/no instructor assigned yet/i)).toBeInTheDocument();
   });
 
   it("removes a TA", async () => {
@@ -769,6 +876,40 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
     clickTab(/settings/i);
     fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
     await waitFor(() => expect(screen.getByText("Network error.")).toBeInTheDocument());
+  });
+});
+
+// #1840 review: the instructor candidate picker is ADMIN/UNIT_ADMIN only, but
+// this view also renders for a course INSTRUCTOR. The candidate endpoint is
+// gated at rank 3 and logs an ADMIN_ACCESS_DENIED security event on refusal,
+// so asking for candidates unconditionally wrote a spurious denied-access
+// record on every page load and revalidation by every course instructor.
+describe("CourseDetailManagerView — instructor candidate fetch gating (#1840 review)", () => {
+  /** The `courseId` the view passed for a given picker, or `undefined`. */
+  const courseIdFor = (exclude: string) =>
+    candidatesCalls.mock.calls.find((call) => call[1] === exclude)?.[0];
+
+  it("does not request instructor candidates for a course instructor", () => {
+    renderView({ access: "instructor" });
+
+    expect(courseIdFor("instructor")).toBeUndefined();
+    // The student/TA pickers are rank 2 and must keep working for them.
+    expect(courseIdFor("enrolled")).toBe("c1");
+    expect(courseIdFor("ta")).toBe("c1");
+  });
+
+  it("does not request instructor candidates for a TA", () => {
+    renderView({ access: "ta" });
+    expect(courseIdFor("instructor")).toBeUndefined();
+  });
+
+  it("requests instructor candidates for admin and unit-admin access", () => {
+    renderView({ access: "admin" });
+    expect(courseIdFor("instructor")).toBe("c1");
+
+    candidatesCalls.mockClear();
+    renderView({ access: "unit" });
+    expect(courseIdFor("instructor")).toBe("c1");
   });
 });
 
