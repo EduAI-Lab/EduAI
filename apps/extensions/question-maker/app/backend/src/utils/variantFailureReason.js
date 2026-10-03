@@ -56,6 +56,9 @@ export function describeVariantFailure(error) {
     };
   }
 
+  // Unreachable from generateBankVariantsForQuestions today: shouldStopAiFanout rethrows a
+  // 429 before classification so the whole run stops. Kept so the classifier stays complete
+  // for any caller that collects a rate limit per item instead of aborting.
   if (status === 429) {
     return {
       code: "PROVIDER_RATE_LIMIT",
