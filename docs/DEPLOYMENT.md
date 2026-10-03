@@ -173,17 +173,20 @@ The complete procedure, including one-time systemd installation, belongs in
 Update the shared branch and prepare generated state:
 
 ```bash
-AS_SVC="sudo -u service_eduai env PATH=/usr/local/bin:/usr/bin:/bin HOME=/var/lib/service_eduai"
-$AS_SVC git status --short
-$AS_SVC git pull --ff-only origin development
-$AS_SVC bash infra/s378/go-live-build.sh --install --no-restart
-sudo /usr/local/sbin/eduai-cron-sync
-systemctl restart eduai-core eduai-aitutor-server eduai-qm-backend eduai-cron-worker
+# 1. As the service account: refuses local edits to tracked files, switches the
+#    checkout to development, pulls, installs, migrates and builds (--no-restart).
+sudo -u service_eduai /usr/local/sbin/eduai-dev-build
+
+# 2. As yourself (eduai-dev): sync cron scripts, restart, and fail unless every
+#    unit opens its port.
+bash infra/s378/go-live-build.sh --restart-only
 ```
 
 The checkout and the web services belong to the `service_eduai` service account
-(#1872), so run the git and build steps as that account to avoid mixed file
-ownership, then restart as yourself. See [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md#canonical-deployment).
+(#1872). The wrapper does the git and build steps as that account (fetch,
+`checkout development`, `pull --ff-only`, then the build with `--no-restart`);
+`--restart-only` then restarts and checks every port. See
+[`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md#canonical-deployment).
 
 The deployer performs environment synchronization, Prisma client generation,
 migrations, reference and extension seed steps, builds, service restarts, and

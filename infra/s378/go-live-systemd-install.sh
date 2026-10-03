@@ -58,6 +58,20 @@ id -nG service_eduai | tr ' ' '\n' | grep -qx eduai-dev || {
 }
 echo "  user service_eduai ok (member of eduai-dev)"
 
+# One-time migration (#1872 review): the checkout used to belong to a personal
+# account, which leaves `.git` (git: "dubious ownership") and 0600 app .env files
+# unusable by service_eduai. Hand the whole tree to the service account, keep it
+# group-writable for eduai-dev, and make the app env files group-readable.
+if [ "$(stat -c %U "$REPO")" != "service_eduai" ] \
+   || sudo find "$REPO" -xdev ! -user service_eduai -print -quit | grep -q .; then
+  echo "  migrating $REPO to service_eduai:eduai-dev"
+  sudo chown -R service_eduai:eduai-dev "$REPO"
+  sudo chmod -R g+rwX "$REPO"
+  sudo find "$REPO/apps" -maxdepth 5 \( -name .env -o -name .env.test \) \
+    -not -path '*/node_modules/*' -exec chmod 0660 {} +
+fi
+echo "  $REPO owned by service_eduai:eduai-dev"
+
 # The worker executes the shell jobs as the dedicated account. Keep this
 # separate from service_eduai (the account used by the web services) so the cron
 # env, backup files, and audit log have one predictable owner.
@@ -180,6 +194,18 @@ sudo chmod 0440 "$SUDOERS_DIR/eduai-cron-sync"
 sudo visudo -cf "$SUDOERS_DIR/eduai-cron-sync"
 echo "  $CRON_SYNC (root-owned; fixed source and destination)"
 
+echo
+echo "=== installing the deploy wrapper (build as service_eduai) ==="
+# Lets eduai-dev members who don't have full sudo deploy (#1872 review): the
+# grant is argument-less and runs only as service_eduai, never as root.
+DEV_BUILD=/usr/local/sbin/eduai-dev-build
+sudo install -m 0755 -o root -g root "$SCRIPT_DIR/eduai-dev-build.sh" "$DEV_BUILD"
+printf '%%eduai-dev ALL=(service_eduai) NOPASSWD: %s\n' "$DEV_BUILD" \
+  | sudo tee "$SUDOERS_DIR/eduai-dev-build" >/dev/null
+sudo chmod 0440 "$SUDOERS_DIR/eduai-dev-build"
+sudo visudo -cf "$SUDOERS_DIR/eduai-dev-build"
+echo "  $DEV_BUILD (run: sudo -u service_eduai $DEV_BUILD)"
+
 # The two frontend units are gone for good — both extension frontends are static
 # now and served by Apache. Remove any stale copies so eduai-dev.target does not
 # resurrect a Vite process that fights Apache for the site.
@@ -205,8 +231,9 @@ cat <<EOF
 
 Installed and enabled (NOT started — nothing is built yet).
 
-Next:
-  bash ${SCRIPT_DIR}/go-live-build.sh
+Next (two-step deploy, #1872):
+  sudo -u service_eduai /usr/local/sbin/eduai-dev-build
+  bash ${SCRIPT_DIR}/go-live-build.sh --restart-only
 
 Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
   systemctl restart eduai-dev.target     # must NOT prompt for a password
@@ -218,5 +245,6 @@ Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
 
 If the restart does prompt, the polkit rule is not taking effect; fix the
 polkit installation rather than adding a broad sudoers wildcard. The only
-sudoers grant installed here is the argument-less, fixed-path cron sync helper.
+sudoers grants installed here are the argument-less, fixed-path cron sync helper
+# (as root) and deploy wrapper (as service_eduai only).
 EOF

@@ -99,23 +99,25 @@ than allowing duplicate service managers to compete with systemd.
 
 ## Canonical deployment
 
-Run every step that writes to the checkout **as the service account** that owns
-it (`service_eduai`, #1872), so files never end up with mixed owners. `sudo -u`
-resets `PATH`, and the host's `/usr/bin/node` is an old v10, so pass the Node 24
-path explicitly. Then restart as yourself (an `eduai-dev` member):
+Deploys are two steps (#1872). The checkout belongs to the `service_eduai`
+service account, so everything that writes to it runs as that account through
+the root-owned wrapper `/usr/local/sbin/eduai-dev-build` (any `eduai-dev` member
+may run it; `go-live-systemd-install.sh` installs it and its sudoers rule). The
+restart runs as you, because the service account has no login and no polkit
+rights:
 
 ```bash
-cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-AS_SVC="sudo -u service_eduai env PATH=/usr/local/bin:/usr/bin:/bin HOME=/var/lib/service_eduai"
-$AS_SVC git status --short
-$AS_SVC git pull --ff-only origin development
-$AS_SVC bash infra/s378/go-live-build.sh --install --no-restart
-sudo /usr/local/sbin/eduai-cron-sync
-systemctl restart eduai-core eduai-aitutor-server eduai-qm-backend eduai-cron-worker
+# 1. As the service account: refuses local edits to tracked files, switches the
+#    checkout to development, pulls, installs, migrates and builds (--no-restart).
+sudo -u service_eduai /usr/local/sbin/eduai-dev-build
+
+# 2. As yourself (eduai-dev): sync cron scripts, restart, and fail unless every
+#    unit opens its port.
+bash infra/s378/go-live-build.sh --restart-only
 ```
 
-`--no-restart` is needed because the build's restart step calls `sudo` and
-`systemctl` from the build user, and the locked service account has neither.
+The `origin` remote is the public HTTPS repository, so the service account
+needs no GitHub credentials to pull.
 
 The implementation owns the order:
 
@@ -127,6 +129,9 @@ The implementation owns the order:
 6. build Core and the extension clients;
 7. restart the affected systemd services;
 8. poll expected listeners and report the result.
+
+In the two-step deploy, steps 1–6 run in `eduai-dev-build` and steps 7–8 in
+`--restart-only`; a one-shot `bash infra/s378/go-live-build.sh` still does all eight.
 
 The Core restart is part of the build sequence so an old server process does not
 continue serving assets from the previous build. Do not manually reorder these
