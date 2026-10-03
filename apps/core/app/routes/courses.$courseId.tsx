@@ -156,6 +156,7 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
     availableAt: m.availableAt ?? null,
     duplicateOfId: m.duplicateOfId ?? null,
     hasExtractedText: m.hasExtractedText,
+    failureCode: m.failureCode ?? null,
   };
 }
 
@@ -282,42 +283,54 @@ export default function CourseDetailPage() {
 
   const uploadMaterials: UploadMaterial[] = materials.map(toUploadMaterial);
 
-  const handleFileSelect = async (file: File) => {
-    setIsUploading(true);
-    setMaterialsError(null);
-    setMaterialsSuccess(null);
-    try {
-      // The upload endpoint returns 202 and processes in the background (#949),
-      // so the outcome arrives from polling rather than from the POST status.
-      const outcome = await uploadMaterial(file);
-      switch (outcome.status) {
-        case "ready":
-          setMaterialsSuccess("Material uploaded and processed successfully");
-          break;
-        case "duplicate": {
-          const existing = materials.find((m) => m.id === outcome.duplicateOfId);
-          setMaterialsError(
-            existing
-              ? `"${existing.title}" already contains identical content — nothing was added`
-              : "A file with identical content already exists in this course",
-          );
-          break;
+  const handleFileSelect = useCallback(
+    async (file: File) => {
+      setIsUploading(true);
+      setMaterialsError(null);
+      setMaterialsSuccess(null);
+      try {
+        // The upload endpoint returns 202 and processes in the background (#949),
+        // so the outcome arrives from polling rather than from the POST status.
+        const outcome = await uploadMaterial(file);
+        switch (outcome.status) {
+          case "ready":
+            setMaterialsSuccess("Material uploaded and processed successfully");
+            break;
+          case "restored":
+            // #1791: this upload is why the material is on the course, so it is
+            // reported as a success. Saying "already exists" here is what made
+            // a successful retry look like another refusal.
+            setMaterialsSuccess("Material processed successfully and is ready to use");
+            break;
+          case "duplicate": {
+            const existing = materials.find((m) => m.id === outcome.duplicateOfId);
+            setMaterialsError(
+              existing
+                ? `"${existing.title}" already contains identical content — nothing was added`
+                : "A file with identical content already exists in this course",
+            );
+            break;
+          }
+          case "failed":
+            // The specific reason (#1791) shows on the settled row in the
+            // materials list, via its failure popover and "Try again" — the
+            // reprocess-based retry (#1749/#1795), not a re-upload of this file.
+            setMaterialsError("Processing failed for this file. Please try again.");
+            break;
+          case "processing":
+            setMaterialsSuccess(
+              "Upload accepted. Processing is taking a while — the list will update when it finishes.",
+            );
+            break;
         }
-        case "failed":
-          setMaterialsError("Processing failed for this file. Please try again.");
-          break;
-        case "processing":
-          setMaterialsSuccess(
-            "Upload accepted. Processing is taking a while — the list will update when it finishes.",
-          );
-          break;
+      } catch (e) {
+        setMaterialsError(e instanceof Error ? e.message : "Upload failed");
+      } finally {
+        setIsUploading(false);
       }
-    } catch (e) {
-      setMaterialsError(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setIsUploading(false);
-    }
-  };
+    },
+    [uploadMaterial, materials],
+  );
 
   return (
     <CoreAppShell

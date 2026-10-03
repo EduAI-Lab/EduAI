@@ -4,6 +4,7 @@ import { cn } from "@eduai/ui";
 import { Alert, AlertDescription } from "@eduai/ui";
 import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck, IconX } from "@tabler/icons-react";
 import { MATERIAL_INPUT_ACCEPT } from "~/lib/materials/accepted-types";
+import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 
 export interface CourseMaterial {
   id: string;
@@ -36,6 +37,8 @@ export interface CourseMaterial {
    * which decides whether indexing can be retried without re-uploading.
    */
   hasExtractedText?: boolean;
+  /** Why a FAILED row failed (#1791); null on rows that predate the column. */
+  failureCode?: MaterialFailureCode | null;
 }
 
 export interface CourseMaterialsUploadProps {
