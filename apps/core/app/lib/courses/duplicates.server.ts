@@ -35,6 +35,11 @@ export function identityWhere(identity: CourseIdentity) {
   };
 }
 
+/** Live rows that hold the identity slot; Canvas rows are outside the partial unique index. */
+export function liveIdentityWhere(identity: CourseIdentity) {
+  return { ...identityWhere(identity), deletedAt: null, externalSource: null };
+}
+
 /** Who may bring a soft-deleted course back: admins, its unit's admins, or one of its active instructors. */
 export async function canRestoreCourse(
   user: RbacUser,

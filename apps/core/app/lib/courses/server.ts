@@ -29,6 +29,7 @@ import {
   canRestoreCourse,
   findDuplicateWarnings,
   identityWhere,
+  liveIdentityWhere,
   type CourseIdentity,
 } from "./duplicates.server";
 import { getCourseInstructors } from "./instructors.server";
@@ -583,7 +584,7 @@ export async function createCourse(request: Request) {
   const user = session.user as RbacUser;
   const identity = result.data;
   const live = await prisma.course.findFirst({
-    where: { ...identityWhere(identity), deletedAt: null },
+    where: liveIdentityWhere(identity),
     select: { name: true },
   });
   if (live) return identityTakenError(identity, live.name);
@@ -684,7 +685,7 @@ async function restoreDeletedCourse(user: RbacUser, data: CreateCourseInput) {
           endDate: data.endDate,
           department: canChangeDepartment ? data.department : undefined,
           description: data.description,
-          isPublished: data.isPublished,
+          // isPublished is left out: the create form never sends it, so the default would unpublish.
           // Empty means "not filled in" on the create form; keep the old instructions.
           aiInstructions: data.aiInstructions || undefined,
           instructorId: data.instructorUserIds[0],
@@ -734,7 +735,7 @@ async function identityTakenOrRethrow(
   identity: CourseIdentity,
 ) {
   const blocking = await prisma.course.findFirst({
-    where: { ...identityWhere(identity), deletedAt: null },
+    where: liveIdentityWhere(identity),
     select: { name: true },
   });
   if (!blocking) throw error;

@@ -145,6 +145,7 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
     await prisma.enrollment.create({
       data: { courseId: first.body.id, userId: studentId, role: "STUDENT", isActive: true },
     });
+    await prisma.course.update({ where: { id: first.body.id }, data: { isPublished: true } });
     await softDelete(first.body.id);
 
     const restored = await createCourseAs(
@@ -163,6 +164,7 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
     });
     expect(row?.deletedAt).toBeNull();
     expect(row?.name).toBe(`Restored ${code}`);
+    expect(row?.isPublished).toBe(true);
     expect(row?.enrollments.map((e) => e.userId).sort()).toEqual([instructorId, studentId].sort());
     expect(await prisma.course.count({ where: { code } })).toBe(1);
   });
@@ -337,6 +339,9 @@ describe("#1842/#1811 — soft-deleted courses and the (code, section, year, ter
       createdCourseIds.push(row.id);
     }
     expect(await prisma.course.count({ where: { code, deletedAt: null } })).toBe(2);
+
+    // The index ignores Canvas rows, so a hand-made course may take the same identity.
+    expect((await createCourseAs(coursePayload(code))).status).toBe(201);
   });
 
   it("declares the slot index as partial on deletedAt so tombstones do not hold it", async () => {
