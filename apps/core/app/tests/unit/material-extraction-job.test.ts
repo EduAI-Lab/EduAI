@@ -24,6 +24,7 @@ vi.mock("~/lib/ai/embedding", () => ({
   // #1791: the job asks whether a dead embedding was transient, to record
   // MATERIAL_EMBED_RATE_LIMITED rather than a flat MATERIAL_EMBED_FAILED.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
+  isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
@@ -49,7 +50,11 @@ vi.mock("~/lib/topics/job.server", () => ({
 }));
 
 import prisma from "~/lib/prisma.server";
-import { isTransientEmbeddingError, processMaterialEmbeddings } from "~/lib/ai/embedding";
+import {
+  isEmbeddingTimeoutError,
+  isTransientEmbeddingError,
+  processMaterialEmbeddings,
+} from "~/lib/ai/embedding";
 import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
 import {
@@ -110,6 +115,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({ failureCode: null } as never);
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
   vi.mocked(isTransientEmbeddingError).mockReturnValue(false);
+  vi.mocked(isEmbeddingTimeoutError).mockReturnValue(false);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
     bytes: Buffer.from("hello"),
@@ -859,6 +865,14 @@ describe("resolveFailureCode", () => {
     );
   });
 
+  it("reports a timed-out provider as unavailable, not rate-limited", () => {
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(isEmbeddingTimeoutError).mockReturnValue(true);
+    expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("timed out"))).toBe(
+      "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
+    );
+  });
+
   it("passes the stage code through when nothing refines it", () => {
     expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("boom"))).toBe(
       "MATERIAL_EMBED_FAILED",
@@ -875,6 +889,7 @@ describe("resolveFailureCode", () => {
     // A transient *extraction* error is not an embedding rate limit: the
     // refinement is scoped to the stage that produced the failure.
     vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(isEmbeddingTimeoutError).mockReturnValue(true);
     expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new Error("429"))).toBe(
       "MATERIAL_EXTRACT_FAILED",
     );

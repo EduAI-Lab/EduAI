@@ -78,6 +78,11 @@ const FAILURE_CODE_TEXT = {
     description:
       "The AI service is rate-limiting requests right now, so this file's search data couldn't be built. The file itself is fine — try again in a few minutes.",
   },
+  MATERIAL_EMBED_PROVIDER_UNAVAILABLE: {
+    title: "AI service unavailable while indexing",
+    description:
+      "The AI service didn't respond, so this file's search data couldn't be built. The file itself is fine — try again later, and contact your administrator if it keeps happening.",
+  },
 } satisfies Record<MaterialFailureCode, { title: string; description: string }>;
 
 /**

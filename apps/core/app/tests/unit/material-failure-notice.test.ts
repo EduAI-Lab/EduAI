@@ -171,6 +171,17 @@ describe("describeMaterialFailure — failureCode refines the message", () => {
     expect(notice?.canRetry).toBe(true);
   });
 
+  it("uses the provider-unavailable code's wording, without blaming a rate limit", () => {
+    const notice = describeMaterialFailure({
+      ...failedIndexing,
+      failureCode: "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
+    });
+
+    expect(notice?.description).toMatch(/didn't respond/i);
+    expect(notice?.description).not.toMatch(/rate-limit/i);
+    expect(notice?.canRetry).toBe(true);
+  });
+
   it("falls back to the generic shape-derived message when failureCode is null", () => {
     // A row that failed before the column existed (#1794).
     const notice = describeMaterialFailure({ ...failedIndexing, failureCode: null });

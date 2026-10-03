@@ -1064,10 +1064,13 @@ enum MaterialFailureCode {
   MATERIAL_EXTRACT_BUSY
   MATERIAL_EXTRACT_ABANDONED
   MATERIAL_EMBED_FAILED
-  /// The embedding provider kept answering 429/503 (or timing out) until the
-  /// retry budget ran out. Transient and worth retrying later, which is the one
-  /// thing the old generic message could not tell anyone.
+  /// The embedding provider kept answering 429/503 until the retry budget ran
+  /// out. Transient and worth retrying later, which is the one thing the old
+  /// generic message could not tell anyone.
   MATERIAL_EMBED_RATE_LIMITED
+  /// The embedding provider kept timing out — unreachable or stalled, not
+  /// throttling. Distinct from a rate limit so a down local model isn't misreported.
+  MATERIAL_EMBED_PROVIDER_UNAVAILABLE
 }
 
 /// How a duplicate receipt's upload was resolved (#1791). `duplicateOfId` alone
