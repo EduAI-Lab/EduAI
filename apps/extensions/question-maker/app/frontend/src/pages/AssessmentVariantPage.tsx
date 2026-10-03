@@ -471,7 +471,11 @@ export function AssessmentVariantPage() {
       // The backend classifies each failure now (#1763), so name the distinct causes
       // instead of sending the instructor to the browser console — which was never
       // something they would open, and said nothing useful when they did.
-      const causes = [...new Set((result.errors ?? []).map((e) => e.error).filter(Boolean))];
+      // Some backend messages lack a trailing period, so end each one before joining —
+      // otherwise causes run together ("Variant generation failed MCQ variant missing choices").
+      const causes = [...new Set((result.errors ?? []).map((e) => e.error).filter(Boolean))].map(
+        (cause) => (/[.!?]$/.test(cause) ? cause : `${cause}.`),
+      );
       const causeText =
         causes.slice(0, 3).join(" ") + (causes.length > 3 ? ` +${causes.length - 3} more.` : "");
 

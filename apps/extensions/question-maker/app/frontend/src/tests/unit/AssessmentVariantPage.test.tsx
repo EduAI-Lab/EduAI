@@ -442,6 +442,21 @@ describe("AssessmentVariantPage — generate step", () => {
     expect(description.match(/Check the API key\./g)).toHaveLength(1);
   });
 
+  it("ends each cause with a period so joined causes do not run together", async () => {
+    assessmentVariantService.generateBankVariants.mockResolvedValue({
+      results: [],
+      errors: [
+        { questionId: 1, code: "VARIANT_GENERATION_FAILED", error: "Variant generation failed" },
+        { questionId: 2, code: "VARIANT_GENERATION_FAILED", error: "MCQ variant missing choices" },
+      ],
+    });
+    await goToGenerateStep();
+    fireEvent.click(screen.getByRole("button", { name: /generate for all questions/i }));
+    await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
+    const description = toastFn.error.mock.calls.at(-1)[1].description as string;
+    expect(description).toContain("Variant generation failed. MCQ variant missing choices.");
+  });
+
   it("names the cause when only some attempts failed (#1763)", async () => {
     assessmentVariantService.generateBankVariants.mockResolvedValue({
       results: [{ createdVariantIds: [1], createdVariants: [{}] }],
