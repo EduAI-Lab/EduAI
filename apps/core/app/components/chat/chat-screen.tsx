@@ -698,6 +698,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         setChatId(null);
         setSystemPrompt(null);
         setMessages([]);
+        setDismissedError(chatRequestError);
         setInput("");
         setSelectedCourseId(action.courseId);
         setRoutedModelByMessageId({});
@@ -716,6 +717,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       persistPreference,
       selectedCourseId,
       availableCourses,
+      chatRequestError,
       setInput,
       setMessages,
       stopActiveChatRequest,
@@ -813,8 +815,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // New chat = a clean /chat route (no transcript, no restore).
   const handleNewChat = useCallback(() => {
     stopActiveChatRequest();
+    setDismissedError(chatRequestError);
     navigate("/chat");
-  }, [navigate, stopActiveChatRequest]);
+  }, [chatRequestError, navigate, stopActiveChatRequest]);
 
   const historyListProps = {
     chats,
@@ -919,13 +922,26 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // Derived from the SDK's `error` rather than latched in `onError`, so the
   // AI SDK's own reset — it clears `error` the moment the next request starts
   // — also clears the banner, on a retry and on a fresh submit alike.
-  const chatError = useMemo(() => describeStudentChatError(chatRequestError), [chatRequestError]);
+  // The SDK only clears `error` when the next request starts, so a course
+  // switch or New chat (setMessages([]), no remount) would keep showing the
+  // old failure on a fresh chat. Remember which error was dismissed and hide
+  // that instance only; a later failure is a new Error and shows normally.
+  const [dismissedError, setDismissedError] = useState<Error | undefined>(undefined);
+  const chatError = useMemo(
+    () =>
+      describeStudentChatError(chatRequestError === dismissedError ? undefined : chatRequestError),
+    [chatRequestError, dismissedError],
+  );
 
   // Re-send the failed turn from the transcript the SDK still holds, so the
   // student doesn't have to retype a question that was never answered.
   const handleRetryChat = useCallback(() => {
     void reload();
   }, [reload]);
+  // Nothing to re-send on an empty transcript, and a rate-limit would only hit
+  // the limiter again.
+  const canRetryChat =
+    chatError !== null && messages.length > 0 && chatError?.kind !== "rate-limit";
 
   const sharedViewProps = {
     chatModels,
@@ -963,7 +979,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssistByMessageId,
     streamingAdhdAssist,
     chatError,
-    onRetryChat: handleRetryChat,
+    onRetryChat: canRetryChat ? handleRetryChat : undefined,
   };
 
   return (

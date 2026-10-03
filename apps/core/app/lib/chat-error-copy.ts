@@ -70,34 +70,57 @@ function parseRejectionBody(message: string): ChatRejectionBody {
   return chatRejectionBodySchema.parse(parsed);
 }
 
-/** "in 42 seconds" when the server told us how long, "in a moment" when it didn't. */
+/**
+ * "42 seconds" / "5 minutes" / "14 hours" when the server told us how long,
+ * "a moment" when it didn't. The caller supplies any leading "in". Waits come
+ * from the burst limiter (seconds) and the daily local-model cap (up to 24h),
+ * so a raw second count would read as a bug.
+ */
 function waitPhrase(seconds: number | undefined): string {
-  return seconds === undefined ? "a moment" : `${seconds} seconds`;
+  if (seconds === undefined) return "a moment";
+  if (seconds < 120) return `${seconds} seconds`;
+  if (seconds < 7200) return `${Math.ceil(seconds / 60)} minutes`;
+  return `${Math.ceil(seconds / 3600)} hours`;
 }
 
+/** Past this, the limit is an allowance the student used up, not a burst. */
+const BURST_WINDOW_SECONDS = 60;
+
 function describeRateLimit(body: ChatRejectionBody): ChatErrorNotice | null {
-  if (body.error === "RATE_LIMITED" || body.code === "RATE_LIMIT_EXCEEDED") {
+  if (body.error === "RATE_LIMITED") {
+    if (body.retryAfter !== undefined && body.retryAfter > BURST_WINDOW_SECONDS) {
+      return {
+        kind: "rate-limit",
+        title: "You've reached your usage limit",
+        description: `You can ask again in ${waitPhrase(body.retryAfter)}.`,
+      };
+    }
     return {
       kind: "rate-limit",
       title: "You're sending messages too quickly",
       description:
         body.retryAfter === undefined
           ? "Wait a moment and try again."
-          : `Wait ${body.retryAfter} seconds and try again.`,
+          : `Wait ${waitPhrase(body.retryAfter)} and try again.`,
     };
   }
-  if (body.retryAfterSeconds !== undefined) {
+  const busyWait = body.retryAfterSeconds ?? body.retryAfter;
+  if (body.retryAfterSeconds !== undefined || body.code === "AI_ADMISSION_TIMEOUT") {
     return {
       kind: "rate-limit",
       title: "EduAI is busy right now",
-      description: `A lot of people are asking questions. Try again in ${waitPhrase(body.retryAfterSeconds)}.`,
+      description: `A lot of people are asking questions. Try again in ${waitPhrase(busyWait)}.`,
     };
   }
   return null;
 }
 
+/** A machine code (`INTERNAL_ERROR`), not a sentence a student can read. */
+const MACHINE_CODE = /^[A-Z][A-Z0-9_]+$/u;
+
 function isProviderDown(body: ChatRejectionBody): boolean {
   if (body.code !== undefined && PROVIDER_DOWN_CODES.has(body.code)) return true;
+  if (body.error === "SERVICE_UNAVAILABLE") return true;
   return body.error !== undefined && UNCODED_PROVIDER_UNAVAILABLE.test(body.error);
 }
 
@@ -154,9 +177,12 @@ export function describeStudentChatError(error: Error | undefined): ChatErrorNot
     };
   }
 
+  // `error` is a sentence for some rejections and a machine code for others;
+  // a body that was not JSON at all (a proxy's HTML 504 page) is never shown.
   return {
     kind: "generic",
     title: "Couldn't get a response",
-    description: body.error ?? (error.message.trim() || GENERIC_FALLBACK),
+    description:
+      body.error !== undefined && !MACHINE_CODE.test(body.error) ? body.error : GENERIC_FALLBACK,
   };
 }

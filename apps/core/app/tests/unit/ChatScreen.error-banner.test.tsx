@@ -17,7 +17,10 @@ import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const capturedUseChatOptions = vi.hoisted(() => ({
-  current: null as { onError?: (error: Error) => void } | null,
+  current: null as {
+    onError?: (error: Error) => void;
+    onResponse?: (response: Response) => void | Promise<void>;
+  } | null,
 }));
 const chatState = vi.hoisted(() => ({ error: undefined as Error | undefined }));
 const { reloadMock, toastErrorMock } = vi.hoisted(() => ({
@@ -55,13 +58,21 @@ vi.mock("~/lib/assistive-events.client", () => ({
 
 vi.mock("~/hooks/api/use-courses", () => ({
   useCourses: () => ({
-    courses: [{ id: "c1", code: "COSC 101", name: "Intro to CS" }],
+    courses: [
+      { id: "c1", code: "COSC 101", name: "Intro to CS" },
+      { id: "c2", code: "COSC 202", name: "Data Structures" },
+    ],
     loading: false,
   }),
 }));
 
 vi.mock("~/hooks/api/use-chat-history", () => ({
-  useChatHistory: () => ({ chats: [], isLoading: false, error: null, refresh: vi.fn() }),
+  useChatHistory: () => ({
+    chats: [],
+    isLoading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock("~/hooks/use-api-keys", () => ({
@@ -85,7 +96,12 @@ vi.mock("~/components/chat/chat-course-scoped-view", () => ({
 
 const baseData: ChatBaseData = {
   chatModels: [
-    { id: "openai:gpt-4", name: "GPT-4", description: "Test model", provider: "openai" },
+    {
+      id: "openai:gpt-4",
+      name: "GPT-4",
+      description: "Test model",
+      provider: "openai",
+    },
   ],
   assistModelId: null,
   routerAutoEnabled: false,
@@ -204,12 +220,38 @@ describe("ChatScreen — surfacing /api/chat failures (#1510)", () => {
   });
 
   it("wires Try again to the SDK's reload so the student need not retype the question", () => {
-    chatState.error = rejectionError({ error: "RATE_LIMITED" });
+    chatState.error = rejectionError({ error: "x", code: "LLM_STREAM_FAILED" });
 
     renderChatScreen();
     latestViewProps().onRetryChat?.();
 
     expect(reloadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no Try again for a rate-limit notice, since retrying hits the limiter again", () => {
+    chatState.error = rejectionError({ error: "RATE_LIMITED", retryAfter: 30 });
+
+    renderChatScreen();
+
+    expect(latestViewProps().chatError?.kind).toBe("rate-limit");
+    expect(latestViewProps().onRetryChat).toBeUndefined();
+  });
+
+  it("drops the old banner when a course switch starts a fresh chat", async () => {
+    chatState.error = rejectionError({ error: "x", code: "LLM_STREAM_FAILED" });
+    renderChatScreen();
+    expect(latestViewProps().chatError?.kind).toBe("provider-down");
+
+    await act(async () => {
+      await capturedUseChatOptions.current?.onResponse?.(
+        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
+      );
+    });
+    act(() => {
+      latestViewProps().setSelectedCourseId("c2");
+    });
+
+    expect(latestViewProps().chatError).toBeNull();
   });
 
   it("does not also fire a toast, so one failure produces one notice", async () => {

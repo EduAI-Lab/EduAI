@@ -82,6 +82,49 @@ describe("describeStudentChatError — rate limit", () => {
   });
 });
 
+describe("describeStudentChatError — long and non-burst waits", () => {
+  it("words a daily-cap wait as hours, never raw seconds", () => {
+    const notice = describeStudentChatError(
+      rejectionError({ error: "RATE_LIMITED", retryAfter: 52311 }),
+    );
+
+    expect(notice?.kind).toBe("rate-limit");
+    expect(notice?.description).not.toMatch(/52311/);
+    expect(notice?.description).toMatch(/15 hours/);
+  });
+
+  it("words a multi-minute wait as minutes", () => {
+    const notice = describeStudentChatError(
+      rejectionError({ error: "RATE_LIMITED", retryAfter: 300 }),
+    );
+
+    expect(notice?.description).toMatch(/5 minutes/);
+  });
+
+  it("does not blame a daily cap on sending too quickly", () => {
+    const notice = describeStudentChatError(
+      rejectionError({ error: "RATE_LIMITED", retryAfter: 52311 }),
+    );
+
+    expect(notice?.title).not.toMatch(/too quickly/i);
+    expect(notice?.title).toMatch(/limit/i);
+  });
+
+  it("classifies the admission-timeout 503 as busy and uses its retryAfter", () => {
+    const notice = describeStudentChatError(
+      rejectionError({
+        error: "Server busy — too many concurrent AI requests. Try again shortly.",
+        code: "AI_ADMISSION_TIMEOUT",
+        retryAfter: 7,
+      }),
+    );
+
+    expect(notice?.kind).toBe("rate-limit");
+    expect(notice?.title).toBe("EduAI is busy right now");
+    expect(notice?.description).toMatch(/7 seconds/);
+  });
+});
+
 describe("describeStudentChatError — provider down", () => {
   const providerCodes = [
     "LLM_STREAM_FAILED",
@@ -106,7 +149,10 @@ describe("describeStudentChatError — provider down", () => {
 
   it("tells the student it is not their question that failed", () => {
     const notice = describeStudentChatError(
-      rejectionError({ error: "LLM stream failed: fetch failed.", code: "LLM_STREAM_FAILED" }),
+      rejectionError({
+        error: "LLM stream failed: fetch failed.",
+        code: "LLM_STREAM_FAILED",
+      }),
     );
 
     expect(notice?.description).toMatch(/not (a problem )?with your question/i);
@@ -114,7 +160,10 @@ describe("describeStudentChatError — provider down", () => {
 
   it("hides the raw provider diagnostic from the student", () => {
     const notice = describeStudentChatError(
-      rejectionError({ error: "LLM stream failed: fetch failed.", code: "LLM_STREAM_FAILED" }),
+      rejectionError({
+        error: "LLM stream failed: fetch failed.",
+        code: "LLM_STREAM_FAILED",
+      }),
     );
 
     expect(notice?.description).not.toMatch(/fetch failed/);
@@ -156,7 +205,10 @@ describe("describeStudentChatError — network", () => {
     // words "fetch failed", so a message-substring check that ran before the
     // JSON parse would misfile every provider outage as the student's wifi.
     const notice = describeStudentChatError(
-      rejectionError({ error: "LLM stream failed: fetch failed.", code: "LLM_STREAM_FAILED" }),
+      rejectionError({
+        error: "LLM stream failed: fetch failed.",
+        code: "LLM_STREAM_FAILED",
+      }),
     );
 
     expect(notice?.kind).toBe("provider-down");
@@ -177,11 +229,28 @@ describe("describeStudentChatError — generic fallback", () => {
     expect(notice?.description).toBe("Select a course before asking a question.");
   });
 
-  it("falls back to a non-JSON error message rather than showing nothing", () => {
-    const notice = describeStudentChatError(new Error("Internal Server Error"));
+  it("never prints a non-JSON body such as a proxy's HTML error page", () => {
+    const notice = describeStudentChatError(
+      new Error("<html><head><title>504 Gateway Time-out</title></head></html>"),
+    );
 
     expect(notice?.kind).toBe("generic");
-    expect(notice?.description).toBe("Internal Server Error");
+    expect(notice?.description).not.toMatch(/<html>|504/);
+    expect(notice?.description).toMatch(/try again/i);
+  });
+
+  it("never prints a machine code such as INTERNAL_ERROR", () => {
+    const notice = describeStudentChatError(rejectionError({ error: "INTERNAL_ERROR" }));
+
+    expect(notice?.kind).toBe("generic");
+    expect(notice?.description).not.toMatch(/INTERNAL_ERROR/);
+    expect(notice?.description).toMatch(/try again/i);
+  });
+
+  it("classifies SERVICE_UNAVAILABLE as provider-down", () => {
+    const notice = describeStudentChatError(rejectionError({ error: "SERVICE_UNAVAILABLE" }));
+
+    expect(notice?.kind).toBe("provider-down");
   });
 
   it("still produces a notice when the error carries no message at all", () => {
