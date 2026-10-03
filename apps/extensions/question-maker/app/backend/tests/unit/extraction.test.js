@@ -146,6 +146,11 @@ describe("questionTextDedupeKey", () => {
     expect(key).toBe("a".repeat(150));
   });
 
+  it("compares the full text when maxLength is Infinity", () => {
+    const text = "a".repeat(200);
+    expect(questionTextDedupeKey(text, { maxLength: Infinity })).toBe(text);
+  });
+
   it("returns an empty key for a missing or non-string text", () => {
     expect(questionTextDedupeKey(null)).toBe("");
     expect(questionTextDedupeKey(42)).toBe("");

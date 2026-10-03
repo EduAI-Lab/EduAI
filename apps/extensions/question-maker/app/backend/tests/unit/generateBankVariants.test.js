@@ -479,6 +479,24 @@ describe("generateBankVariantsForQuestions — duplicate blocking (#1763)", () =
     expect(mockGenerateQuestions).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts a long stem that differs from an existing variant only after 150 characters", async () => {
+    const stem = `${"A firm invests in a project with steady annual cash flows. ".repeat(4)}What is the NPV`;
+    expect(stem.length).toBeGreaterThan(150);
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
+    mockVariantFindMany.mockResolvedValueOnce([existing(10, `${stem} if the rate is 5%?`)]);
+    mockGenerateQuestions.mockResolvedValueOnce(
+      makeGeneratedQuestion({ content: `${stem} if the rate is 7%?` }),
+    );
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(1);
+    expect(mockVariantCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ questionText: `${stem} if the rate is 7%?` }),
+    });
+    expect(errors).toHaveLength(0);
+  });
+
   it("reports a duplicate without inserting when the retry duplicates as well", async () => {
     mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [makePrimaryVariant()] })]);
     mockVariantFindMany.mockResolvedValueOnce([existing(10, "New variant text")]);

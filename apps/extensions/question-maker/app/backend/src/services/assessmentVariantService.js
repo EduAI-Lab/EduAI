@@ -43,6 +43,14 @@ function publicAdmissionError(validation) {
   return error;
 }
 
+/**
+ * Full-text dedupe key for bank variants (#1763). Extraction's 150-char prefix would treat a
+ * variant that changes only a value late in a long stem as a copy of the original.
+ */
+function variantTextDedupeKey(text) {
+  return questionTextDedupeKey(text, { maxLength: Infinity });
+}
+
 function shouldStopAiFanout(error) {
   return Number(error?.statusCode ?? error?.status) === 429 || isQmAiDeadlineError(error);
 }
@@ -931,7 +939,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
     });
     for (const row of existingVariants) {
       const keys = variantKeysByQuestion.get(row.questionMetadataId) ?? new Set();
-      keys.add(questionTextDedupeKey(row.questionText));
+      keys.add(variantTextDedupeKey(row.questionText));
       variantKeysByQuestion.set(row.questionMetadataId, keys);
     }
   }
@@ -1090,11 +1098,11 @@ Return exactly one question in the required JSON format.`;
         // A duplicate costs one more provider call, then gives up: the admission budget
         // reserves four calls per variant and an attempt uses at most two, so the retry
         // always fits. Reported rather than inserted, so the bank never gains a copy.
-        if (existingKeys.has(questionTextDedupeKey(attempt.questionText))) {
+        if (existingKeys.has(variantTextDedupeKey(attempt.questionText))) {
           const dedupeRepair = `\n\nCRITICAL FIX: Your last reply duplicated a variant this question already has. Write a genuinely different item — change the scenario, the values and the wording — while keeping the same learning objective and approximate difficulty.`;
           attempt = await generateOneVariant(baseVariantPrompt + dedupeRepair);
 
-          if (existingKeys.has(questionTextDedupeKey(attempt.questionText))) {
+          if (existingKeys.has(variantTextDedupeKey(attempt.questionText))) {
             errors.push({
               questionId: qid,
               iteration: n + 1,
@@ -1131,7 +1139,7 @@ Return exactly one question in the required JSON format.`;
           },
         });
 
-        existingKeys.add(questionTextDedupeKey(variantText));
+        existingKeys.add(variantTextDedupeKey(variantText));
         createdVariantIds.push(v.id);
         // Return the full variant payload so the UI can show generated questions
         // for review without a round-trip to the question bank.
