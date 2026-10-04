@@ -343,8 +343,10 @@ export default function App({ loaderData }: Route.ComponentProps) {
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   // An unmatched URL lands here; it gets the same 404 page as a missing or
-  // forbidden record (see RouteErrorState), just without the app shell.
-  if (isRouteErrorResponse(error) && error.status === 404) {
+  // forbidden record (see RouteErrorState), just without the app shell. A 403
+  // gets it too, as in AI Tutor's root, so a forbidden page never reads as
+  // one that exists.
+  if (isRouteErrorResponse(error) && (error.status === 404 || error.status === 403)) {
     return <NotFoundState standalone LinkComponent={Link} />;
   }
 

@@ -2,7 +2,8 @@
  * @file Core's route boundary around the shared `@eduai/ui` 404 (whose own copy
  * and layout are tested in packages/ui). A 404 thrown
  * through `notFound(user)` renders inside the app shell; a bare 404 (no viewer
- * attached) renders standalone; any other error is a load failure, not a 404.
+ * attached) renders standalone, as does a 403; any other error is a load
+ * failure, not a 404.
  */
 import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, data, RouterProvider } from "react-router";
@@ -60,6 +61,13 @@ describe("RouteErrorState", () => {
     expect(await screen.findByText(TITLE)).toBeInTheDocument();
     expect(screen.queryByTestId("core-app-shell")).toBeNull();
     expect(screen.getByRole("main")).toBeInTheDocument();
+  });
+
+  it("renders a 403 as the same standalone 404, so forbidden is never told apart from missing", async () => {
+    renderThrowing(new Response(null, { status: 403 }));
+
+    expect(await screen.findByText(TITLE)).toBeInTheDocument();
+    expect(screen.queryByText("This page could not be loaded")).toBeNull();
   });
 
   it("does not dress a real failure up as a 404", async () => {
