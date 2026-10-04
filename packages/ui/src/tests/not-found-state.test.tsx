@@ -42,10 +42,21 @@ describe("NotFoundState", () => {
     expect(screen.queryByRole("main")).toBeNull();
   });
 
-  it("routes the way back through the app's own link component", () => {
-    function RouterLink({ to, children, ...rest }: { to: string; children: React.ReactNode }) {
+  it("gives the default <a> an href and no stray router `to`", () => {
+    render(<NotFoundState homeHref="/home" />);
+
+    const link = screen.getByRole("link", { name: /go to dashboard/i });
+    expect(link).toHaveAttribute("href", "/home");
+    expect(link).not.toHaveAttribute("to");
+  });
+
+  it("routes the way back through the app's own link component, passing only `to`", () => {
+    const received: object[] = [];
+    function RouterLink(props: { to: string; children: React.ReactNode }) {
+      received.push(props);
+      const { to, children, ...rest } = props;
       return (
-        <a data-router-link={to} {...rest}>
+        <a data-router-link={to} href={to} {...rest}>
           {children}
         </a>
       );
@@ -55,6 +66,6 @@ describe("NotFoundState", () => {
 
     const link = screen.getByRole("link", { name: /go to dashboard/i });
     expect(link).toHaveAttribute("data-router-link", "/home");
-    expect(link).toHaveAttribute("href", "/home");
+    expect(received.every((props) => !("href" in props))).toBe(true);
   });
 });

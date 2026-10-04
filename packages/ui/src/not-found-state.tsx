@@ -37,6 +37,9 @@ export function NotFoundState({
   homeHref = "/dashboard",
   LinkComponent = "a",
 }: NotFoundStateProps) {
+  // A plain <a> takes `href`; a router link takes `to` and renders the href
+  // itself. Passing both leaks a stray attribute into one or the other.
+  const linkProps = LinkComponent === "a" ? { href: homeHref } : { to: homeHref };
   const body = (
     <Card>
       <EmptyState
@@ -45,7 +48,7 @@ export function NotFoundState({
         description="This page doesn't exist, or you don't have access to it. Check the link and try again."
         action={
           <Button asChild variant="outline">
-            <LinkComponent to={homeHref} href={homeHref}>
+            <LinkComponent {...linkProps}>
               <IconArrowLeft className="size-4" aria-hidden="true" />
               Go to dashboard
             </LinkComponent>
