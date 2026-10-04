@@ -48,7 +48,10 @@ type BugReportDialogProps = {
   onOpenChange: (open: boolean) => void;
   /** Called on submit. Throw to surface an inline error; resolve to close the dialog. */
   onSubmit: (data: BugReportSubmitData) => Promise<void>;
-  /** If provided, called only after the user opts in to diagnostic attachments. */
+  /**
+   * If provided, called only after the user opts in to diagnostic attachments,
+   * and again on submit to wait for that shot, so repeat calls must reuse it.
+   */
   captureScreenshot?: () => Promise<string | null>;
   /** If provided, the user may explicitly opt in to diagnostic attachments. */
   getCapturedData?: () => { consoleLogs: string; networkLogs: string; screenshot: string | null };
@@ -122,6 +125,9 @@ export function BugReportDialog({
         isAnonymous,
       };
       if (includeDiagnostics && getCapturedData) {
+        // The toggle only starts the screenshot; a reporter who submits right
+        // after opting in would otherwise send the logs without it.
+        await captureScreenshot?.();
         const captured = getCapturedData();
         data.consoleLogs = captured.consoleLogs;
         data.networkLogs = captured.networkLogs;

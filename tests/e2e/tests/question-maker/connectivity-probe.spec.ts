@@ -39,11 +39,24 @@ test.describe("Question Maker connectivity probe (course-free, #1109)", () => {
 
     const res = await request.post(`${QM_BACKEND_URL}/api/eduai/test-api-key`, { data: {} });
 
-    // 200 = provider reachable; 400 = provider unreachable (the E2E
-    // environment has no local vLLM/cloud provider). Both are valid probe
-    // outcomes — the probe must never be rejected by a course gate.
-    expect([200, 400]).toContain(res.status());
+    // 200 = provider reachable; 400 = provider unreachable; 504 = the probe's
+    // AI deadline expired waiting on the provider. E2E has no local vLLM/cloud
+    // provider, and since #1806 activated the probe model (qwen3.5-2b) Core
+    // really attempts the vLLM call instead of rejecting it as inactive, so the
+    // deadline path is now the usual outcome. All are valid probe outcomes —
+    // the probe must never be rejected by a course gate or an auth failure.
+    expect([200, 400, 504]).toContain(res.status());
     const body = await res.json();
+
+    if (res.status() === 504) {
+      // The route's stable deadline contract (sendStableAiFailure). It carries
+      // no provider, but reaching it proves the request passed both auth gates
+      // and got as far as the provider call — no course gate involved.
+      expect(body.success).toBe(false);
+      expect(body.code).toBe("QM_AI_OPERATION_DEADLINE");
+      expect(String(body.error ?? "").toLowerCase()).not.toContain("course");
+      return;
+    }
 
     // The probe always resolves a provider path (never resolves course access).
     expect(body.provider).toEqual(expect.any(String));

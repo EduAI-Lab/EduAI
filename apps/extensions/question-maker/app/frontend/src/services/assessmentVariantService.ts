@@ -69,7 +69,8 @@ export interface GenerateBankVariantsResult {
     createdVariantIds: number[];
     createdVariants: GeneratedVariantPreview[];
   }>;
-  errors: Array<{ questionId: number; iteration?: number; error: string }>;
+  /** `code` classifies the cause (#1763) — PROVIDER_AUTH, VARIANT_DUPLICATE, … Absent on older builds. */
+  errors: Array<{ questionId: number; iteration?: number; error: string; code?: string }>;
   courseId: number;
 }
 

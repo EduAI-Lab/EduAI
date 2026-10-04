@@ -541,8 +541,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed after retry`, {
               attemptCount: 2,
             });
-            throw new Error(
-              "Could not parse response from EduAI (expected a JSON array of questions)",
+            // Tagged so the caller can tell "the model replied with junk" apart from a
+            // transport failure; the re-wrap below carries `reasonCode` through (#1763).
+            throw Object.assign(
+              new Error("Could not parse response from EduAI (expected a JSON array of questions)"),
+              { reasonCode: "PROVIDER_MALFORMED_JSON" },
             );
           }
         }
@@ -781,14 +784,16 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       stableError.name = "EduAIQuestionGenerationError";
       const statusCode = error?.statusCode;
       if (Number.isInteger(statusCode)) stableError.statusCode = statusCode;
-      // Carry the "the caller's own provider key was refused" marker across the
-      // re-wrap. Dropping it is what made a live key rejection indistinguishable
-      // from a generic fault at the route, so the route answered 500 and the
-      // browser never invalidated its cached verdict. It is a fixed enum value,
-      // never upstream text, so nothing leaks with it.
-      if (error?.reasonCode === "PROVIDER_API_KEY_REQUIRED") {
-        stableError.reasonCode = error.reasonCode;
-      }
+      // The message stays deliberately generic (it can quote a provider body), but the
+      // classification `toStableUpstreamError` already computed must survive: without it
+      // every caller sees one opaque failure and cannot tell auth from a timeout (#1763).
+      // That includes the "the caller's own provider key was refused" marker — dropping it
+      // made a live key rejection look like a generic fault, so the route answered 500 and
+      // the browser never invalidated its cached verdict. These fields are allowlisted
+      // values, never response bodies.
+      if (typeof error?.transportCode === "string") stableError.transportCode = error.transportCode;
+      if (typeof error?.reasonCode === "string") stableError.reasonCode = error.reasonCode;
+      if (typeof error?.correlationId === "string") stableError.correlationId = error.correlationId;
       throw stableError;
     }
   }

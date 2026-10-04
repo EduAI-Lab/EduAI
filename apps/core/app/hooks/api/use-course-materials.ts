@@ -64,6 +64,24 @@ const UPLOAD_POLL_TIMEOUT_MS = 5 * 60 * 1000;
  */
 const BACKGROUND_REFRESH_INTERVAL_MS = 30 * 1000;
 
+/**
+ * `row` as read by request `seq`, unless a later read already wrote a newer copy
+ * (#1748 review). A batch runs several uploads at once, each polling, so list
+ * reads resolve out of order; without this an older response could put a row
+ * the user just saw settle back into PROCESSING. `seen` maps row id to the
+ * newest read that wrote it.
+ */
+function pickNewer(
+  seen: Map<string, number>,
+  seq: number,
+  row: CourseMaterial,
+  current: CourseMaterial | undefined,
+): CourseMaterial {
+  if (current && (seen.get(row.id) ?? 0) > seq) return current;
+  seen.set(row.id, seq);
+  return row;
+}
+
 /** Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch. */
 export function useCourseMaterials(courseId: string) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
@@ -71,6 +89,20 @@ export function useCourseMaterials(courseId: string) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+  // The course this hook currently serves (#1748 review). The course page is
+  // not remounted when the switcher moves between courses, so an upload or
+  // poll started for the previous course can resolve after `courseId` changes;
+  // its results must not land in the new course's list.
+  const courseIdRef = useRef(courseId);
+  useEffect(() => {
+    courseIdRef.current = courseId;
+  }, [courseId]);
+
+  // Every list read takes a number when it is sent; see `pickNewer`.
+  const readSeqRef = useRef(0);
+  const rowSeqRef = useRef(new Map<string, number>());
+  const lastFullReadRef = useRef(0);
 
   const fetchPage = useCallback(
     async (cursor: string | null) => {
@@ -99,16 +131,25 @@ export function useCourseMaterials(courseId: string) {
 
   const fetchMaterials = useCallback(async () => {
     if (!courseId) return;
+    const seq = ++readSeqRef.current;
+    lastFullReadRef.current = seq;
+    // A newer full read, or a different course, owns the list now.
+    const superseded = () => lastFullReadRef.current !== seq || courseIdRef.current !== courseId;
     setLoading(true);
     setError(null);
     try {
       const data = await fetchPage(null);
-      setMaterials(data.materials);
+      if (superseded()) return;
+      setMaterials((prev) => {
+        const current = new Map(prev.map((m) => [m.id, m]));
+        return data.materials.map((m) => pickNewer(rowSeqRef.current, seq, m, current.get(m.id)));
+      });
       setNextCursor(data.nextCursor);
     } catch (e) {
+      if (superseded()) return;
       setError(e instanceof Error ? e.message : "Failed to fetch materials");
     } finally {
-      setLoading(false);
+      if (!superseded()) setLoading(false);
     }
   }, [courseId, fetchPage]);
 
@@ -117,14 +158,16 @@ export function useCourseMaterials(courseId: string) {
     setLoadingMore(true);
     try {
       const data = await fetchPage(nextCursor);
+      if (courseIdRef.current !== courseId) return;
       setMaterials((prev) => [...prev, ...data.materials]);
       setNextCursor(data.nextCursor);
     } catch (e) {
+      if (courseIdRef.current !== courseId) return;
       setError(e instanceof Error ? e.message : "Failed to load more materials");
     } finally {
       setLoadingMore(false);
     }
-  }, [fetchPage, nextCursor, loadingMore]);
+  }, [courseId, fetchPage, nextCursor, loadingMore]);
 
   useEffect(() => {
     fetchMaterials();
@@ -165,6 +208,10 @@ export function useCourseMaterials(courseId: string) {
         method: "POST",
       });
       if (!res.ok) throw new Error(await res.text());
+      if (courseIdRef.current !== courseId) return;
+      // Newer than any read still in flight, which would otherwise put the
+      // row back to FAILED.
+      rowSeqRef.current.set(materialId, ++readSeqRef.current);
       setMaterials((prev) =>
         prev.map((m) =>
           m.id === materialId
@@ -183,15 +230,21 @@ export function useCourseMaterials(courseId: string) {
   );
 
   /**
-   * Merge one freshly-read row into local state without clobbering pages the
-   * user already loaded via `loadMore` — a poll only re-reads page 1.
+   * Merge one freshly-read row (read by request `seq`) into local state without
+   * clobbering pages the user already loaded via `loadMore` — a poll only
+   * re-reads page 1. Dropped once the hook has moved on to another course.
    */
-  const mergeMaterial = useCallback((row: CourseMaterial) => {
-    setMaterials((prev) =>
-      prev.some((m) => m.id === row.id)
-        ? prev.map((m) => (m.id === row.id ? row : m))
-        : [row, ...prev],
-    );
+  const mergeMaterial = useCallback((seq: number, row: CourseMaterial) => {
+    if (row.courseId !== courseIdRef.current) return;
+    setMaterials((prev) => {
+      const current = prev.find((m) => m.id === row.id);
+      if (!current) {
+        rowSeqRef.current.set(row.id, seq);
+        return [row, ...prev];
+      }
+      const next = pickNewer(rowSeqRef.current, seq, row, current);
+      return next === current ? prev : prev.map((m) => (m.id === row.id ? next : m));
+    });
   }, []);
 
   /**
@@ -203,13 +256,19 @@ export function useCourseMaterials(courseId: string) {
    * a list the user can already see.
    */
   const refreshFirstPage = useCallback(async (): Promise<Set<string> | null> => {
+    const seq = ++readSeqRef.current;
     try {
       const data = await fetchPage(null);
+      if (courseIdRef.current !== courseId) return null;
       setMaterials((prev) => {
         const fresh = new Map(data.materials.map((m) => [m.id, m]));
         const known = new Set(prev.map((m) => m.id));
-        const updated = prev.map((m) => fresh.get(m.id) ?? m);
+        const updated = prev.map((m) => {
+          const row = fresh.get(m.id);
+          return row ? pickNewer(rowSeqRef.current, seq, row, m) : m;
+        });
         const added = data.materials.filter((m) => !known.has(m.id));
+        for (const m of added) rowSeqRef.current.set(m.id, seq);
         return added.length > 0 ? [...added, ...updated] : updated;
       });
       // Which rows this tick actually refreshed, so the caller can tell what
@@ -219,7 +278,7 @@ export function useCourseMaterials(courseId: string) {
       /* transient read failure — the next tick retries */
       return null;
     }
-  }, [fetchPage]);
+  }, [courseId, fetchPage]);
 
   // Read by the poll below, which runs long after the render that scheduled it
   // and must see the list as it is now rather than as it was then.
@@ -249,9 +308,10 @@ export function useCourseMaterials(courseId: string) {
 
     const missing = watching.filter((id) => !covered.has(id));
     if (missing.length === 0) return;
+    const seq = ++readSeqRef.current;
     try {
       const data = await fetchByIds(missing);
-      for (const row of data.materials) mergeMaterial(row);
+      for (const row of data.materials) mergeMaterial(seq, row);
     } catch {
       /* transient read failure — the next tick retries */
     }
@@ -268,23 +328,31 @@ export function useCourseMaterials(courseId: string) {
   }, [courseId, hasProcessingRow, refreshProcessingRows]);
 
   /**
-   * Watch a material until it leaves PROCESSING (#949). Uploads are ordered
-   * newest-first, so a brand-new row is always on page 1.
+   * Watch a material until it leaves PROCESSING (#949). Page 1 is read first,
+   * since a new upload is newest-first and normally sits there. Inside a batch
+   * (#1748 review) the other files can push a slow one past page 1, so a miss
+   * falls back to reading the row by id before concluding anything — "not on
+   * page 1" is not "still processing", and treating it so hid FAILED outcomes.
    */
   const watchUpload = useCallback(
     async (materialId: string): Promise<UploadOutcome> => {
       const deadline = Date.now() + UPLOAD_POLL_TIMEOUT_MS;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, UPLOAD_POLL_INTERVAL_MS));
-        let page: { materials: CourseMaterial[] };
+        let seq = ++readSeqRef.current;
+        let row: CourseMaterial | undefined;
         try {
-          page = await fetchPage(null);
+          row = (await fetchPage(null)).materials.find((m) => m.id === materialId);
+          if (!row) {
+            seq = ++readSeqRef.current;
+            row = (await fetchByIds([materialId])).materials.find((m) => m.id === materialId);
+          }
         } catch {
           continue; // transient read failure — the row is still processing server-side
         }
-        const row = page.materials.find((m) => m.id === materialId);
+        // Gone entirely (deleted elsewhere): nothing left to watch.
         if (!row) return { status: "processing", materialId };
-        mergeMaterial(row);
+        mergeMaterial(seq, row);
         if (row.status === "READY") return { status: "ready", materialId };
         if (row.status === "FAILED") {
           return row.duplicateOfId
@@ -294,7 +362,7 @@ export function useCourseMaterials(courseId: string) {
       }
       return { status: "processing", materialId };
     },
-    [fetchPage, mergeMaterial],
+    [fetchPage, fetchByIds, mergeMaterial],
   );
 
   /**
@@ -305,9 +373,20 @@ export function useCourseMaterials(courseId: string) {
    * A duplicate is reported late rather than as a 409. The server leaves a
    * FAILED receipt row pointing at the winner; we read it, then delete it so
    * repeated attempts don't pile up in the list.
+   *
+   * The PROCESSING row is painted with a quiet page-1 merge rather than
+   * `fetchMaterials` (#1748 review): a batch runs several of these at once, and
+   * a full reload per file would discard "load more" pages each time and race
+   * the other files' polls with whole-list replacements.
+   *
+   * `onAccepted` reports the new material id as soon as the POST lands, before
+   * the outcome is known — a batch uses it to recognise its own files.
    */
   const uploadMaterial = useCallback(
-    async (file: File): Promise<UploadOutcome> => {
+    async (
+      file: File,
+      { onAccepted }: { onAccepted?: (materialId: string) => void } = {},
+    ): Promise<UploadOutcome> => {
       const formData = new FormData();
       formData.append("file", file);
       const res = await fetch(`/api/courses/${courseId}/materials`, {
@@ -322,7 +401,8 @@ export function useCourseMaterials(courseId: string) {
       }
 
       const materialId = body.materialId as string;
-      await fetchMaterials(); // paint the PROCESSING row right away
+      onAccepted?.(materialId);
+      await refreshFirstPage(); // paint the PROCESSING row right away
       const outcome = await watchUpload(materialId);
 
       if (outcome.status === "duplicate") {
@@ -332,7 +412,7 @@ export function useCourseMaterials(courseId: string) {
       }
       return outcome;
     },
-    [courseId, fetchMaterials, watchUpload, deleteMaterial],
+    [courseId, refreshFirstPage, watchUpload, deleteMaterial],
   );
 
   return {
