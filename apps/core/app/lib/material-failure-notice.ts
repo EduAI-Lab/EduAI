@@ -45,45 +45,56 @@ export type MaterialFailureFacts = {
   failureCode: MaterialFailureCode | null;
 };
 
+type FailureCodeText = { title: string; cause: string; when?: string; escalate?: boolean };
+
 /**
- * Per-code copy (#1794), more specific than the three shape-derived messages
- * below. `satisfies`, not an annotation: every code must be listed, while the
- * literal's own type stays intact for the lookup below — an explicit open
- * dictionary type would discard that a code not on this list is a type error,
- * not a value this ever has to handle at runtime.
+ * Per-code copy (#1794): what happened, never what to do next. The next step
+ * comes from the row's shape (`nextStep`), so a code can't promise a retry
+ * button that isn't there or call the file fine where it couldn't be read.
+ * `when` and `escalate` tune that step.
  */
 const FAILURE_CODE_TEXT = {
   MATERIAL_EXTRACT_FAILED: {
     title: "Couldn't read this file",
-    description:
+    cause:
       "Couldn't read the contents of this file. It may be corrupted, password-protected, or a scan with no selectable text.",
   },
   MATERIAL_EXTRACT_BUSY: {
     title: "The server was too busy to process this file",
-    description:
-      "The server was too busy to process this file after several attempts. Nothing is wrong with the file — try again in a few minutes.",
+    cause: "The server was too busy to process this file after several attempts.",
+    when: "in a few minutes",
   },
   MATERIAL_EXTRACT_ABANDONED: {
     title: "Processing didn't complete",
-    description:
-      "Processing this file was attempted several times and didn't complete. Try again, or upload a smaller or simpler version of the file.",
+    cause: "Processing this file was attempted several times and didn't complete.",
   },
   MATERIAL_EMBED_FAILED: {
     title: "Couldn't prepare this file for search",
-    description:
-      "The file was read successfully, but its search data couldn't be built. Try again — if it keeps failing, contact your administrator.",
+    cause: "This file's search data couldn't be built.",
+    escalate: true,
   },
   MATERIAL_EMBED_RATE_LIMITED: {
     title: "Rate-limited while indexing",
-    description:
-      "The AI service is rate-limiting requests right now, so this file's search data couldn't be built. The file itself is fine — try again in a few minutes.",
+    cause:
+      "The AI service was rate-limiting requests, so this file's search data couldn't be built.",
+    when: "in a few minutes",
   },
   MATERIAL_EMBED_PROVIDER_UNAVAILABLE: {
     title: "AI service unavailable while indexing",
-    description:
-      "The AI service didn't respond, so this file's search data couldn't be built. The file itself is fine — try again later, and contact your administrator if it keeps happening.",
+    cause: "The AI service didn't respond, so this file's search data couldn't be built.",
+    when: "later",
+    escalate: true,
   },
-} satisfies Record<MaterialFailureCode, { title: string; description: string }>;
+} satisfies Record<MaterialFailureCode, FailureCodeText>;
+
+/** The recovery sentence for a bucket, timed and escalated per the code. */
+function nextStep(canRetry: boolean, text: FailureCodeText): string {
+  const when = text.when ? ` ${text.when}` : "";
+  const step = canRetry
+    ? `The text is still saved, so use Try again${when} — there's no need to upload the file again.`
+    : `The original upload is no longer stored, so upload the file again${when}.`;
+  return text.escalate ? `${step} If it keeps happening, contact your administrator.` : step;
+}
 
 /**
  * Explain a FAILED material from the row.
@@ -117,7 +128,9 @@ export function describeMaterialFailure(
 ): MaterialFailureNotice | null {
   if (material.status !== "FAILED") return null;
 
-  const specific = material.failureCode ? FAILURE_CODE_TEXT[material.failureCode] : undefined;
+  const specific: FailureCodeText | undefined = material.failureCode
+    ? FAILURE_CODE_TEXT[material.failureCode]
+    : undefined;
 
   // Checked first: a duplicate receipt always has extracted text — it got far
   // enough to checksum the content — so the indexing branch would claim it.
@@ -136,9 +149,9 @@ export function describeMaterialFailure(
     return {
       kind: "unreadable-file",
       title: specific?.title ?? "Couldn't read this file",
-      description:
-        specific?.description ??
-        "No usable text could be extracted, so there is nothing to retry — the original upload is no longer stored. Check the file opens correctly, then upload it again.",
+      description: specific
+        ? `${specific.cause} ${nextStep(false, specific)}`
+        : "No usable text could be extracted, so there is nothing to retry — the original upload is no longer stored. Check the file opens correctly, then upload it again.",
       canRetry: false,
       duplicateOfId: null,
     };
@@ -147,9 +160,9 @@ export function describeMaterialFailure(
   return {
     kind: "indexing-failed",
     title: specific?.title ?? "Couldn't prepare this file for search",
-    description:
-      specific?.description ??
-      "The text was read successfully, but indexing it for course chat failed. The text is still saved, so this can be retried without uploading the file again.",
+    description: specific
+      ? `${specific.cause} ${nextStep(true, specific)}`
+      : "The text was read successfully, but indexing it for course chat failed. The text is still saved, so this can be retried without uploading the file again.",
     canRetry: true,
     duplicateOfId: null,
   };

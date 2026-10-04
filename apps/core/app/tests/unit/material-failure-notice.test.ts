@@ -203,8 +203,39 @@ describe("describeMaterialFailure — failureCode refines the message", () => {
     );
   });
 
+  // #1796 review: the next step comes from the shape, not the code, so a row
+  // with no retry button never says "try again" and an unreadable row never
+  // calls the file fine.
+  it.each([
+    "MATERIAL_EXTRACT_FAILED",
+    "MATERIAL_EXTRACT_BUSY",
+    "MATERIAL_EXTRACT_ABANDONED",
+    "MATERIAL_EMBED_FAILED",
+    "MATERIAL_EMBED_RATE_LIMITED",
+    "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
+  ] as const)("points a no-text %s row at re-uploading, not a retry", (failureCode) => {
+    const notice = describeMaterialFailure({ ...unreadable, failureCode });
+
+    expect(notice?.canRetry).toBe(false);
+    expect(notice?.description).toMatch(/upload the file again/i);
+    expect(notice?.description).not.toMatch(/try again|file (itself )?is fine/i);
+  });
+
+  it.each([
+    "MATERIAL_EXTRACT_ABANDONED",
+    "MATERIAL_EMBED_FAILED",
+    "MATERIAL_EMBED_RATE_LIMITED",
+    "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
+  ] as const)("points a retryable %s row at Try again, not a re-upload", (failureCode) => {
+    const notice = describeMaterialFailure({ ...failedIndexing, failureCode });
+
+    expect(notice?.canRetry).toBe(true);
+    expect(notice?.description).toMatch(/try again/i);
+    expect(notice?.description).toMatch(/no need to upload/i);
+  });
+
   it("keeps the duplicate branch first even when a restore-failure receipt carries a code", () => {
-    // `copyFailureFromRestoreTarget` (#1791) can leave a receipt with both
+    // `failRestoreReceipt` (#1791) can leave a receipt with both
     // `duplicateOfId` and `failureCode` set. Duplicate-branch-first ordering
     // means this is still reported as a duplicate, not refined by the code.
     const notice = describeMaterialFailure({

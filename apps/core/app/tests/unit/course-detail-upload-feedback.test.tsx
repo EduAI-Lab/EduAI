@@ -247,7 +247,7 @@ describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
     await selectFile();
 
     expect(screen.getByTestId("success").textContent).toBe(
-      "Material processed successfully and is ready to use",
+      "Material uploaded and processed successfully",
     );
     expect(screen.getByTestId("error").textContent).toBe("");
   });

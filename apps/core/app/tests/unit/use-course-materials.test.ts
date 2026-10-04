@@ -430,7 +430,11 @@ describe("useCourseMaterials.uploadMaterial (#949 async contract)", () => {
       .mockResolvedValueOnce(materialsResponse([])) // page 1 no longer holds it
       .mockResolvedValueOnce(materialsResponse([{ ...processing, status: "FAILED" }]));
 
-    expect(await upload(result)).toEqual({ status: "failed", materialId: "mat-new" });
+    expect(await upload(result)).toEqual({
+      status: "failed",
+      materialId: "mat-new",
+      failureCode: null,
+    });
     expect(vi.mocked(fetch).mock.calls[4][0]).toBe("/api/courses/course-1/materials?ids=mat-new");
     expect(result.current.materials.find((m) => m.id === "mat-new")?.status).toBe("FAILED");
   });

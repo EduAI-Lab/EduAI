@@ -272,6 +272,21 @@ describe("sweepStrandedMaterialExtractions", () => {
     expect(extractUploadedFileContent).not.toHaveBeenCalled();
   });
 
+  it("abandons a row that only ever hit a busy worker as busy, not generic (#1796 review)", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      blobRow({
+        extractionAttempts: MAX_EXTRACTION_ATTEMPTS,
+        failureCode: "MATERIAL_EXTRACT_BUSY",
+      }),
+    ] as never);
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    expect(updatesFor("mat-1")).toContainEqual(
+      expect.objectContaining({ status: "FAILED", failureCode: "MATERIAL_EXTRACT_BUSY" }),
+    );
+  });
+
   it("abandons a row that has burned through its attempts instead of looping", async () => {
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
       blobRow({ extractionAttempts: MAX_EXTRACTION_ATTEMPTS }),
@@ -808,6 +823,27 @@ describe("classifyRestoreTarget", () => {
 });
 
 describe("claimRestoreTarget", () => {
+  it("retries a live FAILED row in place, keeping its original uploader", async () => {
+    vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValueOnce({ count: 0 } as never);
+
+    expect(await claimRestoreTarget("target-1", "user-2", "restored text")).toBe(true);
+
+    const calls = vi.mocked(prisma.courseMaterial.updateMany).mock.calls as [any][];
+    expect(calls).toHaveLength(2);
+    const [args] = calls[1];
+    // #1791: a live FAILED row is terminal, so nothing owns it — re-uploading
+    // the file is a retry, not a duplicate.
+    expect(args.where).toEqual({ id: "target-1", deletedAt: null, status: "FAILED" });
+    // #1796 review: never deleted, so it stays the original uploader's.
+    expect(args.data).not.toHaveProperty("uploadedBy");
+    // The row is leaving FAILED, so the reason it failed goes with it (#1791).
+    expect(args.data.failureCode).toBeNull();
+    expect(args.data.duplicateResolution).toBeNull();
+    expect(args.data.status).toBe("PROCESSING");
+    expect(args.data.extractionLeaseUntil).toBeInstanceOf(Date);
+    expect(args.data.rawText).toBe("restored text");
+  });
+
   it("un-deletes and leases in one statement, never on a null lease", async () => {
     await claimRestoreTarget("target-1", "user-1", "restored text");
 
@@ -818,20 +854,17 @@ describe("claimRestoreTarget", () => {
         // Soft-deleted is not on its own enough (#1494 review): a DELETE landing
         // mid-restore must not re-open a target whose worker is still running.
         { deletedAt: { not: null }, status: { not: "PROCESSING" } },
-        // #1791: a live FAILED row is terminal, so nothing owns it — re-uploading
-        // the file is a retry, not a duplicate.
-        { deletedAt: null, status: "FAILED" },
         // An expired lease only — a PROCESSING row with a null lease is a
         // Canvas import, not an abandoned restore.
         { status: "PROCESSING", extractionLeaseUntil: { lt: expect.any(Date) } },
       ],
     });
-    // The row is leaving FAILED, so the reason it failed goes with it (#1791).
     expect(args.data.failureCode).toBeNull();
     expect(args.data.duplicateResolution).toBeNull();
     // The un-delete and the lease are the same write, so there is no window in
     // which the target is PROCESSING with nothing claiming it.
     expect(args.data.deletedAt).toBeNull();
+    expect(args.data.uploadedBy).toBe("user-1");
     expect(args.data.status).toBe("PROCESSING");
     expect(args.data.extractionLeaseUntil).toBeInstanceOf(Date);
     expect(args.data.rawText).toBe("restored text");
@@ -885,6 +918,12 @@ describe("resolveFailureCode", () => {
     );
   });
 
+  it("keeps a busy worker as the reason when the sweeper abandons the row", () => {
+    expect(resolveFailureCode("MATERIAL_EXTRACT_ABANDONED", new PdfExtractionBusyError())).toBe(
+      "MATERIAL_EXTRACT_BUSY",
+    );
+  });
+
   it("only refines the stage it belongs to", () => {
     // A transient *extraction* error is not an embedding rate limit: the
     // refinement is scoped to the stage that produced the failure.
@@ -931,9 +970,42 @@ describe("runMaterialExtraction failure recording (#1791)", () => {
     // picks it up, rather than the 15 minutes a null lease would cost. Failing
     // it here is what turned a burst of uploads into broken materials.
     expect(data.status).toBe("PROCESSING");
+    // #1796 review: stamped so a later abandon still reports "busy".
+    expect(data.failureCode).toBe("MATERIAL_EXTRACT_BUSY");
     expect(data.extractionLeaseUntil).toBeInstanceOf(Date);
     expect((data.extractionLeaseUntil as Date).getTime()).toBeLessThan(Date.now());
     expect(updatesFor("mat-1")).not.toContainEqual(expect.objectContaining({ status: "FAILED" }));
+  });
+});
+
+describe("runMaterialExtraction lease heartbeat (#1796 review)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("renews the lease while a first-pass embed outlasts it", async () => {
+    let resolveEmbed: () => void = () => {};
+    vi.mocked(processMaterialEmbeddings).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveEmbed = resolve;
+        }),
+    );
+
+    const run = runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+    await vi.advanceTimersByTimeAsync(EXTRACTION_LEASE_MS);
+
+    const renewals = vi
+      .mocked(prisma.courseMaterial.updateMany)
+      .mock.calls.map(([args]: [any]) => args)
+      .filter((args: any) => args.where.id === "mat-1" && args.where.status === "PROCESSING");
+    expect(renewals.length).toBeGreaterThan(0);
+
+    resolveEmbed();
+    await run;
   });
 });
 
@@ -1012,9 +1084,6 @@ describe("runMaterialExtraction duplicate resolution (#1791)", () => {
     );
     vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
     vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("429 rate limit"));
-    vi.mocked(prisma.courseMaterial.findUnique).mockResolvedValue({
-      failureCode: "MATERIAL_EMBED_RATE_LIMITED",
-    } as never);
 
     await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
 
@@ -1029,16 +1098,24 @@ describe("runMaterialExtraction duplicate resolution (#1791)", () => {
     );
   });
 
-  it("falls back to a generic embed failure when the target's code is unreadable", async () => {
+  it("leaves the receipt for the sweeper when marking it FAILED fails (#1796 review)", async () => {
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(duplicateRow() as never);
     vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("boom"));
-    vi.mocked(prisma.courseMaterial.findUnique).mockRejectedValue(new Error("db down"));
+    vi.mocked(prisma.courseMaterial.update).mockImplementation(((args: any) =>
+      args.where.id === "receipt-1"
+        ? Promise.reject(new Error("db down"))
+        : Promise.resolve({})) as never);
 
-    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+    await expect(
+      runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX),
+    ).resolves.toBeUndefined();
 
-    expect(updatesFor("receipt-1")).toContainEqual(
-      expect.objectContaining({ status: "FAILED", failureCode: "MATERIAL_EMBED_FAILED" }),
-    );
+    // No fallback EXTRACT_FAILED stamped over it, and the blob kept so the
+    // sweeper can re-run the upload once its lease lapses.
+    expect(updatesFor("receipt-1")).toHaveLength(1);
+    expect(prisma.materialUploadBlob.deleteMany).not.toHaveBeenCalledWith({
+      where: { materialId: "receipt-1" },
+    });
   });
 
   it("still waits rather than resolving a receipt against a live restore", async () => {
