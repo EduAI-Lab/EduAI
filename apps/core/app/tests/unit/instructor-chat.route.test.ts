@@ -19,6 +19,7 @@ vi.mock("~/lib/auth/server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     course: { findMany: vi.fn() },
+    enrollment: { findFirst: vi.fn() },
     aIModel: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
   },
@@ -48,6 +49,7 @@ const COURSE_ROW = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.aIModel.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.enrollment.findFirst).mockResolvedValue(null);
 });
 
 describe("instructor.chat loader auth (#1659)", () => {
@@ -75,8 +77,14 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
       user: { id: "ua-1", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
     } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([COURSE_ROW] as never);
+    // Their INSTRUCTOR enrollment still earns them the dashboard's "New chat"
+    // link, so with nothing left to list they go back to the dashboard rather
+    // than a 404.
+    vi.mocked(prisma.enrollment.findFirst).mockResolvedValue({ id: "enr-1" } as never);
 
-    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
+    const res = (await loader(makeArgs())) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/dashboard");
   });
 
   it("still lists a UNIT_ADMIN's course OUTSIDE their authorized units — resolveAccess falls through to their real INSTRUCTOR enrollment there", async () => {
@@ -160,5 +168,43 @@ describe("instructor.chat loader — dual-role visibility matches the /api/chat 
     expect(result.courses[0].label).toBe("COSC 121 — Jan 5, 2026 Sec 001");
     expect(result.courses[1].label).toBe("COSC 121 — Sep 8, 2026 Sec 001");
     expect(result.courses[0].label).not.toBe(result.courses[1].label);
+  });
+});
+
+// #1898 review: the dashboard's "New chat" button links every platform
+// INSTRUCTOR and anyone holding an INSTRUCTOR enrollment here
+// (dashboard-view.tsx), published course or not, so a link the app itself offers must not end on a
+// 404. Only a caller the page was never offered to gets the generic 404.
+describe("instructor.chat loader — no published course to chat about", () => {
+  it("sends a platform INSTRUCTOR with no published course back to the dashboard", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instr-1", role: "INSTRUCTOR" },
+    } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([]);
+
+    const res = (await loader(makeArgs())) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/dashboard");
+  });
+
+  it("sends a STUDENT who teaches only unpublished courses back to the dashboard", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "stu-1", role: "STUDENT" },
+    } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.enrollment.findFirst).mockResolvedValue({ id: "enr-1" } as never);
+
+    const res = (await loader(makeArgs())) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/dashboard");
+  });
+
+  it("answers a STUDENT who teaches nothing with the generic 404", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "stu-1", role: "STUDENT" },
+    } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([]);
+
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 });

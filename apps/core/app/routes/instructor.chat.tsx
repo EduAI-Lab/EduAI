@@ -25,6 +25,23 @@ import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { listInstructorChatCourses } from "~/lib/auth/instructor-chat-courses.server";
+import type { RbacUser } from "~/lib/auth/course-access.server";
+
+/**
+ * Whether the dashboard's "New chat" button sends this user to
+ * `/instructor/chat` (dashboard-view.tsx): a platform INSTRUCTOR always, and
+ * anyone with an active INSTRUCTOR enrollment. Neither checks for a published
+ * course, unlike the sidebar link (#1745). ADMIN's dashboard never links here.
+ */
+async function isOfferedCourseAssistant(user: RbacUser) {
+  if (user.role === "ADMIN") return false;
+  if (user.role === "INSTRUCTOR") return true;
+  const enrollment = await prisma.enrollment.findFirst({
+    where: { userId: user.id, isActive: true, role: "INSTRUCTOR" },
+    select: { id: true },
+  });
+  return enrollment !== null;
+}
 
 /** `startDate` formatted as e.g. "Jan 5, 2026" — always in UTC so the label doesn't shift with the server/test-runner's local timezone (`startDate` is a bare calendar date, not a moment). */
 const formatStartDate = (d: Date) =>
@@ -81,8 +98,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const courses = await listInstructorChatCourses(session.user);
   if (courses.length === 0) {
-    // Not an instructor of any published course — nothing for this page to
-    // show. 404 rather than render an empty/broken chat shell.
+    // Nothing to chat about. The dashboard's "New chat" button still links
+    // every platform INSTRUCTOR and anyone with an INSTRUCTOR enrollment here,
+    // published course or not, so for them this is a link the app itself
+    // showed: send them back to the dashboard, not to a 404. Anyone else was
+    // never offered this page and gets the generic 404.
+    if (await isOfferedCourseAssistant(session.user)) return redirect("/dashboard");
     throw notFound(session.user);
   }
 
