@@ -162,6 +162,24 @@ describe("purgeDeletedMaterials (real Postgres)", () => {
     expect(await exists(restoring.id)).toBe(false);
   });
 
+  it("audits each material exactly once when two runs overlap", async () => {
+    const seeded = await Promise.all(
+      Array.from({ length: 5 }, () => seedMaterial({ courseId, deletedAt: daysAgo(120) })),
+    );
+    const ids = seeded.map((m) => m.id);
+    for (const id of ids) await backdateUpdatedAt(id, daysAgo(120));
+
+    // Both runs select the same candidates; the row locks decide which one deletes each.
+    await Promise.all([purgeDeletedMaterials(), purgeDeletedMaterials()]);
+
+    for (const id of ids) expect(await exists(id)).toBe(false);
+    const audits = await prisma.auditLog.findMany({
+      where: { actionCode: "MATERIAL_PURGED", entityId: { in: ids } },
+      select: { entityId: true },
+    });
+    expect(audits.map((a) => a.entityId).sort()).toEqual([...ids].sort());
+  });
+
   it("honours an admin retainDays override", async () => {
     const twentyDays = await seedMaterial({ courseId, deletedAt: daysAgo(20) });
     await backdateUpdatedAt(twentyDays.id, daysAgo(20));
