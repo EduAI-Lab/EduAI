@@ -42,6 +42,12 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # Do NOT add `--mode development`; it was measured to be a no-op on top of this.
 export NODE_ENV=development
 
+# #1881: `npm install` runs scripts/setup-env.js, which chmods every app .env.
+# Its default is owner-only (0600), which locks out the other eduai-dev accounts
+# that read these files (the cron worker runs as eduai-cron and crash-looped
+# for ~1.5 days when apps/core/.env went 0600). Keep them group-readable here.
+export EDUAI_ENV_FILE_MODE=0660
+
 DO_ENV=1
 DO_INSTALL=0
 DO_RESTART=1

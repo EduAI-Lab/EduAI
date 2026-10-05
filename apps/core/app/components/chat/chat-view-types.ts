@@ -1,3 +1,5 @@
+import type { ChatErrorNotice } from "~/lib/chat-error-copy";
+
 export type ChatModelOption = {
   id: string;
   name: string;
@@ -101,4 +103,17 @@ export type ChatViewSharedProps = {
   adhdAssistByMessageId?: Record<string, boolean>;
   /** Whether the in-flight request was made with Assist on. */
   streamingAdhdAssist?: boolean;
+
+  /**
+   * The failure to surface inline in the conversation when the latest turn
+   * failed, or null/undefined when nothing has failed (#1510). Classified by
+   * `describeStudentChatError` so the copy matches what the student can
+   * actually do about it.
+   */
+  chatError?: ChatErrorNotice | null;
+  /**
+   * Re-sends the failed turn without retyping it. Omit it and the banner
+   * renders without a retry control rather than an inert button.
+   */
+  onRetryChat?: () => void;
 };

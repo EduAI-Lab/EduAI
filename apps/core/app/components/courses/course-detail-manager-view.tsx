@@ -77,7 +77,7 @@ import {
   CourseResponseStyleSummary,
 } from "~/components/courses/course-response-style-settings";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
-import type { CourseMaterial } from "~/components/course-materials-upload";
+import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
@@ -210,7 +210,15 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
-  onFileSelect: (file: File) => void;
+  /** Per-file progress of the current batch upload (#1748). */
+  uploads?: UploadItem[];
+  onFilesSelect: (files: File[]) => void;
+  /**
+   * Called as the upload dialog opens (#1748 review), so the page can drop the
+   * previous batch's list and messages instead of showing them over an idle
+   * drop zone.
+   */
+  onUploadDialogOpen?: () => void;
   onCreateTopic: (name: string) => Promise<void>;
   onDeleteTopic: (id: string) => Promise<void>;
   /**
@@ -348,7 +356,9 @@ export function CourseDetailManagerView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
-  onFileSelect,
+  uploads,
+  onFilesSelect,
+  onUploadDialogOpen,
   onCreateTopic,
   onDeleteTopic,
   onRenameTopic,
@@ -392,6 +402,10 @@ export function CourseDetailManagerView({
   const [selectedTAIds, setSelectedTAIds] = useState<string[]>([]);
   const [addingTAs, setAddingTAs] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUploadDialog = () => {
+    onUploadDialogOpen?.();
+    setUploadOpen(true);
+  };
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState(false);
@@ -986,7 +1000,8 @@ export function CourseDetailManagerView({
             isUploading={isUploading}
             error={materialsError}
             success={materialsSuccess}
-            onFileSelect={onFileSelect}
+            uploads={uploads}
+            onFilesSelect={onFilesSelect}
           />
         </DialogContent>
       </Dialog>
@@ -1424,7 +1439,7 @@ export function CourseDetailManagerView({
                     Course search settings
                   </Button>
                 )}
-                <Button size="sm" onClick={() => setUploadOpen(true)}>
+                <Button size="sm" onClick={openUploadDialog}>
                   <IconUpload className="h-4 w-4 mr-1.5" />
                   Upload material
                 </Button>
@@ -1436,7 +1451,7 @@ export function CourseDetailManagerView({
                 title="No materials yet"
                 description="Upload documents to make them available for AI chat."
                 action={
-                  <Button size="sm" onClick={() => setUploadOpen(true)}>
+                  <Button size="sm" onClick={openUploadDialog}>
                     <IconUpload className="h-4 w-4 mr-1.5" />
                     Upload material
                   </Button>

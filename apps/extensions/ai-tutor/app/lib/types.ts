@@ -137,11 +137,12 @@ export type BugReportCreatePayload = {
   description: string;
   bugType: BugReportType | null;
   isAnonymous: boolean;
-  consoleLogs: string;
-  networkLogs: string;
+  /** Diagnostics are null unless the reporter opted in (#1752). */
+  consoleLogs: string | null;
+  networkLogs: string | null;
   screenshot: string | null;
-  pageUrl: string;
-  userAgent: string;
+  pageUrl: string | null;
+  userAgent: string | null;
   context?: BugReportContext;
 };
 

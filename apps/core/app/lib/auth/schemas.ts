@@ -42,6 +42,42 @@ export const resetPasswordSchema = z
     path: ["confirmPassword"],
   });
 
+/**
+ * #1728: length of the emailed password-reset code. Shared with the
+ * better-auth emailOTP plugin config so the form and the issuer cannot drift.
+ */
+export const PASSWORD_RESET_OTP_LENGTH = 6;
+
+/** The code as it is typed back in: digits only, surrounding space forgiven. */
+const passwordResetOtp = z
+  .string()
+  .trim()
+  .regex(
+    new RegExp(`^\\d{${PASSWORD_RESET_OTP_LENGTH}}$`),
+    `Enter the ${PASSWORD_RESET_OTP_LENGTH}-digit code from your email`,
+  );
+
+/**
+ * #1728: resetting a forgotten password with an emailed one-time code, as
+ * opposed to {@link resetPasswordSchema}'s link token. The password still goes
+ * through the same #339 strength policy.
+ */
+export const resetPasswordOtpSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .max(320, "Email address is too long")
+      .email("Please enter a valid email address"),
+    otp: passwordResetOtp,
+    password: strongPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
+
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Current password is required"),
@@ -62,6 +98,7 @@ export type SignInInput = z.infer<typeof signInSchema>;
 export type SignUpInput = z.infer<typeof signUpSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type ResetPasswordOtpInput = z.infer<typeof resetPasswordOtpSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 

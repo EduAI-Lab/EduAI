@@ -11,7 +11,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useCourses } from "~/hooks/api/use-courses";
+import { CourseDuplicateError, useCourses } from "~/hooks/api/use-courses";
 import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const course = { id: "course-1", name: "Intro", code: "CS101" };
@@ -226,6 +226,89 @@ describe("useCourses", () => {
         instructorUserIds: [],
       } as never),
     ).rejects.toThrow("duplicate code");
+  });
+
+  it("createCourse surfaces a duplicate warning as CourseDuplicateError and re-sends the resolution", async () => {
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const deletedMatch = { id: "old-1", name: "Intro", canRestore: true };
+    mockFetch.mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method !== "POST") return Promise.resolve(page());
+      const body = init.body as FormData;
+      if (body.get("duplicateResolution") === "restore") return Promise.resolve(okJson(course));
+      return Promise.resolve({
+        ok: false,
+        status: 409,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              error: "COURSE_POSSIBLE_DUPLICATE",
+              deletedMatches: [deletedMatch],
+              similarCourses: [],
+            }),
+          ),
+      } as Response);
+    });
+    const input = {
+      name: "Intro",
+      code: "CS101",
+      section: "A",
+      term: "W1",
+      year: 2026,
+      startDate: "2026-09-01",
+      instructorUserIds: ["u1"],
+    };
+
+    const warned = result.current.createCourse(input);
+    await expect(warned).rejects.toBeInstanceOf(CourseDuplicateError);
+    await expect(warned).rejects.toMatchObject({ deletedMatches: [deletedMatch] });
+
+    let restored: unknown;
+    await act(async () => {
+      restored = await result.current.createCourse(input, {
+        duplicateResolution: "restore",
+        restoreCourseId: "old-1",
+      });
+    });
+    expect(restored).toEqual(course);
+    const restoreBody = mockFetch.mock.calls
+      .filter(([, init]) => (init as RequestInit)?.method === "POST")
+      .at(-1)![1].body as FormData;
+    expect(restoreBody.get("restoreCourseId")).toBe("old-1");
+  });
+
+  it("createCourse throws the field message from a JSON error envelope", async () => {
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        init?.method === "POST"
+          ? ({
+              ok: false,
+              status: 409,
+              text: () =>
+                Promise.resolve(
+                  JSON.stringify({
+                    error: "COURSE_IDENTITY_TAKEN",
+                    fields: { code: 'CS101 section A (W1 2026) is already used by "Intro"' },
+                  }),
+                ),
+            } as Response)
+          : page(),
+      ),
+    );
+
+    await expect(
+      result.current.createCourse({
+        name: "Intro",
+        code: "CS101",
+        section: "A",
+        term: "W1",
+        year: 2026,
+        startDate: "2026-09-01",
+        instructorUserIds: ["u1"],
+      }),
+    ).rejects.toThrow('already used by "Intro"');
   });
 
   it("updateCourse PATCHes and refetches the filtered list + facets instead of patching the page", async () => {

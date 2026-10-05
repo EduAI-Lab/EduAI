@@ -12,6 +12,10 @@ import {
   requireCanvasCredentials,
   validateInstructorCanvasCourseIds,
 } from "~/lib/canvas/courses.server";
+import {
+  ACCEPTED_MATERIAL_MIME_TYPES,
+  MATERIAL_MIME_BY_EXTENSION,
+} from "~/lib/materials/accepted-types";
 import { isChecksumConflict } from "~/lib/materials/extraction-job.server";
 import type {
   CanvasMaterialDiscoverItem,
@@ -21,23 +25,12 @@ import type {
 import prisma from "~/lib/prisma.server";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
 
-const ALLOWED_MIME_TYPES = new Set([
-  "text/plain",
-  "text/markdown",
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-]);
-
-// A `Map` because the key is a filename suffix, not a union: the loop below
-// walks every entry looking for the one a given name ends with.
-const EXTENSION_MIME = new Map<string, string>([
-  [".pdf", "application/pdf"],
-  [".txt", "text/plain"],
-  [".md", "text/markdown"],
-  [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-  [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
-]);
+// Both derive from the shared list (#1785) so Canvas cannot drift from what
+// the upload route accepts. The extension map is a `Map` because the key is a
+// filename suffix, not a union: the loop below walks every entry looking for
+// the one a given name ends with.
+const ALLOWED_MIME_TYPES: ReadonlySet<string> = new Set(ACCEPTED_MATERIAL_MIME_TYPES);
+const EXTENSION_MIME: ReadonlyMap<string, string> = MATERIAL_MIME_BY_EXTENSION;
 
 export class CanvasMaterialSyncError extends Error {
   readonly statusCode: number;

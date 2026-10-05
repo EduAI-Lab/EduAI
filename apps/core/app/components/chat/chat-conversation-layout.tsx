@@ -1,5 +1,6 @@
 import type { Message } from "@ai-sdk/react";
-import { IconArrowDown, IconBooksOff } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowDown, IconBooksOff, IconRefresh } from "@tabler/icons-react";
+import { Alert, AlertDescription, AlertTitle, Button } from "@eduai/ui";
 
 import { ChatDisclaimer } from "~/components/chat/chat-disclaimer";
 import { ChatInput } from "~/components/chat/chat-input";
@@ -68,6 +69,8 @@ export function ChatConversationLayout({
   onContinue,
   adhdAssistByMessageId = {},
   streamingAdhdAssist = false,
+  chatError = null,
+  onRetryChat,
 }: ChatConversationLayoutProps) {
   const {
     startedAt,
@@ -218,6 +221,34 @@ export function ChatConversationLayout({
                     />
                   )}
                 </>
+              )}
+
+              {/* #1510: a failed turn used to be completely invisible -- the
+                  composer returned to idle and nothing else changed. The
+                  banner sits here, inside the transcript pane and outside the
+                  empty/non-empty branch above, so it lands where the reply
+                  the student was waiting for would have appeared and shows
+                  even when the failure left no message behind. */}
+              {chatError && (
+                <Alert variant="destructive" className="mt-2">
+                  <IconAlertTriangle aria-hidden="true" />
+                  <AlertTitle>{chatError.title}</AlertTitle>
+                  <AlertDescription>
+                    <p>{chatError.description}</p>
+                    {onRetryChat && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onRetryChat}
+                        className="mt-2"
+                      >
+                        <IconRefresh className="h-3.5 w-3.5" />
+                        Try again
+                      </Button>
+                    )}
+                  </AlertDescription>
+                </Alert>
               )}
             </div>
           </div>

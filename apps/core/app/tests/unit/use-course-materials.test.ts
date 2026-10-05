@@ -347,17 +347,71 @@ describe("useCourseMaterials.uploadMaterial (#949 async contract)", () => {
     });
   });
 
-  it("stops watching when the row is no longer on page 1", async () => {
+  it("reads the row by id when newer uploads push it off page 1 (#1748 review)", async () => {
+    // A batch's other files can finish more than a page of newer rows while a
+    // slow one is still running; its FAILED outcome must still be reported.
     const result = await mount();
     vi.mocked(fetch)
       .mockResolvedValueOnce(accepted())
       .mockResolvedValueOnce(materialsResponse([processing]))
-      .mockResolvedValueOnce(materialsResponse([])); // row gone (deleted elsewhere)
+      .mockResolvedValueOnce(materialsResponse([])) // page 1 no longer holds it
+      .mockResolvedValueOnce(materialsResponse([{ ...processing, status: "FAILED" }]));
+
+    expect(await upload(result)).toEqual({ status: "failed", materialId: "mat-new" });
+    expect(vi.mocked(fetch).mock.calls[4][0]).toBe("/api/courses/course-1/materials?ids=mat-new");
+    expect(result.current.materials.find((m) => m.id === "mat-new")?.status).toBe("FAILED");
+  });
+
+  it("stops watching when the row is gone entirely", async () => {
+    const result = await mount();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([])) // not on page 1
+      .mockResolvedValueOnce(materialsResponse([])); // nor by id (deleted elsewhere)
 
     expect(await upload(result)).toEqual({
       status: "processing",
       materialId: "mat-new",
     });
+  });
+
+  it("paints the new row without dropping pages loaded with load more (#1748 review)", async () => {
+    const page2 = { ...material, id: "mat-old" };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(materialsResponse([material], "c1"))
+      .mockResolvedValueOnce(materialsResponse([page2], null));
+    const { result } = renderHook(() => useCourseMaterials("course-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing, material], "c1"))
+      .mockResolvedValueOnce(materialsResponse([{ ...processing, status: "READY" }, material]));
+    await upload(result);
+
+    expect(result.current.materials.map((m) => m.id)).toEqual(["mat-new", "mat-1", "mat-old"]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("reports the new material id as soon as the POST is accepted", async () => {
+    const result = await mount();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(materialsResponse([processing]));
+    const onAccepted = vi.fn();
+
+    await act(async () => {
+      void result.current.uploadMaterial(file, { onAccepted });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(onAccepted).toHaveBeenCalledWith("mat-new");
   });
 
   it("keeps polling through a transient list-read failure", async () => {
@@ -647,5 +701,90 @@ describe("useCourseMaterials.reprocessMaterial past page 1", () => {
 
     expect(result.current.materials[0].status).toBe("PROCESSING");
     expect(vi.mocked(fetch).mock.calls.every(([url]) => !String(url).includes("ids="))).toBe(true);
+  });
+});
+
+/** A fetch response the test resolves by hand, to force reads out of order. */
+function deferredResponse() {
+  let resolve!: (res: Response) => void;
+  const promise = new Promise<Response>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe("useCourseMaterials out-of-order reads (#1748 review)", () => {
+  const processing = { ...material, id: "mat-a", status: "PROCESSING", processedAt: null };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("does not let an older read put a settled row back into PROCESSING", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(materialsResponse([processing]));
+    const { result } = renderHook(() => useCourseMaterials("course-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // An older read is sent while the row is still PROCESSING...
+    const stale = deferredResponse();
+    vi.mocked(fetch).mockReturnValueOnce(stale.promise);
+    let staleRead!: Promise<void>;
+    act(() => {
+      staleRead = result.current.refetch();
+    });
+
+    // ...then a newer one (another upload's repaint) sees it READY and lands first.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ materialId: "mat-b" }), { status: 202 }))
+      .mockResolvedValueOnce(
+        materialsResponse([
+          { ...processing, id: "mat-b" },
+          { ...processing, status: "READY" },
+        ]),
+      )
+      .mockResolvedValue(materialsResponse([{ ...processing, status: "READY" }]));
+    await act(async () => {
+      void result.current.uploadMaterial(new File(["b"], "b.pdf"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.materials.find((m) => m.id === "mat-a")?.status).toBe("READY");
+
+    await act(async () => {
+      stale.resolve(materialsResponse([processing]));
+      await staleRead;
+    });
+    expect(result.current.materials.find((m) => m.id === "mat-a")?.status).toBe("READY");
+  });
+
+  it("drops a read that resolves after the hook moved to another course", async () => {
+    const stale = deferredResponse();
+    vi.mocked(fetch)
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce(materialsResponse([]));
+    const { result, rerender } = renderHook(({ id }) => useCourseMaterials(id), {
+      initialProps: { id: "course-1" },
+    });
+
+    rerender({ id: "course-2" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.loading).toBe(false);
+
+    await act(async () => {
+      stale.resolve(materialsResponse([material]));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.materials).toEqual([]);
+    expect(result.current.loading).toBe(false);
   });
 });

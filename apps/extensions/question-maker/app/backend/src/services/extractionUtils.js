@@ -82,12 +82,22 @@ export const chunkByQuestionBlocks = (text, maxChunkSize = 5000) => {
   return { chunks, blockCountsPerChunk };
 };
 
-/** Builds a stable dedupe key from question text (normalized prefix, first 150 chars). */
-export const extractedQuestionDedupeKey = (question) => {
-  const q = typeof question?.question === "string" ? question.question : "";
+/**
+ * Builds a stable dedupe key from raw question text (whitespace-collapsed, lowercased).
+ * Shared by OCR extraction and bank variant generation (#1763) so both surfaces normalize
+ * text the same way. The default 150-char prefix suits extraction, where it matches the
+ * same question cut differently at overlapping chunk boundaries. Variants pass `Infinity`:
+ * a real variant often changes only values late in a long stem, so a prefix match would
+ * flag it as a duplicate.
+ */
+export const questionTextDedupeKey = (text, { maxLength = 150 } = {}) => {
+  const q = typeof text === "string" ? text : "";
   const normalized = q.replace(/\s+/g, " ").trim().toLowerCase();
-  return normalized.slice(0, 150);
+  return Number.isFinite(maxLength) ? normalized.slice(0, maxLength) : normalized;
 };
+
+/** Builds a stable dedupe key from an extracted question object. */
+export const extractedQuestionDedupeKey = (question) => questionTextDedupeKey(question?.question);
 
 /** Deduplicates extracted questions by key, preserves order, keeps longer version when same key. */
 export const deduplicateExtractedQuestions = (questions) => {

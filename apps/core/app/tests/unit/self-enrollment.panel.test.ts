@@ -142,7 +142,7 @@ function renderView() {
     materials: [],
     tas: [],
     courseInstructors: [],
-    onFileSelect: vi.fn(),
+    onFilesSelect: vi.fn(),
     onCreateTopic: vi.fn(async () => {}),
     onDeleteTopic: vi.fn(async () => {}),
     onAddInstructor: vi.fn(async () => {}),

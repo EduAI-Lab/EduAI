@@ -119,6 +119,54 @@ describe("POST /api/bug-reports (proxy to Core)", () => {
     expect(body.userId).toBe(TEST_USER.id);
   });
 
+  it("forwards the reporter's bug type to Core", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(sessionOk())
+      .mockResolvedValueOnce(coreCreated());
+    vi.stubGlobal("fetch", mockFetch);
+
+    await request(app)
+      .post("/api/bug-reports")
+      .set("Cookie", "session=valid-token")
+      .send({ description: "Verifying the bug type is forwarded.", bugType: "PERFORMANCE" });
+
+    const body = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(body.bugType).toBe("PERFORMANCE");
+  });
+
+  it("sends null diagnostics to Core when the reporter did not opt in (#1752)", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(sessionOk())
+      .mockResolvedValueOnce(coreCreated());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .set("Cookie", "session=valid-token")
+      .send({
+        description: "No diagnostics were attached here.",
+        bugType: "OTHER",
+        isAnonymous: false,
+        consoleLogs: null,
+        networkLogs: null,
+        screenshot: null,
+        pageUrl: null,
+        userAgent: null,
+      });
+
+    expect(res.status).toBe(201);
+    const body = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(body).toMatchObject({
+      consoleLogs: null,
+      networkLogs: null,
+      screenshot: null,
+      pageUrl: null,
+      userAgent: null,
+    });
+  });
+
   it("passes 422 validation errors from Core through unchanged", async () => {
     vi.stubGlobal(
       "fetch",
