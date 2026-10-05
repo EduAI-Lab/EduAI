@@ -515,13 +515,19 @@ function EditSettingsDialog({ job, open, onClose, onSaved }: EditSettingsDialogP
       for (const setting of job.settings ?? []) {
         const raw = (values[setting.key] ?? "").trim();
         if (raw === String(setting.value)) continue;
-        latest = await post({
+        const refreshed = await post({
           intent: "update-setting",
           jobName: job.name,
           key: setting.key,
           value: Number(raw),
         });
-        if (!latest) return;
+        if (!refreshed) {
+          // An earlier setting may already have persisted; show it in the table
+          // while the dialog stays open on the error for the one that failed.
+          if (latest) onSaved(latest);
+          return;
+        }
+        latest = refreshed;
       }
       if (latest) onSaved(latest);
       onClose();
@@ -836,10 +842,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
         job={editSettingsJob}
         open={editSettingsJob !== null}
         onClose={() => setEditSettingsJob(null)}
-        onSaved={(updated) => {
-          setJobs(updated);
-          setEditSettingsJob(null);
-        }}
+        onSaved={setJobs}
       />
     </div>
   );

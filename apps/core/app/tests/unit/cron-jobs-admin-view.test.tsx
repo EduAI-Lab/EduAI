@@ -586,6 +586,44 @@ describe("CronJobsAdminView", () => {
     expect(screen.getByLabelText("Delete after (days)")).toBeInTheDocument();
   });
 
+  it("shows a setting that saved even when a later one in the same Save fails", async () => {
+    const BATCH = { ...RETAIN, key: "batchSize", label: "Batch size", default: 100, value: 100 };
+    const twoSettings = (retain: Partial<typeof RETAIN>) =>
+      job({ ...purgeJob(), settings: [{ ...RETAIN, ...retain }, BATCH] });
+    const fetchMock = vi
+      .fn()
+      // Mount-time status fetch: nothing overridden yet.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [twoSettings({})] }),
+      })
+      // retainDays persists.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [twoSettings({ value: 30, overridden: true })] }),
+      })
+      // batchSize is refused.
+      .mockResolvedValueOnce({
+        ok: false,
+        json: () => Promise.resolve({ error: '"Batch size" must be between 1 and 3650' }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CronJobsAdminView jobs={[twoSettings({})]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    fireEvent.change(await screen.findByLabelText("Delete after (days)"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Batch size"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(await screen.findByText('"Batch size" must be between 1 and 3650')).toBeInTheDocument();
+    // The dialog stays open on the failure while the row reflects what persisted.
+    expect(screen.getByLabelText("Batch size")).toBeInTheDocument();
+    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
+  });
+
   it("offers Reset to default only for an overridden setting and posts reset-setting", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
