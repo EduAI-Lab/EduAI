@@ -822,6 +822,38 @@ describe("triggerCronJobAsync CORE lease heartbeat", () => {
       warn.mockRestore();
     }
   });
+
+  it("aborts the handler's signal and stops heartbeating once the lease is lost", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const purge = deferredPurge();
+    // The renewal UPDATE matches no row: another owner/reaper has fenced this run.
+    mockExecuteRaw.mockResolvedValue(0);
+
+    try {
+      triggerCronJobAsync("purge-deleted-materials", "Core handler", "run-a", "owner-a", "CORE");
+      await vi.waitFor(() => expect(mockPurgeDeletedMaterials).toHaveBeenCalledOnce());
+      const signal = mockPurgeDeletedMaterials.mock.calls[0][1] as AbortSignal;
+      expect(signal.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.waitFor(() => expect(signal.aborted).toBe(true));
+      expect(renewCalls()).toHaveLength(1);
+
+      // The handler cannot be killed, but the heartbeat no longer renews or re-warns.
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(renewCalls()).toHaveLength(1);
+      const lostWarnings = warn.mock.calls.filter(([text]) =>
+        String(text).includes("lease ownership was lost"),
+      );
+      expect(lostWarnings).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+
+      purge.reject(new Error("Run lease lost after purging 0 material(s); stopped early"));
+      await vi.waitFor(() => expect(finishCalls()).toHaveLength(1));
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe("KNOWN_CRON_JOBS ai-status-probe entry", () => {
