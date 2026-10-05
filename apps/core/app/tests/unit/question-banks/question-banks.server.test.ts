@@ -637,4 +637,27 @@ describe("moveQuestionBetweenBanks", () => {
     expect(result).toEqual({ error: "Question is already in the target bank" });
     expect(prismaMock.questionBankMembership.delete).not.toHaveBeenCalled();
   });
+
+  // #1778 review: two concurrent moves of one question both pass the pre-checks;
+  // the loser's delete finds the source row already gone. That is "not a member"
+  // (404), not an unhandled 500, and the throw rolls back the loser's target row.
+  it("reports not-a-member when a concurrent move takes the source row first", async () => {
+    prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK, EXTRA_BANK]);
+    prismaMock.questionBankMembership.findUnique
+      .mockResolvedValueOnce(SOURCE_MEMBERSHIP)
+      .mockResolvedValueOnce(null);
+    prismaMock.questionBankMembership.create.mockResolvedValue(TARGET_MEMBERSHIP);
+    prismaMock.questionBankMembership.delete.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Record to delete does not exist", {
+        code: "P2025",
+        clientVersion: "test",
+      }),
+    );
+
+    const result = await moveQuestionBetweenBanks(COURSE_ID, DEFAULT_BANK.id, "42", {
+      targetBankId: EXTRA_BANK.id,
+    });
+
+    expect(result).toEqual({ error: "Question is not a member of this bank" });
+  });
 });

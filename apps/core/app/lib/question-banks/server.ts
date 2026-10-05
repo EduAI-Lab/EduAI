@@ -403,6 +403,12 @@ export async function moveQuestionBetweenBanks(
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { error: DUPLICATE_TARGET_MEMBERSHIP_ERROR } as const;
     }
+    // Likewise a concurrent move or remove can take the source row after the read:
+    // the delete finds nothing (P2025), the transaction rolls back the target row,
+    // and the caller gets the same answer the pre-check would have given.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return { error: "Question is not a member of this bank" } as const;
+    }
     throw error;
   }
 }
