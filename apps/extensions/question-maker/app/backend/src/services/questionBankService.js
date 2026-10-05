@@ -251,7 +251,13 @@ export async function attachQuestionToBanks(localCourseId, userId, questionMetad
   }
 
   for (const bankId of bankIds) {
-    await addQuestionToBank(localCourseId, userId, bankId, questionMetadataId);
+    try {
+      await addQuestionToBank(localCourseId, userId, bankId, questionMetadataId);
+    } catch (error) {
+      // Already in that bank (e.g. a retry after a partial failure): the question is
+      // where the caller asked for it, so this is attached, not a failure.
+      if (error.status !== 409) throw error;
+    }
   }
   return bankIds;
 }

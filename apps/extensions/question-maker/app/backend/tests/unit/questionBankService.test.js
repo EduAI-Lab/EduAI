@@ -378,6 +378,37 @@ describe("updateBank / deleteBank / ensureDefaultBank / attachQuestionToBanks", 
     expect(addQuestionBankMembershipOnCore).toHaveBeenCalledTimes(2);
   });
 
+  // #1778 review: a retry after a partial failure finds the earlier banks already
+  // attached. The question is where the caller asked, so that is not an error.
+  it("attachQuestionToBanks treats a bank that already holds the question as attached", async () => {
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
+    addQuestionBankMembershipOnCore
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Core error"), {
+          status: 409,
+          body: { error: "Question is already in this bank" },
+        }),
+      )
+      .mockResolvedValueOnce({ id: "m2" });
+    await expect(
+      attachQuestionToBanks(9, USER_ID, 42, { questionBankIds: ["bank_a", "bank_b"] }),
+    ).resolves.toEqual(["bank_a", "bank_b"]);
+    expect(addQuestionBankMembershipOnCore).toHaveBeenCalledTimes(2);
+  });
+
+  it("attachQuestionToBanks still rethrows any other Core failure", async () => {
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
+    addQuestionBankMembershipOnCore.mockRejectedValue(
+      Object.assign(new Error("Core error"), {
+        status: 404,
+        body: { error: "Question bank not found" },
+      }),
+    );
+    await expect(
+      attachQuestionToBanks(9, USER_ID, 42, { questionBankIds: ["bank_a"] }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it("backfillDefaultBanks is a no-op", async () => {
     await expect(backfillDefaultBanks()).resolves.toEqual({
       coursesProcessed: 0,
