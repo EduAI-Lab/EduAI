@@ -71,6 +71,7 @@ const {
 
 // ── react-router ─────────────────────────────────────────────────────────────
 vi.mock("react-router", () => ({
+  Link: ({ children }: any) => <a>{children}</a>,
   useNavigate: () => navigateMock,
   useSearchParams: () => [searchParamsBox.current, setSearchParamsMock],
 }));
@@ -151,6 +152,7 @@ vi.mock("@eduai/ui", () => ({
   Alert: ({ children }: any) => <div role="alert">{children}</div>,
   AlertDescription: ({ children }: any) => <div>{children}</div>,
   Skeleton: () => <div data-testid="skeleton" />,
+  NotFoundState: () => <div>404 — Page not found</div>,
   cn: (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" "),
   resolvePaletteAccent: () => "#000",
   ConfirmDialog: ({ open, onConfirm, title, description, confirmLabel, isLoading }: any) =>
@@ -424,7 +426,7 @@ describe("CourseDetailPage gate states", () => {
     expect(screen.getByRole("status", { name: /Loading course detail/i })).toBeInTheDocument();
   });
 
-  it("shows not-found card when the course does not exist", () => {
+  it("shows the shared 404 page when the course does not exist", () => {
     useCourseFromRouteMock.mockReturnValue({
       course: null,
       courseId: 5,
@@ -432,9 +434,9 @@ describe("CourseDetailPage gate states", () => {
       notFound: true,
     });
     render(<CourseDetailPage />);
-    expect(screen.getByText("Course not found")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Back to Courses" }));
-    expect(navigateMock).toHaveBeenCalledWith("/courses");
+    expect(screen.getByText("404 — Page not found")).toBeInTheDocument();
+    expect(screen.queryByText("Course not found")).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
 
