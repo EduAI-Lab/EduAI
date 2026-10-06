@@ -27,6 +27,8 @@ import {
   deleteBank,
   addQuestionToBank,
   removeQuestionFromBank,
+  moveQuestionToBank,
+  listBankIdsForQuestion,
   ensureDefaultBank,
 } from "../services/questionBankService.js";
 import {
@@ -637,6 +639,32 @@ router.get("/:id/banks", authenticateToken, bankReadAccess, async (req, res, nex
   }
 });
 
+/**
+ * GET /api/course/:id/banks/questions/:questionMetadataId
+ * The bank ids already holding one question, so the move/add picker can rule them out.
+ */
+router.get(
+  "/:id/banks/questions/:questionMetadataId",
+  authenticateToken,
+  bankReadAccess,
+  async (req, res, next) => {
+    try {
+      const questionMetadataId = Number(req.params.questionMetadataId);
+      if (!Number.isInteger(questionMetadataId)) {
+        return res.status(400).json({ success: false, error: "Invalid question id" });
+      }
+      const bankIds = await listBankIdsForQuestion(
+        req.qmCourse.id,
+        req.user.id,
+        questionMetadataId,
+      );
+      res.json({ success: true, data: { bankIds } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 /** POST /api/course/:id/banks */
 router.post("/:id/banks", authenticateToken, bankWriteAccess, async (req, res, next) => {
   try {
@@ -719,6 +747,36 @@ router.delete(
         req.params.questionMetadataId,
       );
       res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/** POST /api/course/:id/banks/:bankId/questions/:questionMetadataId/move */
+router.post(
+  "/:id/banks/:bankId/questions/:questionMetadataId/move",
+  authenticateToken,
+  bankWriteAccess,
+  async (req, res, next) => {
+    try {
+      const questionMetadataId = Number(req.params.questionMetadataId);
+      if (!Number.isInteger(questionMetadataId)) {
+        return res.status(400).json({ success: false, error: "Invalid question id" });
+      }
+      const targetBankId =
+        typeof req.body?.targetBankId === "string" ? req.body.targetBankId.trim() : "";
+      if (!targetBankId) {
+        return res.status(400).json({ success: false, error: "targetBankId is required" });
+      }
+      const membership = await moveQuestionToBank(
+        req.qmCourse.id,
+        req.user.id,
+        req.params.bankId,
+        targetBankId,
+        questionMetadataId,
+      );
+      res.json({ success: true, data: membership, message: "Question moved" });
     } catch (error) {
       next(error);
     }
