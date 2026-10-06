@@ -50,3 +50,17 @@ export function resolveSuggestedTourId(role: Role | undefined, pathname: string)
   if (!pathname.startsWith("/student")) return "student-journey";
   return isLessonRoute(pathname) ? "student-lesson-help" : "student-journey";
 }
+
+/**
+ * The tour the header help modal (#1754) offers: this page's own tour when it
+ * has one, else the viewer's role tour. Unlike the sidebar control, the modal
+ * says up front that the fallback starts elsewhere, so navigating there (the
+ * tour engine opens on step one when no step lives on this route) is expected.
+ */
+export function resolveHelpTourId(role: Role | undefined, pathname: string): AppTourId | null {
+  const suggested = resolveSuggestedTourId(role, pathname);
+  if (suggested) return suggested;
+  if (role === "STUDENT" || role === "TA") return "student-journey";
+  if (role === "UNIT_ADMIN") return "unit-admin-orientation";
+  return null;
+}

@@ -3,6 +3,7 @@ import {
   canAccessStudentTour,
   canAccessTour,
   canAccessUnitAdminTour,
+  resolveHelpTourId,
   resolveSuggestedTourId,
 } from "~/lib/tours/tour-storage";
 
@@ -63,5 +64,24 @@ describe("tour access helpers", () => {
 
   it("suggests lesson help on student lesson routes", () => {
     expect(resolveSuggestedTourId("STUDENT", "/student/lesson/1")).toBe("student-lesson-help");
+  });
+});
+
+describe("resolveHelpTourId (header help modal, #1754)", () => {
+  it("prefers the tour that belongs to the current page", () => {
+    expect(resolveHelpTourId("STUDENT", "/student/lesson/4")).toBe("student-lesson-help");
+    expect(resolveHelpTourId("UNIT_ADMIN", "/instructor")).toBe("unit-admin-orientation");
+  });
+
+  it("falls back to the role tour on pages without one", () => {
+    expect(resolveHelpTourId("STUDENT", "/settings")).toBe("student-journey");
+    expect(resolveHelpTourId("TA", "/help")).toBe("student-journey");
+    expect(resolveHelpTourId("UNIT_ADMIN", "/settings")).toBe("unit-admin-orientation");
+  });
+
+  it("offers nothing to roles that have no tour", () => {
+    expect(resolveHelpTourId("INSTRUCTOR", "/instructor")).toBeNull();
+    expect(resolveHelpTourId("ADMIN", "/dashboard")).toBeNull();
+    expect(resolveHelpTourId(undefined, "/dashboard")).toBeNull();
   });
 });

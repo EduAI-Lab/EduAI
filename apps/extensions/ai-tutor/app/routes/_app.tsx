@@ -41,6 +41,7 @@ import {
   useShellBreadcrumbState,
 } from "~/components/layout/ShellBreadcrumbContext";
 import TourButton from "~/components/TourButton";
+import { AiTutorPageHelp } from "~/components/help/AiTutorPageHelp";
 
 const NAV_ICONS = {
   dashboard: IconDashboard,
@@ -223,6 +224,8 @@ function AppLayoutInner() {
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <BugReportTriggerButton onClick={handleOpenBugReport} />
+          {/* Last, so it sits in the header's top-right corner (#1754). */}
+          <AiTutorPageHelp role={user.role} />
         </>
       }
       commandPalette={

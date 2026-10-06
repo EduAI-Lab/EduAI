@@ -58,6 +58,10 @@ vi.mock("~/components/layout/ShellBreadcrumbs", () => ({
   ShellBreadcrumbs: () => <div data-testid="breadcrumbs" />,
 }));
 vi.mock("~/components/TourButton", () => ({ default: () => <div data-testid="tour-button" /> }));
+const mockStartTour = vi.fn();
+vi.mock("~/components/TourProvider", () => ({
+  useAppTour: () => ({ startTour: mockStartTour }),
+}));
 
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
@@ -158,6 +162,27 @@ describe("_app layout — authenticated shell", () => {
     mockCaptureScreenshot.mockClear();
     mockSubmitBugReport.mockClear();
     mockClearScreenshot.mockClear();
+  });
+
+  it("renders the page help (?) button with the dashboard's help, and no tour for an instructor", async () => {
+    wrap();
+
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Dashboard");
+    expect(screen.queryByRole("button", { name: /take the tour/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a student the learner tour from the help modal", async () => {
+    mockUser = { id: "u2", name: "Sam", role: "STUDENT" };
+    mockStartTour.mockClear();
+    wrap();
+
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    fireEvent.click(await screen.findByRole("button", { name: /take the tour/i }));
+
+    await waitFor(() => expect(mockStartTour).toHaveBeenCalledWith("student-journey"));
   });
 
   it("opens the bug report dialog", async () => {
