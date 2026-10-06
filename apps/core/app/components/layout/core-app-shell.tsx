@@ -85,8 +85,6 @@ export interface CoreAppShellProps {
   breadcrumbs?: React.ReactNode;
   /** Route-specific header control(s) rendered before the common action bundle (e.g. chat's history toggle). */
   actions?: React.ReactNode;
-  /** Route-specific floating content mounted alongside the command palette (e.g. dashboard's ProductTour). */
-  tour?: React.ReactNode;
   /** Sidebar variant override — e.g. `"inset"` for the unit-chats and admin-chat pages. */
   sidebarVariant?: AppSidebarProps["variant"];
   /** Sidebar nav overrides, forwarded to `useCoreSidebarProps`. Unused by any route today; kept for parity with the old `AppSidebar` component's flexibility. */
@@ -106,7 +104,7 @@ export interface CoreAppShellProps {
  * Core's composition of the shared `@eduai/ui` `AppShell` (issue #764 core
  * parity) — the single place that assembles Core's sidebar (RBAC nav, logout),
  * header (search, AI status, theme, bug report), command palette, and
- * per-route breadcrumbs/tour, instead of every route hand-assembling
+ * per-route breadcrumbs, instead of every route hand-assembling
  * `SidebarProvider > AppSidebar + SidebarInset > SiteHeader`.
  */
 export function CoreAppShell({
@@ -114,7 +112,6 @@ export function CoreAppShell({
   title,
   breadcrumbs,
   actions,
-  tour,
   sidebarVariant,
   sidebarProps,
   insetClassName,
@@ -139,12 +136,7 @@ export function CoreAppShell({
         headerActions={
           <CoreHeaderActions extraActions={actions} help={<CorePageHelp role={user.role} />} />
         }
-        commandPalette={
-          <>
-            <CommandPalette user={user} />
-            {tour}
-          </>
-        }
+        commandPalette={<CommandPalette user={user} />}
         insetClassName={insetClassName}
         mainClassName={mainClassName}
         providerClassName={providerClassName}

@@ -14,7 +14,7 @@ import {
   IconCommand,
   type Icon,
 } from "@tabler/icons-react";
-import { PageHeading } from "@eduai/ui";
+import { Button, PageHeading, useTour } from "@eduai/ui";
 
 type HelpTopic = {
   id: string;
@@ -118,6 +118,7 @@ const TOPICS: HelpTopic[] = [
 ];
 
 export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean }) {
+  const { startTour } = useTour();
   // TAs are platform STUDENTs (Enrollment.role carries TA). They can upload
   // and manage their own course materials (AUTH-08), so they need the
   // materials topic even though session.user.role is not in STAFF.
@@ -134,13 +135,10 @@ export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean
           heading="Help & guide"
           subheading="How to get around EduAI and make the most of it."
         />
-        <Link
-          to="/dashboard?tour=1"
-          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={() => startTour("dashboard")}>
           <IconRocket className="size-4" aria-hidden />
           Replay guided tour
-        </Link>
+        </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[200px_1fr] lg:items-start">

@@ -3,9 +3,15 @@
  * filter: role-less topics always show, STAFF topics show for
  * ADMIN/UNIT_ADMIN/INSTRUCTOR, and ADMINS topics only for ADMIN/UNIT_ADMIN.
  */
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
+
+const startTour = vi.fn();
+vi.mock("@eduai/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@eduai/ui")>()),
+  useTour: () => ({ startTour }),
+}));
 
 import { HelpView } from "~/components/help/help-view";
 
@@ -72,11 +78,11 @@ describe("HelpView", () => {
     );
   });
 
-  it("renders the replay tour link pointing at the dashboard tour query param", () => {
+  it("replays the dashboard tour from the header button", () => {
     renderHelp("STUDENT");
 
-    const replayLink = screen.getByRole("link", { name: /Replay guided tour/ });
-    expect(replayLink).toHaveAttribute("href", "/dashboard?tour=1");
+    fireEvent.click(screen.getByRole("button", { name: /Replay guided tour/ }));
+    expect(startTour).toHaveBeenCalledWith("dashboard");
   });
 
   it("renders nested links inside topic bodies, e.g. the Courses link", () => {

@@ -1,17 +1,16 @@
-import { Link, useLocation, useNavigate } from "react-router";
-import { PageHelpButton } from "@eduai/ui";
+import { Link, useLocation } from "react-router";
+import { PageHelpButton, useTour } from "@eduai/ui";
 
 import { getCorePageHelp } from "./page-help-content";
 
 /**
  * Core's header (?) button (#1754): help for the current route, plus the
- * dashboard product tour. The tour only lives on /dashboard, so starting it
- * from any other page navigates there first; `?tour=1` (re)starts it even when
- * the reader is already on the dashboard (see `ProductTour`).
+ * dashboard tour. The tour's steps live on /dashboard, so starting it from any
+ * other page takes the reader there first.
  */
 export function CorePageHelp({ role }: { role?: string | null }) {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
+  const { startTour } = useTour();
   const onDashboard = pathname === "/dashboard";
 
   return (
@@ -23,7 +22,7 @@ export function CorePageHelp({ role }: { role?: string | null }) {
         description: onDashboard
           ? "A 30-second walkthrough of the dashboard and header."
           : "A 30-second walkthrough of EduAI. It starts on your dashboard.",
-        onStart: () => navigate("/dashboard?tour=1"),
+        onStart: () => startTour("dashboard"),
       }}
     />
   );
