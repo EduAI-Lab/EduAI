@@ -37,6 +37,7 @@ const TOPICS: HelpTopic[] = [
       "Your dashboard is home base — it greets you, surfaces quick stats, and lists your courses and recent conversations.",
       "The left sidebar is your main navigation. Collapse it with the toggle in the header when you want more room.",
       "Switch between light and dark themes with the sun/moon button in the top-right of every page.",
+      "Click the (?) button in the top-right corner of any page for help with that page, or to start the guided tour.",
       "Use the app-grid (waffle) button at the bottom of the sidebar to jump between EduAI apps you have access to.",
     ],
   },

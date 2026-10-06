@@ -49,6 +49,21 @@ describe("ProductTour", () => {
     expect(screen.queryByText("Finish")).not.toBeInTheDocument();
   });
 
+  it("restarts on a later ?tour=1 without remounting (header help modal, #1754)", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/", element: <ProductTour steps={STEPS} storageKey={STORAGE_KEY} /> }],
+      { initialEntries: ["/?tour=1"] },
+    );
+    render(<RouterProvider router={router} />);
+    await screen.findByText("Welcome");
+    fireEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+    await waitFor(() => expect(screen.queryByText("Welcome")).not.toBeInTheDocument());
+
+    await router.navigate("/?tour=1");
+    expect(await screen.findByText("Welcome")).toBeInTheDocument();
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+  });
+
   it("does not auto-start when already seen", async () => {
     localStorage.setItem(STORAGE_KEY, "1");
     renderTour("/");

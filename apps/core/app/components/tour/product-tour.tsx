@@ -97,8 +97,10 @@ export function ProductTour({ steps, storageKey }: { steps: TourStep[]; storageK
 
   // ── Decide whether to auto-start (once) or force-start via ?tour=1 ───────────
   React.useEffect(() => {
-    if (startedRef.current) return;
-
+    // An explicit ?tour=1 always (re)starts, even after this mount already ran
+    // the tour — the header help modal (#1754) sends it from /dashboard itself,
+    // where the page doesn't remount. The param is dropped immediately below,
+    // so the re-run this navigation triggers falls through to the guard.
     if (searchParams.get("tour") === "1") {
       startedRef.current = true;
       setIndex(0);
@@ -109,6 +111,7 @@ export function ProductTour({ steps, storageKey }: { steps: TourStep[]; storageK
       navigate({ search: next.toString() }, { replace: true });
       return;
     }
+    if (startedRef.current) return;
     let seen = false;
     try {
       seen = localStorage.getItem(storageKey) === "1";

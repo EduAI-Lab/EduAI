@@ -34,7 +34,12 @@ export const DASHBOARD_TOUR_STEPS: TourStep[] = [
     body: "Switch themes here whenever you like — your choice is remembered.",
   },
   {
+    target: '[data-tour="page-help"]',
+    title: "Help on every page",
+    body: "Stuck? The (?) button explains whatever page you're on, links to the full guide, and can replay this tour.",
+  },
+  {
     title: "Jump anywhere with ⌘K",
-    body: "Press ⌘K (Ctrl K on Windows/Linux) to open the command palette and jump to any page or course. Need more? Open Help & guide from the sidebar.",
+    body: "Press ⌘K (Ctrl K on Windows/Linux) to open the command palette and jump to any page or course. Need more? Click the (?) button or open Help & guide in the sidebar.",
   },
 ];
