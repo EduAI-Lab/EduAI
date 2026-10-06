@@ -40,7 +40,6 @@ import {
   ShellBreadcrumbProvider,
   useShellBreadcrumbState,
 } from "~/components/layout/ShellBreadcrumbContext";
-import TourButton from "~/components/TourButton";
 import { AiTutorPageHelp } from "~/components/help/AiTutorPageHelp";
 
 const NAV_ICONS = {
@@ -76,7 +75,12 @@ const AI_TUTOR_LOGO = (
 /** Reads the active route's published breadcrumb trail (see ShellBreadcrumbContext). */
 function HeaderBreadcrumbs() {
   const items = useShellBreadcrumbState();
-  return <ShellBreadcrumbs items={items} />;
+  // Anchors the lesson tour's "climb back up a level" step.
+  return (
+    <div data-tour="shell-breadcrumbs" className="min-w-0">
+      <ShellBreadcrumbs items={items} />
+    </div>
+  );
 }
 
 function AppLayoutInner() {
@@ -192,8 +196,6 @@ function AppLayoutInner() {
             external: true,
           },
         ],
-        // Guide-tour control lives in the sidebar footer (#740 / #952), not header chrome.
-        footerLeading: <TourButton />,
       }}
       breadcrumbs={<HeaderBreadcrumbs />}
       headerActions={

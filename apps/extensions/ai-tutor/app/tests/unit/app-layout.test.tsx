@@ -57,16 +57,13 @@ vi.mock("~/components/command/CommandPalette", () => ({
 vi.mock("~/components/layout/ShellBreadcrumbs", () => ({
   ShellBreadcrumbs: () => <div data-testid="breadcrumbs" />,
 }));
-vi.mock("~/components/TourButton", () => ({ default: () => <div data-testid="tour-button" /> }));
 const mockStartTour = vi.fn();
-vi.mock("~/components/TourProvider", () => ({
-  useAppTour: () => ({ startTour: mockStartTour }),
-}));
 
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
   return {
     ...actual,
+    useTour: () => ({ ...actual.useTour(), startTour: mockStartTour }),
     useAiServiceStatus: (...args: unknown[]) => mockAiStatus(...args),
     // Renders `ubcHistory` so the REAL AIServiceHistoryPanel (spread in from
     // `actual` above) mounts — the link under test is its own output, not a stub's.

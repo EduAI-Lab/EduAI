@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   canAccessStudentTour,
-  canAccessTour,
   canAccessUnitAdminTour,
   resolveHelpTourId,
   resolveSuggestedTourId,
-} from "~/lib/tours/tour-storage";
+} from "~/lib/tours/tour-access";
 
 describe("tour access helpers", () => {
   it("allows students on student routes", () => {
@@ -43,12 +42,6 @@ describe("tour access helpers", () => {
     // Other roles keep their own answer.
     expect(canAccessUnitAdminTour("INSTRUCTOR", "/dashboard")).toBe(false);
     expect(canAccessUnitAdminTour("ADMIN", "/dashboard")).toBe(false);
-  });
-
-  it("canAccessTour is the union the sidebar control gates on", () => {
-    expect(canAccessTour("UNIT_ADMIN", "/dashboard")).toBe(true);
-    expect(canAccessTour("STUDENT", "/student")).toBe(true);
-    expect(canAccessTour("INSTRUCTOR", "/dashboard")).toBe(false);
   });
 
   it("suggests the unit-admin orientation for a unit admin", () => {

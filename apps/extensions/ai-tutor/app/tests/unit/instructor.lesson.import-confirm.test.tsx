@@ -72,7 +72,6 @@ vi.mock("~/components/AddCourseTopicsButton", () => ({ default: () => null }));
 vi.mock("~/components/bug-report/useBugReport", () => ({
   useBugReport: () => ({ setContext: vi.fn(), clearContext: vi.fn() }),
 }));
-vi.mock("~/components/TourButton", () => ({ default: () => null }));
 
 import InstructorLessonBuilder from "~/routes/instructor.lesson";
 

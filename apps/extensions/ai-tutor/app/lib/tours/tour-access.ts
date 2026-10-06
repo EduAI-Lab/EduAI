@@ -1,11 +1,9 @@
+/**
+ * Which AI Tutor tour a viewer is offered, by role and page (#1754). The tours
+ * themselves live in `ai-tutor-tours.ts`.
+ */
 import type { Role } from "~/lib/types";
-import type { AppTourDefinition, AppTourId } from "./tour-types";
-import { isBrowser } from "@eduai/ui/runtime-env";
-
-export function markTourCompleted(tour: AppTourDefinition) {
-  if (!isBrowser()) return;
-  window.localStorage.setItem(tour.completionKey, "true");
-}
+import type { AiTutorTourId } from "./ai-tutor-tours";
 
 export function isLessonRoute(pathname: string) {
   return /^\/student\/lesson\/\d+$/.test(pathname);
@@ -25,11 +23,9 @@ export function canAccessStudentTour(role: Role | undefined, pathname: string) {
  *
  * Scoped to the routes the tour actually visits, and to those *exactly*: the
  * tour opens on whichever step belongs to the current route
- * (`resolveTourStartStep`), so offering it anywhere without a step of its own —
- * /settings, /help, or a course page under /instructor — would start a tour
- * that immediately navigates the reader somewhere else. Both routes stay
- * admitted while the tour runs, so the sidebar control can still stop it after
- * the hop from /dashboard to /instructor.
+ * (`resolveStartStep` in `@eduai/ui`), so it is only *suggested* as this
+ * page's tour where it has a step of its own; elsewhere `resolveHelpTourId`
+ * still offers it, saying up front that it starts on another page.
  *
  * The tour is staff-voiced and unit-specific — extending it to INSTRUCTOR would
  * need its own copy, not just another role in this list.
@@ -39,12 +35,10 @@ export function canAccessUnitAdminTour(role: Role | undefined, pathname: string)
   return pathname === "/dashboard" || pathname === "/instructor";
 }
 
-/** Whether any tour is on offer here — the sidebar footer control's gate. */
-export function canAccessTour(role: Role | undefined, pathname: string) {
-  return canAccessStudentTour(role, pathname) || canAccessUnitAdminTour(role, pathname);
-}
-
-export function resolveSuggestedTourId(role: Role | undefined, pathname: string): AppTourId | null {
+export function resolveSuggestedTourId(
+  role: Role | undefined,
+  pathname: string,
+): AiTutorTourId | null {
   if (canAccessUnitAdminTour(role, pathname)) return "unit-admin-orientation";
   if (!canAccessStudentTour(role, pathname)) return null;
   if (!pathname.startsWith("/student")) return "student-journey";
@@ -53,11 +47,11 @@ export function resolveSuggestedTourId(role: Role | undefined, pathname: string)
 
 /**
  * The tour the header help modal (#1754) offers: this page's own tour when it
- * has one, else the viewer's role tour. Unlike the sidebar control, the modal
- * says up front that the fallback starts elsewhere, so navigating there (the
- * tour engine opens on step one when no step lives on this route) is expected.
+ * has one, else the viewer's role tour. The modal says up front that the
+ * fallback starts elsewhere, so navigating there (the tour engine opens on
+ * step one when no step lives on this route) is expected.
  */
-export function resolveHelpTourId(role: Role | undefined, pathname: string): AppTourId | null {
+export function resolveHelpTourId(role: Role | undefined, pathname: string): AiTutorTourId | null {
   const suggested = resolveSuggestedTourId(role, pathname);
   if (suggested) return suggested;
   if (role === "STUDENT" || role === "TA") return "student-journey";

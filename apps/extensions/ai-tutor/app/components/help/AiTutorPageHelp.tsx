@@ -1,17 +1,16 @@
 import { Link, useLocation } from "react-router";
-import { PageHelpButton, type PageHelpTour } from "@eduai/ui";
+import { PageHelpButton, useTour, type PageHelpTour } from "@eduai/ui";
 
-import { useAppTour } from "~/components/TourProvider";
 import { getAiTutorPageHelp } from "~/lib/help/page-help-content";
-import { resolveHelpTourId, resolveSuggestedTourId } from "~/lib/tours/tour-storage";
-import type { AppTourId } from "~/lib/tours/tour-types";
+import type { AiTutorTourId } from "~/lib/tours/ai-tutor-tours";
+import { resolveHelpTourId, resolveSuggestedTourId } from "~/lib/tours/tour-access";
 import type { Role } from "~/lib/types";
 
 const TOUR_DESCRIPTIONS = {
   "student-journey": "Walk through opening a course, working a lesson and getting help.",
   "student-lesson-help": "Walk through this lesson's questions, answers and the AI tutor.",
   "unit-admin-orientation": "Walk through your dashboard and the courses you oversee.",
-} satisfies Record<AppTourId, string>;
+} satisfies Record<AiTutorTourId, string>;
 
 /**
  * AI Tutor's header (?) button (#1754): help for the current route, plus the
@@ -21,7 +20,7 @@ const TOUR_DESCRIPTIONS = {
  */
 export function AiTutorPageHelp({ role }: { role?: Role }) {
   const { pathname } = useLocation();
-  const { startTour } = useAppTour();
+  const { startTour } = useTour();
   const tourId = resolveHelpTourId(role, pathname);
   const startsHere = tourId !== null && tourId === resolveSuggestedTourId(role, pathname);
 

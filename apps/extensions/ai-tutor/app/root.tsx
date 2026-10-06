@@ -11,7 +11,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { AuthProvider } from "~/hooks/useLocalUser";
-import { TourProvider } from "~/components/TourProvider";
+import { AiTutorTourProvider } from "~/components/AiTutorTourProvider";
 import { BugReportProvider } from "~/components/bug-report/BugReportProvider";
 import { AssistiveModeProvider } from "~/components/settings/assistive-mode";
 import { UiPreferencesProvider } from "~/components/settings/ui-preferences";
@@ -65,14 +65,14 @@ export default function App() {
   return (
     <AuthProvider initialUser={null}>
       <BugReportProvider>
-        <TourProvider>
+        <AiTutorTourProvider>
           <AssistiveModeProvider>
             <UiPreferencesProvider>
               <ThemeSyncInitializer />
               <Outlet />
             </UiPreferencesProvider>
           </AssistiveModeProvider>
-        </TourProvider>
+        </AiTutorTourProvider>
       </BugReportProvider>
     </AuthProvider>
   );

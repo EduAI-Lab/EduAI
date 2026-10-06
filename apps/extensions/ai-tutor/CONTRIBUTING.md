@@ -111,7 +111,7 @@ npm run test:frontend     # Frontend only
 - **Runner**: Vitest with jsdom environment
 - **Libraries**: `@testing-library/react`, `@testing-library/jest-dom`
 - **Location**: `app/tests/` (mirrors `app/` structure)
-- **Co-located tests**: Some test files live next to source (e.g., `tour-engine.test.ts`)
+- **Co-located tests**: Some test files live next to source (e.g., `*.test.ts` beside a module)
 
 ### Backend Tests
 
@@ -276,7 +276,7 @@ Include:
 | `app/components/`        | Shared React components                       |
 | `app/hooks/`             | React context providers and custom hooks      |
 | `app/lib/`               | API client, auth utilities, type definitions  |
-| `app/lib/tours/`         | Guided tour engine and definitions            |
+| `app/lib/tours/`         | Guided tour definitions and role access       |
 | `app/tests/`             | Frontend test files                           |
 | `server/src/routes/`     | Express route handlers                        |
 | `server/src/services/`   | Business logic (AI, analytics, cloning, sync) |
