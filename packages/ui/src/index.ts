@@ -12,6 +12,15 @@ export { BugReportDialog } from "./bug-report-dialog";
 export { BugReportTriggerButton } from "./bug-report-trigger-button";
 export type { BugReportType, BugReportSubmitData } from "./bug-report-dialog";
 
+// ── Page help ──────────────────────────────────────────────────────────────
+export { PageHelpButton, resolvePageHelp } from "./page-help";
+export type {
+  PageHelpButtonProps,
+  PageHelpContent,
+  PageHelpRoute,
+  PageHelpTour,
+} from "./page-help";
+
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge";
 export type { RoleBadgeProps } from "./role-badge";
