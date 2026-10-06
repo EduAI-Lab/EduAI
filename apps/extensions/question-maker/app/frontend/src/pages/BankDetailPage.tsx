@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
-import { useNavigate, useParams } from "react-router";
-import { Button, Badge, Alert, AlertDescription } from "@eduai/ui";
+import { Link, useNavigate, useParams } from "react-router";
+import { Button, Badge, Alert, AlertDescription, NotFoundState } from "@eduai/ui";
 import { IconArrowLeft, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
@@ -198,11 +198,7 @@ export function BankDetailPage() {
   }
 
   if (notFound || !course || !courseId) {
-    return (
-      <div className="p-6">
-        <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
-      </div>
-    );
+    return <NotFoundState LinkComponent={Link} />;
   }
 
   if (!hasCourseAccess) {

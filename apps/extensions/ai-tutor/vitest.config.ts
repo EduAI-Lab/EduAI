@@ -11,6 +11,10 @@ export default defineConfig({
       // would rewrite subpaths to `.../src/index.ts/<subpath>`. Insertion order
       // is what keeps that from happening.
       "@eduai/ui/core-url": path.resolve(__dirname, "../../../packages/ui/src/lib/core-url.ts"),
+      "@eduai/ui/not-found-state": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/not-found-state.tsx",
+      ),
       "@eduai/ui/primitive-union": path.resolve(
         __dirname,
         "../../../packages/ui/src/lib/primitive-union.ts",

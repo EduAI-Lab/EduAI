@@ -103,8 +103,8 @@ test.describe("Question Maker role access", () => {
       await expect(page.getByText("QM TA Assigned Course", { exact: true })).toBeVisible();
 
       await page.goto(`${QM_FRONTEND_URL}/courses/${otherQmCourseId}`);
-      // CardTitle renders as a plain div (no heading role), so match on text.
-      await expect(page.getByText("Course not found")).toBeVisible();
+      // A course outside the TA's list gets the same 404 as AI Tutor and Core.
+      await expect(page.getByText("404 — Page not found")).toBeVisible();
     } finally {
       await adminContext.dispose();
       await instructorContext.dispose();

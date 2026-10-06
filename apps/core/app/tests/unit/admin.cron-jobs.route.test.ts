@@ -9,6 +9,11 @@ vi.mock("~/lib/api-keys/access.server", () => ({
   isActiveAdminUser: vi.fn(),
 }));
 
+vi.mock("~/lib/logging.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/logging.server")>()),
+  logAuditAction: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("~/lib/db.cron-jobs.server", () => ({
   KNOWN_CRON_JOBS: [
     {
@@ -33,6 +38,15 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   triggerCronJobAsync: vi.fn(),
   updateCronSchedule: vi.fn(),
   resetCronSchedule: vi.fn(),
+  updateCronJobSetting: vi.fn(),
+  resetCronJobSetting: vi.fn(),
+  CronJobSettingError: class CronJobSettingError extends Error {
+    readonly status = 400;
+    constructor(message: string) {
+      super(message);
+      this.name = "CronJobSettingError";
+    }
+  },
 }));
 
 import { loader, action } from "~/routes/api/admin.cron-jobs";
@@ -45,7 +59,11 @@ import {
   triggerCronJobAsync,
   updateCronSchedule,
   resetCronSchedule,
+  updateCronJobSetting,
+  resetCronJobSetting,
+  CronJobSettingError,
 } from "~/lib/db.cron-jobs.server";
+import { logAuditAction } from "~/lib/logging.server";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const ADMIN_USER = { id: "u-admin", role: "ADMIN", email: "admin@test.com" };
@@ -85,6 +103,8 @@ beforeEach(() => {
   vi.mocked(triggerCronJobAsync).mockReturnValue(undefined);
   vi.mocked(updateCronSchedule).mockResolvedValue(undefined);
   vi.mocked(resetCronSchedule).mockResolvedValue(undefined);
+  vi.mocked(updateCronJobSetting).mockResolvedValue({ previous: 90, value: 30 });
+  vi.mocked(resetCronJobSetting).mockResolvedValue({ previous: 30, value: 90 });
 });
 
 // ---------------------------------------------------------------------------
@@ -383,6 +403,208 @@ describe("POST /api/admin/cron-jobs (action) — intent: reset-schedule", () => 
     expect(resetCronSchedule).toHaveBeenCalledWith("backup-nightly");
     const b = body(res);
     expect(b.jobs).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Action — intents: update-setting / reset-setting
+// ---------------------------------------------------------------------------
+
+describe("POST /api/admin/cron-jobs (action) — intent: update-setting", () => {
+  beforeEach(() => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: ADMIN_USER } as any);
+    vi.mocked(listCronJobStatuses).mockResolvedValue([{ name: "backup-nightly" } as any]);
+  });
+
+  function update(extra: Record<string, string | number | boolean | number[] | null>) {
+    return action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-setting",
+          jobName: "purge-deleted-materials",
+          ...extra,
+        }),
+      ),
+    );
+  }
+
+  it("saves a numeric value, audits the change, and returns jobs", async () => {
+    const res = await update({ key: "retainDays", value: 30 });
+    expect(status(res)).toBe(200);
+    expect(updateCronJobSetting).toHaveBeenCalledWith(
+      "purge-deleted-materials",
+      "retainDays",
+      30,
+      "u-admin",
+    );
+    expect(body(res).jobs).toBeDefined();
+    await vi.waitFor(() =>
+      expect(logAuditAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionCode: "CRON_SETTING_UPDATED",
+          category: "SECURITY",
+          entityType: "CronJobSetting",
+          entityId: "purge-deleted-materials.retainDays",
+          actorUserId: "u-admin",
+          details: {
+            jobName: "purge-deleted-materials",
+            key: "retainDays",
+            oldValue: 90,
+            newValue: 30,
+          },
+        }),
+      ),
+    );
+  });
+
+  it("coerces a numeric string", async () => {
+    await update({ key: "retainDays", value: "45" });
+    expect(updateCronJobSetting).toHaveBeenCalledWith(
+      "purge-deleted-materials",
+      "retainDays",
+      45,
+      "u-admin",
+    );
+  });
+
+  // Only a JSON number or a string of digits is a value; everything else reaches
+  // updateCronJobSetting as NaN. Its real no-write rejection of NaN is covered in
+  // db.cron-jobs.server.test.ts, so here it is mocked to reject non-integers the same way.
+  it.each([
+    ["null", null],
+    ["true", true],
+    ["false", false],
+    ["an empty string", ""],
+    ["a padded numeric string", " 30 "],
+    ["a one-element array", [5]],
+  ])("rejects %s as not a whole number with 400 and no audit", async (_label, value) => {
+    vi.mocked(updateCronJobSetting).mockImplementationOnce(async (_job, _key, parsed) => {
+      if (!Number.isSafeInteger(parsed)) {
+        throw new CronJobSettingError('"Delete after (days)" must be a whole number');
+      }
+      return { previous: 90, value: parsed };
+    });
+    const res = await update({ key: "retainDays", value });
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe('"Delete after (days)" must be a whole number');
+    expect(vi.mocked(updateCronJobSetting).mock.calls[0][2]).toBeNaN();
+    expect(listCronJobStatuses).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when jobName is missing, without touching settings", async () => {
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-setting",
+          key: "retainDays",
+          value: 30,
+        }),
+      ),
+    );
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe("jobName is required");
+    expect(updateCronJobSetting).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when key is missing", async () => {
+    const res = await update({ value: 30 });
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe("key is required");
+    expect(updateCronJobSetting).not.toHaveBeenCalled();
+  });
+
+  it("returns the validation message as a 400 and does not audit", async () => {
+    vi.mocked(updateCronJobSetting).mockRejectedValue(
+      new CronJobSettingError('"Delete after (days)" must be between 1 and 3650'),
+    );
+    const res = await update({ key: "retainDays", value: 0 });
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe('"Delete after (days)" must be between 1 and 3650');
+    expect(logAuditAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/admin/cron-jobs (action) — intent: reset-setting", () => {
+  beforeEach(() => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: ADMIN_USER } as any);
+    vi.mocked(listCronJobStatuses).mockResolvedValue([{ name: "backup-nightly" } as any]);
+  });
+
+  it("resets the setting, audits it, and returns jobs", async () => {
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-setting",
+          jobName: "purge-deleted-materials",
+          key: "retainDays",
+        }),
+      ),
+    );
+    expect(status(res)).toBe(200);
+    expect(resetCronJobSetting).toHaveBeenCalledWith("purge-deleted-materials", "retainDays");
+    expect(body(res).jobs).toBeDefined();
+    await vi.waitFor(() =>
+      expect(logAuditAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionCode: "CRON_SETTING_RESET",
+          details: {
+            jobName: "purge-deleted-materials",
+            key: "retainDays",
+            oldValue: 30,
+            newValue: 90,
+          },
+        }),
+      ),
+    );
+  });
+
+  it("returns 400 when jobName is missing, without touching settings", async () => {
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-setting",
+          key: "retainDays",
+        }),
+      ),
+    );
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toBe("jobName is required");
+    expect(resetCronJobSetting).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an unknown setting", async () => {
+    vi.mocked(resetCronJobSetting).mockRejectedValue(
+      new CronJobSettingError('Unknown setting "nope" for job purge-deleted-materials'),
+    );
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-setting",
+          jobName: "purge-deleted-materials",
+          key: "nope",
+        }),
+      ),
+    );
+    expect(status(res)).toBe(400);
+    expect(body(res).error).toMatch(/Unknown setting/);
+  });
+
+  it("rejects a non-admin before touching settings", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: STUDENT_USER } as any);
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-setting",
+          jobName: "purge-deleted-materials",
+          key: "retainDays",
+        }),
+      ),
+    );
+    expect(status(res)).toBe(401);
+    expect(resetCronJobSetting).not.toHaveBeenCalled();
   });
 });
 

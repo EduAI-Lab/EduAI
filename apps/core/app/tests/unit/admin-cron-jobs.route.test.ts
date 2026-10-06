@@ -36,13 +36,11 @@ describe("admin.cron-jobs loader", () => {
     expect(listCronJobStatuses).not.toHaveBeenCalled();
   });
 
-  it("redirects a non-admin to /dashboard", async () => {
+  it("404s a non-admin instead of redirecting", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
     expect(listCronJobStatuses).not.toHaveBeenCalled();
   });
 

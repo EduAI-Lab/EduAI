@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   PageTabs,
   PageTabsList,
@@ -19,11 +19,7 @@ import {
   PageTabsContent,
   CourseHeroCard,
   DetailPageScaffold,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Button,
+  NotFoundState,
   Alert,
   AlertDescription,
   resolvePaletteAccent,
@@ -1060,22 +1056,10 @@ export const CourseDetailPage = () => {
     return <CourseDetailSkeleton />;
   }
 
+  // Same generic 404 as an unknown URL, AI Tutor and Core: a missing course and
+  // one outside the viewer's list look identical.
   if (notFound || !course) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Course not found</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              This course doesn’t exist or you don’t have access to it.
-            </p>
-            <Button onClick={() => navigate("/courses")}>Back to Courses</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <NotFoundState LinkComponent={Link} />;
   }
 
   const writesDisabled = !canCreateQuestion || !hasCourseAccess;

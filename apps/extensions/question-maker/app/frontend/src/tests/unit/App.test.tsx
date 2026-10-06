@@ -13,6 +13,7 @@ vi.mock("@eduai/ui", () => ({
   Toaster: () => <div data-testid="toaster" />,
   ThemeProvider: ({ children }: any) => <>{children}</>,
   ThemeSyncInitializer: () => null,
+  NotFoundState: () => <div data-testid="not-found-state" />,
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -106,10 +107,13 @@ describe("App routing", () => {
     await waitFor(() => expect(screen.getByTestId("dashboard-page")).toBeInTheDocument());
   });
 
-  it("redirects an unmatched path to /dashboard", async () => {
+  it("renders the in-shell 404 for an unmatched path instead of redirecting", async () => {
     window.history.pushState({}, "", "/this-route-does-not-exist");
     render(<App />);
-    await waitFor(() => expect(screen.getByTestId("dashboard-page")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("not-found-state")).toBeInTheDocument());
+    expect(screen.getByTestId("qm-app-layout")).toBeInTheDocument();
+    expect(screen.queryByTestId("dashboard-page")).toBeNull();
+    expect(window.location.pathname).toBe("/this-route-does-not-exist");
   });
 
   describe("/home legacy redirect", () => {

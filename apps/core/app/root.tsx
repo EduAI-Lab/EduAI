@@ -1,5 +1,6 @@
 import {
   isRouteErrorResponse,
+  Link,
   Links,
   Meta,
   Outlet,
@@ -23,6 +24,7 @@ import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provide
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui/sonner";
 import { PageLoader } from "@eduai/ui/page-loader";
+import { NotFoundState } from "@eduai/ui/not-found-state";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
@@ -340,14 +342,21 @@ export default function App({ loaderData }: Route.ComponentProps) {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  // An unmatched URL lands here; it gets the same 404 page as a missing or
+  // forbidden record (see RouteErrorState), just without the app shell. A 403
+  // gets it too, as in AI Tutor's root, so a forbidden page never reads as
+  // one that exists.
+  if (isRouteErrorResponse(error) && (error.status === 404 || error.status === 403)) {
+    return <NotFoundState standalone LinkComponent={Link} />;
+  }
+
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404 ? "The requested page could not be found." : error.statusText || details;
+    message = "Error";
+    details = error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

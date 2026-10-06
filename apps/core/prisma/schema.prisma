@@ -1289,6 +1289,22 @@ model CronJobScheduleOverride {
   @@map("cron_job_schedule_overrides")
 }
 
+/// Admin overrides for per-job settings declared on `KNOWN_CRON_JOBS[].settings`
+/// (e.g. `purge-deleted-materials.retainDays`). No row means the code default
+/// applies — the same two-layer model as `CronJobScheduleOverride`. `value` is
+/// text and is parsed and range-checked against the job's declaration on every
+/// read, so a bad row can never reach a handler.
+model CronJobSetting {
+  jobName   String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@id([jobName, key])
+  @@map("cron_job_settings")
+}
+
 enum IdempotencyStatus {
   PROCESSING
   COMPLETED
