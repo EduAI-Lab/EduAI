@@ -15,7 +15,7 @@
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { DEFAULT_PASSWORD, registerUser, signOut } from "../helpers/auth";
-import { gotoAiTutor, loginAsStudent, sidebar } from "../helpers/at-ui";
+import { gotoAiTutor, loginAsStudent, openHelpTourEntry, sidebar } from "../helpers/at-ui";
 
 test.describe("AI Tutor STUDENT — sign-in and landing", () => {
   test("signs in through Core's form and lands on the shared dashboard as STUDENT", async ({
@@ -161,10 +161,10 @@ test.describe("AI Tutor STUDENT — Help and guided tour", () => {
 
   test("the guided tour IS offered to a student", async ({ page }) => {
     // `canAccessStudentTour` is STUDENT/TA only — the inverse of the admin case,
-    // where the sparkle button never renders. Here it must.
+    // where the help modal has no tour entry. Here it must.
     await loginAsStudent(page, "at-student-tour");
     await gotoAiTutor(page, "/student");
-    await expect(page.getByRole("button", { name: /take tour/i })).toBeVisible({ timeout: 20_000 });
+    await expect(await openHelpTourEntry(page)).toBeVisible({ timeout: 20_000 });
   });
 });
 
