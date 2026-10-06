@@ -11,11 +11,11 @@ import {
   BreadcrumbLink,
   BreadcrumbSeparator,
   BugReportTriggerButton,
-  Button,
   CommandSearchButton,
   AIServiceHistoryPanel,
   useHistoryOnOpen,
   AIServiceIndicators,
+  PageHelpButton,
   type HistoryPayload,
 } from "@eduai/ui";
 import {
@@ -26,23 +26,22 @@ import {
   IconLibrary,
   IconSettings,
   IconHelpCircle,
-  IconRoute,
   type Icon,
 } from "@tabler/icons-react";
-import { getCoreStatusUrl } from "@/lib/coreUrl";
+import { getCoreStatusUrl, getCoreUrl } from "@/lib/coreUrl";
+import { QM_ACCESS_HELP } from "@/lib/pageHelpContent";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutContext";
 import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
 import { useCourses } from "@/hooks/useCourses";
 import { useAiServicesStatus, revalidateCloud } from "@/hooks/useAiServicesStatus";
 import eduaiService from "@/services/eduaiService";
-import { useGuidedTour } from "@/contexts/GuidedTourContext";
 import { useBugReport } from "@/contexts/BugReportContext";
 import { getFooterNavForUser, getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
 import type { QmNavItemKey } from "@/lib/rbac/types";
-import { Tooltip } from "@/components/ui/tooltip";
 import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
 import { CommandPalette } from "@/components/command/CommandPalette";
+import { QmPageHelp } from "@/components/layout/QmPageHelp";
 import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
 import { toast } from "sonner";
 import { courseService } from "@/services/courseService";
@@ -159,7 +158,6 @@ function QmAppLayoutInner() {
   const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const aiStatus = useAiServicesStatus();
-  const { startTour } = useGuidedTour();
   const bugReport = useBugReport();
   const localCourseId = Number(pathname.match(/^\/courses\/(\d+)/)?.[1]);
   const routeCourse = courses.find((course) => course.id === localCourseId);
@@ -210,14 +208,6 @@ function QmAppLayoutInner() {
         description: "Your session is still active. Please try again.",
       });
     });
-  };
-
-  const handleGuidedTourClick = () => {
-    if (guidedTourHandler) {
-      guidedTourHandler();
-    } else {
-      startTour("main");
-    }
   };
 
   const navMain = getNavForUser(navigationUser).map((item) => ({
@@ -324,27 +314,14 @@ function QmAppLayoutInner() {
               onUbcOpenChange={onAiHistoryOpenChange}
             />
           </div>
-          <div className="relative">
-            <Tooltip content="Walk through the app with a guided tour" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-9"
-                onClick={handleGuidedTourClick}
-                aria-label="Guided tour"
-              >
-                <IconRoute className="size-4" />
-              </Button>
-            </Tooltip>
-            {courses.length === 0 && !isCoursesLoading && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
-              </span>
-            )}
-          </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           {bugReport ? <BugReportTriggerButton onClick={bugReport.openBugReport} /> : null}
+          {/* Last, so it sits in the header's top-right corner (#1754). The
+              guided tour is launched from its modal. */}
+          <QmPageHelp
+            guidedTourHandler={guidedTourHandler}
+            showIndicator={courses.length === 0 && !isCoursesLoading}
+          />
         </>
       }
       commandPalette={
@@ -427,6 +404,9 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           navUser: user ? { items: [], onLogout: handleLogout } : undefined,
         }}
         title="Question Maker"
+        headerActions={
+          <PageHelpButton content={QM_ACCESS_HELP} helpHref={`${getCoreUrl()}/help`} />
+        }
       >
         <div className="flex h-full items-center justify-center p-4">{children}</div>
       </AppShell>

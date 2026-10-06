@@ -6,7 +6,7 @@
  * component/context is mocked so this exercises only QmAppLayout's own logic.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 let pathnameValue = "/dashboard";
 let searchParamsValue = new URLSearchParams();
@@ -45,6 +45,9 @@ let capturedAppShellProps: any = null;
 vi.mock("@eduai/ui", async (importOriginal) => ({
   useHistoryOnOpen: (await importOriginal<any>()).useHistoryOnOpen,
   BugReportTriggerButton: (await importOriginal<any>()).BugReportTriggerButton,
+  // Real help button + resolver: the modal's tour wiring is what's asserted below.
+  PageHelpButton: (await importOriginal<any>()).PageHelpButton,
+  resolvePageHelp: (await importOriginal<any>()).resolvePageHelp,
   AppShell: (props: any) => {
     capturedAppShellProps = props;
     return (
@@ -258,18 +261,47 @@ describe("QmAppLayout", () => {
     expect(container.querySelector(".animate-ping")).toBeFalsy();
   });
 
-  it("clicking the guided tour button calls the registered handler when present", () => {
+  it("replaces the standalone guided tour button with the page help (?) button (#1754)", () => {
+    render(<QmAppLayout />);
+    expect(screen.queryByLabelText("Guided tour")).not.toBeInTheDocument();
+    const actions = screen.getByTestId("header-actions");
+    const buttons = within(actions).getAllByRole("button");
+    expect(buttons[buttons.length - 1]).toHaveAccessibleName("Help for this page");
+  });
+
+  it("shows help for the current page in the help modal", () => {
+    pathnameValue = "/library";
+    render(<QmAppLayout />);
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Question library");
+  });
+
+  it("starting the tour from the help modal calls the registered handler when present", async () => {
     guidedTourHandlerValue = vi.fn();
     render(<QmAppLayout />);
-    fireEvent.click(screen.getByLabelText("Guided tour"));
-    expect(guidedTourHandlerValue).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    await waitFor(() => expect(guidedTourHandlerValue).toHaveBeenCalled());
     expect(startTour).not.toHaveBeenCalled();
   });
 
-  it('clicking the guided tour button falls back to startTour("main") when no handler is registered', () => {
+  it("starting the tour with no registered handler hands off to /courses, which starts it", async () => {
     render(<QmAppLayout />);
-    fireEvent.click(screen.getByLabelText("Guided tour"));
-    expect(startTour).toHaveBeenCalledWith("main");
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/courses", { state: { startGuidedTour: true } }),
+    );
+    expect(startTour).not.toHaveBeenCalled();
+  });
+
+  it('starting the tour on /courses itself runs startTour("main") in place', async () => {
+    pathnameValue = "/courses";
+    render(<QmAppLayout />);
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    await waitFor(() => expect(startTour).toHaveBeenCalledWith("main"));
+    expect(navigate).not.toHaveBeenCalledWith("/courses", expect.anything());
   });
 
   it("renders the bug report button when a BugReportContext is present, and calls it on click", () => {
@@ -424,6 +456,17 @@ describe("QmAccessShell", () => {
     );
     expect(screen.getByText("gated content")).toBeInTheDocument();
     expect(screen.getByTestId("app-shell").dataset.title).toBe("Question Maker");
+  });
+
+  it("offers access help, without a tour, on the restricted shell", () => {
+    render(
+      <QmAccessShell>
+        <p>gated content</p>
+      </QmAccessShell>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Access restricted");
+    expect(screen.queryByRole("button", { name: /take the tour/i })).not.toBeInTheDocument();
   });
 
   it("falls back to a Guest sidebar user when unauthenticated", () => {

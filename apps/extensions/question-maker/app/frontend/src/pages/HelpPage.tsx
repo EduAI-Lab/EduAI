@@ -66,7 +66,7 @@ const ARTICLES: HelpArticle[] = [
         <li>Use the Dashboard to enter the question bank and assessments for one course.</li>
         <li>
           The guided tour can be relaunched any time from this page (see “Relaunch guided tour”
-          above).
+          above), or from the (?) help button in the top-right corner of any page.
         </li>
         <li>For new users, a first-run guided tour may start automatically.</li>
         <li>

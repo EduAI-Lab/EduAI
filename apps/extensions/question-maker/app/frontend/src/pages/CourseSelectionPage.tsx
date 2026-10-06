@@ -104,19 +104,30 @@ export const CourseSelectionPage = () => {
     onStart: handleAutoStartMainTour,
   });
 
-  // When arriving from homepage guided tour, start here and remember which course to reopen.
+  // When arriving with `startGuidedTour` (a course workspace, or the header help
+  // modal on any other page, #1754), start here and remember which course to
+  // reopen. Waits for courses so the first step has a card to highlight when
+  // no `returnCourseId` was passed.
   useEffect(() => {
     const state = location.state as { startGuidedTour?: boolean; returnCourseId?: number } | null;
-    if (!state?.startGuidedTour) return;
+    if (!state?.startGuidedTour || isCoursesLoading) return;
 
-    if (state.returnCourseId != null) {
-      writeTourCourseId(state.returnCourseId);
-      setTourHighlightCourseId(state.returnCourseId);
+    const tourCourseId = resolveTourCourseId();
+    if (tourCourseId != null) {
+      writeTourCourseId(tourCourseId);
+      setTourHighlightCourseId(tourCourseId);
     }
 
     startTour("main");
     navigate(location.pathname, { replace: true, state: {} });
-  }, [location.pathname, location.state, navigate, startTour]);
+  }, [
+    isCoursesLoading,
+    location.pathname,
+    location.state,
+    navigate,
+    resolveTourCourseId,
+    startTour,
+  ]);
 
   // Step 1: open the highlighted course on the questions tab (never blindly pick courses[0]).
   useEffect(() => {

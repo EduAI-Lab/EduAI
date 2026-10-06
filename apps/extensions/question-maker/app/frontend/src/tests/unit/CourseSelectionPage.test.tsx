@@ -163,6 +163,33 @@ describe("CourseSelectionPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/courses", { replace: true, state: {} });
   });
 
+  it("highlights the first course when the help modal hands off without a returnCourseId (#1754)", () => {
+    sessionStorage.removeItem("qm:tour-course-id");
+    locationBox.current = { pathname: "/courses", state: { startGuidedTour: true } };
+    const startTour = vi.fn();
+    setup(
+      "INSTRUCTOR",
+      [
+        { id: 5, name: "Intro" },
+        { id: 6, name: "Data" },
+      ],
+      { startTour },
+    );
+    render(<CourseSelectionPage />);
+    expect(startTour).toHaveBeenCalledWith("main");
+    expect(sessionStorage.getItem("qm:tour-course-id")).toBe("5");
+  });
+
+  it("waits for courses to load before starting a handed-off tour", () => {
+    locationBox.current = { pathname: "/courses", state: { startGuidedTour: true } };
+    const startTour = vi.fn();
+    setup("INSTRUCTOR", [], { startTour });
+    useDisplayCoursesMock.mockReturnValue({ displayCourses: [], isLoading: true });
+    render(<CourseSelectionPage />);
+    expect(startTour).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalledWith("/courses", { replace: true, state: {} });
+  });
+
   it("registers a course-select tour step that opens the resolved course on the questions tab", () => {
     let registeredAction: any;
     const registerStepAction = vi.fn((_id: string, action: any) => {
