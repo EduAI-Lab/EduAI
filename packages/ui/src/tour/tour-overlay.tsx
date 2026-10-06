@@ -84,7 +84,8 @@ export function TourOverlay({
 
   // Measure in the overlay root's own coordinates. Normally that is the
   // viewport, but inside a transformed ancestor (a centred Radix dialog)
-  // `position: fixed` is relative to that ancestor instead.
+  // `position: fixed` is relative to that ancestor instead, and the card must
+  // also stay within that ancestor's box, since it clips (`overflow: hidden`).
   const measure = React.useCallback(() => {
     const root = rootRef.current;
     const card = cardRef.current;
@@ -92,7 +93,10 @@ export function TourOverlay({
     const box = root.getBoundingClientRect();
     const origin = { top: box.top, left: box.left };
     const spot = target ? rectOf(target, origin) : null;
-    const viewport = { width: window.innerWidth - box.left, height: window.innerHeight - box.top };
+    const viewport = {
+      width: Math.min(box.width, window.innerWidth - box.left),
+      height: Math.min(box.height, window.innerHeight - box.top),
+    };
     const padded = spot && {
       top: spot.top - SPOTLIGHT_PAD,
       left: spot.left - SPOTLIGHT_PAD,

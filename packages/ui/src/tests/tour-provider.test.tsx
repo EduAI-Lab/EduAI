@@ -1,6 +1,6 @@
 import * as React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LocalTour } from "../tour/local-tour";
 import type { TourDefinition } from "../tour/tour-engine";
@@ -164,6 +164,34 @@ function Dialog() {
   );
 }
 
+/** A dialog whose (?) button opens its tour after mount, so the target exists. */
+function OpenedLater() {
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => setOpen(true), []);
+  return (
+    <div>
+      <div data-tour="first">Generate</div>
+      <LocalTour
+        open={open}
+        onOpenChange={setOpen}
+        steps={[{ id: "a", target: "first", title: "Step A", body: "a" }]}
+      />
+    </div>
+  );
+}
+
+const rect = (left: number, top: number, width: number, height: number) =>
+  ({
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+  }) as DOMRect;
+
 describe("LocalTour", () => {
   it("runs a single-screen tour in place and skips absent targets", () => {
     render(<Dialog />);
@@ -172,5 +200,29 @@ describe("LocalTour", () => {
     // Step B's target is absent, so A is the last step.
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByTestId("tour-overlay")).not.toBeInTheDocument();
+  });
+
+  describe("inside a dialog that is its containing block", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("keeps the card inside the dialog box, which clips it, not just the viewport", () => {
+      // A centred dialog at x=145..1295 in a 1440px viewport, with the target
+      // near its top-right corner (QM's Generate button).
+      vi.spyOn(window, "innerWidth", "get").mockReturnValue(1440);
+      vi.spyOn(window, "innerHeight", "get").mockReturnValue(661);
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+        function (this: Element) {
+          if (this.getAttribute("data-testid") === "tour-overlay") return rect(145, 34, 1150, 593);
+          if (this.getAttribute("data-tour") === "first") return rect(1128, 58, 103, 36);
+          return rect(0, 0, 0, 0);
+        },
+      );
+
+      render(<OpenedLater />);
+      const card = screen.getByText("Step A").closest<HTMLElement>("[style]")!;
+      const left = parseFloat(card.style.left);
+      expect(left).toBeGreaterThanOrEqual(16);
+      expect(left + 340).toBeLessThanOrEqual(1150 - 16);
+    });
   });
 });
