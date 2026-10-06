@@ -155,7 +155,7 @@ function QmAppLayoutInner() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, logout } = useAuth();
-  const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
+  const { profileOpen, closeProfile } = useQmLayout();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const aiStatus = useAiServicesStatus();
   const bugReport = useBugReport();
@@ -283,7 +283,7 @@ function QmAppLayoutInner() {
       headerActions={
         <>
           <CommandSearchButton eventName="qm:open-command" />
-          <div data-tour-id="eduai-status">
+          <div data-tour="eduai-status">
             <AIServiceIndicators
               cloud={aiStatus.cloud}
               ubc={aiStatus.ubc}
@@ -318,10 +318,7 @@ function QmAppLayoutInner() {
           {bugReport ? <BugReportTriggerButton onClick={bugReport.openBugReport} /> : null}
           {/* Last, so it sits in the header's top-right corner (#1754). The
               guided tour is launched from its modal. */}
-          <QmPageHelp
-            guidedTourHandler={guidedTourHandler}
-            showIndicator={courses.length === 0 && !isCoursesLoading}
-          />
+          <QmPageHelp showIndicator={courses.length === 0 && !isCoursesLoading} />
         </>
       }
       commandPalette={

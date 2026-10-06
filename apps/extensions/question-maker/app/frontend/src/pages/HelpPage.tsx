@@ -18,8 +18,8 @@ import {
   CardTitle,
   Input,
   PageHeading,
+  useTour,
 } from "@eduai/ui";
-import { useGuidedTour } from "../contexts/GuidedTourContext";
 
 interface HelpArticle {
   id: string;
@@ -328,7 +328,7 @@ const ARTICLES: HelpArticle[] = [
 ];
 
 export const HelpPage = () => {
-  const { startTour } = useGuidedTour();
+  const { startTour } = useTour();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {

@@ -692,7 +692,7 @@ const AssessmentBuilderPage = () => {
               ) : (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" className="gap-1.5" data-tour-id="export-assessment-btn">
+                    <Button type="button" className="gap-1.5" data-tour="export-assessment-btn">
                       <IconShare2 className="size-4" />
                       Export
                       <IconChevronDown className="size-3.5" />
@@ -700,13 +700,13 @@ const AssessmentBuilderPage = () => {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      data-tour-id="export-canvas-btn"
+                      data-tour="export-canvas-btn"
                       onSelect={() => setTimeout(() => setIsCanvasExportOpen(true), 0)}
                     >
                       <IconUpload className="size-4" /> Send to Canvas
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      data-tour-id="export-word-btn"
+                      data-tour="export-word-btn"
                       disabled={isWordExporting}
                       onSelect={() => void handleExportWord()}
                     >
@@ -714,7 +714,7 @@ const AssessmentBuilderPage = () => {
                       {isWordExporting ? "Preparing…" : "Download as Word (.docx)"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      data-tour-id="export-txt-btn"
+                      data-tour="export-txt-btn"
                       disabled={isTxtExporting}
                       onSelect={handleExportTxt}
                     >

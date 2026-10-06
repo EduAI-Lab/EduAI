@@ -1,7 +1,7 @@
 /**
  * Unit tests for `QmAppLayout` (#1546): the app shell wrapper — nav building
  * from RBAC helpers, route-aware breadcrumb/title, the composer sticky-bar
- * className branch, the guided-tour click handler, and the "no courses yet"
+ * className branch, the help modal's tour entry, and the "no courses yet"
  * pulse indicator. Every `@eduai/ui` shell primitive and sibling
  * component/context is mocked so this exercises only QmAppLayout's own logic.
  */
@@ -19,7 +19,6 @@ const openBugReport = vi.fn();
 let bugReportValue: { openBugReport: () => void } | null = { openBugReport };
 let coursesValue: any[] = [];
 let isCoursesLoadingValue = false;
-let guidedTourHandlerValue: (() => void) | null = null;
 let userValue: any = { id: "1", name: "Ada", email: "ada@example.com", role: "instructor" };
 const { toastErrorFn, toastFn, createCourse } = vi.hoisted(() => {
   const toastErrorFn = vi.fn();
@@ -48,6 +47,7 @@ vi.mock("@eduai/ui", async (importOriginal) => ({
   // Real help button + resolver: the modal's tour wiring is what's asserted below.
   PageHelpButton: (await importOriginal<any>()).PageHelpButton,
   resolvePageHelp: (await importOriginal<any>()).resolvePageHelp,
+  useTour: () => ({ startTour }),
   AppShell: (props: any) => {
     capturedAppShellProps = props;
     return (
@@ -109,7 +109,6 @@ vi.mock("@/components/layout/QmLayoutContext", async () => {
     useQmLayout: () => ({
       profileOpen: false,
       closeProfile: vi.fn(),
-      guidedTourHandler: guidedTourHandlerValue,
     }),
   };
 });
@@ -129,10 +128,6 @@ vi.mock("@/hooks/useCourses", () => ({
 vi.mock("@/hooks/useAiServicesStatus", () => ({
   useAiServicesStatus: () => ({ cloud: { state: "online" }, ubc: { state: "online" }, refresh }),
   revalidateCloud: (...args: unknown[]) => revalidateCloud(...args),
-}));
-
-vi.mock("@/contexts/GuidedTourContext", () => ({
-  useGuidedTour: () => ({ startTour }),
 }));
 
 vi.mock("@/contexts/BugReportContext", () => ({
@@ -185,7 +180,6 @@ afterEach(() => {
   searchParamsValue = new URLSearchParams();
   coursesValue = [];
   isCoursesLoadingValue = false;
-  guidedTourHandlerValue = null;
   bugReportValue = { openBugReport };
   userValue = { id: "1", name: "Ada", email: "ada@example.com", role: "instructor" };
   capturedAppShellProps = null;
@@ -276,32 +270,18 @@ describe("QmAppLayout", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("Question library");
   });
 
-  it("starting the tour from the help modal calls the registered handler when present", async () => {
-    guidedTourHandlerValue = vi.fn();
+  it.each([
+    ["/dashboard", true],
+    ["/courses", false],
+    ["/courses/5", false],
+  ])('starting the tour from %s runs startTour("main")', async (path, startsElsewhere) => {
+    pathnameValue = path;
     render(<QmAppLayout />);
     fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
-    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
-    await waitFor(() => expect(guidedTourHandlerValue).toHaveBeenCalled());
-    expect(startTour).not.toHaveBeenCalled();
-  });
-
-  it("starting the tour with no registered handler hands off to /courses, which starts it", async () => {
-    render(<QmAppLayout />);
-    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
-    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith("/courses", { state: { startGuidedTour: true } }),
-    );
-    expect(startTour).not.toHaveBeenCalled();
-  });
-
-  it('starting the tour on /courses itself runs startTour("main") in place', async () => {
-    pathnameValue = "/courses";
-    render(<QmAppLayout />);
-    fireEvent.click(screen.getByRole("button", { name: "Help for this page" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent?.includes("It starts on your courses page.")).toBe(startsElsewhere);
     fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
     await waitFor(() => expect(startTour).toHaveBeenCalledWith("main"));
-    expect(navigate).not.toHaveBeenCalledWith("/courses", expect.anything());
   });
 
   it("renders the bug report button when a BugReportContext is present, and calls it on click", () => {

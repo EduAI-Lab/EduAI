@@ -67,33 +67,22 @@ describe("CoursesGrid", () => {
     expect(screen.queryByText("CPSC 101")).toBeNull();
   });
 
-  it("tags the first course for the guided tour when no explicit highlight is given", () => {
-    const course = makeCourse({ id: 42 });
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={vi.fn()} />);
-    expect(document.querySelector('[data-tour-id="course-select"]')).toHaveAttribute(
-      "data-course-id",
-      "42",
-    );
+  it("tags the first course, and its route, for the guided tour (#1754)", () => {
+    const courses = [makeCourse({ id: 42 }), makeCourse({ id: 43, code: "CPSC 102" })];
+    render(<CoursesGrid courses={courses} isLoading={false} onSelectCourse={vi.fn()} />);
+    const card = document.querySelector('[data-tour="course-select"]');
+    expect(card).toHaveAttribute("data-course-id", "42");
+    expect(card).toHaveAttribute("data-tour-route", "/courses/42");
+    expect(document.querySelectorAll("[data-tour-route]")).toHaveLength(1);
+  });
+
+  it("tags the empty state so the tour can explain linking a course", () => {
+    render(<CoursesGrid courses={[]} isLoading={false} onSelectCourse={vi.fn()} />);
+    expect(document.querySelector('[data-tour="qm-courses-empty"]')).toBeInTheDocument();
   });
 });
 
 describe("CoursesGrid additional coverage", () => {
-  it("respects an explicit tourHighlightCourseId over the first course", () => {
-    const courses = [makeCourse({ id: 1 }), makeCourse({ id: 2, code: "CPSC 102" })];
-    render(
-      <CoursesGrid
-        courses={courses}
-        isLoading={false}
-        onSelectCourse={vi.fn()}
-        tourHighlightCourseId={2}
-      />,
-    );
-    expect(document.querySelector('[data-tour-id="course-select"]')).toHaveAttribute(
-      "data-course-id",
-      "2",
-    );
-  });
-
   it("supports space-key activation on a course card", () => {
     const onSelectCourse = vi.fn();
     const course = makeCourse();
