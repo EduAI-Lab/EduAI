@@ -173,12 +173,20 @@ The complete procedure, including one-time systemd installation, belongs in
 Update the shared branch and prepare generated state:
 
 ```bash
-git status --short
-git fetch origin
-git checkout development
-git pull --ff-only origin development
-bash infra/s378/go-live-build.sh --install
+# 1. As the service account: refuses local edits to tracked files, switches the
+#    checkout to development, pulls, installs, migrates and builds (--no-restart).
+sudo -u service_eduai /usr/local/sbin/eduai-dev-build
+
+# 2. As yourself (eduai-dev): sync cron scripts, restart, and fail unless every
+#    unit opens its port.
+bash infra/s378/go-live-build.sh --restart-only
 ```
+
+The checkout and the web services belong to the `service_eduai` service account
+(#1872). The wrapper does the git and build steps as that account (fetch,
+`checkout development`, `pull --ff-only`, then the build with `--no-restart`);
+`--restart-only` then restarts and checks every port. See
+[`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md#canonical-deployment).
 
 The deployer performs environment synchronization, Prisma client generation,
 migrations, reference and extension seed steps, builds, service restarts, and
