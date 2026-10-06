@@ -21,10 +21,15 @@
  * lives in the UPDATE's WHERE so the database serializes two workers racing for
  * the same row and exactly one proceeds.
  */
+import type { MaterialFailureCode } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import {
+  isEmbeddingTimeoutError,
+  isTransientEmbeddingError,
+  processMaterialEmbeddings,
+} from "~/lib/ai/embedding";
+import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { hasIndexableText } from "~/lib/materials/indexable-text.server";
-import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import type { getRequestContext } from "~/lib/request-context.server";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
@@ -57,8 +62,38 @@ export const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 export const SWEEP_BATCH_SIZE = 20;
 
 /**
+ * Refine a failure into the code the *client* sees (#1791).
+ *
+ * The `logSystemError` code says which stage died; this says whether the file is
+ * the problem. An embedding that died on 429s after the full indexing retry
+ * budget is a rate limit, not an unindexable file, and an instructor who is told
+ * so retries in ten minutes instead of concluding the upload is broken — which
+ * is exactly the distinction the original report could not make.
+ */
+export function resolveFailureCode(
+  code: "MATERIAL_EXTRACT_FAILED" | "MATERIAL_EMBED_FAILED" | "MATERIAL_EXTRACT_ABANDONED",
+  cause: unknown,
+): MaterialFailureCode {
+  // ABANDONED too: a row whose last attempt was released as busy (#1796 review)
+  // ran out of attempts on capacity, not on its content.
+  if (code !== "MATERIAL_EMBED_FAILED" && cause instanceof PdfExtractionBusyError) {
+    return "MATERIAL_EXTRACT_BUSY";
+  }
+  if (code === "MATERIAL_EMBED_FAILED") {
+    // Checked first: a timeout is transient too, but means unreachable, not throttled.
+    if (isEmbeddingTimeoutError(cause)) return "MATERIAL_EMBED_PROVIDER_UNAVAILABLE";
+    if (isTransientEmbeddingError(cause)) return "MATERIAL_EMBED_RATE_LIMITED";
+  }
+  return code;
+}
+
+/**
  * Move a material to terminal FAILED and record why. The row is the
  * client-visible signal; `logSystemError` is the operator one.
+ *
+ * `failureCode` is what makes the row's FAILED state legible (#1791). It is
+ * written here rather than derived at read time because the cause does not
+ * outlive this call — nothing downstream ever sees the exception again.
  */
 export async function failMaterial(
   materialId: string,
@@ -71,7 +106,11 @@ export async function failMaterial(
   try {
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: "FAILED", extractionLeaseUntil: null },
+      data: {
+        status: "FAILED",
+        failureCode: resolveFailureCode(code, cause),
+        extractionLeaseUntil: null,
+      },
     });
   } catch (updateError) {
     console.error("Additionally failed to mark material FAILED:", updateError);
@@ -95,18 +134,111 @@ export async function failMaterial(
  * client polling its `materialId` can resolve the outcome, marked FAILED and
  * pointing at the winner. Clients are expected to read it and then delete it,
  * so duplicate attempts don't accumulate in the materials list.
+ *
+ * `resolution` is what the receipt could not say before (#1791). "Points at a
+ * winner" covers two opposite outcomes — this upload revived a material that was
+ * failed or deleted (`RESTORED`, a success) or found one already there
+ * (`EXISTING`, nothing added) — and reporting the first as "already exists" is
+ * precisely what left an instructor unable to retry a failed material.
  */
-export async function markDuplicateReceipt(materialId: string, winnerId: string): Promise<void> {
+export async function markDuplicateReceipt(
+  materialId: string,
+  winnerId: string,
+  resolution: "EXISTING" | "RESTORED" = "EXISTING",
+): Promise<void> {
   await prisma.courseMaterial.update({
     where: { id: materialId },
     data: {
       status: "FAILED",
       duplicateOfId: winnerId,
+      duplicateResolution: resolution,
       processedAt: new Date(),
       extractionLeaseUntil: null,
     },
   });
   await discardUploadBlob(materialId);
+}
+
+/**
+ * Put a PROCESSING row back in the sweeper's queue instead of failing it (#1791).
+ *
+ * Used for failures that are about this process rather than about the file. The
+ * lease is set just into the past rather than to null: the sweeper's null-lease
+ * arm only matches rows untouched for a full lease period (15 minutes), while an
+ * expired lease is picked up by the next pass (≤5 minutes). `extractionAttempts`
+ * was already incremented by the claim, so the retry budget is unchanged.
+ *
+ * `failureCode` is stamped on the still-PROCESSING row so that if the sweeper
+ * later abandons it, the reason stays "busy" rather than a generic abandon
+ * (#1796 review). A successful finalize clears it.
+ */
+async function releaseForRetry(
+  materialId: string,
+  cause: unknown,
+  requestContext: RequestContext,
+): Promise<void> {
+  console.warn("MATERIAL_EXTRACT_BUSY: releasing material for a later sweep:", cause);
+  try {
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: {
+        status: "PROCESSING",
+        failureCode: "MATERIAL_EXTRACT_BUSY",
+        extractionLeaseUntil: new Date(Date.now() - 1),
+      },
+    });
+  } catch (updateError) {
+    console.error("Failed to release material for retry:", updateError);
+  }
+  fireAndForget(
+    logSystemError({
+      ...requestContext,
+      source: "AI",
+      code: "MATERIAL_EXTRACT_BUSY",
+      message: "PDF extraction capacity exhausted; material released for a later sweep",
+      error: cause,
+    }),
+  );
+}
+
+/**
+ * Settle a receipt whose restore attempt failed (#1791).
+ *
+ * The receipt still points at the material it tried to revive — that row is
+ * where the chunks, the title and the real failure live, and the client needs
+ * the pointer to clean the receipt up. What changes is that the receipt also
+ * carries a `failureCode`, which is how a client tells this apart from an
+ * ordinary duplicate: a receipt with a reason is a failure, not an "already
+ * exists".
+ *
+ * A failed write leaves the receipt PROCESSING with its blob and an expiring
+ * lease (#1796 review), so the sweeper re-runs it rather than it sticking.
+ */
+async function failRestoreReceipt(
+  receiptId: string,
+  restoreTargetId: string,
+  failureCode: MaterialFailureCode,
+): Promise<void> {
+  try {
+    await prisma.courseMaterial.update({
+      where: { id: receiptId },
+      data: {
+        status: "FAILED",
+        duplicateOfId: restoreTargetId,
+        duplicateResolution: "RESTORED",
+        failureCode,
+        processedAt: new Date(),
+        extractionLeaseUntil: null,
+      },
+    });
+  } catch (updateError) {
+    console.error(
+      "Failed to mark restore receipt FAILED; leaving it for the sweeper:",
+      updateError,
+    );
+    return;
+  }
+  await discardUploadBlob(receiptId);
 }
 
 /**
@@ -226,6 +358,19 @@ export async function claimRestoreTarget(
   rawText: string,
 ): Promise<boolean> {
   const now = new Date();
+  const reset = {
+    status: "PROCESSING",
+    processedAt: null,
+    duplicateOfId: null,
+    duplicateResolution: null,
+    // The row is no longer FAILED, so the reason it failed must not survive
+    // it (#1791) — a stale code would outlive the failure it described and
+    // resurface on the *next* failure as a wrong explanation.
+    failureCode: null,
+    rawText,
+    extractionLeaseUntil: new Date(now.getTime() + EXTRACTION_LEASE_MS),
+  } as const;
+
   const claimed = await prisma.courseMaterial.updateMany({
     where: {
       id: materialId,
@@ -237,18 +382,19 @@ export async function claimRestoreTarget(
         { status: "PROCESSING", extractionLeaseUntil: { lt: now } },
       ],
     },
-    data: {
-      deletedAt: null,
-      deletedBy: null,
-      status: "PROCESSING",
-      uploadedBy: userId,
-      processedAt: null,
-      duplicateOfId: null,
-      rawText,
-      extractionLeaseUntil: new Date(now.getTime() + EXTRACTION_LEASE_MS),
-    },
+    data: { ...reset, deletedAt: null, deletedBy: null, uploadedBy: userId },
   });
-  return claimed.count === 1;
+  if (claimed.count === 1) return true;
+
+  // Live but FAILED (#1791): re-uploading a material whose processing died is a
+  // retry, and the row is terminal, so nothing owns it. A separate statement so
+  // the retry keeps the original uploader (#1796 review) — the row was never
+  // deleted, so it is still theirs. Disjoint from the arms above.
+  const retried = await prisma.courseMaterial.updateMany({
+    where: { id: materialId, deletedAt: null, status: "FAILED" },
+    data: reset,
+  });
+  return retried.count === 1;
 }
 
 /**
@@ -265,10 +411,21 @@ export async function claimRestoreTarget(
  *     *before* `deletedAt` (#1494 review): DELETE only stamps the flag, it does
  *     not stop the worker, so a soft-delete landing mid-restore must not make a
  *     live target look claimable.
- *   - `restore` — soft-deleted and settled (a fresh restore), or a restore whose
- *     worker died and whose lease has since expired. Claim it and (re-)run it.
- *   - `settled` — READY, or FAILED, or PROCESSING for reasons unrelated to this
- *     module (an unleased Canvas import). Point the receipt at it, as before.
+ *   - `restore` — soft-deleted and settled (a fresh restore), a restore whose
+ *     worker died and whose lease has since expired, or a live row that is
+ *     FAILED. Claim it and (re-)run it.
+ *   - `settled` — READY, or PROCESSING for reasons unrelated to this module (an
+ *     unleased Canvas import). Point the receipt at it, as before.
+ *
+ * FAILED used to fall through to `settled`, which is the bug behind #1791. A
+ * material that dies *after* extraction has already replaced its `pending:`
+ * checksum with the real content hash, so the dead row holds the course's
+ * `(courseId, checksum)` slot forever: every re-upload of the same file found it
+ * and was answered "a file with identical content already exists" — a permanent
+ * refusal, for a row containing nothing. Deleting it did not help either, since
+ * the restore path then un-deleted it and failed the same way. Treating a FAILED
+ * row as reclaimable makes re-uploading the file mean what the instructor
+ * plainly intended: try this again.
  */
 export function classifyRestoreTarget(
   duplicate: {
@@ -285,6 +442,7 @@ export function classifyRestoreTarget(
     if (!duplicate.extractionLeaseUntil) return "settled";
     return duplicate.extractionLeaseUntil < now ? "restore" : "busy";
   }
+  if (duplicate.status === "FAILED") return "restore";
   return duplicate.deletedAt ? "restore" : "settled";
 }
 
@@ -321,6 +479,17 @@ export async function runMaterialExtraction(
   try {
     fileInfo = await extractUploadedFileContent(file);
   } catch (extractError) {
+    // Capacity, not content (#1791). `PdfExtractionBusyError` means this process
+    // had no extraction slot free — it says nothing about the file, and failing
+    // the material for it turned a burst of uploads into a set of permanently
+    // broken materials. Hand the row back to the sweeper instead by expiring its
+    // lease; `extractionAttempts` still bounds the loop, so a row that is only
+    // ever unlucky ends at MATERIAL_EXTRACT_ABANDONED rather than retrying
+    // forever.
+    if (extractError instanceof PdfExtractionBusyError) {
+      await releaseForRetry(materialId, extractError, requestContext);
+      return;
+    }
     // Unlike the old inline path, the row already exists here, so a killed PDF
     // worker always leaves an auditable record (#1018 / #1161) — there is no
     // longer a window where extraction fails before anything is persisted.
@@ -379,7 +548,12 @@ export async function runMaterialExtraction(
           );
           await prisma.courseMaterial.update({
             where: { id: duplicate.id },
-            data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
+            data: {
+              status: "READY",
+              processedAt: new Date(),
+              failureCode: null,
+              extractionLeaseUntil: null,
+            },
           });
         } catch (embeddingError) {
           await failMaterial(
@@ -389,6 +563,19 @@ export async function runMaterialExtraction(
             embeddingError,
             requestContext,
           );
+          // #1791: this used to fall through to the receipt below, so a restore
+          // that had just failed still answered the client "duplicate — nothing
+          // was added". The instructor was told the file was already there while
+          // the only copy of it sat FAILED, and the client then deleted the
+          // receipt, erasing the last trace of the attempt. Fail this upload on
+          // its own terms instead; the restored row carries the real reason and
+          // the receipt gets the same code, derived from the same cause.
+          await failRestoreReceipt(
+            materialId,
+            duplicate.id,
+            resolveFailureCode("MATERIAL_EMBED_FAILED", embeddingError),
+          );
+          return;
         }
         // Receipt LAST, deliberately (#1494 review): marking it before the
         // restored row settles hands the client a terminal "duplicate, nothing
@@ -397,7 +584,10 @@ export async function runMaterialExtraction(
         // restore failure would have nothing left to surface it. Keeping the
         // receipt PROCESSING until restoration lands means a poller either
         // waits or sees the settled truth.
-        await markDuplicateReceipt(materialId, duplicate.id);
+        //
+        // RESTORED, not EXISTING (#1791): this upload is why the material is
+        // there, so the client reports it as added rather than rejected.
+        await markDuplicateReceipt(materialId, duplicate.id, "RESTORED");
         return;
       }
 
@@ -415,6 +605,9 @@ export async function runMaterialExtraction(
         fileSize: fileInfo.fileSize,
         checksum: fileInfo.checksum,
         rawText: fileInfo.content,
+        // A resumed run may be re-finalizing a row an earlier attempt failed;
+        // the reason it failed must not survive that (#1791).
+        failureCode: null,
       },
     });
   } catch (finalizeError) {
@@ -449,10 +642,21 @@ export async function runMaterialExtraction(
     // second pass would append a duplicate set of chunks and vectors. Replacing
     // makes the step idempotent, and on a genuine first run it deletes nothing
     // because the row has no chunks yet.
-    await processMaterialEmbeddings(materialId, fileInfo.content, { replace: true });
+    //
+    // Heartbeated like restore and re-embed (#1796 review): the indexing retry
+    // budget can outlast the claim's lease, and an expired lease lets a re-upload
+    // of the same file claim this row as a restore target mid-embed.
+    await withLeaseHeartbeat(materialId, () =>
+      processMaterialEmbeddings(materialId, fileInfo.content, { replace: true }),
+    );
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
+      data: {
+        status: "READY",
+        processedAt: new Date(),
+        failureCode: null,
+        extractionLeaseUntil: null,
+      },
     });
     await discardUploadBlob(materialId);
     // #1624: the material is only now readable by topic analysis. Started here
@@ -586,7 +790,12 @@ async function runMaterialReembed(
     );
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
+      data: {
+        status: "READY",
+        processedAt: new Date(),
+        failureCode: null,
+        extractionLeaseUntil: null,
+      },
     });
     // #1624, via #1795 review round 3. A row that gets here is indexed and
     // readable, which is the only condition topic analysis cares about — how it
@@ -672,6 +881,7 @@ export async function sweepStrandedMaterialExtractions(
       courseId: true,
       uploadedBy: true,
       extractionAttempts: true,
+      failureCode: true,
     },
     take: SWEEP_BATCH_SIZE,
   });
@@ -686,7 +896,9 @@ export async function sweepStrandedMaterialExtractions(
         row.id,
         "MATERIAL_EXTRACT_ABANDONED",
         `Material extraction abandoned after ${row.extractionAttempts} attempts`,
-        new Error("extraction attempts exhausted"),
+        row.failureCode === "MATERIAL_EXTRACT_BUSY"
+          ? new PdfExtractionBusyError()
+          : new Error("extraction attempts exhausted"),
         requestContext,
       );
       abandoned += 1;

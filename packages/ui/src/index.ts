@@ -9,6 +9,7 @@ export { ThemeSyncInitializer } from "./theme-sync-initializer";
 
 // ── Bug report ─────────────────────────────────────────────────────────────
 export { BugReportDialog } from "./bug-report-dialog";
+export { BugReportTriggerButton } from "./bug-report-trigger-button";
 export type { BugReportType, BugReportSubmitData } from "./bug-report-dialog";
 
 // ── Domain components ──────────────────────────────────────────────────────
@@ -30,6 +31,8 @@ export { StatCard } from "./stat-card";
 export type { StatCardProps } from "./stat-card";
 export { EmptyState } from "./empty-state";
 export type { EmptyStateProps } from "./empty-state";
+export { NotFoundState } from "./not-found-state";
+export type { NotFoundStateProps } from "./not-found-state";
 export { MaterialList } from "./material-list";
 export type { MaterialListProps, MaterialListItem } from "./material-list";
 export { QuickActionsPanel } from "./quick-actions-panel";

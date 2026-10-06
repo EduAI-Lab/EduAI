@@ -178,6 +178,21 @@ describe("DashboardView", () => {
     expect(screen.getByText("Browse courses →")).toBeInTheDocument();
   });
 
+  // A role that supplies its own copy replaces both the generic line and the
+  // "Browse courses" link, which would only lead to a second empty list.
+  it("shows role-specific empty-state copy instead of the generic one", () => {
+    renderDashboard({
+      courses: [],
+      emptyCoursesMessage: "Your professor hasn't added you to their course yet.",
+    });
+
+    expect(
+      screen.getByText("Your professor hasn't added you to their course yet."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No courses found.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Browse courses \u2192")).not.toBeInTheDocument();
+  });
+
   it("defaults to an empty course list when courses is undefined", () => {
     renderDashboard({ courses: undefined });
 

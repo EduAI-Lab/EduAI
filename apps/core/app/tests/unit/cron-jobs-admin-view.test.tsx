@@ -453,4 +453,207 @@ describe("CronJobsAdminView", () => {
     render(<CronJobsAdminView jobs={[job({ triggerEnabled: false })]} />);
     expect(screen.queryByText("Edit")).not.toBeInTheDocument();
   });
+
+  const RETAIN = {
+    key: "retainDays",
+    label: "Delete after (days)",
+    description:
+      "Materials soft-deleted longer than this are permanently removed along with their embeddings and cannot be restored.",
+    type: "int" as const,
+    min: 1,
+    max: 3650,
+    default: 90,
+    value: 90,
+    overridden: false,
+  };
+
+  function purgeJob(settingOverrides: Partial<typeof RETAIN> = {}) {
+    return job({
+      name: "purge-deleted-materials",
+      description: "Permanently delete course materials soft-deleted more than N days ago",
+      schedule: "0 5 * * *",
+      scheduleLabel: "Daily at 05:00 UTC",
+      script: "Core handler",
+      execution: "CORE",
+      settings: [{ ...RETAIN, ...settingOverrides }],
+    });
+  }
+
+  it("shows each setting's current value and whether it is the default", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[purgeJob()]} />);
+    expect(screen.getByText("Delete after (days): 90 (default)")).toBeInTheDocument();
+  });
+
+  it("marks an overridden setting", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[purgeJob({ value: 30, overridden: true })]} />);
+    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
+  });
+
+  it("shows no Edit settings button for a job without settings", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job()]} />);
+    expect(screen.queryByRole("button", { name: "Edit settings" })).not.toBeInTheDocument();
+  });
+
+  it("edits a setting, posts update-setting with a number, and closes on success", async () => {
+    // The mount-time status fetch returns the pre-save job and only the save returns
+    // the override, so the row can show 30 only if the save response reaches onSaved.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [purgeJob()] }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [purgeJob({ value: 30, overridden: true })] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CronJobsAdminView jobs={[purgeJob()]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Delete after (days): 90 (default)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    const input = (await screen.findByLabelText("Delete after (days)")) as HTMLInputElement;
+    expect(input.value).toBe("90");
+    expect(screen.getByText(RETAIN.description)).toBeInTheDocument();
+    expect(screen.getByText("1–3650, default 90")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/cron-jobs",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            intent: "update-setting",
+            jobName: "purge-deleted-materials",
+            key: "retainDays",
+            value: 30,
+          }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Delete after (days)")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
+    // Mount fetch plus the save; nothing else refetched the status list.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not post when Save is pressed without changes", async () => {
+    // The mount-time status fetch publishes its result over the initial jobs, so it
+    // must return the same job or the row (and its button) disappears.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ jobs: [purgeJob()] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CronJobsAdminView jobs={[purgeJob()]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await screen.findByLabelText("Delete after (days)");
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Delete after (days)")).not.toBeInTheDocument(),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the server's validation error and keeps the dialog open", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: '"Delete after (days)" must be between 1 and 3650' }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CronJobsAdminView jobs={[purgeJob()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    const input = await screen.findByLabelText("Delete after (days)");
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(
+      await screen.findByText('"Delete after (days)" must be between 1 and 3650'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Delete after (days)")).toBeInTheDocument();
+  });
+
+  it("shows a setting that saved even when a later one in the same Save fails", async () => {
+    const BATCH = { ...RETAIN, key: "batchSize", label: "Batch size", default: 100, value: 100 };
+    const twoSettings = (retain: Partial<typeof RETAIN>) =>
+      job({ ...purgeJob(), settings: [{ ...RETAIN, ...retain }, BATCH] });
+    const fetchMock = vi
+      .fn()
+      // Mount-time status fetch: nothing overridden yet.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [twoSettings({})] }),
+      })
+      // retainDays persists.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [twoSettings({ value: 30, overridden: true })] }),
+      })
+      // batchSize is refused.
+      .mockResolvedValueOnce({
+        ok: false,
+        json: () => Promise.resolve({ error: '"Batch size" must be between 1 and 3650' }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CronJobsAdminView jobs={[twoSettings({})]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    fireEvent.change(await screen.findByLabelText("Delete after (days)"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Batch size"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(await screen.findByText('"Batch size" must be between 1 and 3650')).toBeInTheDocument();
+    // The dialog stays open on the failure while the row reflects what persisted.
+    expect(screen.getByLabelText("Batch size")).toBeInTheDocument();
+    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
+  });
+
+  it("offers Reset to default only for an overridden setting and posts reset-setting", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ jobs: [purgeJob()] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CronJobsAdminView jobs={[purgeJob({ value: 30, overridden: true })]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: /reset to default/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/cron-jobs",
+        expect.objectContaining({
+          body: JSON.stringify({
+            intent: "reset-setting",
+            jobName: "purge-deleted-materials",
+            key: "retainDays",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("hides Reset to default for a setting at its default", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[purgeJob()]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await screen.findByLabelText("Delete after (days)");
+    expect(screen.queryByRole("button", { name: /reset to default/i })).not.toBeInTheDocument();
+  });
 });

@@ -52,6 +52,7 @@ export type SyncCanvasCourseResult = {
   coreCourseId: string;
   rosterMembersSynced: number;
   enrollmentsLinked: number;
+  enrollmentsSkipped: number;
 };
 
 export type UnsyncCanvasCourseResult = {

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useMemo, useState } from "react";
-import { useBugReportCapture } from "~/hooks/useBugReportCapture";
+import { useBugReportCapture } from "@eduai/ui/bug-report-capture";
 import type { BugReportContext as BugReportContextType } from "~/lib/types";
 
 type BugReportProviderValue = {
@@ -8,6 +8,7 @@ type BugReportProviderValue = {
   clearContext: () => void;
   captureScreenshot: () => Promise<string | null>;
   getCapturedData: () => { consoleLogs: string; networkLogs: string; screenshot: string | null };
+  clearScreenshot: () => void;
 };
 
 const EMPTY_CONTEXT: BugReportContextType = {
@@ -21,7 +22,7 @@ export const BugReportContext = createContext<BugReportProviderValue | undefined
 
 export function BugReportProvider({ children }: { children: React.ReactNode }) {
   const [context, setContextState] = useState<BugReportContextType>(EMPTY_CONTEXT);
-  const { captureScreenshot, getCapturedData } = useBugReportCapture();
+  const { captureScreenshot, getCapturedData, clearScreenshot } = useBugReportCapture();
   const setContext = useCallback((next: BugReportContextType) => {
     setContextState({
       courseOfferingId: next.courseOfferingId ?? null,
@@ -39,8 +40,9 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
       clearContext,
       captureScreenshot,
       getCapturedData,
+      clearScreenshot,
     }),
-    [captureScreenshot, clearContext, context, getCapturedData, setContext],
+    [captureScreenshot, clearContext, clearScreenshot, context, getCapturedData, setContext],
   );
 
   return <BugReportContext.Provider value={value}>{children}</BugReportContext.Provider>;

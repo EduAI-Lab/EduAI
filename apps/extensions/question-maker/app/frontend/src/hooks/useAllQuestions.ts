@@ -48,6 +48,7 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
     reasoningLevels: filters?.reasoningLevels,
     aiGenerated: filters?.aiGenerated,
     draftStatus: filters?.draftStatus,
+    questionBankId: filters?.questionBankId ?? undefined,
     sortBy,
   };
 
@@ -96,6 +97,7 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
     JSON.stringify(filters?.reasoningLevels ?? []),
     filters?.aiGenerated,
     filters?.draftStatus,
+    filters?.questionBankId,
   ]);
 
   useEffect(() => {

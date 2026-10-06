@@ -54,6 +54,7 @@ import {
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 import { asPresentText } from "~/lib/json-value";
 
 // Unit admins may invite instructors and students only.
@@ -85,9 +86,9 @@ const ROLE_LABEL = {
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
-  if (session.user.role !== "UNIT_ADMIN") return redirect("/dashboard");
+  if (session.user.role !== "UNIT_ADMIN") throw notFound(session.user);
   // The whole surface is gated by the policy flag — when off, it doesn't exist.
-  if (!(await getPolicy("unitAdmins.canInvite"))) return redirect("/dashboard");
+  if (!(await getPolicy("unitAdmins.canInvite"))) throw notFound(session.user);
   return { user: session.user };
 }
 
@@ -535,3 +536,5 @@ function errorMessage(code: JsonValue, status: number, details?: JsonValue): str
       return asPresentText(code) ?? `Request failed (${status}).`;
   }
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

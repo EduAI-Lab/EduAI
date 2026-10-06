@@ -4,6 +4,7 @@
  * Extensions may rely on deletedAt being set to detect EduAI-side removals.
  */
 
+import { resolveMaterialMimeType } from "~/lib/materials/accepted-types";
 import type { Prisma } from "@prisma/client";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { createHash } from "crypto";
@@ -516,6 +517,10 @@ async function reclaimProvisionalRow(
         deletedBy: null,
         processedAt: null,
         duplicateOfId: null,
+        duplicateResolution: null,
+        // The row is leaving FAILED, so the reason it failed goes with it
+        // (#1791) — a stale code would be read as this attempt's outcome.
+        failureCode: null,
         rawText: null,
         // Hand the row back as a fresh job: clear the dead attempt's lease and
         // reset its attempt count, or a row reclaimed after two failures would
@@ -620,6 +625,11 @@ async function reprocessMaterial(
     data: {
       status: "PROCESSING",
       processedAt: null,
+      // The row is leaving FAILED, so the reason it failed goes with it
+      // (#1791) — same reset `reclaimProvisionalRow` and `claimRestoreTarget`
+      // make, so a retry that is still running never reads as though it
+      // already failed again.
+      failureCode: null,
       extractionLeaseUntil: new Date(Date.now() + EXTRACTION_LEASE_MS),
     },
   });
@@ -683,7 +693,7 @@ async function uploadMaterial(
       data: {
         courseId,
         title,
-        mimeType: file.type || "application/octet-stream",
+        mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
         fileSize: file.size || bytes.length,
         checksum: provisionalChecksum,
         rawText: null,
@@ -693,7 +703,7 @@ async function uploadMaterial(
           create: {
             bytes: toBytesColumn(bytes),
             fileName: file.name || "upload",
-            mimeType: file.type || "application/octet-stream",
+            mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
           },
         },
       },
@@ -711,7 +721,7 @@ async function uploadMaterial(
         {
           bytes,
           fileName: file.name || "upload",
-          mimeType: file.type || "application/octet-stream",
+          mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
         },
       );
       if (resolution?.outcome === "conflict") {
@@ -756,7 +766,7 @@ async function uploadMaterial(
         courseId,
         actorEmail: user.email,
         actorName: user.name,
-        mimeType: file.type || "application/octet-stream",
+        mimeType: resolveMaterialMimeType(file) || "application/octet-stream",
         fileSize: file.size || bytes.length,
       },
     }),
@@ -886,6 +896,13 @@ const MATERIAL_LIST_SELECT = {
   // #949: how a client polling after a 202 learns its upload resolved to an
   // already-present material instead of a new one.
   duplicateOfId: true,
+  // #1791: the two things that make a settled row's outcome legible — whether a
+  // receipt's upload restored the material it points at or merely found it, and
+  // why a FAILED row failed. Without these the client can only say "processing
+  // failed" or "already exists", which is how a rate-limited upload became an
+  // unrecoverable one.
+  duplicateResolution: true,
+  failureCode: true,
   createdAt: true,
   updatedAt: true,
   processedAt: true,

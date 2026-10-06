@@ -29,7 +29,9 @@ vi.mock("~/lib/cron-scheduler.server", () => ({
 
 const prismaMock = vi.hoisted(() => ({
   userPreference: { findUnique: vi.fn() },
-  enrollment: { findMany: vi.fn() },
+  enrollment: { findFirst: vi.fn() },
+  course: { findMany: vi.fn() },
+  user: { findUnique: vi.fn() },
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -45,7 +47,7 @@ type RootData = {
   density: string;
   theme: string;
   canInvite: boolean;
-  hasInstructorEnrollment: boolean;
+  canUseCourseAssistant: boolean;
   hasTeachingAssistantEnrollment: boolean;
   policies: Record<string, boolean>;
 };
@@ -78,7 +80,9 @@ beforeEach(() => {
   vi.mocked(getPolicies).mockResolvedValue({} as never);
   vi.mocked(getExpiredPasswordRedirect).mockResolvedValue(null);
   prismaMock.userPreference.findUnique.mockResolvedValue(null);
-  prismaMock.enrollment.findMany.mockResolvedValue([]);
+  prismaMock.enrollment.findFirst.mockResolvedValue(null);
+  prismaMock.course.findMany.mockResolvedValue([]);
+  prismaMock.user.findUnique.mockResolvedValue(null);
 });
 
 describe("root loader — guest", () => {
@@ -249,62 +253,68 @@ describe("root loader — canInvite", () => {
   });
 });
 
-// #1666 review (Stavan): resolved once per navigation (root loader) so the
-// sidebar/command-palette Course Assistant link is correct on every route,
-// not just the one page that happened to fetch this caller's courses.
-describe("root loader — hasInstructorEnrollment (#1666 review)", () => {
-  it("is true for a STUDENT with a real active INSTRUCTOR enrollment", async () => {
+// #1745: must match the /instructor/chat loader's gate, or the link bounces
+// to /dashboard.
+describe("root loader — canUseCourseAssistant (#1745)", () => {
+  it("is true when the caller teaches a published course", async () => {
     signedInAs("STUDENT");
-    prismaMock.enrollment.findMany.mockResolvedValue([{ role: "INSTRUCTOR" }]);
+    prismaMock.course.findMany.mockResolvedValue([{ id: "c1", department: "COSC" }]);
 
-    const data = (await run()) as RootData;
-
-    expect(data.hasInstructorEnrollment).toBe(true);
-    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith({
-      where: { userId: "u1", role: { in: ["INSTRUCTOR", "TA"] }, isActive: true },
-      select: { role: true },
-      distinct: ["role"],
-    });
+    expect(((await run()) as RootData).canUseCourseAssistant).toBe(true);
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          isPublished: true,
+          deletedAt: null,
+          enrollments: { some: { userId: "u1", isActive: true, role: "INSTRUCTOR" } },
+        },
+      }),
+    );
   });
 
-  it("is false for a STUDENT with no active INSTRUCTOR enrollment", async () => {
-    signedInAs("STUDENT");
-    prismaMock.enrollment.findMany.mockResolvedValue([]);
+  it("is false for a platform INSTRUCTOR with no published course", async () => {
+    signedInAs("INSTRUCTOR");
 
-    expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
+    expect(((await run()) as RootData).canUseCourseAssistant).toBe(false);
   });
 
-  // resolveAccess (course-access.server.ts) always resolves ADMIN to
-  // admin-level, never instructor-level, no matter their enrollment — an
-  // ADMIN can never actually pass /instructor/chat's own gate, so showing
-  // the link for one (even with a stray enrollment row) would be a dead
-  // link. Matches instructor.chat.tsx's own loader exclusion.
-  it("is false for ADMIN without even querying the enrollment table", async () => {
+  it("is false for a UNIT_ADMIN whose only course is in their own unit", async () => {
+    signedInAs("UNIT_ADMIN");
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
+    prismaMock.course.findMany.mockResolvedValue([{ id: "c1", department: "COSC" }]);
+
+    expect(((await run()) as RootData).canUseCourseAssistant).toBe(false);
+  });
+
+  it("is false for ADMIN without querying courses or enrollments", async () => {
     signedInAs("ADMIN");
 
-    const data = (await run()) as RootData;
-
-    expect(data.hasInstructorEnrollment).toBe(false);
-    expect(prismaMock.enrollment.findMany).not.toHaveBeenCalled();
+    expect(((await run()) as RootData).canUseCourseAssistant).toBe(false);
+    expect(prismaMock.course.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.enrollment.findFirst).not.toHaveBeenCalled();
   });
 
   it("is false for a guest", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
-    expect(((await run()) as RootData).hasInstructorEnrollment).toBe(false);
-    expect(prismaMock.enrollment.findMany).not.toHaveBeenCalled();
+    expect(((await run()) as RootData).canUseCourseAssistant).toBe(false);
+    expect(prismaMock.course.findMany).not.toHaveBeenCalled();
   });
 });
 
 describe("root loader — Question Maker TA projection", () => {
   it("marks a platform STUDENT with an active TA enrollment", async () => {
     signedInAs("STUDENT");
-    prismaMock.enrollment.findMany.mockResolvedValue([{ role: "TA" }]);
+    prismaMock.enrollment.findFirst.mockResolvedValue({ id: "e1" });
 
     const data = (await run()) as RootData;
 
     expect(data.hasTeachingAssistantEnrollment).toBe(true);
-    expect(data.hasInstructorEnrollment).toBe(false);
+    expect(data.canUseCourseAssistant).toBe(false);
+    expect(prismaMock.enrollment.findFirst).toHaveBeenCalledWith({
+      where: { userId: "u1", role: "TA", isActive: true },
+      select: { id: true },
+    });
   });
 
   it("does not promote an ordinary platform STUDENT", async () => {

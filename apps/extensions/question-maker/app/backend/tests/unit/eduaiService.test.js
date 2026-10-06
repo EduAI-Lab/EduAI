@@ -603,6 +603,31 @@ describe("generateQuestions", () => {
     );
   });
 
+  it("keeps the transport code so callers can name the cause (#1763)", async () => {
+    axios.post.mockRejectedValue(requestError({ code: "ECONNREFUSED" }));
+    await expect(eduaiService.generateQuestions(baseParams)).rejects.toMatchObject({
+      message: "EduAI question generation failed",
+      transportCode: "ECONNREFUSED",
+    });
+  });
+
+  it("keeps the credential reason code so callers can name the cause (#1763)", async () => {
+    axios.post.mockRejectedValue(
+      responseError({ status: 401, data: { error: "Invalid API key for provider" } }),
+    );
+    await expect(eduaiService.generateQuestions(baseParams)).rejects.toMatchObject({
+      reasonCode: "PROVIDER_API_KEY_REQUIRED",
+      statusCode: 401,
+    });
+  });
+
+  it("tags an unparseable reply as malformed JSON (#1763)", async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: "sorry, no JSON today" } });
+    await expect(eduaiService.generateQuestions(baseParams)).rejects.toMatchObject({
+      reasonCode: "PROVIDER_MALFORMED_JSON",
+    });
+  });
+
   it("throws when the parsed response is not a question array", async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: { foo: "bar" } } });
     await expect(eduaiService.generateQuestions(baseParams)).rejects.toThrow(/generation failed/i);

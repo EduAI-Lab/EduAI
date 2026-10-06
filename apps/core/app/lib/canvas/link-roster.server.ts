@@ -8,8 +8,8 @@ import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
-  rosterSisUserIdMatchFilter,
   studentIdMatchFilter,
+  type StoredStudentId,
 } from "~/lib/canvas/student-id.server";
 import { canLinkCanvasRoster, isCanvasLinkRosterRateLimited } from "~/lib/canvas/guards.server";
 import prisma from "~/lib/prisma.server";
@@ -46,8 +46,10 @@ function auditLinkAttempt(userId: string, outcome: "success" | "failure", detail
 }
 
 /**
- * Administrative linking path. Self-service callers must use
- * `linkCanvasRosterSelfService`, which requires a verified roster identity.
+ * Administrative linking path — an admin vouching for the number, so it is
+ * stored already corroborated. Self-service callers must use
+ * `linkCanvasRosterSelfService`, which additionally requires a verified account
+ * email and stores the number as an uncorroborated claim.
  */
 export async function linkCanvasRoster(
   userId: string,
@@ -67,33 +69,27 @@ export async function linkCanvasRoster(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { studentId: true, email: true, emailVerified: true },
+    select: { studentId: true, email: true, emailVerified: true, studentIdVerifiedAt: true },
   });
 
   if (!user) {
     throw new LinkRosterError("User not found", 404);
   }
 
+  // The account's own email must still be verified before a student may claim a
+  // number — that is what ties the claim to a real, reachable identity. The
+  // roster row that corroborates the claim is NOT required here any more:
+  // demanding one up front made registration a dead end for every student whose
+  // instructor had not synced their course yet. The claim is instead stored
+  // uncorroborated and settled by `resolveCanvasEnrollmentsForUser` (now, if the
+  // roster is already there) or by the instructor's next sync (later). Until
+  // then it grants no enrollments, so the identity guarantee is unchanged — it
+  // moved from "reject the signup" to "withhold the enrollments".
   if (options.requireVerifiedRoster) {
     const email = normalizeRosterEmail(user.email);
     if (!user.emailVerified || !email) {
       auditLinkAttempt(userId, "failure", "verified_email_missing");
       throw new LinkRosterError("Verify your account email before linking Canvas", 403);
-    }
-    const verifiedMatch = await prisma.canvasRosterMember.findFirst({
-      where: {
-        isActive: true,
-        ...rosterSisUserIdMatchFilter(normalized),
-        email: { equals: email, mode: "insensitive" },
-      },
-      select: { id: true },
-    });
-    if (!verifiedMatch) {
-      auditLinkAttempt(userId, "failure", "verified_roster_match_missing");
-      throw new LinkRosterError(
-        "Student number and verified email do not match an active Canvas roster. Contact your instructor or an administrator.",
-        403,
-      );
     }
   }
 
@@ -127,11 +123,29 @@ export async function linkCanvasRoster(
     );
   }
 
-  if (currentStudentId !== normalized || isLegacyPlaintextStudentId(user.studentId)) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: prepareStudentIdStorage(normalized),
-    });
+  const needsStudentIdWrite =
+    currentStudentId !== normalized || isLegacyPlaintextStudentId(user.studentId);
+  // The administrative path vouches for the number itself, so it lands
+  // corroborated and keeps matching roster rows on the number alone — the
+  // behaviour admins had before claims existed. Self-service claims stay
+  // uncorroborated until a roster row backs them.
+  const adminVouches = !options.requireVerifiedRoster;
+  const stampsNow = adminVouches && user.studentIdVerifiedAt == null;
+  const clearsStamp = !adminVouches && needsStudentIdWrite && user.studentIdVerifiedAt != null;
+
+  if (needsStudentIdWrite || stampsNow || clearsStamp) {
+    const data: Partial<StoredStudentId> & { studentIdVerifiedAt?: Date | null } = {};
+    if (needsStudentIdWrite) {
+      const stored = prepareStudentIdStorage(normalized);
+      data.studentId = stored.studentId;
+      data.studentIdLookup = stored.studentIdLookup;
+    }
+    if (stampsNow) {
+      data.studentIdVerifiedAt = new Date();
+    } else if (clearsStamp) {
+      data.studentIdVerifiedAt = null;
+    }
+    await prisma.user.update({ where: { id: userId }, data });
   }
 
   const enrollmentsLinked = await resolveCanvasEnrollmentsForUser(userId);
@@ -169,6 +183,20 @@ export async function applyStudentIdAndResolveEnrollments(
   }
   if (!isValidUbcStudentNumber(normalized)) {
     throw new LinkRosterError(UBC_STUDENT_NUMBER_MESSAGE, 400);
+  }
+  // The number was just written by an administrator, who is vouching for it —
+  // stamp it corroborated so it resolves roster rows on the number alone, the
+  // way it did before uncorroborated claims existed. Without this, an admin
+  // fixing up a student's number would silently stop linking their courses.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { studentIdVerifiedAt: true },
+  });
+  if (user && user.studentIdVerifiedAt == null) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { studentIdVerifiedAt: new Date() },
+    });
   }
   return resolveCanvasEnrollmentsForUser(userId);
 }

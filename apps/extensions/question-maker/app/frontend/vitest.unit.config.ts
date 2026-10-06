@@ -29,6 +29,10 @@ export default defineConfig({
         frontendDir,
         "../../../../../packages/ui/src/lib/runtime-env.ts",
       ),
+      "@eduai/ui/bug-report-capture": path.resolve(
+        frontendDir,
+        "../../../../../packages/ui/src/bug-report-capture.ts",
+      ),
       "@eduai/ui": path.resolve(frontendDir, "../../../../../packages/ui/src/index.ts"),
     },
     dedupe: ["react", "react-dom"],

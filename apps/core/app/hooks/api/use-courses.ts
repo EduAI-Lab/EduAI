@@ -72,6 +72,53 @@ export interface CreateCourseInput {
   instructorUserIds: string[];
 }
 
+/** #1811: how to answer a COURSE_POSSIBLE_DUPLICATE warning on re-submit. */
+export type DuplicateResolution =
+  | { duplicateResolution: "create" }
+  | { duplicateResolution: "restore"; restoreCourseId: string };
+
+export interface DuplicateCourseSummary {
+  id: string;
+  name: string;
+  code: string;
+  section: string;
+  term: string;
+  year: number;
+  startDate: string;
+  deletedAt: string | null;
+  canRestore?: boolean;
+}
+
+/** Thrown by `createCourse` when the server wants the duplicate warning answered first. */
+export class CourseDuplicateError extends Error {
+  constructor(
+    readonly deletedMatches: DuplicateCourseSummary[],
+    readonly similarCourses: DuplicateCourseSummary[],
+  ) {
+    super("COURSE_POSSIBLE_DUPLICATE");
+    this.name = "CourseDuplicateError";
+  }
+}
+
+async function createCourseError(res: Response): Promise<Error> {
+  const text = await res.text();
+  let body: {
+    error?: string;
+    fields?: Record<string, string>;
+    deletedMatches?: DuplicateCourseSummary[];
+    similarCourses?: DuplicateCourseSummary[];
+  };
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return new Error(text);
+  }
+  if (body.error === "COURSE_POSSIBLE_DUPLICATE") {
+    return new CourseDuplicateError(body.deletedMatches ?? [], body.similarCourses ?? []);
+  }
+  return new Error(Object.values(body.fields ?? {})[0] ?? body.error ?? text);
+}
+
 export interface UpdateCourseInput {
   name?: string;
   code?: string;
@@ -281,7 +328,7 @@ export function useCourses(options: UseCoursesOptions = {}) {
   }, [fetchCourses, fetchFacets]);
 
   const createCourse = useCallback(
-    async (input: CreateCourseInput): Promise<Course> => {
+    async (input: CreateCourseInput, resolution?: DuplicateResolution): Promise<Course> => {
       const formData = new FormData();
       formData.append("name", input.name);
       formData.append("code", input.code);
@@ -292,8 +339,14 @@ export function useCourses(options: UseCoursesOptions = {}) {
       if (input.department) formData.append("department", input.department);
       if (input.aiInstructions) formData.append("aiInstructions", input.aiInstructions);
       input.instructorUserIds.forEach((id) => formData.append("instructorUserIds", id));
+      if (resolution) {
+        formData.append("duplicateResolution", resolution.duplicateResolution);
+        if (resolution.duplicateResolution === "restore") {
+          formData.append("restoreCourseId", resolution.restoreCourseId);
+        }
+      }
       const res = await fetch("/api/courses", { method: "POST", body: formData });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await createCourseError(res);
       const course = await res.json();
       // Where the new row lands depends on the current sort/page, so refetch.
       // A new course can also add a term/department the dropdowns haven't seen.

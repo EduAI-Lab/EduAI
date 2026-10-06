@@ -15,12 +15,11 @@
  * keeps the sidebar and header mounted: a boundary replaces its own route's
  * subtree, so a boundary on the layout would take the shell down with it.
  */
-import { isRouteErrorResponse, useRouteError } from "react-router";
-import { Button, Card, EmptyState } from "@eduai/ui";
+import { isRouteErrorResponse, Link, useRouteError } from "react-router";
+import { Button, Card, EmptyState, NotFoundState } from "@eduai/ui";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 
 import { ApiHttpError } from "~/lib/api";
-import { NotFoundState } from "./NotFoundState";
 
 /** HTTP status behind this error, when it carries one. */
 export function statusOf(cause: unknown): number | null {
@@ -38,7 +37,7 @@ export function RouteErrorState() {
   const error = useRouteError();
 
   if (isNotFoundStatus(statusOf(error))) {
-    return <NotFoundState />;
+    return <NotFoundState LinkComponent={Link} />;
   }
 
   return (

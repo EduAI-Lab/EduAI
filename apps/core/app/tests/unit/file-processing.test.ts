@@ -72,7 +72,17 @@ async function buildPptxZipArrayBuffer(slides: string[]): Promise<ArrayBuffer> {
   return zip.generateAsync({ type: "arraybuffer" });
 }
 
-/** Builds a syntactically valid, empty one-page PDF (accurate xref table) for real-subprocess tests. */
+/** The one line of text `buildTinyValidPdf` draws, so assertions can look for it. */
+const TINY_PDF_TEXT = "Tiny valid PDF with a real text layer.";
+
+/**
+ * Builds a syntactically valid one-page PDF (accurate xref table) for real-subprocess tests.
+ *
+ * The page carries a real `Tj` text run. It used to paint `q Q` and nothing
+ * else, which made it a scanned PDF as far as the pipeline is concerned —
+ * pdf2md returned "" and the "well-formed PDF" cases silently asserted that
+ * a document with no text processes successfully (#1781 / #1787).
+ */
 function buildTinyValidPdf(): Buffer {
   const parts: Buffer[] = [Buffer.from("%PDF-1.4\n")];
   const offsets: number[] = [];
@@ -80,21 +90,23 @@ function buildTinyValidPdf(): Buffer {
     offsets.push(parts.reduce((n, b) => n + b.length, 0));
     parts.push(Buffer.from(str));
   };
+  const stream = `BT /F1 12 Tf 72 700 Td (${TINY_PDF_TEXT}) Tj ET\n`;
 
   push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
   push("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
   push(
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n",
   );
-  push("4 0 obj\n<< /Length 3 >>\nstream\nq Q\nendstream\nendobj\n");
+  push(`4 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}endstream\nendobj\n`);
+  push("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
 
   const xrefOffset = parts.reduce((n, b) => n + b.length, 0);
-  let xref = "xref\n0 5\n0000000000 65535 f \n";
+  let xref = "xref\n0 6\n0000000000 65535 f \n";
   for (const off of offsets) {
     xref += `${String(off).padStart(10, "0")} 00000 n \n`;
   }
   parts.push(Buffer.from(xref));
-  parts.push(Buffer.from(`trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`));
+  parts.push(Buffer.from(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`));
 
   return Buffer.concat(parts);
 }
@@ -214,6 +226,18 @@ describe("validateFile", () => {
     const result = validateFile(makeFile("image/png", 100));
     expect(result.isValid).toBe(false);
     expect(result.error).toContain("image/png");
+  });
+
+  it("accepts an empty type when the .md extension identifies it (Windows browsers)", () => {
+    expect(validateFile({ name: "notes.md", type: "", size: 100 }).isValid).toBe(true);
+  });
+
+  it("still rejects an empty type with an unknown extension", () => {
+    const result = validateFile({ name: "notes.xyz", type: "", size: 100 });
+    expect(result.isValid).toBe(false);
+    expect(result.error).toBe(
+      "File type  is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX",
+    );
   });
 
   it("rejects files larger than 50 MB", () => {
@@ -931,7 +955,7 @@ describe("extractPptxText", () => {
     expect(order).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
   });
 
-  it("falls back to a placeholder message when the presentation has no slides", async () => {
+  it("returns empty content when the presentation has no slides", async () => {
     const buffer = await buildZipArrayBuffer({ "docProps/core.xml": "<core/>" });
     const file = {
       name: "empty.pptx",
@@ -942,10 +966,10 @@ describe("extractPptxText", () => {
 
     const result = await extractPptxText(file as any);
     expect(result.pageCount).toBe(0);
-    expect(result.content).toBe("No text content found in presentation");
+    expect(result.content).toBe("");
   });
 
-  it("falls back to the placeholder when slides exist but contain no <a:t> runs", async () => {
+  it("returns empty content (no placeholder) when slides exist but contain no <a:t> runs", async () => {
     const buffer = await buildPptxZipArrayBuffer(["<p:noText/>"]);
     const file = {
       name: "blank.pptx",
@@ -956,7 +980,7 @@ describe("extractPptxText", () => {
 
     const result = await extractPptxText(file as any);
     expect(result.pageCount).toBe(1);
-    expect(result.content).toBe("No text content found in presentation");
+    expect(result.content).toBe("");
   });
 
   it("wraps errors when the uploaded bytes are not a valid ZIP container", async () => {
@@ -982,7 +1006,7 @@ describe("extractPdfText", () => {
       arrayBuffer: async () => toArrayBuffer(buildTinyValidPdf()),
     };
     const result = await extractPdfText(file as any);
-    expect(result.content).toEqual(expect.any(String));
+    expect(result.content).toContain(TINY_PDF_TEXT);
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
     expect(result.metadata?.processingMethod).toBe("@opendocsg/pdf2md");
   });
@@ -1176,6 +1200,7 @@ describe("processUploadedFile", () => {
 
     expect(result.title).toBe("lecture");
     expect(result.mimeType).toBe("application/pdf");
+    expect(result.content).toContain(TINY_PDF_TEXT);
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
     expect((result.metadata as JsonObject | undefined)?.processingLibrary).toBe(
       "@opendocsg/pdf2md",

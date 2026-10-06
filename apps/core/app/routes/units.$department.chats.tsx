@@ -14,23 +14,24 @@ import {
 import { CourseChatsPanel } from "~/components/courses/course-chats-panel";
 import { useUnitChats } from "~/hooks/api/use-course-chats";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 
 /**
  * Unit-level chats view for UNIT_ADMIN (§5d). The endpoint
  * GET /api/units/:department/chats is the security boundary; this page just
  * renders it. Non unit/admin callers, or a department outside the caller's
- * authorized units, are redirected.
+ * authorized units, get the generic 404.
  */
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
 
   const department = params.department;
-  if (!department) return redirect("/courses");
+  if (!department) throw notFound(session.user);
 
   const role = session.user.role;
   if (role !== "ADMIN" && role !== "UNIT_ADMIN") {
-    return redirect("/courses?access=denied");
+    throw notFound(session.user);
   }
 
   if (role === "UNIT_ADMIN") {
@@ -39,7 +40,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       select: { authorizedUnits: true },
     });
     if (!(dbUser?.authorizedUnits ?? []).includes(department)) {
-      return redirect("/courses?access=denied");
+      throw notFound(session.user);
     }
   }
 
@@ -101,3 +102,5 @@ export default function UnitChatsPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

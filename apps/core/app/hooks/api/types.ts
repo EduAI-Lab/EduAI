@@ -55,4 +55,10 @@ export type SubmitBugReportInput = {
   description: string;
   bugType?: BugReportType | null;
   isAnonymous?: boolean;
+  /** Diagnostics — present only when the reporter opted in (#1752). */
+  consoleLogs?: string | null;
+  networkLogs?: string | null;
+  screenshot?: string | null;
+  pageUrl?: string | null;
+  userAgent?: string | null;
 };

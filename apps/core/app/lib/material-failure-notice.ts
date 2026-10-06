@@ -1,4 +1,5 @@
 import type { MaterialStatus } from "@eduai/ui";
+import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 
 /**
  * Why a material upload ended in FAILED, at the granularity the *instructor*
@@ -31,17 +32,78 @@ export type MaterialFailureFacts = {
   duplicateOfId: string | null;
   /** `rawText !== null` on the row — computed server-side, never the text itself. */
   hasExtractedText: boolean;
+  /**
+   * The reason the background job recorded (#1791/#1794), when the row has
+   * one. Null on a row that failed before the column existed, and on a
+   * duplicate receipt (which has no failure of its own to explain). Refines
+   * the message within whatever bucket `duplicateOfId`/`hasExtractedText`
+   * already put the row in — it never changes `kind` or `canRetry`, which
+   * stay derived from the row's shape: a code says what class of failure this
+   * is, but only the shape says whether the server actually has something to
+   * retry from.
+   */
+  failureCode: MaterialFailureCode | null;
 };
 
+type FailureCodeText = { title: string; cause: string; when?: string; escalate?: boolean };
+
 /**
- * Explain a FAILED material from the row alone.
+ * Per-code copy (#1794): what happened, never what to do next. The next step
+ * comes from the row's shape (`nextStep`), so a code can't promise a retry
+ * button that isn't there or call the file fine where it couldn't be read.
+ * `when` and `escalate` tune that step.
+ */
+const FAILURE_CODE_TEXT = {
+  MATERIAL_EXTRACT_FAILED: {
+    title: "Couldn't read this file",
+    cause:
+      "Couldn't read the contents of this file. It may be corrupted, password-protected, or a scan with no selectable text.",
+  },
+  MATERIAL_EXTRACT_BUSY: {
+    title: "The server was too busy to process this file",
+    cause: "The server was too busy to process this file after several attempts.",
+    when: "in a few minutes",
+  },
+  MATERIAL_EXTRACT_ABANDONED: {
+    title: "Processing didn't complete",
+    cause: "Processing this file was attempted several times and didn't complete.",
+  },
+  MATERIAL_EMBED_FAILED: {
+    title: "Couldn't prepare this file for search",
+    cause: "This file's search data couldn't be built.",
+    escalate: true,
+  },
+  MATERIAL_EMBED_RATE_LIMITED: {
+    title: "Rate-limited while indexing",
+    cause:
+      "The AI service was rate-limiting requests, so this file's search data couldn't be built.",
+    when: "in a few minutes",
+  },
+  MATERIAL_EMBED_PROVIDER_UNAVAILABLE: {
+    title: "AI service unavailable while indexing",
+    cause: "The AI service didn't respond, so this file's search data couldn't be built.",
+    when: "later",
+    escalate: true,
+  },
+} satisfies Record<MaterialFailureCode, FailureCodeText>;
+
+/** The recovery sentence for a bucket, timed and escalated per the code. */
+function nextStep(canRetry: boolean, text: FailureCodeText): string {
+  const when = text.when ? ` ${text.when}` : "";
+  const step = canRetry
+    ? `The text is still saved, so use Try again${when} — there's no need to upload the file again.`
+    : `The original upload is no longer stored, so upload the file again${when}.`;
+  return text.escalate ? `${step} If it keeps happening, contact your administrator.` : step;
+}
+
+/**
+ * Explain a FAILED material from the row.
  *
  * #1749: the failed badge carried no reason and no recovery, so the only way
- * to make progress was to re-upload and hope. The reason the background job
- * recorded is not readable here — `failMaterial` writes only `status`, sending
- * the message to `logSystemError`, and `CourseMaterial` has no column for it
- * (#1794). What the row *does* distinguish is the stage that failed, which is
- * what decides whether retrying is even possible:
+ * to make progress was to re-upload and hope. #1794 then gave the background
+ * job a column to record *why* on the row itself (`failureCode`), but a row
+ * can still predate that column, or carry a code this client build does not
+ * recognize — so the derivation below still starts from what every row has:
  *
  * - `duplicateOfId` set — the content checksummed to a material already on the
  *   course (#949's async successor to the old synchronous 409).
@@ -52,12 +114,23 @@ export type MaterialFailureFacts = {
  *   database. `processMaterialEmbeddings` uses `replace: true` and is
  *   idempotent, which is what makes that safe to repeat.
  *
+ * `failureCode`, when present and recognized, only swaps in a more specific
+ * title/description within whichever of those three buckets the shape already
+ * chose — `canRetry` keeps coming from the shape, because that is what the
+ * reprocess endpoint itself checks (`MATERIAL_TEXT_UNAVAILABLE`), and codes
+ * like `MATERIAL_EXTRACT_ABANDONED` can be reached both with and without text
+ * left to retry from.
+ *
  * Returns `null` for any material that has not failed.
  */
 export function describeMaterialFailure(
   material: MaterialFailureFacts,
 ): MaterialFailureNotice | null {
   if (material.status !== "FAILED") return null;
+
+  const specific: FailureCodeText | undefined = material.failureCode
+    ? FAILURE_CODE_TEXT[material.failureCode]
+    : undefined;
 
   // Checked first: a duplicate receipt always has extracted text — it got far
   // enough to checksum the content — so the indexing branch would claim it.
@@ -75,9 +148,10 @@ export function describeMaterialFailure(
   if (!material.hasExtractedText) {
     return {
       kind: "unreadable-file",
-      title: "Couldn't read this file",
-      description:
-        "No usable text could be extracted, so there is nothing to retry — the original upload is no longer stored. Check the file opens correctly, then upload it again.",
+      title: specific?.title ?? "Couldn't read this file",
+      description: specific
+        ? `${specific.cause} ${nextStep(false, specific)}`
+        : "No usable text could be extracted, so there is nothing to retry — the original upload is no longer stored. Check the file opens correctly, then upload it again.",
       canRetry: false,
       duplicateOfId: null,
     };
@@ -85,9 +159,10 @@ export function describeMaterialFailure(
 
   return {
     kind: "indexing-failed",
-    title: "Couldn't prepare this file for search",
-    description:
-      "The text was read successfully, but indexing it for course chat failed. The text is still saved, so this can be retried without uploading the file again.",
+    title: specific?.title ?? "Couldn't prepare this file for search",
+    description: specific
+      ? `${specific.cause} ${nextStep(true, specific)}`
+      : "The text was read successfully, but indexing it for course chat failed. The text is still saved, so this can be retried without uploading the file again.",
     canRetry: true,
     duplicateOfId: null,
   };

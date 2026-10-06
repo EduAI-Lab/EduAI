@@ -51,7 +51,7 @@ async function expectRootLoader(overrides: JsonObject) {
     canInvite: false,
     // #1666 review: resolved once per navigation (root loader) so the
     // sidebar/command-palette Course Assistant link survives every route.
-    hasInstructorEnrollment: false,
+    canUseCourseAssistant: false,
     hasTeachingAssistantEnrollment: false,
     assistive: false,
     motionReduced: false,

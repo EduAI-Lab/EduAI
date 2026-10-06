@@ -23,57 +23,24 @@ import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { getAuthorizedUnits, type RbacUser } from "~/lib/auth/course-access.server";
+import { notFound } from "~/lib/not-found.server";
+import { listInstructorChatCourses } from "~/lib/auth/instructor-chat-courses.server";
+import type { RbacUser } from "~/lib/auth/course-access.server";
 
 /**
- * #1659 review: the only authority for "which courses can this instructor
- * open a chat for" is an active INSTRUCTOR enrollment on a published course
- * — but that alone isn't enough to match `/api/chat`'s instructor-mode gate,
- * which reuses `resolveCourseAccessWithCourse` (course-access.server.ts).
- * That resolver decides access by PLATFORM role FIRST: every ADMIN gets
- * `admin`-level access and every in-unit UNIT_ADMIN gets `unit`-level access
- * — regardless of whether they *also* hold a real INSTRUCTOR enrollment on
- * the course, since enrollment is only consulted once neither short-circuit
- * applies. A raw enrollment lookup would therefore list a course here for a
- * dual-role caller (ADMIN, or in-unit UNIT_ADMIN, who happens to teach it)
- * that the API guard then always 403s on every turn — the exact drift this
- * function exists to prevent. Those callers have /admin/chat for
- * platform-wide ops instead, so we exclude them here rather than special-case
- * the guard, keeping this loader and the guard provably in lockstep.
+ * Whether the dashboard's "New chat" button sends this user to
+ * `/instructor/chat` (dashboard-view.tsx): a platform INSTRUCTOR always, and
+ * anyone with an active INSTRUCTOR enrollment. Neither checks for a published
+ * course, unlike the sidebar link (#1745). ADMIN's dashboard never links here.
  */
-async function listMyPublishedInstructorCourses(user: RbacUser) {
-  // Every ADMIN resolves to `admin`-level access on every course
-  // (resolveAccess's first branch) — never `instructor`, no matter their
-  // enrollment. Nothing they teach can ever pass the guard.
-  if (user.role === "ADMIN") return [];
-
-  const authorizedUnits = user.role === "UNIT_ADMIN" ? await getAuthorizedUnits(user) : null;
-
-  const courses = await prisma.course.findMany({
-    where: {
-      isPublished: true,
-      deletedAt: null,
-      enrollments: { some: { userId: user.id, isActive: true, role: "INSTRUCTOR" } },
-    },
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      startDate: true,
-      section: true,
-      department: true,
-    },
-    orderBy: { code: "asc" },
+async function isOfferedCourseAssistant(user: RbacUser) {
+  if (user.role === "ADMIN") return false;
+  if (user.role === "INSTRUCTOR") return true;
+  const enrollment = await prisma.enrollment.findFirst({
+    where: { userId: user.id, isActive: true, role: "INSTRUCTOR" },
+    select: { id: true },
   });
-
-  if (!authorizedUnits) return courses;
-
-  // §19 unit lock (course-access.server.ts): a UNIT_ADMIN whose authorized
-  // units include the course's department resolves to `unit`-level access
-  // there — never `instructor` — regardless of their real enrollment. A
-  // null department is never a unit match, so those courses fall through to
-  // the (allowed) enrollment check same as the guard.
-  return courses.filter((c) => c.department === null || !authorizedUnits.includes(c.department));
+  return enrollment !== null;
 }
 
 /** `startDate` formatted as e.g. "Jan 5, 2026" — always in UTC so the label doesn't shift with the server/test-runner's local timezone (`startDate` is a bare calendar date, not a moment). */
@@ -129,11 +96,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
-  const courses = await listMyPublishedInstructorCourses(session.user);
+  const courses = await listInstructorChatCourses(session.user);
   if (courses.length === 0) {
-    // Not an instructor of any published course — nothing for this page to
-    // show. Redirect rather than render an empty/broken chat shell.
-    return redirect("/dashboard");
+    // Nothing to chat about. The dashboard's "New chat" button still links
+    // every platform INSTRUCTOR and anyone with an INSTRUCTOR enrollment here,
+    // published course or not, so for them this is a link the app itself
+    // showed: send them back to the dashboard, not to a 404. Anyone else was
+    // never offered this page and gets the generic 404.
+    if (await isOfferedCourseAssistant(session.user)) return redirect("/dashboard");
+    throw notFound(session.user);
   }
 
   const dbModels = await prisma.aIModel.findMany({
@@ -463,3 +434,5 @@ export default function InstructorChatPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

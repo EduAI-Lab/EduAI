@@ -102,11 +102,13 @@ describe("admin.logs loader authz", () => {
     await expectThrownRedirect(loader(makeLoaderArgs("/admin/logs")), "/auth/login");
   });
 
-  it("redirects a non-admin to /dashboard", async () => {
+  it("404s a non-admin instead of redirecting", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "UNIT_ADMIN" },
     } as never);
-    await expectThrownRedirect(loader(makeLoaderArgs("/admin/logs")), "/dashboard");
+    await expect(loader(makeLoaderArgs("/admin/logs"))).rejects.toMatchObject({
+      init: { status: 404 },
+    });
   });
 });
 
