@@ -107,7 +107,6 @@ export function PageHelpButton({
           aria-haspopup="dialog"
           title="Help"
           data-tour="page-help"
-          data-tour-id="page-help"
           className={cn(
             "flex size-9 min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             className,

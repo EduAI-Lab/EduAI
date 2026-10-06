@@ -21,6 +21,23 @@ export type {
   PageHelpTour,
 } from "./page-help";
 
+// ── Guided tours ───────────────────────────────────────────────────────────
+export { TourProvider, useTour, useAutoStartTour } from "./tour/tour-provider";
+export type { TourContextValue, TourProviderProps } from "./tour/tour-provider";
+export { TourOverlay } from "./tour/tour-overlay";
+export type { TourOverlayProps } from "./tour/tour-overlay";
+export { LocalTour } from "./tour/local-tour";
+export type { LocalTourProps } from "./tour/local-tour";
+export { hasSeenTour, markTourSeen } from "./tour/tour-dom";
+export type {
+  TourDefinition,
+  TourLocation,
+  TourPlacement,
+  TourRoute,
+  TourRoutes,
+  TourStep,
+} from "./tour/tour-engine";
+
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge";
 export type { RoleBadgeProps } from "./role-badge";
