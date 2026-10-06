@@ -52,9 +52,6 @@ export function CoursesGrid({
   filters,
   matchesFilter,
 }: CoursesGridProps) {
-  // The guided tour (#1754) opens the first course and follows it into its workspace.
-  const tourCourseId = courses[0]?.id;
-
   const filterGroups: CourseFilterGroup<Course>[] = [
     buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
     ...(showDepartment
@@ -91,8 +88,11 @@ export function CoursesGrid({
         }}
         role="button"
         tabIndex={0}
-        data-tour={course.id === tourCourseId ? "course-select" : undefined}
-        data-tour-route={course.id === tourCourseId ? `/courses/${course.id}` : undefined}
+        // Every card is a tour target: the guided tour (#1754) spotlights the
+        // first one on screen and follows it into its workspace, so it matches
+        // CourseListView's ordering (current term first) and any active filter.
+        data-tour="course-select"
+        data-tour-route={`/courses/${course.id}`}
         data-course-id={course.id}
         className="cursor-pointer rounded-[var(--radius-xl)] focus:outline-none focus:ring-2 focus:ring-primary"
       >

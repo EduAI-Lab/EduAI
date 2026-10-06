@@ -67,13 +67,17 @@ describe("CoursesGrid", () => {
     expect(screen.queryByText("CPSC 101")).toBeNull();
   });
 
-  it("tags the first course, and its route, for the guided tour (#1754)", () => {
-    const courses = [makeCourse({ id: 42 }), makeCourse({ id: 43, code: "CPSC 102" })];
+  it("points the guided tour at the first course on screen, with its route (#1754)", () => {
+    // The data lists an older term first, but the list shows newer terms
+    // first, so the tour must pick the first card in display order.
+    const courses = [
+      makeCourse({ id: 42, code: "CPSC 121", term: "W2", year: 2025 }),
+      makeCourse({ id: 43, code: "CPSC 101", term: "W1", year: 2026 }),
+    ];
     render(<CoursesGrid courses={courses} isLoading={false} onSelectCourse={vi.fn()} />);
-    const card = document.querySelector('[data-tour="course-select"]');
-    expect(card).toHaveAttribute("data-course-id", "42");
-    expect(card).toHaveAttribute("data-tour-route", "/courses/42");
-    expect(document.querySelectorAll("[data-tour-route]")).toHaveLength(1);
+    const first = document.querySelector('[data-tour="course-select"]');
+    expect(first).toHaveAttribute("data-course-id", "43");
+    expect(first).toHaveAttribute("data-tour-route", "/courses/43");
   });
 
   it("tags the empty state so the tour can explain linking a course", () => {
