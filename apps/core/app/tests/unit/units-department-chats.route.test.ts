@@ -39,33 +39,27 @@ describe("units.$department.chats loader", () => {
     expect(res.headers.get("Location")).toBe("/auth/login");
   });
 
-  it("redirects to /courses when the :department param is missing", async () => {
+  it("404s when the :department param is missing", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
-    const res = (await loader(makeArgs(""))) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses");
+    await expect(loader(makeArgs(""))).rejects.toMatchObject({ init: { status: 404 } });
   });
 
-  it("redirects a STUDENT to /courses?access=denied", async () => {
+  it("404s a STUDENT", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses?access=denied");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
-  it("redirects a UNIT_ADMIN not authorized for the department", async () => {
+  it("404s a UNIT_ADMIN not authorized for the department", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "ua-1", role: "UNIT_ADMIN" },
     } as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ authorizedUnits: ["MATH"] } as never);
 
-    const res = (await loader(makeArgs())) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/courses?access=denied");
+    await expect(loader(makeArgs())).rejects.toMatchObject({ init: { status: 404 } });
   });
 
   it("loads for a UNIT_ADMIN authorized for the department", async () => {

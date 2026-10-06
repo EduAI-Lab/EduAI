@@ -63,7 +63,7 @@ const TOPIC: CourseTopic = {
 };
 
 const NOOP = async () => {};
-const onFileSelect = vi.fn();
+const onFilesSelect = vi.fn();
 const STAFF_PROPS = {
   tas: [],
   courseInstructors: [],
@@ -98,7 +98,7 @@ describe("CourseDetailManagerView", () => {
         topics={[]}
         enrollments={[]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -118,7 +118,7 @@ describe("CourseDetailManagerView", () => {
         topics={[]}
         enrollments={[]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -135,7 +135,7 @@ describe("CourseDetailManagerView", () => {
         topics={[]}
         enrollments={[]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -155,7 +155,7 @@ describe("CourseDetailManagerView", () => {
         topics={[TOPIC]}
         enrollments={[]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -185,7 +185,7 @@ describe("CourseDetailManagerView", () => {
           },
         ]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -214,7 +214,7 @@ describe("CourseDetailManagerView", () => {
           },
         ]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -243,7 +243,7 @@ describe("CourseDetailManagerView", () => {
           },
         ]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
         {...STAFF_PROPS}
@@ -267,7 +267,7 @@ describe("CourseDetailTaView", () => {
         course={COURSE}
         topics={[]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         {...TA_PROPS}
       />,
     );
@@ -280,7 +280,7 @@ describe("CourseDetailTaView", () => {
         course={COURSE}
         topics={[]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         {...TA_PROPS}
       />,
     );
@@ -293,7 +293,7 @@ describe("CourseDetailTaView", () => {
         course={COURSE}
         topics={[]}
         materials={[{ ...MATERIAL, uploadedBy: "user-ta" }]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         courseId="c1"
         currentUserId="user-ta"
         {...TA_PROPS}
@@ -311,7 +311,7 @@ describe("CourseDetailTaView", () => {
         course={COURSE}
         topics={[TOPIC]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         {...TA_PROPS}
       />,
     );
@@ -327,7 +327,7 @@ describe("CourseDetailTaView", () => {
         course={COURSE}
         topics={[TOPIC]}
         materials={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
         {...TA_PROPS}
       />,
     );
@@ -348,13 +348,13 @@ describe("CourseDetailStudentView", () => {
     expect(screen.queryByTestId("upload-widget")).not.toBeInTheDocument();
   });
 
-  it("does NOT render upload widget for students when upload policy is disabled even if onFileSelect is provided", () => {
+  it("does NOT render upload widget for students when upload policy is disabled even if onFilesSelect is provided", () => {
     wrap(
       <CourseDetailStudentView
         course={COURSE}
         materials={[]}
         topics={[]}
-        onFileSelect={onFileSelect}
+        onFilesSelect={onFilesSelect}
       />,
     );
 

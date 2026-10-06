@@ -270,17 +270,21 @@ renames it):
 
 ```bash
 sudo install -d -o root -g eduai -m 2770 /etc/eduai/fleet
-sudo cp -n /srv/www/eduai-production/current/apps/core/fleet.config.json /etc/eduai/fleet/ 2>/dev/null \
-  || sudo cp /srv/www/eduai-production/current/apps/core/fleet.config.example.json /etc/eduai/fleet/fleet.config.json
-sudo chown root:eduai /etc/eduai/fleet/fleet.config.json && sudo chmod 0660 /etc/eduai/fleet/fleet.config.json
+[ -e /etc/eduai/fleet/fleet.config.json ] || sudo install -o root -g eduai -m 0660 \
+  /srv/www/eduai-production/current/apps/core/fleet.config.example.json /etc/eduai/fleet/fleet.config.json
 ```
 
-Then edit it to match the edge check. As of the Weeks 1–3 release: cmps01
-`qwen3.5-2b-instruct` + `qwen3.5-9b-instruct`; **cmps02 `qwen3.5-2b-instruct` +
-`qwen3.8-27b-instruct`** (was `qwen2.5-32b-instruct`); cmps03 the 2b/9b pair,
-only if its edge check passed. Without this file the registry assumes every
-fleet URL serves `VLLM_FLEET_DEFAULT_MODELS` (2b + 9b), which is wrong for
-cmps02, and the AI status probe samples hosts from it.
+The guard makes this safe to re-run: an existing config is never overwritten.
+After the first save from the Servers tab the file is recreated as `0640`, owned
+by Core's service user, so don't rely on the initial `0660`.
+
+Then edit it to match the edge check (step 0); the current per-host model list
+is in [`../cmps01/README.md`](../cmps01/README.md#fleet-inventory). Routing reads
+each server's live `/v1/models` first and falls back to the file's `models` only
+when that probe fails; the AI status probe also takes its host list from this
+file.
+Without this file the registry assumes every fleet URL serves
+`VLLM_FLEET_DEFAULT_MODELS`, which is wrong for cmps02.
 
 **Auto routing tier assignment is a manual step on production.** Unlike
 `eduai-dev`/s378 (`infra/s378/go-live-build.sh` runs

@@ -1,13 +1,18 @@
 import { useState } from "react";
-import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import { toast } from "sonner";
 import type { LoaderFunctionArgs } from "react-router";
 
 import prisma from "~/lib/prisma.server";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { CoursesView, type CoursesRole } from "~/components/courses/courses-view";
-import { useCourses } from "~/hooks/api/use-courses";
-import type { CourseFilterKey } from "~/hooks/api/use-courses";
+import { CourseDuplicateError, useCourses } from "~/hooks/api/use-courses";
+import type {
+  CourseFilterKey,
+  CreateCourseInput,
+  DuplicateResolution,
+} from "~/hooks/api/use-courses";
+import { DuplicateCourseDialog } from "~/components/courses/duplicate-course-dialog";
 import { TablePagination } from "~/components/ui/table-pagination";
 import {
   Breadcrumb,
@@ -83,9 +88,6 @@ export default function CoursesPage() {
     enrolledCourseIds,
     instructors,
   } = useLoaderData<typeof loader>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const accessDenied = searchParams.get("access") === "denied";
-  const accessUnpublished = searchParams.get("access") === "unpublished";
   const {
     courses,
     total: courseTotal,
@@ -134,6 +136,52 @@ export default function CoursesPage() {
     label: string;
   } | null>(null);
 
+  // #1811: a duplicate warning holds the create form's promise open until the
+  // user restores, creates anyway (resolve → form closes) or cancels (reject → form stays).
+  const [duplicate, setDuplicate] = useState<{
+    input: CreateCourseInput;
+    warning: CourseDuplicateError;
+    resolve: () => void;
+    reject: (reason: Error) => void;
+  } | null>(null);
+
+  const handleCreateCourse = async (data: CreateCourseInput) => {
+    try {
+      await createCourse(data);
+    } catch (error) {
+      if (error instanceof CourseDuplicateError) {
+        return new Promise<void>((resolve, reject) =>
+          setDuplicate({ input: data, warning: error, resolve, reject }),
+        );
+      }
+      toast.error(error instanceof Error ? error.message : "Failed to create course.");
+      throw error;
+    }
+  };
+
+  const handleResolveDuplicate = async (resolution: DuplicateResolution) => {
+    if (!duplicate) return;
+    try {
+      await createCourse(duplicate.input, resolution);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create course.";
+      toast.error(message);
+      duplicate.reject(error instanceof Error ? error : new Error(message));
+      setDuplicate(null);
+      return;
+    }
+    toast.success(
+      resolution.duplicateResolution === "restore" ? "Course restored." : "Course created.",
+    );
+    duplicate.resolve();
+    setDuplicate(null);
+  };
+
+  const handleCancelDuplicate = () => {
+    duplicate?.reject(new Error("Course creation cancelled"));
+    setDuplicate(null);
+  };
+
   const handlePublishToggle = async (id: string, publish: boolean) => {
     try {
       await updateCourse(id, { isPublished: publish });
@@ -168,29 +216,6 @@ export default function CoursesPage() {
   return (
     <Layout user={user}>
       <div className="px-4 lg:px-6">
-        {accessDenied && (
-          <div
-            role="alert"
-            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          >
-            You do not have access to that course. Open a course from this list only.
-            <button type="button" className="ml-2 underline" onClick={() => setSearchParams({})}>
-              Dismiss
-            </button>
-          </div>
-        )}
-        {accessUnpublished && (
-          <div
-            role="alert"
-            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          >
-            That course isn&apos;t published yet. You&apos;ll be able to open it once your
-            instructor publishes it.
-            <button type="button" className="ml-2 underline" onClick={() => setSearchParams({})}>
-              Dismiss
-            </button>
-          </div>
-        )}
         {effectiveRole === "admin" ? (
           <CoursesView
             role="admin"
@@ -203,9 +228,7 @@ export default function CoursesPage() {
             availableValues={availableValues}
             total={courseTotal}
             onClearAll={handleClearAll}
-            onCreateCourse={async (data) => {
-              await createCourse(data);
-            }}
+            onCreateCourse={handleCreateCourse}
             onEditCourse={async (id, data) => {
               await updateCourse(id, data);
             }}
@@ -231,9 +254,7 @@ export default function CoursesPage() {
             availableValues={availableValues}
             total={courseTotal}
             onClearAll={handleClearAll}
-            onCreateCourse={async (data) => {
-              await createCourse(data);
-            }}
+            onCreateCourse={handleCreateCourse}
             onEditCourse={async (id, data) => {
               await updateCourse(id, data);
             }}
@@ -253,9 +274,7 @@ export default function CoursesPage() {
             availableValues={availableValues}
             total={courseTotal}
             onClearAll={handleClearAll}
-            onCreateCourse={async (data) => {
-              await createCourse(data);
-            }}
+            onCreateCourse={handleCreateCourse}
             onEditCourse={async (id, data) => {
               await updateCourse(id, data);
             }}
@@ -288,6 +307,11 @@ export default function CoursesPage() {
           />
         </div>
       </div>
+      <DuplicateCourseDialog
+        warning={duplicate?.warning ?? null}
+        onResolve={handleResolveDuplicate}
+        onCancel={handleCancelDuplicate}
+      />
       <ConfirmDialog
         open={pendingPublish !== null}
         onOpenChange={(open) => {

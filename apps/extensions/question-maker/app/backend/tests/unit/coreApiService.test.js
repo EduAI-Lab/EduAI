@@ -26,6 +26,8 @@ const {
   createQuestionBankOnCore,
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
+  moveQuestionBankMembershipOnCore,
+  listQuestionBankIdsForQuestionOnCore,
   searchCoursesFromCore,
   proxyCoreCreateQuiz,
   proxyCoreListQuizzes,
@@ -563,6 +565,64 @@ describe("removeQuestionBankMembershipOnCore", () => {
       "http://core.test/api/courses/cuid-course-1/banks/bank_1/questions/42?source=question-maker",
     );
     expect(opts.method).toBe("DELETE");
+  });
+});
+
+describe("moveQuestionBankMembershipOnCore", () => {
+  it("POSTs the target bank to the move route", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ id: "mem_2" })));
+
+    await expect(
+      moveQuestionBankMembershipOnCore("cuid-course-1", "bank_1", "42", "bank_2"),
+    ).resolves.toEqual({ id: "mem_2" });
+
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe("http://core.test/api/courses/cuid-course-1/banks/bank_1/questions/42/move");
+    expect(opts.method).toBe("POST");
+    expect(JSON.parse(opts.body)).toEqual({ targetBankId: "bank_2", source: "question-maker" });
+  });
+
+  it("URL-encodes a path-traversal bankId instead of letting it escape the route", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ id: "mem_3" })));
+
+    await moveQuestionBankMembershipOnCore(
+      "cuid-course-1",
+      "../../other/banks/b9/questions/99/move?",
+      "42",
+      "bank_2",
+    );
+
+    const [url] = fetch.mock.calls[0];
+    expect(url).toBe(
+      "http://core.test/api/courses/cuid-course-1/banks/..%2F..%2Fother%2Fbanks%2Fb9%2Fquestions%2F99%2Fmove%3F/questions/42/move",
+    );
+  });
+});
+
+describe("listQuestionBankIdsForQuestionOnCore", () => {
+  it("GETs the bank ids holding one question", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ bankIds: ["bank_1", "bank_2"] })));
+
+    await expect(listQuestionBankIdsForQuestionOnCore("cuid-course-1", "42")).resolves.toEqual({
+      bankIds: ["bank_1", "bank_2"],
+    });
+
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe(
+      "http://core.test/api/courses/cuid-course-1/banks/questions/42?source=question-maker",
+    );
+    expect(opts.method ?? "GET").toBe("GET");
+  });
+
+  it("URL-encodes the question id instead of letting it escape the route", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ bankIds: [] })));
+
+    await listQuestionBankIdsForQuestionOnCore("cuid-course-1", "../../banks/b9/questions");
+
+    const [url] = fetch.mock.calls[0];
+    expect(url).toBe(
+      "http://core.test/api/courses/cuid-course-1/banks/questions/..%2F..%2Fbanks%2Fb9%2Fquestions?source=question-maker",
+    );
   });
 });
 

@@ -19,7 +19,11 @@ import {
   Button,
 } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
-import { CourseMaterialsUpload, type CourseMaterial } from "~/components/course-materials-upload";
+import {
+  CourseMaterialsUpload,
+  type CourseMaterial,
+  type UploadItem,
+} from "~/components/course-materials-upload";
 import {
   CourseInstructorsPanel,
   resolveDisplayInstructors,
@@ -50,7 +54,9 @@ interface Props {
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
-  onFileSelect?: (file: File) => void;
+  /** Per-file progress of the current batch upload (#1748). */
+  uploads?: UploadItem[];
+  onFilesSelect?: (files: File[]) => void;
 }
 
 function ThemedPanel({ children }: { children: ReactNode }) {
@@ -85,7 +91,8 @@ export function CourseDetailStudentView({
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
-  onFileSelect,
+  uploads,
+  onFilesSelect,
 }: Props) {
   // #1841: every instructor of record, falling back to the single legacy field.
   const displayInstructors = resolveDisplayInstructors(course);
@@ -96,7 +103,7 @@ export function CourseDetailStudentView({
   // §2 grant: a student sees the upload control only when students.canUploadMaterials
   // is on (default false — mirrors the POST 403). Uploads land on the whole-course
   // RAG corpus, same as instructor/TA uploads.
-  const canUploadMaterials = isEnabled("students.canUploadMaterials") && Boolean(onFileSelect);
+  const canUploadMaterials = isEnabled("students.canUploadMaterials") && Boolean(onFilesSelect);
   // The Materials tab content shows when the student may either read or upload;
   // §807: when neither is allowed the tab stays visible but greyed-out so the
   // student knows materials exist but an admin restricted them.
@@ -288,13 +295,14 @@ export function CourseDetailStudentView({
                 an enrolled student; the POST endpoint applies the matching gate. Off
                 by default → read-only list only. The redesigned read-only list below
                 still renders so an uploading student also sees existing materials. */}
-            {canUploadMaterials && onFileSelect && (
+            {canUploadMaterials && onFilesSelect && (
               <div className="mb-4">
                 <CourseMaterialsUpload
                   isUploading={isUploading}
                   error={materialsError}
                   success={materialsSuccess}
-                  onFileSelect={onFileSelect}
+                  uploads={uploads}
+                  onFilesSelect={onFilesSelect}
                 />
               </div>
             )}

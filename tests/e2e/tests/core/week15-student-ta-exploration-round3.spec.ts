@@ -419,9 +419,12 @@ test.describe("Chat composer — error handling per failure mode", () => {
   const cases: Array<{
     name: string;
     mock: (route: Route) => Promise<void>;
+    /** The #1510 banner heading this failure mode must resolve to. */
+    banner: string;
   }> = [
     {
       name: "502 LLM_STREAM_FAILED (model errored mid-stream)",
+      banner: "The AI model isn't responding",
       mock: (route) =>
         route.fulfill({
           status: 502,
@@ -434,6 +437,7 @@ test.describe("Chat composer — error handling per failure mode", () => {
     },
     {
       name: "400 provider not available (matches an unconfigured/unreachable model)",
+      banner: "The AI model isn't responding",
       mock: (route) =>
         route.fulfill({
           status: 400,
@@ -446,12 +450,13 @@ test.describe("Chat composer — error handling per failure mode", () => {
     },
     {
       name: "connection refused (route.abort — closest match to a totally unreachable backend)",
+      banner: "Couldn't reach EduAI",
       mock: (route) => route.abort("connectionrefused"),
     },
   ];
 
-  for (const { name, mock } of cases) {
-    test(`${name}: composer returns to idle and surfaces an error toast`, async ({
+  for (const { name, mock, banner } of cases) {
+    test(`${name}: composer returns to idle and surfaces an inline error banner`, async ({
       page,
       playwright,
     }) => {
@@ -491,9 +496,17 @@ test.describe("Chat composer — error handling per failure mode", () => {
           `[${name}] Stop must not stay stuck after /api/chat fails`,
         ).toHaveCount(0);
 
+        // #1510: an inline banner in the conversation, not a toast — a toast
+        // auto-dismisses before a student reads it and carries no retry. The
+        // heading differs per failure mode so the student is told which of
+        // "wait", "it's us not you" and "check your connection" applies.
         await expect(
-          page.getByText("Could not get a response", { exact: true }),
-          `[${name}] /api/chat failure should surface an error toast`,
+          page.getByRole("alert").filter({ hasText: banner }),
+          `[${name}] /api/chat failure should surface the inline error banner`,
+        ).toBeVisible({ timeout: 10_000 });
+        await expect(
+          page.getByRole("button", { name: /try again/i }),
+          `[${name}] the error banner should offer a retry that does not require retyping`,
         ).toBeVisible({ timeout: 10_000 });
       } finally {
         await ctx.dispose();

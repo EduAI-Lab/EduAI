@@ -1,6 +1,7 @@
 import { data } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import cron from "node-cron";
+import { z } from "zod";
 
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
@@ -11,8 +12,13 @@ import {
   resetCronSchedule,
   startCronRun,
   updateCronSchedule,
+  CronJobSettingError,
+  resetCronJobSetting,
+  updateCronJobSetting,
 } from "~/lib/db.cron-jobs.server";
 import { withErrorResponse } from "~/lib/errors.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 // Re-checks `isActive` against the DB, not just the session's cached role
 // (#1571, mirrored from `requireAdmin` in `~/lib/auth/guards.server`): a
@@ -52,6 +58,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   );
 }
 
+/**
+ * A setting value is a JSON number or a string of digits, nothing else. `Number()`
+ * alone would turn `true` into 1, `" 30 "` into 30, `[5]` into 5 and `""`/`false`
+ * into 0. Anything this rejects is passed on as NaN so `updateCronJobSetting`
+ * rejects it as "must be a whole number".
+ */
+const settingValueInputSchema = z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]);
+
 export async function action({ request }: ActionFunctionArgs) {
   return withErrorResponse(
     async () => {
@@ -65,6 +79,8 @@ export async function action({ request }: ActionFunctionArgs) {
         jobName?: string;
         schedule?: string;
         scheduleLabel?: string;
+        key?: string;
+        value?: number | string | null;
       };
       const { intent, jobName } = body;
 
@@ -117,6 +133,49 @@ export async function action({ request }: ActionFunctionArgs) {
           return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
         }
         await resetCronSchedule(jobName);
+        const jobs = await listCronJobStatuses();
+        return data({ jobs });
+      }
+
+      if (intent === "update-setting" || intent === "reset-setting") {
+        if (!jobName) {
+          return data({ error: "jobName is required" }, { status: 400 });
+        }
+        const { key } = body;
+        if (!key) {
+          return data({ error: "key is required" }, { status: 400 });
+        }
+        let change: { previous: number; value: number };
+        try {
+          change =
+            intent === "update-setting"
+              ? await updateCronJobSetting(
+                  jobName,
+                  key,
+                  settingValueInputSchema.safeParse(body.value).data ?? Number.NaN,
+                  user.id,
+                )
+              : await resetCronJobSetting(jobName, key);
+        } catch (error) {
+          if (error instanceof CronJobSettingError) {
+            return data({ error: error.message }, { status: 400 });
+          }
+          throw error;
+        }
+        // Unlike a schedule edit, a setting can decide when data is permanently
+        // deleted (purge-deleted-materials.retainDays), so record who changed it.
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(user),
+            ...getRequestContext(request),
+            actionCode: intent === "update-setting" ? "CRON_SETTING_UPDATED" : "CRON_SETTING_RESET",
+            category: "SECURITY",
+            entityType: "CronJobSetting",
+            entityId: `${jobName}.${key}`,
+            entityLabel: `${jobName}.${key}`,
+            details: { jobName, key, oldValue: change.previous, newValue: change.value },
+          }),
+        );
         const jobs = await listCronJobStatuses();
         return data({ jobs });
       }

@@ -16,6 +16,7 @@ vi.mock("@/services/questionService", () => ({
 }));
 
 import { useAllQuestions } from "@/hooks/useAllQuestions";
+import type { QuestionFilters } from "@/components/question-bank/QuestionFilterToolbar";
 
 afterEach(() => {
   cleanup();
@@ -123,5 +124,74 @@ describe("useAllQuestions", () => {
     });
 
     expect(result.current.questions).toEqual([{ id: "second" }]);
+  });
+
+  it("sends the bank filter with the course", async () => {
+    getQuestionsPage.mockResolvedValue({ items: [], total: 0 });
+
+    renderHook(() =>
+      useAllQuestions({
+        courseId: 3,
+        filters: {
+          questionTypes: [],
+          reasoningLevels: [],
+          difficulties: [],
+          aiGenerated: "all",
+          draftStatus: "all",
+          questionBankId: "bank-2",
+        },
+        limit: 10,
+        offset: 0,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(getQuestionsPage).toHaveBeenCalledWith(
+        expect.objectContaining({ courseId: 3, questionBankId: "bank-2" }),
+      ),
+    );
+  });
+
+  it("refetches when only the bank filter changes", async () => {
+    getQuestionsPage.mockResolvedValue({ items: [], total: 0 });
+
+    const baseFilters: QuestionFilters = {
+      questionTypes: [],
+      reasoningLevels: [],
+      difficulties: [],
+      aiGenerated: "all",
+      draftStatus: "all",
+      questionBankId: null,
+    };
+
+    const { rerender } = renderHook(
+      ({ courseId, limit, offset, filters }) =>
+        useAllQuestions({ courseId, limit, offset, filters }),
+      {
+        initialProps: {
+          courseId: 3,
+          limit: 10,
+          offset: 0,
+          filters: baseFilters,
+        },
+      },
+    );
+
+    await waitFor(() =>
+      expect(getQuestionsPage).toHaveBeenCalledWith(expect.objectContaining({ courseId: 3 })),
+    );
+
+    rerender({
+      courseId: 3,
+      limit: 10,
+      offset: 0,
+      filters: { ...baseFilters, questionBankId: "bank-2" },
+    });
+
+    await waitFor(() =>
+      expect(getQuestionsPage).toHaveBeenCalledWith(
+        expect.objectContaining({ questionBankId: "bank-2" }),
+      ),
+    );
   });
 });

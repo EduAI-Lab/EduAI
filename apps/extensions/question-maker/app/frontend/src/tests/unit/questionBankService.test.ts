@@ -79,4 +79,23 @@ describe("questionBankService", () => {
     await questionBankService.removeQuestionFromBank(1, "b2", 99);
     expect(del).toHaveBeenCalledWith("/api/course/1/banks/b2/questions/99");
   });
+
+  it("moveQuestionToBank posts the target bank to the move route", async () => {
+    post.mockResolvedValue({ data: { data: { id: "mem_2" } } });
+    await questionBankService.moveQuestionToBank(1, "b1", 42, "b2");
+    expect(post).toHaveBeenCalledWith("/api/course/1/banks/b1/questions/42/move", {
+      targetBankId: "b2",
+    });
+  });
+
+  it("listBankIdsForQuestion returns the bank ids holding a question", async () => {
+    get.mockResolvedValue({ data: { data: { bankIds: ["b1", "b2"] } } });
+    await expect(questionBankService.listBankIdsForQuestion(1, 42)).resolves.toEqual(["b1", "b2"]);
+    expect(get).toHaveBeenCalledWith("/api/course/1/banks/questions/42");
+  });
+
+  it("listBankIdsForQuestion falls back to an empty array", async () => {
+    get.mockResolvedValue({ data: {} });
+    await expect(questionBankService.listBankIdsForQuestion(1, 42)).resolves.toEqual([]);
+  });
 });

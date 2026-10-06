@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { BugReportProvider } from "~/components/bug-report/BugReportProvider";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 
-const { captureScreenshotMock, getCapturedDataMock } = vi.hoisted(() => ({
+const { captureScreenshotMock, getCapturedDataMock, clearScreenshotMock } = vi.hoisted(() => ({
+  clearScreenshotMock: vi.fn(),
   captureScreenshotMock: vi.fn().mockResolvedValue("data:image/png;base64,abc"),
   getCapturedDataMock: vi.fn().mockReturnValue({
     consoleLogs: "[]",
@@ -12,10 +13,11 @@ const { captureScreenshotMock, getCapturedDataMock } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("~/hooks/useBugReportCapture", () => ({
+vi.mock("@eduai/ui/bug-report-capture", () => ({
   useBugReportCapture: () => ({
     captureScreenshot: captureScreenshotMock,
     getCapturedData: getCapturedDataMock,
+    clearScreenshot: clearScreenshotMock,
   }),
 }));
 
@@ -67,8 +69,10 @@ describe("BugReportProvider", () => {
 
     await result.current.captureScreenshot();
     result.current.getCapturedData();
+    result.current.clearScreenshot();
 
     expect(captureScreenshotMock).toHaveBeenCalledTimes(1);
     expect(getCapturedDataMock).toHaveBeenCalledTimes(1);
+    expect(clearScreenshotMock).toHaveBeenCalledTimes(1);
   });
 });

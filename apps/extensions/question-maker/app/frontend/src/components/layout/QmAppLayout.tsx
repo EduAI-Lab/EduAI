@@ -10,15 +10,16 @@ import {
   BreadcrumbPage,
   BreadcrumbLink,
   BreadcrumbSeparator,
+  BugReportTriggerButton,
   Button,
   CommandSearchButton,
   AIServiceHistoryPanel,
   useHistoryOnOpen,
   AIServiceIndicators,
-  NavSecondary,
   type HistoryPayload,
 } from "@eduai/ui";
 import {
+  IconArrowLeft,
   IconBooks,
   IconBug,
   IconDashboard,
@@ -127,7 +128,7 @@ const NAV_ICONS = {
   library: IconLibrary,
   help: IconHelpCircle,
   "bug-reports": IconBug,
-  "back-to-eduai": IconBooks,
+  "back-to-eduai": IconArrowLeft,
 } satisfies Record<QmNavItemKey, Icon>;
 
 /** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
@@ -257,9 +258,7 @@ function QmAppLayoutInner() {
         logoHref: "/dashboard",
         navMain,
         navSecondary,
-        footerLeading: (
-          <NavSecondary items={navFooter} currentPath={pathname} LinkComponent={Link} />
-        ),
+        navFooter,
         currentPath: pathname,
         LinkComponent: Link,
         launcher: {
@@ -345,17 +344,7 @@ function QmAppLayoutInner() {
             )}
           </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          {bugReport ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={bugReport.openBugReport}
-              aria-label="Report a bug"
-            >
-              <IconBug className="h-4 w-4 sm:mr-1" />
-              <span className="hidden sm:inline">Report a bug</span>
-            </Button>
-          ) : null}
+          {bugReport ? <BugReportTriggerButton onClick={bugReport.openBugReport} /> : null}
         </>
       }
       commandPalette={
@@ -423,7 +412,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           logoHref: "/dashboard",
           navMain,
           navSecondary,
-          footerLeading: <NavSecondary items={navFooter} currentPath="/" LinkComponent={Link} />,
+          navFooter,
           currentPath: "/",
           LinkComponent: Link,
           launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },

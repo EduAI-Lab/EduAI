@@ -19,6 +19,7 @@
 #   bash infra/s378/go-live-build.sh --install       # npm install first (after a branch switch)
 #   bash infra/s378/go-live-build.sh --no-env        # skip go-live-env.sh
 #   bash infra/s378/go-live-build.sh --no-restart    # build only, leave units alone
+#   bash infra/s378/go-live-build.sh --restart-only  # skip the build; restart + verify ports
 #   bash infra/s378/go-live-build.sh --only aitutor  # core | aitutor | qm
 #                                                    # (ai-tutor / question-maker also accepted)
 #
@@ -42,9 +43,16 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # Do NOT add `--mode development`; it was measured to be a no-op on top of this.
 export NODE_ENV=development
 
+# #1881: `npm install` runs scripts/setup-env.js, which chmods every app .env.
+# Its default is owner-only (0600), which locks out the other eduai-dev accounts
+# that read these files (the cron worker runs as eduai-cron and crash-looped
+# for ~1.5 days when apps/core/.env went 0600). Keep them group-readable here.
+export EDUAI_ENV_FILE_MODE=0660
+
 DO_ENV=1
 DO_INSTALL=0
 DO_RESTART=1
+RESTART_ONLY=0
 ONLY=""
 
 while [ $# -gt 0 ]; do
@@ -52,13 +60,14 @@ while [ $# -gt 0 ]; do
     --install)    DO_INSTALL=1 ;;
     --no-env)     DO_ENV=0 ;;
     --no-restart) DO_RESTART=0 ;;
+    --restart-only) RESTART_ONLY=1 ;;
     --only)
       # Without the arity check, a trailing `--only` leaves the loop with no
       # positional params and the `shift` below kills the script under set -e
       # with no message at all.
       [ $# -ge 2 ] || { echo "--only requires a value: core | aitutor | qm" >&2; exit 2; }
       ONLY="$2"; shift ;;
-    -h|--help)    sed -n '2,28p' "$0"; exit 0 ;;
+    -h|--help)    sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
   shift
@@ -83,7 +92,108 @@ esac
 want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 step() { echo; echo "=== $* ==="; }
 
+# Restart what this run rebuilt (or, under --restart-only, every unit in scope)
+# and fail loudly unless each one actually opens its port. Kept in one function
+# so the build-as-service-account flow (#1872: build with --no-restart as
+# service_eduai, then --restart-only as an eduai-dev member) keeps the same
+# restart order and health check as a one-shot deploy.
+restart_and_verify() {
+  step "restart"
+  if want core && ! systemctl cat eduai-cron-worker.service >/dev/null 2>&1; then
+    echo "ERROR: eduai-cron-worker.service is not installed on this host."
+    echo "       Run once: sudo bash infra/s378/go-live-systemd-install.sh"
+    echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
+    exit 1
+  fi
+  if want core; then
+    # The worker executes the checked-in shell scripts from /opt/eduai/cron,
+    # not from the web checkout. Sync them on every Core deploy so a script
+    # change cannot remain stale after the worker restarts.
+    echo "  syncing cron scripts to /opt/eduai/cron"
+    sudo /usr/local/sbin/eduai-cron-sync
+  fi
+  # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
+  # members lifecycle control over every eduai-* unit individually, so this does
+  # not have to go through eduai-dev.target. Core is skipped when it was already
+  # restarted right after its own build, above.
+  # Restart only what this invocation actually rebuilt. `--only aitutor` must not
+  # bounce Core: the flag exists to limit blast radius, and restarting a service
+  # whose bundle did not change is a pointless outage on a shared box.
+  RESTART_UNITS=()
+  if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
+  # The cron worker imports Core server code directly, so it must restart with
+  # every Core deployment even when Core itself was restarted after its build.
+  if want core; then RESTART_UNITS+=(eduai-cron-worker.service); fi
+  if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
+  if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
+
+  # Empty is legitimate: `--only core` already restarted Core above. Guard anyway,
+  # because `systemctl restart` with no arguments is an error, not a no-op.
+  if [ "${#RESTART_UNITS[@]}" -gt 0 ]; then
+    systemctl restart "${RESTART_UNITS[@]}"
+  else
+    echo "  nothing left to restart"
+  fi
+
+  step "verify the stack is actually up"
+  # `sleep 3` + `systemctl is-active` is not a health check: a unit that starts,
+  # fails to reach Postgres and dies is 3s into its RestartSec=5 backoff and
+  # reports `activating`, so a crash-looping stack still printed BUILD_OK.
+  # Poll the listening ports instead, the way the retired go-live-systemd-start.sh
+  # did, and make failure fatal. /dev/tcp avoids depending on nc/lsof.
+  wait_port() {
+    local name=$1 port=$2 deadline=$((SECONDS + 120))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+      if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+        exec 3<&- 3>&-
+        printf '  %-24s listening on :%s\n' "$name" "$port"
+        return 0
+      fi
+      # A unit that has given up entirely will never open the port; say so early.
+      if [ "$(systemctl is-active "$name" 2>&1)" = "failed" ]; then
+        break
+      fi
+      sleep 2
+    done
+    printf '  %-24s NOT listening on :%s (%s)\n' "$name" "$port" "$(systemctl is-active "$name" 2>&1)"
+    return 1
+  }
+
+  # Same scoping as the restart above. Under `--only qm` the other two units are
+  # untouched, and failing the deploy because someone has Core deliberately
+  # stopped would be a false alarm.
+  UNHEALTHY=()
+  if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
+  if want core && [ "$(systemctl is-active eduai-cron-worker.service 2>&1)" != "active" ]; then
+    echo "  eduai-cron-worker        NOT active"
+    UNHEALTHY+=(eduai-cron-worker)
+  fi
+  if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
+  if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
+
+  if [ "${#UNHEALTHY[@]}" -gt 0 ]; then
+    echo
+    echo "DEPLOY FAILED: ${UNHEALTHY[*]} did not come up."
+    for u in "${UNHEALTHY[@]}"; do
+      echo "--- journalctl -u $u ---"
+      journalctl -u "$u" --no-pager --lines=40 || true
+    done
+    exit 1
+  fi
+}
+
+
 cd "$REPO"
+
+if [ "$RESTART_ONLY" = "1" ]; then
+  # The build already ran (as service_eduai, with --no-restart). Restart and
+  # verify only; nothing here writes to the checkout.
+  CORE_RESTARTED=0
+  restart_and_verify
+  echo
+  echo "RESTART_OK"
+  exit 0
+fi
 
 # Vite picks up .env.<mode> files. Mode stays at its "production" default (only
 # NODE_ENV is changed), so a stray .env.production would silently override the
@@ -279,88 +389,7 @@ if want qm && [ -d "$QM_DIST" ]; then
 fi
 
 if [ "$DO_RESTART" = "1" ]; then
-  step "restart"
-  if want core && ! systemctl cat eduai-cron-worker.service >/dev/null 2>&1; then
-    echo "ERROR: eduai-cron-worker.service is not installed on this host."
-    echo "       Run once: sudo bash infra/s378/go-live-systemd-install.sh"
-    echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
-    exit 1
-  fi
-  if want core; then
-    # The worker executes the checked-in shell scripts from /opt/eduai/cron,
-    # not from the web checkout. Sync them on every Core deploy so a script
-    # change cannot remain stale after the worker restarts.
-    echo "  syncing cron scripts to /opt/eduai/cron"
-    sudo /usr/local/sbin/eduai-cron-sync
-  fi
-  # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
-  # members lifecycle control over every eduai-* unit individually, so this does
-  # not have to go through eduai-dev.target. Core is skipped when it was already
-  # restarted right after its own build, above.
-  # Restart only what this invocation actually rebuilt. `--only aitutor` must not
-  # bounce Core: the flag exists to limit blast radius, and restarting a service
-  # whose bundle did not change is a pointless outage on a shared box.
-  RESTART_UNITS=()
-  if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
-  # The cron worker imports Core server code directly, so it must restart with
-  # every Core deployment even when Core itself was restarted after its build.
-  if want core; then RESTART_UNITS+=(eduai-cron-worker.service); fi
-  if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
-  if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
-
-  # Empty is legitimate: `--only core` already restarted Core above. Guard anyway,
-  # because `systemctl restart` with no arguments is an error, not a no-op.
-  if [ "${#RESTART_UNITS[@]}" -gt 0 ]; then
-    systemctl restart "${RESTART_UNITS[@]}"
-  else
-    echo "  nothing left to restart"
-  fi
-
-  step "verify the stack is actually up"
-  # `sleep 3` + `systemctl is-active` is not a health check: a unit that starts,
-  # fails to reach Postgres and dies is 3s into its RestartSec=5 backoff and
-  # reports `activating`, so a crash-looping stack still printed BUILD_OK.
-  # Poll the listening ports instead, the way the retired go-live-systemd-start.sh
-  # did, and make failure fatal. /dev/tcp avoids depending on nc/lsof.
-  wait_port() {
-    local name=$1 port=$2 deadline=$((SECONDS + 120))
-    while [ "$SECONDS" -lt "$deadline" ]; do
-      if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
-        exec 3<&- 3>&-
-        printf '  %-24s listening on :%s\n' "$name" "$port"
-        return 0
-      fi
-      # A unit that has given up entirely will never open the port; say so early.
-      if [ "$(systemctl is-active "$name" 2>&1)" = "failed" ]; then
-        break
-      fi
-      sleep 2
-    done
-    printf '  %-24s NOT listening on :%s (%s)\n' "$name" "$port" "$(systemctl is-active "$name" 2>&1)"
-    return 1
-  }
-
-  # Same scoping as the restart above. Under `--only qm` the other two units are
-  # untouched, and failing the deploy because someone has Core deliberately
-  # stopped would be a false alarm.
-  UNHEALTHY=()
-  if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
-  if want core && [ "$(systemctl is-active eduai-cron-worker.service 2>&1)" != "active" ]; then
-    echo "  eduai-cron-worker        NOT active"
-    UNHEALTHY+=(eduai-cron-worker)
-  fi
-  if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
-  if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
-
-  if [ "${#UNHEALTHY[@]}" -gt 0 ]; then
-    echo
-    echo "DEPLOY FAILED: ${UNHEALTHY[*]} did not come up."
-    for u in "${UNHEALTHY[@]}"; do
-      echo "--- journalctl -u $u ---"
-      journalctl -u "$u" --no-pager --lines=40 || true
-    done
-    exit 1
-  fi
+  restart_and_verify
 fi
 
 echo

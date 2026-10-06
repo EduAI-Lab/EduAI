@@ -5,12 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ssaada08
+# #1872: dedicated locked, no-login service account (not a person's account).
+User=service_eduai
 Group=eduai
 UMask=0007
 WorkingDirectory=/srv/www/eduai-production/current/apps/core
 EnvironmentFile=/etc/eduai/eduai-core.env
 Environment=HOST=127.0.0.1
+Environment=HOME=/var/lib/service_eduai
 ExecStart=/usr/local/bin/node /srv/www/eduai-production/current/node_modules/@react-router/serve/bin.js ./build/server/index.js
 Restart=always
 RestartSec=5

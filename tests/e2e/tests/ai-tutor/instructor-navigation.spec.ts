@@ -52,13 +52,21 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     await expect(sidebar(page).getByText("Instructor", { exact: true })).toBeVisible();
   });
 
-  test("the sidebar offers exactly Dashboard, Courses and Help", async ({ page }) => {
+  test("the sidebar offers exactly Dashboard, Courses, Help and Back to EduAI", async ({
+    page,
+  }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
     // Addressed by href, not label: an ADMIN gets two entries both labelled
     // "Courses", so the label alone is not a stable identity. The first
-    // `/dashboard` is the sidebar logo, which links to the role's home.
-    expect(await sidebarHrefs(page)).toEqual(["/dashboard", "/dashboard", "/instructor", "/help"]);
+    // `/dashboard` is the sidebar logo, which links to the role's home; the
+    // last is the footer's "Back to EduAI" link to Core's dashboard.
+    // Core's origin comes from AI Tutor's build-time VITE_CORE_URL, which need
+    // not match this runner's CORE_URL, so only its path is pinned.
+    const hrefs = await sidebarHrefs(page);
+    expect(hrefs.slice(0, 4)).toEqual(["/dashboard", "/dashboard", "/instructor", "/help"]);
+    expect(hrefs).toHaveLength(5);
+    expect(hrefs[4]).toMatch(/^https?:\/\/[^/]+\/dashboard$/);
   });
 
   test("the sidebar carries no admin entry", async ({ page }) => {

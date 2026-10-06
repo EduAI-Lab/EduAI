@@ -134,12 +134,10 @@ test.describe("Student (student1) — UI walkthrough", () => {
       });
       const bodyText = await page.locator("body").innerText();
 
-      // Bug found + fixed in this pass: this redirect used to be a bare `/courses`
-      // with zero explanation, unlike the clear "you do not have access" banner
-      // shown for genuinely unrelated courses. Now carries ?access=unpublished
-      // and courses.tsx renders an explanatory banner for it.
-      expect(page.url()).toBe(`${CORE_URL}/courses?access=unpublished`);
-      await expect(page.getByText(/isn.t published yet/i)).toBeVisible();
+      // An unpublished course answers a student with the same in-place 404 as a
+      // missing or unrelated one (no redirect), matching AI Tutor.
+      expect(page.url()).toBe(`${CORE_URL}/courses/${COURSES.cosc211}`);
+      await expect(page.getByText("404 — Page not found")).toBeVisible();
 
       test.info().annotations.push({
         type: "finding",
@@ -267,7 +265,8 @@ test.describe("TA (ta.cs) — UI walkthrough", () => {
 
       await page.goto(`${CORE_URL}/courses/${COURSES.math200}`);
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/courses\?access=denied/);
+      await expect(page).toHaveURL(new RegExp(`/courses/${COURSES.math200}$`));
+      await expect(page.getByText("404 — Page not found")).toBeVisible();
     } finally {
       await ctx.dispose();
     }

@@ -20,6 +20,11 @@ model User {
   role                      UserRole
   studentId                 String?
   studentIdLookup           String?                @unique
+  // Non-null once this student number was confirmed against an active
+  // Canvas roster row carrying the same verified email. A claimed-but-unconfirmed
+  // number stays null and grants no Canvas-sourced enrollments until a roster
+  // sync corroborates it.
+  studentIdVerifiedAt       DateTime?
   isActive                  Boolean                @default(true)
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
@@ -172,17 +177,16 @@ model Course {
   questionBanks               QuestionBank[]
   selfEnrollmentLinks         SelfEnrollmentLink[]
 
-  // #1842: the course identity slot is a PARTIAL unique index —
-  // `courses_code_startDate_section_active_key ... WHERE "deletedAt" IS NULL`.
+  // #1842/#1811: the course identity slot is a PARTIAL unique index —
+  // `courses_code_section_year_term_active_key ... WHERE "deletedAt" IS NULL
+  // AND "externalSource" IS NULL` (Canvas rows are keyed by their external identity).
   // Prisma cannot express a `WHERE` predicate on a unique index, so it is NOT
-  // declared here; it lives in migrations/20260922000000_partial_unique_course_identity
-  // and is re-applied to integration databases by app/tests/globalSetup.ts
-  // (which provisions via `db push`, not `migrate deploy`).
+  // declared here; it lives in migrations/20261002000000_course_identity_term_year
+  // and is re-applied to integration databases by app/tests/globalSetup.ts.
   //
-  // Do NOT re-add `@@unique([code, startDate, section])`. A total unique index
-  // lets a soft-deleted tombstone own the slot forever, which is the bug #1842
-  // fixed; courses.soft-delete-recreate.integration.test.ts asserts the index
-  // is still partial so a drifted `prisma migrate dev` fails loudly here.
+  // Do NOT add a total `@@unique` on the identity: a soft-deleted tombstone
+  // would own the slot forever (#1842). courses.soft-delete-recreate.integration.test.ts
+  // asserts the index is still partial.
   //
   // PostgreSQL unique indexes permit multiple NULL values, so ordinary Core
   // courses remain unconstrained while every populated external identity maps
@@ -509,6 +513,14 @@ model CourseMaterial {
   /// is the asynchronous successor to the old synchronous 409. Null on every
   /// row that is not a duplicate receipt.
   duplicateOfId     String?
+  /// Set alongside `duplicateOfId` on a receipt row (#1791): did this upload
+  /// revive the material it points at, or was that material already there?
+  /// Null on every row that is not a duplicate receipt.
+  duplicateResolution MaterialDuplicateResolution?
+  /// Why this row is FAILED (#1791). Cleared whenever the row leaves FAILED —
+  /// on a reclaim, a restore, or a successful finalize — so a stale reason can
+  /// never outlive the failure it described.
+  failureCode       MaterialFailureCode?
   /// Durable-extraction bookkeeping (#949). Extraction runs off the request, so
   /// the row is also the job record: a worker must hold a lease before it may
   /// run, and the lease is what makes a restart recoverable. A PROCESSING row
@@ -1039,6 +1051,39 @@ enum MaterialStatus {
   FAILED
 }
 
+/// Why a material reached terminal FAILED (#1791). The row is the only thing the
+/// client can see — `logSystemError` is operator-only — so without this an
+/// instructor gets one undifferentiated "processing failed" for a rate-limited
+/// provider, a busy PDF worker and a genuinely unreadable file alike. Values
+/// mirror the `logSystemError` codes so a UI report and a log line grep the same.
+enum MaterialFailureCode {
+  MATERIAL_EXTRACT_FAILED
+  /// Local PDF-extraction capacity was exhausted (`PdfExtractionBusyError`), not
+  /// a property of the file. Retried rather than terminal; only surfaces once
+  /// the attempt budget runs out.
+  MATERIAL_EXTRACT_BUSY
+  MATERIAL_EXTRACT_ABANDONED
+  MATERIAL_EMBED_FAILED
+  /// The embedding provider kept answering 429/503 until the retry budget ran
+  /// out. Transient and worth retrying later, which is the one thing the old
+  /// generic message could not tell anyone.
+  MATERIAL_EMBED_RATE_LIMITED
+  /// The embedding provider kept timing out — unreachable or stalled, not
+  /// throttling. Distinct from a rate limit so a down local model isn't misreported.
+  MATERIAL_EMBED_PROVIDER_UNAVAILABLE
+}
+
+/// How a duplicate receipt's upload was resolved (#1791). `duplicateOfId` alone
+/// says "the content is over there", not whether this upload *did* anything —
+/// and the two need different words: re-uploading a file that failed processing
+/// retries it (RESTORED, a success), while re-uploading one that is already
+/// READY adds nothing (EXISTING). Reporting the first as "already exists" is
+/// what left instructors with no way to retry a failed material.
+enum MaterialDuplicateResolution {
+  EXISTING
+  RESTORED
+}
+
 /// Provenance of a CourseTopic (#1624), ordered from most to least trusted.
 /// SYSTEM is the `Uncategorized` zero-topic fallback, which exists so authoring
 /// is never blocked while topic analysis is pending or after it fails.
@@ -1283,6 +1328,22 @@ model CronJobScheduleOverride {
   updatedAt     DateTime @updatedAt
 
   @@map("cron_job_schedule_overrides")
+}
+
+/// Admin overrides for per-job settings declared on `KNOWN_CRON_JOBS[].settings`
+/// (e.g. `purge-deleted-materials.retainDays`). No row means the code default
+/// applies — the same two-layer model as `CronJobScheduleOverride`. `value` is
+/// text and is parsed and range-checked against the job's declaration on every
+/// read, so a bad row can never reach a handler.
+model CronJobSetting {
+  jobName   String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@id([jobName, key])
+  @@map("cron_job_settings")
 }
 
 enum IdempotencyStatus {

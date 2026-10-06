@@ -589,6 +589,9 @@ describe("createCourse", () => {
     prismaMock.$transaction.mockImplementation(
       async <T>(fn: (tx: typeof prismaMock) => Promise<T>) => fn(prismaMock),
     );
+    // #1811: no live, soft-deleted or near-duplicate course by default.
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    prismaMock.course.findMany.mockResolvedValue([]);
   });
 
   it("returns 403 when no session", async () => {

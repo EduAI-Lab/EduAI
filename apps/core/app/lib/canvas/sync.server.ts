@@ -70,13 +70,17 @@ async function syncSingleCanvasCourse(
           db: tx,
         });
 
-        const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id, tx);
+        const { linked, skippedUncorroborated } = await linkEnrollmentsFromStagingForCourse(
+          coreCourse.id,
+          tx,
+        );
         await deactivateDroppedCanvasEnrollments(coreCourse.id, tx);
 
         return {
           coreCourseId: coreCourse.id,
           rosterMembersSynced,
-          enrollmentsLinked,
+          enrollmentsLinked: linked,
+          enrollmentsSkipped: skippedUncorroborated,
         };
       },
       { maxWait: 15_000, timeout: 120_000 },
@@ -234,6 +238,7 @@ export async function syncCanvasCourses(
         coreCourseId: syncResult.coreCourseId,
         rosterMembersSynced: syncResult.rosterMembersSynced,
         enrollmentsLinked: syncResult.enrollmentsLinked,
+        enrollmentsSkipped: syncResult.enrollmentsSkipped,
       });
     } catch (error) {
       result.errors.push({

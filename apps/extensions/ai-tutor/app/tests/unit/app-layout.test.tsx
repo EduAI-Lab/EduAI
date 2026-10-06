@@ -23,10 +23,12 @@ vi.mock("~/hooks/useLocalUser", () => ({
 
 const mockCaptureScreenshot = vi.fn().mockResolvedValue(undefined);
 const mockGetCapturedData = vi.fn().mockReturnValue({});
+const mockClearScreenshot = vi.fn();
 vi.mock("~/components/bug-report/useBugReport", () => ({
   useBugReport: () => ({
     captureScreenshot: mockCaptureScreenshot,
     getCapturedData: mockGetCapturedData,
+    clearScreenshot: mockClearScreenshot,
     context: { activityId: null },
   }),
 }));
@@ -72,6 +74,7 @@ vi.mock("@eduai/ui", async (importOriginal) => {
     BugReportDialog: ({
       open,
       onSubmit,
+      onOpenChange,
     }: {
       open: boolean;
       onSubmit: (data: BugReportSubmitData) => void;
@@ -91,6 +94,9 @@ vi.mock("@eduai/ui", async (importOriginal) => {
           >
             Submit bug report
           </button>
+          <button type="button" onClick={() => onOpenChange(false)}>
+            Close bug report
+          </button>
         </div>
       ) : null,
     AppShell: ({
@@ -99,7 +105,10 @@ vi.mock("@eduai/ui", async (importOriginal) => {
       commandPalette,
       children,
     }: {
-      sidebar: { navUser: { onLogout: () => void } };
+      sidebar: {
+        navUser: { onLogout: () => void };
+        navFooter?: { title: string; url: string }[];
+      };
       headerActions: React.ReactNode;
       commandPalette: React.ReactNode;
       children: React.ReactNode;
@@ -108,6 +117,11 @@ vi.mock("@eduai/ui", async (importOriginal) => {
         <button type="button" onClick={() => void sidebar.navUser.onLogout()}>
           Log out
         </button>
+        {sidebar.navFooter?.map((item) => (
+          <a key={item.title} href={item.url}>
+            {item.title}
+          </a>
+        ))}
         <div>{headerActions}</div>
         <div>{commandPalette}</div>
         <div>{children}</div>
@@ -143,6 +157,7 @@ describe("_app layout — authenticated shell", () => {
     mockLogout.mockClear();
     mockCaptureScreenshot.mockClear();
     mockSubmitBugReport.mockClear();
+    mockClearScreenshot.mockClear();
   });
 
   it("opens the bug report dialog", async () => {
@@ -177,6 +192,37 @@ describe("_app layout — authenticated shell", () => {
     );
   });
 
+  it("sends no diagnostics when the reporter did not opt in", async () => {
+    wrap();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /report a bug/i }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /submit bug report/i }));
+    });
+
+    await waitFor(() => expect(mockSubmitBugReport).toHaveBeenCalled());
+    const payload = mockSubmitBugReport.mock.calls[0][0];
+    for (const key of ["consoleLogs", "networkLogs", "screenshot", "pageUrl", "userAgent"]) {
+      expect(payload[key] ?? null).toBeNull();
+    }
+  });
+
+  it("drops the captured screenshot when the dialog closes", async () => {
+    wrap();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /report a bug/i }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /close bug report/i }));
+    });
+
+    expect(mockClearScreenshot).toHaveBeenCalled();
+    expect(screen.queryByTestId("bug-report-dialog")).not.toBeInTheDocument();
+  });
+
   it("logging out calls logout then navigates home", async () => {
     wrap();
 
@@ -186,6 +232,20 @@ describe("_app layout — authenticated shell", () => {
 
     expect(mockLogout).toHaveBeenCalled();
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+  });
+
+  it("offers a Back to EduAI footer link to Core's dashboard, like Question Maker", () => {
+    mockUser = { id: "u1", name: "Ada", role: "STUDENT" };
+    render(
+      <MemoryRouter>
+        <AppLayout />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "Back to EduAI" })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/dashboard",
+    );
   });
 
   it("sends the user to Core for the full status page, in a new tab", () => {

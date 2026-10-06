@@ -1,4 +1,9 @@
 import type { ValidationResult } from "~/lib/validation-result";
+import {
+  ACCEPTED_MATERIAL_MIME_TYPES,
+  ACCEPTED_MATERIAL_TYPE_LABELS,
+  resolveMaterialMimeType,
+} from "~/lib/materials/accepted-types";
 import { z } from "zod";
 import { hasFileReader } from "@eduai/ui/runtime-env";
 import { createHash } from "crypto";
@@ -53,6 +58,39 @@ export function assertExtractedContentWithinLimit(content: string): void {
       `Extracted content of ${content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
     );
   }
+}
+
+/**
+ * Lower bound matching {@link assertExtractedContentWithinLimit} (#1781).
+ *
+ * An accepted format can still carry no extractable text (image-only PDF scan,
+ * figures-only DOCX, blank .txt/.md). Every extractor answers that with `""`,
+ * and letting it through did two things:
+ *
+ * - `processMaterialEmbeddings` threw `No content chunks generated`, so the
+ *   row was failed as MATERIAL_EMBED_FAILED even though embedding was never
+ *   the problem. `rawText: ""` had already been written, so later readers
+ *   blamed the wrong stage.
+ * - `generateChecksum("")` is a constant. Every text-free upload on a course
+ *   hashed to it, so the second one collided as a "duplicate" of the first.
+ *
+ * Throw here so the row fails as MATERIAL_EXTRACT_FAILED with `rawText` still
+ * null and no checksum computed. `extractUploadedFileContent` wraps this as
+ * `Failed to process file <name>: …`, which `runMaterialExtraction` records via
+ * `logSystemError`. The instructor does not see this text yet: `failMaterial`
+ * writes only `status: "FAILED"` to the row, so the upload badge cannot show it.
+ * Persisting and surfacing the reason is #1794.
+ *
+ * PDFs never reach this assert: `extractPdfText` throws
+ * {@link PDF_NO_TEXT_LAYER_MESSAGE} first, so this message is only produced for
+ * DOCX / PPTX / TXT / MD. The OCR advice is worded in both places; change them
+ * together.
+ */
+export function assertExtractedContentNotEmpty(content: string): void {
+  if (content.trim().length > 0) return;
+  throw new Error(
+    "No readable text could be extracted. The document appears to be empty or image-only (a scan with no text layer); run OCR on it, or upload a text-based version.",
+  );
 }
 
 /**
@@ -569,7 +607,7 @@ export function generateChecksum(content: string): string {
  */
 export async function extractTextFromFile(file: File | any, content: string): Promise<FileInfo> {
   const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-  const mimeType = file.type;
+  const mimeType = resolveMaterialMimeType(file);
   const fileSize = file.size;
 
   // Sanitize content before processing
@@ -589,20 +627,13 @@ export async function extractTextFromFile(file: File | any, content: string): Pr
  * Validate file type and size
  */
 export function validateFile(file: File | any): ValidationResult {
-  const allowedTypes = [
-    "text/plain",
-    "text/markdown",
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ];
-
   const maxSize = 50 * 1024 * 1024; // 50MB - increased for presentations
 
-  if (!allowedTypes.includes(file.type)) {
+  const mimeType = resolveMaterialMimeType(file);
+  if (!(ACCEPTED_MATERIAL_MIME_TYPES as readonly string[]).includes(mimeType)) {
     return {
       isValid: false,
-      error: `File type ${file.type} is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX`,
+      error: `File type ${mimeType} is not supported. Supported types: ${ACCEPTED_MATERIAL_TYPE_LABELS}`,
     };
   }
 
@@ -686,7 +717,7 @@ export async function validateFileSignature(
   const buffer = await file.arrayBuffer();
   const head = new Uint8Array(buffer.slice(0, MAGIC_BYTE_SNIFF_LENGTH));
 
-  switch (file.type) {
+  switch (resolveMaterialMimeType(file)) {
     case "application/pdf":
       if (!looksLikePdf(head)) {
         return {
@@ -701,7 +732,7 @@ export async function validateFileSignature(
       if (!looksLikeZipContainer(head)) {
         return {
           isValid: false,
-          error: `File declared as ${file.type} is not a valid ZIP/Office container`,
+          error: `File declared as ${resolveMaterialMimeType(file)} is not a valid ZIP/Office container`,
         };
       }
       return { isValid: true };
@@ -711,7 +742,7 @@ export async function validateFileSignature(
       if (looksLikePdf(head) || looksLikeZipContainer(head) || looksLikeBinaryNoise(head)) {
         return {
           isValid: false,
-          error: `File declared as ${file.type} looks like binary content, not plain text`,
+          error: `File declared as ${resolveMaterialMimeType(file)} looks like binary content, not plain text`,
         };
       }
       return { isValid: true };
@@ -1017,7 +1048,17 @@ function buildPdfExtractionWorkerSource(maxOutputBytes: number): string {
       fs.writeFileSync(outputPath, payload);
     })
     .catch((error) => {
-      process.stderr.write(String((error && error.stack) || error));
+      // pdf.js BaseException subclasses (PasswordException, …) have a stack
+      // that starts with a bare "Error" and omits name/message. The parent
+      // then logged "PDF extraction worker failed: Error\\n at
+      // BaseExceptionClosure (…)" for a password-protected PDF (#1787).
+      const name = (error && error.name) || "Error";
+      const message = (error && error.message) || "";
+      // Ordinary Errors already start their stack with "Name: message";
+      // only prefix when it doesn't, so the line isn't duplicated.
+      const head = name + (message ? ": " + message : "");
+      const stack = String((error && error.stack) || error);
+      process.stderr.write(stack.startsWith(head) ? stack : head + "\\n" + stack);
       process.exit(1);
     });
 `;
@@ -1288,8 +1329,27 @@ export async function extractPdfTextIsolated<T = { content: string }>(
 }
 
 /**
+ * Raised when a PDF parses cleanly but carries no text at all (#1787).
+ * Same defect as #1781, named at the PDF extractor so the stage is honest.
+ *
+ * This is the message a text-free PDF gets. It is thrown before
+ * `assertExtractedContentNotEmpty` runs, so that assert's generic wording is only
+ * ever seen for DOCX / PPTX / TXT / MD: the two are not alternatives for the same
+ * file. `material-empty-extraction.test.ts` pins which type gets which.
+ */
+export const PDF_NO_TEXT_LAYER_MESSAGE =
+  "PDF contains no extractable text layer — a scanned or image-only PDF has to be run " +
+  "through OCR before it can be indexed";
+
+/**
  * Extract text from PDF files using @opendocsg/pdf2md, isolated in a memory- and
  * time-capped subprocess (see PDF extraction isolation guardrails above).
+ *
+ * An empty result is a failure, not a success (#1787 / #1781). pdf2md returns
+ * `""` (or a lone newline) for a page with no text operators — every scanned
+ * handout. Returning that as content poisoned the checksum and mis-attributed
+ * the failure to embedding. `extractPdfTextIsolated` is left alone: it is the
+ * resource-isolation primitive; "a PDF must have text" is pipeline policy.
  */
 export async function extractPdfText(
   file: File,
@@ -1301,8 +1361,13 @@ export async function extractPdfText(
     // Estimate page count from markdown structure
     const pageCount = (markdown.match(/---\s*PAGE\s*\d+\s*---/gi) || []).length || 1;
 
+    const content = sanitizeTextContent(markdown);
+    if (!content) {
+      throw new Error(PDF_NO_TEXT_LAYER_MESSAGE);
+    }
+
     return {
-      content: sanitizeTextContent(markdown),
+      content,
       pageCount,
       metadata: {
         format: "markdown",
@@ -1406,9 +1471,9 @@ export async function extractPptxText(
     });
 
     return {
-      content: sanitizeTextContent(
-        textContent.join("\n\n") || "No text content found in presentation",
-      ),
+      // No placeholder when no slide has text: an empty string lets
+      // `assertExtractedContentNotEmpty` reject image-only decks (#1781).
+      content: sanitizeTextContent(textContent.join("\n\n")),
       pageCount: slideCount,
       metadata: {
         slideCount,
@@ -1602,7 +1667,7 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
   let metadata: any = {};
 
   try {
-    switch (file.type) {
+    switch (resolveMaterialMimeType(file)) {
       case "text/plain":
       case "text/markdown":
         content = sanitizeTextContent(await readFileAsText(file));
@@ -1642,13 +1707,17 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
       }
 
       default:
-        throw new Error(`Unsupported file type: ${file.type}`);
+        throw new Error(`Unsupported file type: ${resolveMaterialMimeType(file)}`);
     }
 
     // Defense-in-depth: bound the extracted text length before chunking, so an
     // archive that slips past the per-entry ZIP caps still can't flood the
     // chunking/embedding path.
     assertExtractedContentWithinLimit(content);
+    // The other end of the same bound (#1781): a file that yielded no text
+    // must fail here, not survive as "" that chunks to nothing and hashes
+    // to a constant. See `assertExtractedContentNotEmpty`.
+    assertExtractedContentNotEmpty(content);
 
     content = enrichExtractedDocumentContent(content);
 

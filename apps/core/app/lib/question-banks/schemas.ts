@@ -23,8 +23,14 @@ export const AddBankMembershipsSchema = z.object({
   memberships: z.array(AddBankMembershipSchema).min(1).max(500),
 });
 
+export const MoveBankMembershipSchema = z.object({
+  targetBankId: z.string().min(1),
+  source: z.string().min(1).optional().default("question-maker"),
+});
+
 export type CreateQuestionBankInput = z.infer<typeof CreateQuestionBankSchema>;
 export type UpdateQuestionBankInput = z.infer<typeof UpdateQuestionBankSchema>;
 export type DeleteQuestionBankInput = z.infer<typeof DeleteQuestionBankSchema>;
 export type AddBankMembershipInput = z.infer<typeof AddBankMembershipSchema>;
 export type AddBankMembershipsInput = z.infer<typeof AddBankMembershipsSchema>;
+export type MoveBankMembershipInput = z.input<typeof MoveBankMembershipSchema>;

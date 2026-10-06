@@ -26,9 +26,9 @@ import type { CourseTA } from "~/hooks/api/use-course-tas";
 import type { CourseMaterial } from "~/components/course-materials-upload";
 
 vi.mock("~/components/course-materials-upload", () => ({
-  CourseMaterialsUpload: ({ onFileSelect }: { onFileSelect: (f: File) => void }) => (
+  CourseMaterialsUpload: ({ onFilesSelect }: { onFilesSelect: (f: File) => void }) => (
     <div data-testid="upload-widget">
-      <button onClick={() => onFileSelect(new File(["x"], "notes.pdf"))}>pick file</button>
+      <button onClick={() => onFilesSelect(new File(["x"], "notes.pdf"))}>pick file</button>
     </div>
   ),
 }));
@@ -153,7 +153,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof CourseDetailMa
     materials: [MATERIAL],
     tas: [TA],
     courseInstructors: [INSTRUCTOR_ENROLLMENT],
-    onFileSelect: vi.fn(),
+    onFilesSelect: vi.fn(),
     onCreateTopic: vi.fn().mockResolvedValue(undefined),
     onDeleteTopic: vi.fn().mockResolvedValue(undefined),
     onAddInstructor: vi.fn().mockResolvedValue(undefined),
@@ -245,11 +245,11 @@ describe("CourseDetailManagerView — tabs and overview", () => {
 });
 
 describe("CourseDetailManagerView — materials tab", () => {
-  it("opens the upload dialog and wires the file picker to onFileSelect", () => {
+  it("opens the upload dialog and wires the file picker to onFilesSelect", () => {
     const props = renderView();
     fireEvent.click(screen.getAllByRole("button", { name: /upload material/i })[0]);
     fireEvent.click(screen.getByText("pick file"));
-    expect(props.onFileSelect).toHaveBeenCalledWith(expect.any(File));
+    expect(props.onFilesSelect).toHaveBeenCalledWith(expect.any(File));
   });
 
   it("opens the course search settings (embedding) dialog", () => {
