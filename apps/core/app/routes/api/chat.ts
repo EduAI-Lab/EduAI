@@ -1508,7 +1508,11 @@ export async function action({ request }: ActionFunctionArgs) {
           .reverse()
           .find((m) => m.role === "user");
         const lastUserMessageTextForRouting = extractMessageText(lastUserMessageForRouting);
-        const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
+        // Check every incoming turn, not just the last: an image attachment on an
+        // earlier client turn would otherwise be persisted and sent to the model.
+        const imagesPresent =
+          messageHasImageParts(lastUserMessageForRouting) ||
+          normalizedIncomingMessages.some((m) => messageHasImageParts(m));
         // Scan from the end for the last user-role index directly, instead of
         // relying on the reverse().find() above returning the same object
         // reference as trimmedMessages — a lastIndexOf reference lookup would

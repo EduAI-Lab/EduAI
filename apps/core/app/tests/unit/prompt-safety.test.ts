@@ -137,6 +137,10 @@ describe("SECURITY_POLICY_BLOCK", () => {
     expect(SECURITY_POLICY_BLOCK).toContain("UNTRUSTED CONTENT:");
     expect(SECURITY_POLICY_BLOCK).toContain("=== END SECURITY POLICY ===");
   });
+
+  it("names student attachments as untrusted reference data", () => {
+    expect(SECURITY_POLICY_BLOCK).toContain("<student_attachment>");
+  });
 });
 
 // #1606: custom system prompts are layered, not substituted.
@@ -181,9 +185,5 @@ describe("appendCustomInstructions", () => {
     const out = appendCustomInstructions("", "Be terse.");
     expect(out).toContain("Be terse.");
     expect(out).toContain("ADDITIONAL INSTRUCTIONS");
-  });
-
-  it("names student attachments as untrusted reference data", () => {
-    expect(SECURITY_POLICY_BLOCK).toContain("<student_attachment>");
   });
 });

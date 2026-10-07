@@ -656,6 +656,30 @@ describe("POST /api/chat — file attachments (#1902)", () => {
     expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
   });
 
+  it("rejects an image attachment on a non-last incoming turn before persisting", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "a",
+              role: "user",
+              content: "x",
+              experimental_attachments: [
+                { name: "p.png", contentType: "image/png", url: "data:image/png;base64,AAAA" },
+              ],
+            },
+            { id: "b", role: "user", content: "hi" },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "IMAGE_MESSAGE_UNSUPPORTED" });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
+  });
+
   it("rejects four attachments with ATTACHMENT_TOO_MANY before persisting", async () => {
     const res = await action(
       makeRequest(
@@ -704,7 +728,7 @@ describe("POST /api/chat — file attachments (#1902)", () => {
 
   it("still includes a stored earlier attachment on a follow-up turn", async () => {
     mockStream();
-    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValueOnce([
       {
         messageId: "earlier",
         role: "user",

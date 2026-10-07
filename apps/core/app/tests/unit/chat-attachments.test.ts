@@ -225,9 +225,10 @@ describe("toModelMessage", () => {
   });
 
   it("sets content when message has only attachments (no content, no parts)", () => {
-    const out = toModelMessage({
+    const input: AttachmentCarrier = {
       experimental_attachments: [att("a.txt", "hello world")],
-    });
+    };
+    const out = toModelMessage(input);
     const fence = '<student_attachment name="a.txt">\nhello world\n</student_attachment>';
     expect(out.content).toBe(fence);
     expect(out).not.toHaveProperty("experimental_attachments");
