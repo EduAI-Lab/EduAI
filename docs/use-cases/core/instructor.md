@@ -125,10 +125,10 @@ Two things make INSTRUCTOR meaningfully different from TA:
 - **Flow:**
   1. Instructor uploads `lectures.zip` (`POST /api/courses/42/materials`)
   2. Access checks pass (instructor, no policy gate on upload) and `uploadMaterial` calls `validateUploadedFile`
-  3. `validateFile` (`apps/core/app/lib/ai/file-processing.ts`) checks the resolved MIME type against the shared accepted list (`ACCEPTED_MATERIAL_MIME_TYPES` in `apps/core/app/lib/materials/accepted-types.ts`) — `application/zip` is not in it, so `validateFile` returns `{ isValid: false, error: "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP" }`
+  3. `validateFile` (`apps/core/app/lib/ai/file-processing.ts`) checks the resolved MIME type against the shared accepted list (`ACCEPTED_MATERIAL_MIME_TYPES` in `apps/core/app/lib/materials/accepted-types.ts`) — `application/zip` is not in it, so `validateFile` returns `{ isValid: false, error: "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, WEBP" }`
   4. `validateUploadedFile` throws `new Error(validation.error)` before any extraction is attempted
   5. `uploadMaterial` catches it and returns synchronously; no `CourseMaterial` row was ever created (the throw happens before `prisma.courseMaterial.create`). Validation deliberately stayed on the request path when extraction moved off it (#949), precisely so this case never becomes a background `FAILED` row the caller has to poll for
-- **Expected outcome:** `400 { error: "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP" }` (`toMaterialUploadUserMessage` passes the message through unchanged since it matches none of the DB/embedding-specific patterns). No material row, no partial state to clean up.
+- **Expected outcome:** `400 { error: "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, WEBP" }` (`toMaterialUploadUserMessage` passes the message through unchanged since it matches none of the DB/embedding-specific patterns). No material row, no partial state to clean up.
 - **Failure modes / what could go wrong:** None outstanding. This previously surfaced as an HTTP `500` despite being a client input-validation failure; #949 corrected it to `400` when validation was split out of `processUploadedFile`.
 - **Related code:**
   - `apps/core/app/routes/api/courses.materials.$.ts`
@@ -233,7 +233,7 @@ Two things make INSTRUCTOR meaningfully different from TA:
 
 - **Category:** Typical Use
 - **Actor:** INSTRUCTOR with `instructor` AccessLevel on courseId=42
-- **Preconditions:** A vision-capable model is reachable on `VLLM_BASE_URL` (`MATERIAL_IMAGE_MODEL`, default `qwen3.8-27b-instruct`)
+- **Preconditions:** A healthy fleet host serves the vision model (`MATERIAL_IMAGE_MODEL`, default `qwen3.8-27b-instruct`, on cmps02); with fleet routing disabled, `VLLM_BASE_URL` must serve it
 - **Entry point(s):** `apps/core/app/routes/api/courses.materials.$.ts`, `apps/core/app/lib/ai/file-processing.ts`, `apps/core/app/lib/ai/image-text-extraction.server.ts`
 - **Flow:**
   1. Instructor picks `whiteboard.png` (PNG, JPEG and WebP are offered by the upload input) and uploads it (`POST /api/courses/42/materials`)
@@ -241,7 +241,7 @@ Two things make INSTRUCTOR meaningfully different from TA:
   3. The row is created `PROCESSING` and the request returns `202`; the background extraction job calls `extractUploadedFileContent`, which sends the bytes to the vision model once (`temperature: 0`, 60 s timeout) and gets back a transcription of the visible text, or a short description for diagrams
   4. The transcription is chunked and embedded like any other extracted text and the material becomes `READY`; the preview shows the transcription, and course chat can retrieve it
 - **Expected outcome:** `202`, then `READY` with the image's transcribed text searchable by course chat. The image itself is never sent to the chat model, so the chat route's rejection of image-bearing payloads (#1152) is unaffected.
-- **Failure modes / what could go wrong:** (1) The vision host is unreachable, times out, or returns nothing, so the extraction job marks the row `FAILED` (`MATERIAL_EXTRACT_FAILED`; the real cause is only in the server log). The instructor sees the generic "Couldn't read this file … corrupted, password-protected, or a scan" notice, which misdescribes an outage, and the failure is not retried automatically the way a busy PDF worker is. (2) Text inside an image is untrusted: the system prompt tells the model to transcribe it rather than obey it, but a transcription can still carry injected instructions into the RAG corpus, the same exposure as UC-INSTRUCTOR-010. (3) Images are upload-only; the Canvas importer ignores image files.
+- **Failure modes / what could go wrong:** (1) The vision host is unhealthy, unreachable, overloaded (429/5xx) or times out, or this process already has `MATERIAL_IMAGE_MAX_CONCURRENT` transcriptions running and a full queue: the extraction throws `ExtractionBusyError`, so the row stays `PROCESSING` with `failureCode = MATERIAL_EXTRACT_BUSY` and the sweeper retries it within `MAX_EXTRACTION_ATTEMPTS`; only a row that is busy on every attempt ends `MATERIAL_EXTRACT_ABANDONED` (reported as busy, not as a bad file). Only an empty transcription, a 4xx from the host or a configuration error marks it `FAILED` (`MATERIAL_EXTRACT_FAILED`). (2) Text inside an image is untrusted: the system prompt tells the model to transcribe it rather than obey it, but a transcription can still carry injected instructions into the RAG corpus, the same exposure as UC-INSTRUCTOR-010. (3) Images are upload-only; the Canvas importer ignores image files.
 - **Related code:**
   - `apps/core/app/lib/materials/accepted-types.ts`
   - `apps/core/app/lib/ai/file-processing.ts`
