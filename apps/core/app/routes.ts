@@ -30,6 +30,7 @@ export default [
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),
   route("/api/chat/cancel", "routes/api/chat.cancel.ts"),
+  route("/api/chat/attachments", "routes/api/chat.attachments.ts"),
   route("/api/completion", "routes/api/completion.ts"),
   route("/api/models", "routes/api/models.ts"),
   route("/api/assistive-events", "routes/api/assistive-events.ts"),
