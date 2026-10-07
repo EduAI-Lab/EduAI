@@ -177,4 +177,58 @@ describe("toModelMessage", () => {
     });
     expect(out.parts).toHaveLength(2);
   });
+
+  it("fences one valid and one malformed text attachment", () => {
+    const valid = att("valid.txt", "hello");
+    const malformed = {
+      name: "bad.txt",
+      contentType: "text/plain" as const,
+      url: "https://x.com/bad.txt",
+    }; // remote URL
+    const out = toModelMessage({
+      content: "q",
+      experimental_attachments: [valid, malformed],
+    });
+    const fence = '<student_attachment name="valid.txt">\nhello\n</student_attachment>';
+    expect(out.content).toBe(`q\n\n${fence}`);
+    expect(out).not.toHaveProperty("experimental_attachments");
+  });
+
+  it("fences four valid text attachments (exceed MAX_FILES, but toModelMessage is lenient)", () => {
+    const attachments = [
+      att("1.txt", "a"),
+      att("2.txt", "b"),
+      att("3.txt", "c"),
+      att("4.txt", "d"),
+    ];
+    const out = toModelMessage({
+      content: "q",
+      experimental_attachments: attachments,
+    });
+    expect(out.content).toContain('<student_attachment name="1.txt">');
+    expect(out.content).toContain('<student_attachment name="2.txt">');
+    expect(out.content).toContain('<student_attachment name="3.txt">');
+    expect(out.content).toContain('<student_attachment name="4.txt">');
+    expect(out).not.toHaveProperty("experimental_attachments");
+  });
+
+  it("silently drops a malformed-only attachment list", () => {
+    const out = toModelMessage({
+      content: "q",
+      experimental_attachments: [
+        { name: "bad.txt", contentType: "text/plain" as const, url: "https://x.com/bad.txt" },
+      ],
+    });
+    expect(out.content).toBe("q");
+    expect(out).not.toHaveProperty("experimental_attachments");
+  });
+
+  it("sets content when message has only attachments (no content, no parts)", () => {
+    const out = toModelMessage({
+      experimental_attachments: [att("a.txt", "hello world")],
+    });
+    const fence = '<student_attachment name="a.txt">\nhello world\n</student_attachment>';
+    expect(out.content).toBe(fence);
+    expect(out).not.toHaveProperty("experimental_attachments");
+  });
 });

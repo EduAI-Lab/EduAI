@@ -72,11 +72,39 @@ const rawAttachmentSchema = z.object({
   url: z.string(),
 });
 
+type RawAttachment = z.infer<typeof rawAttachmentSchema>;
+
 const reject = (
   status: 400 | 413,
   code: ChatAttachmentRejectCode,
   error: string,
 ): AttachmentParseResult => ({ ok: false, status, code, error });
+
+/**
+ * Try to decode a single attachment as a text attachment.
+ * Returns null if the attachment is invalid, an image, or fails to decode.
+ * Used by both parseMessageAttachments (for validation) and toModelMessage (for safe extraction).
+ */
+function tryDecodeTextAttachment(item: RawAttachment): { name: string; text: string } | null {
+  const parsed = rawAttachmentSchema.safeParse(item);
+  if (!parsed.success) return null;
+
+  // Skip images
+  if (isImageAttachment(parsed.data)) return null;
+
+  // Only text/plain
+  if (parsed.data.contentType !== "text/plain") return null;
+
+  // Validate name
+  const name = parsed.data.name?.trim() ?? "";
+  if (name.length === 0 || name.length > 255) return null;
+
+  // Decode URL
+  const text = decodeTextDataUrl(parsed.data.url);
+  if (text === null) return null;
+
+  return { name, text };
+}
 
 export function parseMessageAttachments<T extends AttachmentCarrier>(
   message: T,
@@ -103,16 +131,15 @@ export function parseMessageAttachments<T extends AttachmentCarrier>(
         "That file type can't be attached to a chat message.",
       );
     }
-    const name = item.name?.trim() ?? "";
-    const text = decodeTextDataUrl(item.url);
-    if (name.length === 0 || name.length > 255 || text === null) {
+    const decoded = tryDecodeTextAttachment(item);
+    if (!decoded) {
       return reject(
         400,
         "ATTACHMENT_INVALID",
         "One of the attached files could not be read. Remove it and attach it again.",
       );
     }
-    attachments.push({ name, text });
+    attachments.push(decoded);
   }
 
   if (attachments.length > CHAT_ATTACHMENT_MAX_FILES) {
@@ -146,26 +173,73 @@ export function fenceAttachment(attachment: { name: string; text: string }): str
 }
 
 export function toModelMessage<T extends AttachmentCarrier>(message: T): T {
-  const parsed = parseMessageAttachments(message, Number.POSITIVE_INFINITY);
-  if (!parsed.ok || parsed.attachments.length === 0) return message;
+  // If no experimental_attachments, return unchanged to preserve object reference
+  if (message.experimental_attachments === undefined || message.experimental_attachments === null) {
+    return message;
+  }
 
-  const fenced = parsed.attachments.map(fenceAttachment).join("\n\n");
-  const images = z
-    .array(rawAttachmentSchema)
-    .parse(message.experimental_attachments)
-    .filter((item) => isImageAttachment(item));
-  const { experimental_attachments: _dropped, ...rest } = message;
+  // Parse raw attachments
+  const list = z.array(rawAttachmentSchema).safeParse(message.experimental_attachments);
+  if (!list.success) {
+    // Invalid format: remove attachments, return
+    const { experimental_attachments: _removed, ...rest } = message;
+    // SAFETY: `rest` has removed only the `experimental_attachments` field; all other
+    // properties match `T` via `AttachmentCarrier` spread.
+    return rest as T;
+  }
+
+  // Decode and fence valid text attachments, collect images
+  const validTextAttachments: Array<{ name: string; text: string }> = [];
+  const images: Array<unknown> = [];
+
+  for (const item of list.data) {
+    if (isImageAttachment(item)) {
+      images.push(item);
+      continue;
+    }
+
+    // Try to decode as text
+    const decoded = tryDecodeTextAttachment(item);
+    if (decoded) {
+      validTextAttachments.push(decoded);
+    }
+    // If decode fails, silently drop it (fail closed)
+  }
+
+  // If nothing was valid and no images, remove experimental_attachments
+  if (validTextAttachments.length === 0 && images.length === 0) {
+    const { experimental_attachments: _removed, ...rest } = message;
+    // SAFETY: `rest` has removed only the `experimental_attachments` field; all other
+    // properties match `T` via `AttachmentCarrier` spread.
+    return rest as T;
+  }
+
+  // Fence the valid text attachments
+  const fenced = validTextAttachments.map(fenceAttachment).join("\n\n");
+
+  // Build the result
+  const { experimental_attachments: _removed, ...rest } = message;
   const next: AttachmentCarrier = { ...rest };
 
+  // Update content and/or parts
   // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof message.content === "string") {
     next.content = message.content.length > 0 ? `${message.content}\n\n${fenced}` : fenced;
   }
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (Array.isArray(message.parts)) {
     next.parts = [...message.parts, { type: "text", text: fenced }];
   }
-  if (images.length > 0) next.experimental_attachments = images;
+  // If neither content nor parts, set content to avoid silent loss
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  if (typeof message.content !== "string" && !Array.isArray(message.parts)) {
+    next.content = fenced;
+  }
+
+  // Keep images if any
+  if (images.length > 0) {
+    next.experimental_attachments = images;
+  }
+
   // SAFETY: `next` is `message` minus/plus only the three fields `T` declares
   // via `AttachmentCarrier`; every other property is copied through unchanged.
   return next as T;
