@@ -149,7 +149,8 @@ Use a new release directory for every production change:
      ```
      If a host fails, **leave it out** of `VLLM_FLEET_CHAT_URLS` and
      `fleet.config.json` for this release.
-   - Update `/etc/eduai/fleet/fleet.config.json` (see "Fleet config").
+   - Update `/etc/eduai/fleet/fleet.config.json` (see "Fleet config") so each
+     server lists what it actually serves.
 1. Create or obtain the reviewed release checkout under
    `/srv/www/eduai-production/releases/<release-id>`.
 2. Confirm the intended branch/commit and keep the release checkout clean.
@@ -282,6 +283,8 @@ is in [`../cmps01/README.md`](../cmps01/README.md#fleet-inventory). Routing read
 each server's live `/v1/models` first and falls back to the file's `models` only
 when that probe fails; the AI status probe also takes its host list from this
 file.
+Without this file the registry assumes every fleet URL serves
+`VLLM_FLEET_DEFAULT_MODELS`, which is wrong for cmps02.
 
 **Auto routing tier assignment is a manual step on production.** Unlike
 `eduai-dev`/s378 (`infra/s378/go-live-build.sh` runs
