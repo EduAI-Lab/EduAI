@@ -31,6 +31,30 @@ function hit(content: string, title = "Lecture 1"): HybridRagHit {
 }
 
 describe("messageHasImageParts", () => {
+  it("detects an image smuggled in via experimental_attachments", () => {
+    expect(
+      messageHasImageParts({
+        role: "user",
+        content: "look",
+        experimental_attachments: [
+          { name: "p.png", contentType: "image/png", url: "https://x/p.png" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not treat text attachments as images", () => {
+    expect(
+      messageHasImageParts({
+        role: "user",
+        content: "look",
+        experimental_attachments: [
+          { name: "a.txt", contentType: "text/plain", url: "data:text/plain;base64,eA==" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it("detects image parts in content and parts arrays", () => {
     expect(messageHasImageParts({ role: "user", content: "hello" })).toBe(false);
     expect(

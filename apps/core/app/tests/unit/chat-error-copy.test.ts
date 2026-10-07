@@ -259,4 +259,17 @@ describe("describeStudentChatError — generic fallback", () => {
     expect(notice?.kind).toBe("generic");
     expect(notice?.description).toMatch(/try again/i);
   });
+
+  it("shows the server's sentence for an attachment rejection", () => {
+    const notice = describeStudentChatError(
+      new Error(
+        JSON.stringify({
+          error: "You can attach up to 3 files to one message.",
+          code: "ATTACHMENT_TOO_MANY",
+        }),
+      ),
+    );
+
+    expect(notice?.description).toBe("You can attach up to 3 files to one message.");
+  });
 });

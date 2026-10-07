@@ -182,4 +182,8 @@ describe("appendCustomInstructions", () => {
     expect(out).toContain("Be terse.");
     expect(out).toContain("ADDITIONAL INSTRUCTIONS");
   });
+
+  it("names student attachments as untrusted reference data", () => {
+    expect(SECURITY_POLICY_BLOCK).toContain("<student_attachment>");
+  });
 });

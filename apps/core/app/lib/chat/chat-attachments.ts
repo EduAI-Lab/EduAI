@@ -123,7 +123,7 @@ export function parseMessageAttachments<T extends AttachmentCarrier>(
 
   const attachments: Array<{ name: string; text: string }> = [];
   for (const item of list.data) {
-    // Broad image check is OK here; the image guard rejects these before they reach us.
+    // Image items are skipped here; the Course Chat image guard in /api/chat rejects them afterwards.
     if (isImageAttachment(item)) continue;
     if (item.contentType !== "text/plain") {
       return reject(
