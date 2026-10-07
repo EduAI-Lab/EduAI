@@ -175,11 +175,23 @@ re-embedding, and retrieval verification in a controlled environment.
 
 ## Ingestion limits and fixtures
 
-The upload processor accepts TXT, Markdown, PDF, DOCX, and PPTX. It validates the
-declared type and file signature, limits normal uploads to 50 MiB, protects ZIP
-containers with entry/size/total limits, and rejects extracted text over 20
-million characters. Semantic chunks target 1,500 characters with 80-character
-overlap; equations are kept intact where possible.
+The upload processor accepts TXT, Markdown, PDF, DOCX, PPTX, and PNG/JPEG/WebP
+images. It validates the declared type and file signature, limits normal uploads
+to 50 MiB (images to 10 MiB), protects ZIP containers with entry/size/total
+limits, and rejects extracted text over 20 million characters. Semantic chunks
+target 1,500 characters with 80-character overlap; equations are kept intact
+where possible.
+
+Images (#1903) are transcribed once, in the background extraction job, by a
+vision model (`MATERIAL_IMAGE_MODEL`, default `qwen3.8-27b-instruct`, the only
+campus model with image support; `MATERIAL_IMAGE_TIMEOUT_MS`, default 60000).
+The transcription is then chunked and embedded like any other extracted text.
+Image bytes are never sent to chat, so the chat route's rejection of
+image-bearing payloads (#1152) is unchanged. Images are upload-only: the Canvas
+importer skips them. If the vision model is unreachable, times out, or returns
+nothing, the material ends `FAILED`; the cause is in the server log
+(`MATERIAL_EXTRACT_FAILED`), while the instructor sees the generic
+"Couldn't read this file" notice.
 
 The committed ingestion fixtures are under [`fixtures/`](./fixtures/). The
 repeatable script and its current known limitation are documented in

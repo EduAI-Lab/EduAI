@@ -120,15 +120,15 @@ Two things make INSTRUCTOR meaningfully different from TA:
 
 - **Category:** Wrong/Malformed Usage
 - **Actor:** INSTRUCTOR with `instructor` AccessLevel on courseId=42
-- **Preconditions:** None — instructor accidentally selects a `.zip` or `.png` file instead of course notes
+- **Preconditions:** None — instructor accidentally selects a `.zip` (or any other unaccepted type, e.g. a `.gif`) instead of course notes. PNG, JPEG and WebP images *are* accepted (#1903); see UC-INSTRUCTOR-011
 - **Entry point(s):** `apps/core/app/routes/api/courses.materials.$.ts`, `apps/core/app/lib/ai/file-processing.ts`
 - **Flow:**
-  1. Instructor uploads `screenshot.png` (`POST /api/courses/42/materials`)
+  1. Instructor uploads `lectures.zip` (`POST /api/courses/42/materials`)
   2. Access checks pass (instructor, no policy gate on upload) and `uploadMaterial` calls `validateUploadedFile`
-  3. `validateFile` (`apps/core/app/lib/ai/file-processing.ts`) checks `file.type` against the fixed `allowedTypes` list (`text/plain`, `text/markdown`, `application/pdf`, DOCX, PPTX MIME types) — `image/png` is not in the list, so `validateFile` returns `{ isValid: false, error: "File type image/png is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX" }`
+  3. `validateFile` (`apps/core/app/lib/ai/file-processing.ts`) checks the resolved MIME type against the shared accepted list (`ACCEPTED_MATERIAL_MIME_TYPES` in `apps/core/app/lib/materials/accepted-types.ts`) — `application/zip` is not in it, so `validateFile` returns `{ isValid: false, error: "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP" }`
   4. `validateUploadedFile` throws `new Error(validation.error)` before any extraction is attempted
   5. `uploadMaterial` catches it and returns synchronously; no `CourseMaterial` row was ever created (the throw happens before `prisma.courseMaterial.create`). Validation deliberately stayed on the request path when extraction moved off it (#949), precisely so this case never becomes a background `FAILED` row the caller has to poll for
-- **Expected outcome:** `400 { error: "File type image/png is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX" }` (`toMaterialUploadUserMessage` passes the message through unchanged since it matches none of the DB/embedding-specific patterns). No material row, no partial state to clean up.
+- **Expected outcome:** `400 { error: "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP" }` (`toMaterialUploadUserMessage` passes the message through unchanged since it matches none of the DB/embedding-specific patterns). No material row, no partial state to clean up.
 - **Failure modes / what could go wrong:** None outstanding. This previously surfaced as an HTTP `500` despite being a client input-validation failure; #949 corrected it to `400` when validation was split out of `processUploadedFile`.
 - **Related code:**
   - `apps/core/app/routes/api/courses.materials.$.ts`
@@ -226,3 +226,25 @@ Two things make INSTRUCTOR meaningfully different from TA:
   - `apps/core/app/lib/ai/embedding.ts`
   - `apps/core/app/lib/chat-rag.ts`
   - `apps/core/app/lib/ai/prompt-safety.ts`
+
+---
+
+### UC-INSTRUCTOR-011: Instructor uploads an image of lecture content as a course material
+
+- **Category:** Typical Use
+- **Actor:** INSTRUCTOR with `instructor` AccessLevel on courseId=42
+- **Preconditions:** A vision-capable model is reachable on `VLLM_BASE_URL` (`MATERIAL_IMAGE_MODEL`, default `qwen3.8-27b-instruct`)
+- **Entry point(s):** `apps/core/app/routes/api/courses.materials.$.ts`, `apps/core/app/lib/ai/file-processing.ts`, `apps/core/app/lib/ai/image-text-extraction.server.ts`
+- **Flow:**
+  1. Instructor picks `whiteboard.png` (PNG, JPEG and WebP are offered by the upload input) and uploads it (`POST /api/courses/42/materials`)
+  2. `validateUploadedFile` accepts it: the type is on the shared accepted list, the size is within the 10 MiB image cap, and the first 12 bytes match the PNG signature. A `.png` that is really a PDF, or image bytes declared as `text/plain`, is rejected here with a `400`
+  3. The row is created `PROCESSING` and the request returns `202`; the background extraction job calls `extractUploadedFileContent`, which sends the bytes to the vision model once (`temperature: 0`, 60 s timeout) and gets back a transcription of the visible text, or a short description for diagrams
+  4. The transcription is chunked and embedded like any other extracted text and the material becomes `READY`; the preview shows the transcription, and course chat can retrieve it
+- **Expected outcome:** `202`, then `READY` with the image's transcribed text searchable by course chat. The image itself is never sent to the chat model, so the chat route's rejection of image-bearing payloads (#1152) is unaffected.
+- **Failure modes / what could go wrong:** (1) The vision host is unreachable, times out, or returns nothing, so the extraction job marks the row `FAILED` (`MATERIAL_EXTRACT_FAILED`; the real cause is only in the server log). The instructor sees the generic "Couldn't read this file … corrupted, password-protected, or a scan" notice, which misdescribes an outage, and the failure is not retried automatically the way a busy PDF worker is. (2) Text inside an image is untrusted: the system prompt tells the model to transcribe it rather than obey it, but a transcription can still carry injected instructions into the RAG corpus, the same exposure as UC-INSTRUCTOR-010. (3) Images are upload-only; the Canvas importer ignores image files.
+- **Related code:**
+  - `apps/core/app/lib/materials/accepted-types.ts`
+  - `apps/core/app/lib/ai/file-processing.ts`
+  - `apps/core/app/lib/ai/image-text-extraction.server.ts`
+  - `apps/core/app/lib/materials/extraction-job.server.ts`
+  - `apps/core/app/lib/material-failure-notice.ts`
