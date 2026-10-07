@@ -27,17 +27,21 @@ vi.mock("~/lib/ai/embedding", () => ({
   isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock("~/lib/ai/file-processing", () => ({
-  extractUploadedFileContent: vi.fn(),
-  // A real class, not a stub: the job distinguishes capacity failures with
-  // `instanceof` so it can release the row for a retry instead of failing it.
-  PdfExtractionBusyError: class PdfExtractionBusyError extends Error {
-    constructor(message = "PDF extraction busy") {
-      super(message);
-      this.name = "PdfExtractionBusyError";
-    }
-  },
-}));
+vi.mock("~/lib/ai/file-processing", async () => {
+  // A real subclass of the real base, not a stub: the job distinguishes capacity
+  // failures with `instanceof ExtractionBusyError` so it can release the row for a
+  // retry instead of failing it.
+  const { ExtractionBusyError } = await import("~/lib/ai/extraction-busy-error");
+  return {
+    extractUploadedFileContent: vi.fn(),
+    PdfExtractionBusyError: class PdfExtractionBusyError extends ExtractionBusyError {
+      constructor(message = "PDF extraction busy") {
+        super(message);
+        this.name = "PdfExtractionBusyError";
+      }
+    },
+  };
+});
 
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
@@ -56,6 +60,7 @@ import {
   processMaterialEmbeddings,
 } from "~/lib/ai/embedding";
 import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
 import {
   EXTRACTION_LEASE_MS,
@@ -886,6 +891,9 @@ describe("claimRestoreTarget", () => {
 
 describe("resolveFailureCode", () => {
   it("names a capacity failure rather than blaming the file", () => {
+    expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new ExtractionBusyError())).toBe(
+      "MATERIAL_EXTRACT_BUSY",
+    );
     expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new PdfExtractionBusyError())).toBe(
       "MATERIAL_EXTRACT_BUSY",
     );
@@ -975,6 +983,34 @@ describe("runMaterialExtraction failure recording (#1791)", () => {
     expect(data.extractionLeaseUntil).toBeInstanceOf(Date);
     expect((data.extractionLeaseUntil as Date).getTime()).toBeLessThan(Date.now());
     expect(updatesFor("mat-1")).not.toContainEqual(expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("releases an image whose vision host was unreachable, like a busy PDF worker (#1903 review)", async () => {
+    // Not a PdfExtractionBusyError: the base class is what the job tests for.
+    vi.mocked(extractUploadedFileContent).mockRejectedValue(
+      new ExtractionBusyError("Vision host unavailable: connect ECONNREFUSED"),
+    );
+
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    const [data] = updatesFor("mat-1");
+    expect(data.status).toBe("PROCESSING");
+    expect(data.failureCode).toBe("MATERIAL_EXTRACT_BUSY");
+    expect(updatesFor("mat-1")).not.toContainEqual(expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("still fails an image whose content yielded nothing, since a retry cannot help", async () => {
+    vi.mocked(extractUploadedFileContent).mockRejectedValue(
+      new Error(
+        "Failed to process file a.png: No readable text or description could be extracted from this image",
+      ),
+    );
+
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(updatesFor("mat-1")).toContainEqual(
+      expect.objectContaining({ status: "FAILED", failureCode: "MATERIAL_EXTRACT_FAILED" }),
+    );
   });
 });
 

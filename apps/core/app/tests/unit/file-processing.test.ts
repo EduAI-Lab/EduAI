@@ -38,6 +38,7 @@ import {
   readChildRssBytes,
   PdfExtractionBusyError,
   MAX_IMAGE_UPLOAD_BYTES,
+  ExtractionBusyError,
 } from "~/lib/ai/file-processing";
 
 // mammoth now runs inside the isolated extraction worker (#1494 review), a separate
@@ -1433,5 +1434,62 @@ describe("image uploads (#1903)", () => {
         "Failed to process file board.png: Image text extraction failed: connect ECONNREFUSED",
       );
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Capacity errors reach the extraction job unwrapped (#1903 review)
+// ---------------------------------------------------------------------------
+// The job retries a material only when the error it catches is an
+// ExtractionBusyError. extractPdfText and extractUploadedFileContent used to re-wrap
+// every error in a plain Error, so a busy PDF worker reached the job as an ordinary
+// failure and the material was failed instead of retried. These run the real
+// limiter, not a mock: a mocked extractor is what hid the wrapping.
+describe("busy errors pass through extraction unwrapped", () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    resetPdfExtractionConcurrencyForTests();
+    vi.doUnmock("~/lib/ai/image-text-extraction.server");
+  });
+
+  it("PdfExtractionBusyError is an ExtractionBusyError", () => {
+    expect(new PdfExtractionBusyError()).toBeInstanceOf(ExtractionBusyError);
+  });
+
+  it("a full PDF worker pool reaches the caller as the busy error itself", async () => {
+    process.env.PDF_EXTRACTION_MAX_CONCURRENT = "1";
+    process.env.PDF_EXTRACTION_MAX_QUEUED = "0";
+    resetPdfExtractionConcurrencyForTests();
+    const release = await holdPdfExtractionSlotForTests();
+    try {
+      const pdf = new File([new TextEncoder().encode("%PDF-1.4\n%%EOF")], "a.pdf", {
+        type: "application/pdf",
+      });
+      const error = await extractUploadedFileContent(pdf).catch((e: Error) => e);
+      expect(error).toBeInstanceOf(PdfExtractionBusyError);
+      expect(error).toBeInstanceOf(ExtractionBusyError);
+      expect((error as Error).message).not.toMatch(/^Failed to/);
+    } finally {
+      release();
+    }
+  });
+
+  it("an unavailable vision host reaches the caller as the busy error itself", async () => {
+    vi.doMock("~/lib/ai/image-text-extraction.server", () => ({
+      extractImageText: vi
+        .fn()
+        .mockRejectedValue(new ExtractionBusyError("vision host unavailable")),
+    }));
+    const png = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "slide.png",
+      { type: "image/png" },
+    );
+
+    const error = await extractUploadedFileContent(png).catch((e: Error) => e);
+
+    expect(error).toBeInstanceOf(ExtractionBusyError);
+    expect((error as Error).message).toBe("vision host unavailable");
   });
 });

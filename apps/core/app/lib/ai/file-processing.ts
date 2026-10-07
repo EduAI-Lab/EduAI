@@ -1,4 +1,5 @@
 import type { ValidationResult } from "~/lib/validation-result";
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import {
   ACCEPTED_MATERIAL_MIME_TYPES,
   ACCEPTED_MATERIAL_TYPE_LABELS,
@@ -919,7 +920,9 @@ export const PDF_EXTRACTION_DEFAULT_MAX_QUEUED = 16;
  * Thrown when the waiting queue is full. Callers may map this to HTTP 503.
  * Message includes "busy" / "capacity" for easy matching.
  */
-export class PdfExtractionBusyError extends Error {
+export { ExtractionBusyError };
+
+export class PdfExtractionBusyError extends ExtractionBusyError {
   constructor(
     message = "PDF extraction busy: capacity exceeded (too many concurrent/queued extractions)",
   ) {
@@ -1439,6 +1442,9 @@ export async function extractPdfText(
       },
     };
   } catch (error) {
+    // A full worker pool is not a fact about this PDF; let it reach the job unwrapped
+    // so the material is retried rather than failed (#1903 review).
+    if (error instanceof ExtractionBusyError) throw error;
     throw new Error(
       `Failed to extract text from PDF: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
@@ -1825,6 +1831,9 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
       },
     };
   } catch (error) {
+    // Capacity and host outages pass through untouched: the job retries an
+    // ExtractionBusyError, and wrapping it here is what used to hide it (#1903 review).
+    if (error instanceof ExtractionBusyError) throw error;
     throw new Error(
       `Failed to process file ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
