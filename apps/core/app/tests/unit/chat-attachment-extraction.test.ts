@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import JSZip from "jszip";
 import {
   ChatAttachmentError,
@@ -96,5 +96,35 @@ describe("extractChatAttachment", () => {
       extractChatAttachment(new File([bytes], "broken.docx"), LIMITS),
       "ATTACHMENT_EXTRACT_FAILED",
     );
+  });
+
+  it("rejects invalid UTF-8 in a .txt instead of decoding leniently", async () => {
+    await expectCode(
+      extractChatAttachment(new File([new Uint8Array([0xff, 0xfe, 0xfd])], "a.txt"), LIMITS),
+      "ATTACHMENT_TYPE_UNSUPPORTED",
+    );
+  });
+
+  it("rejects a NUL byte after the first 8 bytes in a .md", async () => {
+    const bytes = new Uint8Array([...new TextEncoder().encode("# heading text"), 0, 0x61]);
+    await expectCode(
+      extractChatAttachment(new File([bytes], "notes.md"), LIMITS),
+      "ATTACHMENT_TYPE_UNSUPPORTED",
+    );
+  });
+
+  it("keeps the underlying cause on extraction failures and logs it", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+      const error = await extractChatAttachment(new File([bytes], "broken.docx"), LIMITS).catch(
+        (e: Error) => e,
+      );
+      expect(error).toBeInstanceOf(ChatAttachmentError);
+      expect((error as Error).cause).toBeInstanceOf(Error);
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -51,8 +51,11 @@ const MESSAGES = {
 export class ChatAttachmentError extends Error {
   readonly status: 400 | 413 | 422;
 
-  constructor(readonly code: ChatAttachmentErrorCode) {
-    super(MESSAGES[code]);
+  constructor(
+    readonly code: ChatAttachmentErrorCode,
+    options?: { cause?: Error },
+  ) {
+    super(MESSAGES[code], options);
     this.name = "ChatAttachmentError";
     this.status = STATUS[code];
   }
@@ -76,7 +79,12 @@ export function resolveChatAttachmentLimits(): ChatAttachmentLimits {
 }
 
 async function decodeStrictText(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch (error) {
+    throw readFailure(error instanceof Error ? error : new Error(String(error)));
+  }
   if (bytes.includes(0)) throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -85,11 +93,16 @@ async function decodeStrictText(file: File): Promise<string> {
   }
 }
 
+function readFailure(error: Error): ChatAttachmentError {
+  console.error("chat attachment extraction failed", error);
+  return new ChatAttachmentError("ATTACHMENT_EXTRACT_FAILED", { cause: error });
+}
+
 async function extractDocument(file: File, mimeType: string): Promise<string> {
-  const typed = new File([await file.arrayBuffer()], file.name, { type: mimeType });
-  const signature = await validateFileSignature(typed);
-  if (!signature.isValid) throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
   try {
+    const typed = new File([await file.arrayBuffer()], file.name, { type: mimeType });
+    const signature = await validateFileSignature(typed);
+    if (!signature.isValid) throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
     switch (mimeType) {
       case "application/pdf":
         return (await extractPdfText(typed)).content;
@@ -101,12 +114,15 @@ async function extractDocument(file: File, mimeType: string): Promise<string> {
         return await readFileAsText(typed);
     }
   } catch (error) {
+    if (error instanceof ChatAttachmentError) throw error;
     if (error instanceof Error && error.message.includes(PDF_NO_TEXT_LAYER_MESSAGE)) {
       throw new ChatAttachmentError("ATTACHMENT_EMPTY");
     }
-    throw new ChatAttachmentError("ATTACHMENT_EXTRACT_FAILED");
+    throw readFailure(error instanceof Error ? error : new Error(String(error)));
   }
 }
+
+const STRICT_TEXT_MIME_TYPES: readonly string[] = ["text/plain", "text/markdown"];
 
 export async function extractChatAttachment(
   file: File,
@@ -116,10 +132,8 @@ export async function extractChatAttachment(
   if (!kind) throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
   if (file.size > limits.maxBytes) throw new ChatAttachmentError("ATTACHMENT_TOO_LARGE");
 
-  const raw =
-    kind.kind === "text"
-      ? await decodeStrictText(file)
-      : await extractDocument(file, kind.mimeType);
+  const strict = kind.kind === "text" || STRICT_TEXT_MIME_TYPES.includes(kind.mimeType);
+  const raw = strict ? await decodeStrictText(file) : await extractDocument(file, kind.mimeType);
   const clean = sanitizeTextContent(raw);
   if (clean.length === 0) throw new ChatAttachmentError("ATTACHMENT_EMPTY");
 
