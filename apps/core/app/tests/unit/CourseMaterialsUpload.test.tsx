@@ -28,7 +28,23 @@ describe("CourseMaterialsUpload — rendering", () => {
   it("lists the supported formats", () => {
     render(<CourseMaterialsUpload onFilesSelect={vi.fn()} />);
     // The supported formats are displayed
-    expect(screen.getByText(/PDF, DOCX, PPTX, TXT, MD/)).toBeInTheDocument();
+    expect(screen.getByText(/PDF, DOCX, PPTX, TXT, MD, PNG, JPG, WebP/)).toBeInTheDocument();
+  });
+
+  it("lets the file picker select images (#1903)", () => {
+    render(<CourseMaterialsUpload onFilesSelect={vi.fn()} />);
+    const accept = fileInput().getAttribute("accept") ?? "";
+    for (const token of [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp",
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ]) {
+      expect(accept.split(",")).toContain(token);
+    }
   });
 
   it("disables the dropzone and shows a message while uploading", () => {
