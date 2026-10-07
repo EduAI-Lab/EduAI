@@ -123,6 +123,7 @@ export function parseMessageAttachments<T extends AttachmentCarrier>(
 
   const attachments: Array<{ name: string; text: string }> = [];
   for (const item of list.data) {
+    // Broad image check is OK here; the image guard rejects these before they reach us.
     if (isImageAttachment(item)) continue;
     if (item.contentType !== "text/plain") {
       return reject(
@@ -193,7 +194,10 @@ export function toModelMessage<T extends AttachmentCarrier>(message: T): T {
   const images: Array<unknown> = [];
 
   for (const item of list.data) {
-    if (isImageAttachment(item)) {
+    // Keep raw only if SDK will interpret as image (contentType check).
+    // A mismatched attachment like { contentType: "text/plain", url: "data:image/..." }
+    // must go through the decode path so decodeTextDataUrl rejects the data:image URL.
+    if (item.contentType?.startsWith("image/") === true) {
       images.push(item);
       continue;
     }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type AttachmentCarrier,
   decodeTextDataUrl,
   encodeTextDataUrl,
   fenceAttachment,
@@ -229,6 +230,34 @@ describe("toModelMessage", () => {
     });
     const fence = '<student_attachment name="a.txt">\nhello world\n</student_attachment>';
     expect(out.content).toBe(fence);
+    expect(out).not.toHaveProperty("experimental_attachments");
+  });
+
+  it("rejects a mismatched attachment (text/plain with data:image URL)", () => {
+    const hidden = "hidden text";
+    const out = toModelMessage({
+      content: "q",
+      experimental_attachments: [
+        {
+          name: "a.txt",
+          contentType: "text/plain" as const,
+          url: `data:image/png;base64,${btoa(hidden)}`,
+        },
+      ],
+    });
+    expect(out.content).toBe("q");
+    expect(out).not.toHaveProperty("experimental_attachments");
+    expect(out.content).not.toContain("hidden text");
+  });
+
+  it("strips non-array experimental_attachments", () => {
+    // Non-array attachments should be stripped (invalid format)
+    const invalidAttachments = "x";
+    const out = toModelMessage({
+      content: "q",
+      experimental_attachments: invalidAttachments,
+    } as AttachmentCarrier);
+    expect(out.content).toBe("q");
     expect(out).not.toHaveProperty("experimental_attachments");
   });
 });
