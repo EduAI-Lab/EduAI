@@ -96,6 +96,7 @@ describe("POST /api/chat/attachments", () => {
 
   it.each([
     ["ATTACHMENT_TYPE_UNSUPPORTED", 400],
+    ["ATTACHMENT_ENCODING_UNSUPPORTED", 400],
     ["ATTACHMENT_TOO_LARGE", 413],
     ["ATTACHMENT_EMPTY", 422],
     ["ATTACHMENT_EXTRACT_FAILED", 422],

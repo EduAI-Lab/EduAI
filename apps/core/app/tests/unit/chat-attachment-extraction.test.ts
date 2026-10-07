@@ -40,11 +40,51 @@ describe("extractChatAttachment", () => {
     expect(result.text).toBe("def f():\n    return 'é'");
   });
 
-  it("truncates to maxChars and flags it", async () => {
+  it("truncates within maxChars, flags it, and tells the model how much was kept", async () => {
+    const file = new File(["x".repeat(1000)], "long.txt", { type: "text/plain" });
+    const result = await extractChatAttachment(file, { maxBytes: 1024 * 1024, maxChars: 200 });
+    const marker = /\n\n\[Only the first ([\d,]+) characters of this file were included\.\]$/u;
+    const match = marker.exec(result.text);
+    expect(match).not.toBeNull();
+    expect(result.truncated).toBe(true);
+    expect(result.text.length).toBeLessThanOrEqual(200);
+    expect(result.charCount).toBe(result.text.length);
+    expect(Number((match?.[1] ?? "").replace(/,/gu, ""))).toBe(result.text.indexOf("\n\n["));
+  });
+
+  it("formats the kept character count with thousands separators", async () => {
+    const file = new File(["x".repeat(5000)], "long.txt", { type: "text/plain" });
+    const result = await extractChatAttachment(file, { maxBytes: 1024 * 1024, maxChars: 2000 });
+    expect(result.text).toMatch(/Only the first 1,9\d\d characters/u);
+    expect(result.text.length).toBeLessThanOrEqual(2000);
+  });
+
+  it("just slices when maxChars is smaller than the marker", async () => {
     const file = new File(["x".repeat(80)], "long.txt", { type: "text/plain" });
     const result = await extractChatAttachment(file, LIMITS);
     expect(result).toMatchObject({ truncated: true, charCount: 50 });
-    expect(result.text).toHaveLength(50);
+    expect(result.text).toBe("x".repeat(50));
+  });
+
+  it("adds no marker when the file fits", async () => {
+    const file = new File(["x".repeat(40)], "fits.txt", { type: "text/plain" });
+    const result = await extractChatAttachment(file, LIMITS);
+    expect(result.truncated).toBe(false);
+    expect(result.text).toBe("x".repeat(40));
+    expect(result.text).not.toContain("Only the first");
+  });
+
+  it("caps a long filename at 255 characters and keeps the extension", async () => {
+    const file = new File(["hello"], `${"a".repeat(300)}.txt`, { type: "text/plain" });
+    const result = await extractChatAttachment(file, LIMITS);
+    expect(result.name).toHaveLength(255);
+    expect(result.name.endsWith(".txt")).toBe(true);
+  });
+
+  it("leaves a name of exactly 255 characters alone", async () => {
+    const name = `${"a".repeat(251)}.txt`;
+    const result = await extractChatAttachment(new File(["hello"], name), LIMITS);
+    expect(result.name).toBe(name);
   });
 
   it("rejects an unsupported extension", async () => {
@@ -65,7 +105,7 @@ describe("extractChatAttachment", () => {
   it("rejects invalid UTF-8 behind a text extension", async () => {
     await expectCode(
       extractChatAttachment(new File([new Uint8Array([0xff, 0xfe, 0xfd])], "a.csv"), LIMITS),
-      "ATTACHMENT_TYPE_UNSUPPORTED",
+      "ATTACHMENT_ENCODING_UNSUPPORTED",
     );
   });
 
@@ -101,7 +141,7 @@ describe("extractChatAttachment", () => {
   it("rejects invalid UTF-8 in a .txt instead of decoding leniently", async () => {
     await expectCode(
       extractChatAttachment(new File([new Uint8Array([0xff, 0xfe, 0xfd])], "a.txt"), LIMITS),
-      "ATTACHMENT_TYPE_UNSUPPORTED",
+      "ATTACHMENT_ENCODING_UNSUPPORTED",
     );
   });
 

@@ -130,6 +130,7 @@ vi.mock("~/lib/ai/course-scope-guardrail", () => ({
 }));
 
 import { streamText } from "ai";
+import { findRelevantContent } from "~/lib/ai/embedding";
 vi.mock("~/lib/api-keys/access.server", () => ({
   // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
   // admin active so this suite's admin-mode paths stay admitted.
@@ -745,8 +746,95 @@ describe("POST /api/chat — file attachments (#1902)", () => {
         baseBody({ messages: [{ id: "follow", role: "user", content: "Explain section 2" }] }),
       ),
     );
-    expect(JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0]?.messages)).toContain(
-      "Stored attachment body",
+    const sent = JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0]?.messages);
+    expect(sent).toContain("Stored attachment body");
+    expect(sent).toContain('<student_attachment name=\\"notes.md\\">');
+    expect(sent).not.toContain("experimental_attachments");
+    expect(sent).not.toContain("data:text/plain");
+  });
+
+  it("collapses an attachment-bearing message to string content with no parts", async () => {
+    mockStream();
+    const big = "z".repeat(50_000);
+    process.env.CHAT_MAX_ATTACHMENT_CHARS = "100000";
+    try {
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "with-file",
+                role: "user",
+                content: "Summarise my notes",
+                parts: [{ type: "text", text: "Summarise my notes" }],
+                experimental_attachments: [textAttachment("big.txt", big)],
+              },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const messages = vi.mocked(streamText).mock.calls[0]?.[0]?.messages ?? [];
+      const user = messages.find((m) => m.role === "user");
+      expect(user).toBeDefined();
+      expect(user).not.toHaveProperty("parts");
+      expect(user?.content).toEqual(expect.any(String));
+      expect(user?.content).toContain("Summarise my notes");
+      expect(user?.content).toContain("<student_attachment");
+    } finally {
+      delete process.env.CHAT_MAX_ATTACHMENT_CHARS;
+    }
+  });
+
+  it("budget-truncates the collapsed content when it overflows the context window", async () => {
+    mockStream();
+    const big = "z".repeat(400_000);
+    process.env.CHAT_MAX_ATTACHMENT_CHARS = "500000";
+    try {
+      await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "with-file",
+                role: "user",
+                content: "Summarise my notes",
+                parts: [{ type: "text", text: "Summarise my notes" }],
+                experimental_attachments: [textAttachment("big.txt", big)],
+              },
+            ],
+          }),
+        ),
+      );
+      const messages = vi.mocked(streamText).mock.calls[0]?.[0]?.messages ?? [];
+      const user = messages.find((m) => m.role === "user");
+      expect(user).not.toHaveProperty("parts");
+      expect(String(user?.content).length).toBeLessThan(big.length);
+    } finally {
+      delete process.env.CHAT_MAX_ATTACHMENT_CHARS;
+    }
+  });
+
+  it("retrieves course context with the typed text only, not the attachment", async () => {
+    mockStream();
+    await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "with-file",
+              role: "user",
+              content: "Explain functions in Python please",
+              experimental_attachments: [textAttachment("notes.md", "UNRELATED BANANA TEXT")],
+            },
+          ],
+        }),
+      ),
     );
+    const queries = vi.mocked(findRelevantContent).mock.calls.map(([query]) => query);
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      expect(query).not.toContain("BANANA");
+    }
   });
 });

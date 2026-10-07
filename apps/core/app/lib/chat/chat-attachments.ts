@@ -150,6 +150,8 @@ export function parseMessageAttachments<T extends AttachmentCarrier>(
       `You can attach up to ${CHAT_ATTACHMENT_MAX_FILES} files to one message.`,
     );
   }
+  // Attachment chars are budgeted per message here (CHAT_MAX_ATTACHMENT_CHARS) and deliberately
+  // not counted in validateChatBody's maxTotalMessageChars; clients send only the latest turn.
   const total = attachments.reduce((sum, a) => sum + a.text.length, 0);
   if (total > maxChars) {
     return reject(
@@ -171,6 +173,18 @@ const escapeAttribute = (value: string): string =>
 export function fenceAttachment(attachment: { name: string; text: string }): string {
   const body = attachment.text.replace(/<\/(student_attachment)/giu, "<\\/$1");
   return `<student_attachment name="${escapeAttribute(attachment.name)}">\n${body}\n</student_attachment>`;
+}
+
+function typedText(message: AttachmentCarrier): string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.parts)) return "";
+  return message.parts
+    .flatMap((part: { type?: string; text?: string }) =>
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof
+      part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+    )
+    .join("\n");
 }
 
 export function toModelMessage<T extends AttachmentCarrier>(message: T): T {
@@ -225,18 +239,13 @@ export function toModelMessage<T extends AttachmentCarrier>(message: T): T {
   const { experimental_attachments: _removed, ...rest } = message;
   const next: AttachmentCarrier = { ...rest };
 
-  // Update content and/or parts
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof
-  if (typeof message.content === "string") {
-    next.content = message.content.length > 0 ? `${message.content}\n\n${fenced}` : fenced;
-  }
-  if (Array.isArray(message.parts)) {
-    next.parts = [...message.parts, { type: "text", text: fenced }];
-  }
-  // If neither content nor parts, set content to avoid silent loss
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof
-  if (typeof message.content !== "string" && !Array.isArray(message.parts)) {
-    next.content = fenced;
+  // Collapse to a single content string and drop `parts`. The AI SDK treats a message
+  // with `parts` as a UI message and reads only `parts`, which would bypass the
+  // content-only budget truncation in chat-rag and hand the model the full text.
+  if (fenced.length > 0) {
+    const typed = typedText(message);
+    delete next.parts;
+    next.content = typed.length > 0 ? `${typed}\n\n${fenced}` : fenced;
   }
 
   // Keep images if any

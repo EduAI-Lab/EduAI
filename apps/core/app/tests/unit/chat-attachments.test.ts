@@ -144,7 +144,7 @@ describe("toModelMessage", () => {
     expect(toModelMessage(message)).toBe(message);
   });
 
-  it("appends fenced text to content and parts and strips text attachments", () => {
+  it("collapses to a single content string, drops parts, and strips text attachments", () => {
     const message = {
       role: "user",
       content: "Explain this",
@@ -154,10 +154,8 @@ describe("toModelMessage", () => {
     const out = toModelMessage(message);
     const fence = '<student_attachment name="a.py">\nprint(1)\n</student_attachment>';
     expect(out.content).toBe(`Explain this\n\n${fence}`);
-    expect(out.parts).toEqual([
-      { type: "text", text: "Explain this" },
-      { type: "text", text: fence },
-    ]);
+    expect(out).not.toHaveProperty("parts");
+    expect(message.parts).toHaveLength(1); // input not mutated
     expect(out).not.toHaveProperty("experimental_attachments");
     expect(message.experimental_attachments).toHaveLength(1); // input not mutated
   });
@@ -171,12 +169,14 @@ describe("toModelMessage", () => {
     expect(out.experimental_attachments).toEqual([image]);
   });
 
-  it("handles a message with parts but no string content", () => {
-    const out = toModelMessage({
+  it("builds content from text parts when there is no string content", () => {
+    const input: AttachmentCarrier = {
       parts: [{ type: "text", text: "q" }],
       experimental_attachments: [att("a.txt", "x")],
-    });
-    expect(out.parts).toHaveLength(2);
+    };
+    const out = toModelMessage(input);
+    expect(out).not.toHaveProperty("parts");
+    expect(out.content).toBe('q\n\n<student_attachment name="a.txt">\nx\n</student_attachment>');
   });
 
   it("fences one valid and one malformed text attachment", () => {

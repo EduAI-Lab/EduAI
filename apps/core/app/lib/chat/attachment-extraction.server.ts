@@ -29,12 +29,14 @@ import {
 
 export type ChatAttachmentErrorCode =
   | "ATTACHMENT_TYPE_UNSUPPORTED"
+  | "ATTACHMENT_ENCODING_UNSUPPORTED"
   | "ATTACHMENT_TOO_LARGE"
   | "ATTACHMENT_EMPTY"
   | "ATTACHMENT_EXTRACT_FAILED";
 
 const STATUS = {
   ATTACHMENT_TYPE_UNSUPPORTED: 400,
+  ATTACHMENT_ENCODING_UNSUPPORTED: 400,
   ATTACHMENT_TOO_LARGE: 413,
   ATTACHMENT_EMPTY: 422,
   ATTACHMENT_EXTRACT_FAILED: 422,
@@ -43,6 +45,8 @@ const STATUS = {
 const MESSAGES = {
   ATTACHMENT_TYPE_UNSUPPORTED:
     "This file type can't be attached. Try a PDF, Word, PowerPoint, text, or code file.",
+  ATTACHMENT_ENCODING_UNSUPPORTED:
+    "This file isn't UTF-8 text. Re-save it as UTF-8 and attach it again.",
   ATTACHMENT_TOO_LARGE: "This file is too large to attach.",
   ATTACHMENT_EMPTY: "This file has no readable text. A scanned document needs OCR first.",
   ATTACHMENT_EXTRACT_FAILED: "We couldn't read this file. Try again, or attach a different copy.",
@@ -89,7 +93,7 @@ async function decodeStrictText(file: File): Promise<string> {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
+    throw new ChatAttachmentError("ATTACHMENT_ENCODING_UNSUPPORTED");
   }
 }
 
@@ -138,6 +142,38 @@ export async function extractChatAttachment(
   if (clean.length === 0) throw new ChatAttachmentError("ATTACHMENT_EMPTY");
 
   const truncated = clean.length > limits.maxChars;
-  const text = truncated ? clean.slice(0, limits.maxChars) : clean;
-  return { name: file.name, contentType: "text/plain", text, truncated, charCount: text.length };
+  const text = truncated ? truncateWithMarker(clean, limits.maxChars) : clean;
+  return {
+    name: capAttachmentName(file.name),
+    contentType: "text/plain",
+    text,
+    truncated,
+    charCount: text.length,
+  };
+}
+
+const MAX_ATTACHMENT_NAME_CHARS = 255;
+
+/** Keeps the extension and trims the stem so /api/chat accepts the name. */
+function capAttachmentName(name: string): string {
+  if (name.length <= MAX_ATTACHMENT_NAME_CHARS) return name;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot) : "";
+  if (ext.length >= MAX_ATTACHMENT_NAME_CHARS) return name.slice(0, MAX_ATTACHMENT_NAME_CHARS);
+  return name.slice(0, MAX_ATTACHMENT_NAME_CHARS - ext.length) + ext;
+}
+
+/**
+ * Slices so file text plus the marker stays within maxChars; the marker tells
+ * the model the file was cut. When maxChars cannot fit the marker, just slice.
+ */
+function truncateWithMarker(clean: string, maxChars: number): string {
+  const marker = (kept: number) =>
+    `
+
+[Only the first ${kept.toLocaleString("en-US")} characters of this file were included.]`;
+  // Marker width depends on the digit count of kept, so size it for maxChars (an upper bound).
+  const keep = maxChars - marker(maxChars).length;
+  if (keep <= 0) return clean.slice(0, maxChars);
+  return clean.slice(0, keep) + marker(keep);
 }
