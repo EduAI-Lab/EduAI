@@ -32,6 +32,7 @@ describe("useChatAttachments", () => {
     act(() => result.current.add([file("scan.pdf")]));
     await waitFor(() => expect(result.current.items[0]?.status).toBe("failed"));
     expect(result.current.items[0]?.error).toBe("This file has no readable text.");
+    expect(result.current.items[0]?.retryable).toBe(true);
     expect(result.current.isBlocking).toBe(true);
   });
 
@@ -40,7 +41,7 @@ describe("useChatAttachments", () => {
     const { result } = renderHook(() => useChatAttachments({ upload }));
     act(() => result.current.add([file("photo.png")]));
     expect(upload).not.toHaveBeenCalled();
-    expect(result.current.items[0]).toMatchObject({ status: "failed" });
+    expect(result.current.items[0]).toMatchObject({ status: "failed", retryable: false });
   });
 
   it("refuses a fourth file with a limit message", () => {

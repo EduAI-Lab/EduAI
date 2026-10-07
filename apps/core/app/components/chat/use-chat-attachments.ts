@@ -10,6 +10,8 @@ export type ChatAttachmentItem = {
   status: "pending" | "ready" | "failed";
   truncated: boolean;
   error: string | null;
+  /** True only for a failed item whose type is supported, i.e. an upload failure. */
+  retryable: boolean;
 };
 
 const successSchema = z.object({ text: z.string(), truncated: z.boolean() });
@@ -40,7 +42,7 @@ export async function uploadChatAttachment(
   throw new Error(failure.success ? failure.data.error : FALLBACK_ERROR);
 }
 
-type Entry = ChatAttachmentItem & { text: string | null };
+type Entry = Omit<ChatAttachmentItem, "retryable"> & { text: string | null };
 
 export function useChatAttachments(options: { upload?: typeof uploadChatAttachment } = {}) {
   const upload = options.upload ?? uploadChatAttachment;
@@ -144,6 +146,7 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
         status,
         truncated,
         error,
+        retryable: status === "failed" && classifyAttachmentName(name) !== null,
       })),
     [entries],
   );

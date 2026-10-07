@@ -51,7 +51,7 @@ export function ChatAttachmentChips({
           {item.status === "failed" && item.error && (
             <span className="text-destructive">{item.error}</span>
           )}
-          {item.status === "failed" && onRetry && (
+          {item.retryable && onRetry && (
             <button
               type="button"
               onClick={() => onRetry(item.id)}

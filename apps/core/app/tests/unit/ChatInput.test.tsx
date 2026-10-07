@@ -371,4 +371,41 @@ describe("ChatInput — attachments (#1902)", () => {
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
     expect(onSubmit.mock.calls[0]).toHaveLength(1);
   });
+
+  it("offers Remove but no Retry for an unsupported file", async () => {
+    render(<ChatInput {...makeProps({ input: "q" })} />);
+    pick([new File(["x"], "photo.png")]);
+    expect(await screen.findByText(/can't be attached/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove photo\.png/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry photo\.png/i })).toBeNull();
+  });
+
+  it("offers Retry for a failed upload and re-uploads on click", async () => {
+    stubUploadFail("This file has no readable text.");
+    render(<ChatInput {...makeProps({ input: "q" })} />);
+    pick([new File(["x"], "scan.pdf")]);
+    await screen.findByText("This file has no readable text.");
+    const fetchMock = vi.mocked(fetch);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /retry scan\.pdf/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("ignores files dropped while a response is loading", () => {
+    stubUploadOk("body", false);
+    render(<ChatInput {...makeProps({ input: "q", isLoading: true })} />);
+    fireEvent.drop(screen.getByTestId("chat-composer"), {
+      dataTransfer: { files: [new File(["x"], "late.txt")] },
+    });
+    expect(screen.queryByText("late.txt")).toBeNull();
+  });
+
+  it("does not submit on Enter while a file is still extracting", () => {
+    stubUploadPending();
+    const onSubmit = vi.fn();
+    render(<ChatInput {...makeProps({ input: "summarise", onSubmit })} />);
+    pick([new File(["x"], "notes.md")]);
+    fireEvent.keyDown(screen.getByPlaceholderText("Ask anything…"), { key: "Enter" });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

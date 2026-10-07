@@ -194,7 +194,7 @@ export function ChatInput({
               if (attachmentsEnabled) e.preventDefault();
             }}
             onDrop={(e) => {
-              if (!attachmentsEnabled || controlsDisabled) return;
+              if (!attachmentsEnabled || controlsDisabled || isLoading) return;
               e.preventDefault();
               attachments.add(Array.from(e.dataTransfer.files));
             }}
