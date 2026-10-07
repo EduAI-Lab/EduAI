@@ -8,7 +8,7 @@
  * Complements #1123 RAG coverage (retrieval/grounding) with a per-accepted-type
  * extraction → RAG-block round trip. Do not treat this as a substitute for #1123.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import JSZip from "jszip";
 import {
   ACCEPTED_MATERIAL_MIME_TYPES,
@@ -16,6 +16,7 @@ import {
   ACCEPTED_MATERIAL_TYPE_LABELS,
   MATERIAL_INPUT_ACCEPT,
   MATERIAL_MIME_BY_EXTENSION,
+  isImageMaterialMimeType,
   resolveMaterialMimeType,
   type AcceptedMaterialMimeType,
 } from "~/lib/materials/accepted-types";
@@ -27,6 +28,23 @@ import {
   buildEmptyCourseRagBlock,
   buildRagSystemBlock,
 } from "~/lib/chat-rag";
+
+// #1903: images are transcribed by a vision model at ingest. The model call is the
+// only thing mocked; everything after it (sanitize, chunk, checksum, RAG block) is real.
+const IMAGE_PHRASES = vi.hoisted(
+  () =>
+    new Map([
+      ["image/png", "ZEBRAQUARK-PNG-1903"],
+      ["image/jpeg", "ZEBRAQUARK-JPEG-1903"],
+      ["image/webp", "ZEBRAQUARK-WEBP-1903"],
+    ]),
+);
+vi.mock("~/lib/ai/image-text-extraction.server", () => ({
+  extractImageText: async (_bytes: Uint8Array, mimeType: string) => ({
+    content: `Whiteboard transcription: ${IMAGE_PHRASES.get(mimeType)}`,
+    model: "mock-vision",
+  }),
+}));
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -157,17 +175,57 @@ const ROUND_TRIP_CASES: RoundTripCase[] = [
     phrase: MD_PHRASE,
     build: async () => Buffer.from(`# Week 2\n\nRemember ${MD_PHRASE} from the reading.`),
   },
+  {
+    label: "PNG image (vision transcription)",
+    fileName: "whiteboard.png",
+    mimeType: "image/png",
+    phrase: IMAGE_PHRASES.get("image/png")!,
+    build: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  },
+  {
+    label: "JPEG image (vision transcription)",
+    fileName: "photo.jpg",
+    mimeType: "image/jpeg",
+    phrase: IMAGE_PHRASES.get("image/jpeg")!,
+    build: async () => Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+  },
+  {
+    label: "WebP image (vision transcription)",
+    fileName: "figure.webp",
+    mimeType: "image/webp",
+    phrase: IMAGE_PHRASES.get("image/webp")!,
+    build: async () => Buffer.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50]),
+  },
 ];
 
 describe("accepted course-material types → RAG path (#1785)", () => {
-  it("advertises exactly pdf, docx, pptx, txt, and md on the upload input", () => {
-    const extensions = MATERIAL_INPUT_ACCEPT.split(",").filter((token) => token.startsWith("."));
-    expect(extensions).toEqual([".pdf", ".txt", ".md", ".docx", ".pptx"]);
-    expect(MATERIAL_INPUT_ACCEPT).toContain("application/pdf");
-    expect(MATERIAL_INPUT_ACCEPT).toContain(DOCX_MIME);
-    expect(MATERIAL_INPUT_ACCEPT).toContain(PPTX_MIME);
-    expect(MATERIAL_INPUT_ACCEPT).toContain("text/plain");
-    expect(MATERIAL_INPUT_ACCEPT).toContain("text/markdown");
+  it("advertises exactly pdf, docx, pptx, txt, md, and png/jpg/jpeg/webp images on the upload input", () => {
+    const tokens = MATERIAL_INPUT_ACCEPT.split(",");
+    const extensions = tokens.filter((token) => token.startsWith("."));
+    expect(extensions).toEqual([
+      ".pdf",
+      ".txt",
+      ".md",
+      ".docx",
+      ".pptx",
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp",
+    ]);
+    for (const mime of [
+      "application/pdf",
+      DOCX_MIME,
+      PPTX_MIME,
+      "text/plain",
+      "text/markdown",
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ]) {
+      // Once each: .jpg and .jpeg share image/jpeg, which must not be listed twice.
+      expect(tokens.filter((token) => token === mime)).toHaveLength(1);
+    }
   });
 
   it("has an extraction case for every type on the shared accepted list, and no others", () => {
@@ -193,15 +251,35 @@ describe("accepted course-material types → RAG path (#1785)", () => {
     expect([...MATERIAL_MIME_BY_EXTENSION]).toEqual(
       ACCEPTED_MATERIAL_TYPES.map((type) => [type.extension, type.mimeType]),
     );
-    // Canvas builds its allow-list from these exports; a type added to the
-    // shared list is importable from Canvas with no second edit.
+    // Canvas builds its allow-list from these exports; a document type added to
+    // the shared list is importable from Canvas with no second edit. Images
+    // (#1903) are the one deliberate exception: upload-only, so Canvas filters
+    // them out of both its MIME set and its extension map.
     const canvasSource = (await import("node:fs")).readFileSync(
       new URL("../../lib/canvas/materials.server.ts", import.meta.url),
       "utf8",
     );
-    expect(canvasSource).toContain("new Set(ACCEPTED_MATERIAL_MIME_TYPES)");
-    expect(canvasSource).toContain("= MATERIAL_MIME_BY_EXTENSION");
-    expect(ACCEPTED_MATERIAL_TYPE_LABELS).toBe("PDF, TXT, MD, DOCX, PPTX");
+    expect(canvasSource).toMatch(
+      /new Set\(\s*ACCEPTED_MATERIAL_MIME_TYPES\.filter\(\(mimeType\) => !isImageMaterialMimeType\(mimeType\)\),?\s*\)/,
+    );
+    expect(canvasSource).toMatch(
+      /new Map\(\s*\[\.\.\.MATERIAL_MIME_BY_EXTENSION\]\.filter\(\(\[, mimeType\]\) => !isImageMaterialMimeType\(mimeType\)\),?\s*\)/,
+    );
+    expect(ACCEPTED_MATERIAL_TYPE_LABELS).toBe("PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP");
+  });
+
+  it("keeps images out of Canvas: they are upload-only (#1903)", () => {
+    const imageMimes = ACCEPTED_MATERIAL_MIME_TYPES.filter(isImageMaterialMimeType);
+    expect(imageMimes).toEqual(["image/png", "image/jpeg", "image/webp"]);
+    // Every non-image type is still importable; no image type is.
+    const importable = ACCEPTED_MATERIAL_MIME_TYPES.filter((m) => !isImageMaterialMimeType(m));
+    expect(importable).toEqual([
+      "application/pdf",
+      "text/plain",
+      "text/markdown",
+      DOCX_MIME,
+      PPTX_MIME,
+    ]);
   });
 
   it("resolves an empty browser-reported type from the extension (N2)", () => {

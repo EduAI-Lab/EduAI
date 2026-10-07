@@ -25,12 +25,31 @@ export const ACCEPTED_MATERIAL_TYPES = [
     extension: ".pptx",
     mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   },
+  // Images (#1903): transcribed to text by a vision model at ingest. Upload-only:
+  // the Canvas importer filters these out (see `isImageMaterialMimeType`).
+  { extension: ".png", mimeType: "image/png" },
+  { extension: ".jpg", mimeType: "image/jpeg" },
+  { extension: ".jpeg", mimeType: "image/jpeg" },
+  { extension: ".webp", mimeType: "image/webp" },
 ] as const;
 
 export type AcceptedMaterialMimeType = (typeof ACCEPTED_MATERIAL_TYPES)[number]["mimeType"];
 
-export const ACCEPTED_MATERIAL_MIME_TYPES: readonly AcceptedMaterialMimeType[] =
-  ACCEPTED_MATERIAL_TYPES.map((type) => type.mimeType);
+const IMAGE_MATERIAL_MIME_TYPES: ReadonlySet<string> = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+/** True for the image entries above, which need a vision model rather than a text parser. */
+export function isImageMaterialMimeType(mimeType: string): boolean {
+  return IMAGE_MATERIAL_MIME_TYPES.has(mimeType);
+}
+
+// Deduplicated: `.jpg` and `.jpeg` are two extensions for one MIME type.
+export const ACCEPTED_MATERIAL_MIME_TYPES: readonly AcceptedMaterialMimeType[] = [
+  ...new Set(ACCEPTED_MATERIAL_TYPES.map((type) => type.mimeType)),
+];
 
 /** Value for the upload input's `accept`: extensions first, then MIME types. */
 export const MATERIAL_INPUT_ACCEPT = [
@@ -43,7 +62,7 @@ export const MATERIAL_MIME_BY_EXTENSION: ReadonlyMap<string, AcceptedMaterialMim
   ACCEPTED_MATERIAL_TYPES.map((type) => [type.extension, type.mimeType]),
 );
 
-/** Human-readable list for error text, e.g. "PDF, TXT, MD, DOCX, PPTX". */
+/** Human-readable list for error text, e.g. "PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP". */
 export const ACCEPTED_MATERIAL_TYPE_LABELS: string = ACCEPTED_MATERIAL_TYPES.map((type) =>
   type.extension.slice(1).toUpperCase(),
 ).join(", ");
