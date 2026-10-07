@@ -265,7 +265,7 @@ describe("accepted course-material types → RAG path (#1785)", () => {
     expect(canvasSource).toMatch(
       /new Map\(\s*\[\.\.\.MATERIAL_MIME_BY_EXTENSION\]\.filter\(\(\[, mimeType\]\) => !isImageMaterialMimeType\(mimeType\)\),?\s*\)/,
     );
-    expect(ACCEPTED_MATERIAL_TYPE_LABELS).toBe("PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP");
+    expect(ACCEPTED_MATERIAL_TYPE_LABELS).toBe("PDF, TXT, MD, DOCX, PPTX, PNG, JPG, WEBP");
   });
 
   it("keeps images out of Canvas: they are upload-only (#1903)", () => {

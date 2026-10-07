@@ -237,7 +237,7 @@ describe("validateFile", () => {
     const result = validateFile({ name: "notes.xyz", type: "", size: 100 });
     expect(result.isValid).toBe(false);
     expect(result.error).toBe(
-      "File type  is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP",
+      "File type  is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, WEBP",
     );
   });
 

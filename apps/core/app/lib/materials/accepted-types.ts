@@ -62,9 +62,15 @@ export const MATERIAL_MIME_BY_EXTENSION: ReadonlyMap<string, AcceptedMaterialMim
   ACCEPTED_MATERIAL_TYPES.map((type) => [type.extension, type.mimeType]),
 );
 
-/** Human-readable list for error text, e.g. "PDF, TXT, MD, DOCX, PPTX, PNG, JPG, JPEG, WEBP". */
-export const ACCEPTED_MATERIAL_TYPE_LABELS: string = ACCEPTED_MATERIAL_TYPES.map((type) =>
-  type.extension.slice(1).toUpperCase(),
+/**
+ * Human-readable list for error text, e.g. "PDF, TXT, MD, DOCX, PPTX, PNG, JPG, WEBP".
+ * One label per format: `.jpg` and `.jpeg` are one type, so only the first is named,
+ * matching the upload hint (#1903 review).
+ */
+export const ACCEPTED_MATERIAL_TYPE_LABELS: string = ACCEPTED_MATERIAL_MIME_TYPES.map((mimeType) =>
+  ACCEPTED_MATERIAL_TYPES.find((type) => type.mimeType === mimeType)!
+    .extension.slice(1)
+    .toUpperCase(),
 ).join(", ");
 
 /**
