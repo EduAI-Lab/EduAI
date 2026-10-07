@@ -39,6 +39,14 @@ const TOURS = {
       },
     ],
   },
+  firstMissing: {
+    id: "firstMissing",
+    storageKey: "test:tour:firstMissing",
+    steps: [
+      { id: "gone", target: "missing", title: "Gone", body: "Never shown.", waitMs: 0 },
+      { id: "hero", target: "hero", title: "Hero", body: "The hero." },
+    ],
+  },
 } satisfies Record<string, TourDefinition>;
 
 /** Minimal in-memory router: each path renders the targets its page would have. */
@@ -97,6 +105,18 @@ describe("TourProvider", () => {
     expect(await screen.findByRole("heading", { name: "Hero" })).toBeInTheDocument();
     expect(screen.queryByText("Absent")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
+  it("returns to the current step when Back finds the earlier target missing", async () => {
+    render(<Harness />);
+    act(() => controls.startTour("firstMissing"));
+    expect(await screen.findByRole("heading", { name: "Hero" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Hero" })).toBeInTheDocument());
+    expect(screen.queryByText("Gone")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(controls.isRunning).toBe(false));
   });
 
   it("marks the tour seen when finished or skipped", async () => {

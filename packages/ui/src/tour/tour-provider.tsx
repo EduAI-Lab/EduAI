@@ -22,6 +22,8 @@ interface TourRun {
   index: number;
   direction: 1 | -1;
   routes: TourRoutes;
+  /** The step Back was pressed on, so a vanished earlier step falls back to it. */
+  backFrom?: number;
   /** Bumped per run so stale async step resolutions are ignored. */
   token: number;
 }
@@ -102,14 +104,18 @@ export function TourProvider({ tours, location, navigate, children }: TourProvid
   const goTo = React.useCallback(
     (current: TourRun, routes: TourRoutes, from: number, direction: 1 | -1) => {
       const { steps } = current.tour;
-      const next =
-        findAvailableStep(steps, routes, from, direction) ??
-        (direction === -1 ? findAvailableStep(steps, routes, current.index, 1) : null);
+      let next = findAvailableStep(steps, routes, from, direction);
+      let travel = direction;
+      if (next === null && direction === -1) {
+        next = findAvailableStep(steps, routes, current.backFrom ?? current.index, 1);
+        travel = 1;
+      }
       if (next === null) {
         finish(current.tour);
         return;
       }
-      setRun({ ...current, index: next, direction, routes });
+      const backFrom = travel === -1 ? current.backFrom : undefined;
+      setRun({ ...current, index: next, direction: travel, routes, backFrom });
     },
     [finish],
   );
@@ -189,7 +195,7 @@ export function TourProvider({ tours, location, navigate, children }: TourProvid
 
   const handleBack = React.useCallback(() => {
     if (!run) return;
-    goTo(run, run.routes, run.index - 1, -1);
+    goTo({ ...run, backFrom: run.index }, run.routes, run.index - 1, -1);
   }, [run, goTo]);
 
   const value = React.useMemo<TourContextValue>(
