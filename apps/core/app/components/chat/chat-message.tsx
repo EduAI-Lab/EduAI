@@ -22,6 +22,7 @@ import { shouldApplyAssistiveDisplayTransform } from "~/components/chat/chat-pro
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
+import { ChatAttachmentChips } from "./chat-attachment-chips";
 // Streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
 // Every Core surface that renders markdown reaches ChatMessage, so importing here
 // keeps the stylesheet off routes that render no markdown. KaTeX's sheet is not
@@ -209,6 +210,16 @@ function ChatMessageBody({
     return (
       <div className={cn("flex justify-end mb-4", highlightClass)}>
         <div className="rounded-2xl bg-muted/60 px-4 py-3 max-w-[80%] min-w-0">
+          <ChatAttachmentChips
+            className="mb-2"
+            items={(message.experimental_attachments ?? [])
+              .filter((attachment) => attachment.contentType === "text/plain")
+              .map((attachment, index) => ({
+                id: `${message.id}-attachment-${index}`,
+                name: attachment.name ?? "attachment",
+                status: "ready" as const,
+              }))}
+          />
           <div
             className={cn(
               "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
