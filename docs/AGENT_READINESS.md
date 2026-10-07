@@ -178,7 +178,7 @@ RAG search still has no standalone HTTP route, by design — it is reached in-pr
 
 ### Not agent-ready (explicitly out of scope)
 
-35 endpoints carry `readiness: "excluded"` with a `reason`. Representative entries:
+36 endpoints carry `readiness: "excluded"` with a `reason`. Representative entries:
 
 | Method | Path | Reason |
 | ------ | ---- | ------ |
