@@ -54,6 +54,7 @@ export function ChatAttachmentChips({
           {item.retryable && onRetry && (
             <button
               type="button"
+              className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => onRetry(item.id)}
               aria-label={`Retry ${item.name}`}
             >
@@ -63,6 +64,7 @@ export function ChatAttachmentChips({
           {onRemove && (
             <button
               type="button"
+              className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => onRemove(item.id)}
               aria-label={`Remove ${item.name}`}
             >

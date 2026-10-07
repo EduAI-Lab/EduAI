@@ -38,7 +38,8 @@ interface ChatInputProps {
   input: string;
   isLoading: boolean;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>, options?: ChatSubmitOptions) => void;
+  /** Return `false` when the send was swallowed so the composer keeps its attached files. */
+  onSubmit: (e: React.FormEvent<HTMLFormElement>, options?: ChatSubmitOptions) => boolean | void;
   onStop?: () => void;
   selectedCourseId: string | null;
   setSelectedCourseId: (value: string | null) => void;
@@ -153,12 +154,11 @@ export function ChatInput({
       preventDefault: () => {},
       currentTarget: {} as HTMLFormElement,
     } as React.FormEvent<HTMLFormElement>;
-    if (attachments.attachments.length > 0) {
-      onSubmit(formEvent, { experimental_attachments: attachments.attachments });
-    } else {
-      onSubmit(formEvent);
-    }
-    attachments.clear();
+    const sent =
+      attachments.attachments.length > 0
+        ? onSubmit(formEvent, { experimental_attachments: attachments.attachments })
+        : onSubmit(formEvent);
+    if (sent !== false) attachments.clear();
   };
 
   const selectedCourse = selectedCourseId
@@ -194,8 +194,10 @@ export function ChatInput({
               if (attachmentsEnabled) e.preventDefault();
             }}
             onDrop={(e) => {
-              if (!attachmentsEnabled || controlsDisabled || isLoading) return;
+              // Always claim the drop so the browser never navigates to the file.
+              if (!attachmentsEnabled) return;
               e.preventDefault();
+              if (controlsDisabled || isLoading) return;
               attachments.add(Array.from(e.dataTransfer.files));
             }}
             className={cn(

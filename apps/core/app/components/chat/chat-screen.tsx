@@ -739,7 +739,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       // concurrent request. Bail while a chip submit is still settling.
       if (promptSubmitInFlightRef.current) {
         e.preventDefault();
-        return;
+        return false;
       }
       if (!chatId) {
         postAssistiveClientEvent({

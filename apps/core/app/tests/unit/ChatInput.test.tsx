@@ -394,10 +394,33 @@ describe("ChatInput — attachments (#1902)", () => {
   it("ignores files dropped while a response is loading", () => {
     stubUploadOk("body", false);
     render(<ChatInput {...makeProps({ input: "q", isLoading: true })} />);
-    fireEvent.drop(screen.getByTestId("chat-composer"), {
+    const notPrevented = fireEvent.drop(screen.getByTestId("chat-composer"), {
       dataTransfer: { files: [new File(["x"], "late.txt")] },
     });
     expect(screen.queryByText("late.txt")).toBeNull();
+    // The browser must not navigate to the dropped file mid-stream.
+    expect(notPrevented).toBe(false);
+  });
+
+  it("keeps the attached chips when onSubmit reports the send was swallowed", async () => {
+    stubUploadOk("body", false);
+    const onSubmit = vi.fn().mockReturnValue(false);
+    render(<ChatInput {...makeProps({ input: "q", onSubmit })} />);
+    pick([new File(["x"], "notes.md")]);
+    expect(await screen.findByText("notes.md")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("notes.md")).toBeInTheDocument();
+  });
+
+  it("clears the chips after a send that is not swallowed", async () => {
+    stubUploadOk("body", false);
+    const onSubmit = vi.fn();
+    render(<ChatInput {...makeProps({ input: "q", onSubmit })} />);
+    pick([new File(["x"], "notes.md")]);
+    expect(await screen.findByText("notes.md")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(screen.queryByText("notes.md")).toBeNull();
   });
 
   it("does not submit on Enter while a file is still extracting", () => {

@@ -74,7 +74,8 @@ export type ChatViewSharedProps = {
   onSystemPromptSave: (prompt: string | null) => Promise<void>;
   webToolsEnabled: boolean;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>, options?: ChatSubmitOptions) => void;
+  /** Return `false` when the send was swallowed so the composer keeps its attached files. */
+  onSubmit: (e: React.FormEvent<HTMLFormElement>, options?: ChatSubmitOptions) => boolean | void;
   onStop?: () => void;
   onSelectPrompt: (prompt: string) => void;
   isStudentWithCourseChat?: boolean;
