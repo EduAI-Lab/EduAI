@@ -10,6 +10,7 @@ import {
 } from "@eduai/ui";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { useTourQueryParam } from "~/components/tour/use-tour-query-param";
 import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
 import {
   DASHBOARD_CONFIG,
@@ -146,6 +147,7 @@ function DashboardContent({
 export default function Page() {
   const { user, isTA, dashboard, canvasIntegration } = useLoaderData<typeof loader>();
   useAutoStartTour("dashboard");
+  useTourQueryParam("dashboard");
 
   return (
     <CoreAppShell
