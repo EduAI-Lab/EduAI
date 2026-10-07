@@ -123,11 +123,24 @@ check_service eduai-core.service
 check_service eduai-aitutor-server.service
 check_service eduai-qm-backend.service
 check_service eduai-cron-worker.service
-# The cron worker runs as eduai-cron, not eduai, and fleet.config.json is
-# gitignored and deployed out of band — a worker that cannot read it samples
-# nothing and the status panel silently stays empty.
-sudo -u eduai-cron test -r /srv/www/eduai-production/current/apps/core/fleet.config.json \
-  || warn "fleet.config.json not readable by eduai-cron"
+# fleet.config.json must live outside release dirs (FLEET_CONFIG_PATH).
+FLEET_CONFIG_PATH_SET=$(sudo sed -n 's/^FLEET_CONFIG_PATH=//p' /etc/eduai/eduai-core.env | tail -1)
+FLEET_CONFIG=${FLEET_CONFIG_PATH_SET:-/srv/www/eduai-production/current/apps/core/fleet.config.json}
+[ -n "$FLEET_CONFIG_PATH_SET" ] \
+  || warn "FLEET_CONFIG_PATH unset; fleet.config.json is read from the release dir and is lost on every activate-release"
+# The AI status probe runs only in eduai-cron-worker (User=eduai-cron,
+# SupplementaryGroups=eduai); systemd-run gives the check the same groups.
+sudo systemd-run --wait --quiet --pipe -p User=eduai-cron -p SupplementaryGroups=eduai \
+  test -r "$FLEET_CONFIG" \
+  || warn "fleet.config.json not readable by eduai-cron at $FLEET_CONFIG"
+# The admin Servers tab writes the file as Core's service user.
+CORE_USER=$(systemctl show -p User --value eduai-core.service 2>/dev/null)
+if [ -z "$CORE_USER" ]; then
+  warn "could not determine eduai-core's User=; skipping the Core read check"
+else
+  sudo -u "$CORE_USER" test -r "$FLEET_CONFIG" \
+    || warn "fleet.config.json not readable by $CORE_USER at $FLEET_CONFIG"
+fi
 grep -q '^VLLM_API_KEY=' /etc/eduai/eduai-core.env \
   || warn "VLLM_API_KEY missing; the status probe will record UNKNOWN for every host"
 ss -ltn 2>/dev/null | grep -E ':(80|443|3000|4000|5432|6379|8000|8001)\b' || true

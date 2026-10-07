@@ -24,6 +24,8 @@ eval-runs/
 node_modules/
 # also ignore node_modules symlinks (trailing-slash rule above matches dirs only)
 node_modules
+# npm temp rename links
+.node_modules-*
 
 # Environment files
 .env

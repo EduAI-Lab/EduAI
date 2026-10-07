@@ -31,6 +31,8 @@ export { StatCard } from "./stat-card";
 export type { StatCardProps } from "./stat-card";
 export { EmptyState } from "./empty-state";
 export type { EmptyStateProps } from "./empty-state";
+export { NotFoundState } from "./not-found-state";
+export type { NotFoundStateProps } from "./not-found-state";
 export { MaterialList } from "./material-list";
 export type { MaterialListProps, MaterialListItem } from "./material-list";
 export { QuickActionsPanel } from "./quick-actions-panel";

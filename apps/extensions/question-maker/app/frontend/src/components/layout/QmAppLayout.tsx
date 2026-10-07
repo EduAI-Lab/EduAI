@@ -16,10 +16,10 @@ import {
   AIServiceHistoryPanel,
   useHistoryOnOpen,
   AIServiceIndicators,
-  NavSecondary,
   type HistoryPayload,
 } from "@eduai/ui";
 import {
+  IconArrowLeft,
   IconBooks,
   IconBug,
   IconDashboard,
@@ -128,7 +128,7 @@ const NAV_ICONS = {
   library: IconLibrary,
   help: IconHelpCircle,
   "bug-reports": IconBug,
-  "back-to-eduai": IconBooks,
+  "back-to-eduai": IconArrowLeft,
 } satisfies Record<QmNavItemKey, Icon>;
 
 /** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
@@ -258,9 +258,7 @@ function QmAppLayoutInner() {
         logoHref: "/dashboard",
         navMain,
         navSecondary,
-        footerLeading: (
-          <NavSecondary items={navFooter} currentPath={pathname} LinkComponent={Link} />
-        ),
+        navFooter,
         currentPath: pathname,
         LinkComponent: Link,
         launcher: {
@@ -414,7 +412,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           logoHref: "/dashboard",
           navMain,
           navSecondary,
-          footerLeading: <NavSecondary items={navFooter} currentPath="/" LinkComponent={Link} />,
+          navFooter,
           currentPath: "/",
           LinkComponent: Link,
           launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },

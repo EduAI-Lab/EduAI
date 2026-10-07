@@ -1,13 +1,5 @@
 import { ReactNode, useEffect } from "react";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  PageLoader,
-} from "@eduai/ui";
+import { Button, PageLoader } from "@eduai/ui";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { canAccessQm } from "@/lib/rbac/roles";
@@ -32,27 +24,25 @@ export function QmAppGate({ children }: QmAppGateProps) {
     return <PageLoader />;
   }
 
+  // Same bare, centred card AI Tutor shows (ai-tutor/app/routes/home.tsx): with
+  // no verified user there is no sidebar worth drawing around it.
   if (authError) {
     return (
-      <QmAccessShell>
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <IconAlertTriangle className="mb-2 size-8 text-destructive" aria-hidden="true" />
-            <CardTitle>
-              <h1>Authentication service unavailable</h1>
-            </CardTitle>
-            <CardDescription>
+      <main className="flex min-h-dvh items-center justify-center bg-background p-6">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-xl border bg-card p-8 text-center shadow-sm">
+          <IconAlertTriangle className="size-10 text-destructive" aria-hidden="true" />
+          <div className="space-y-2">
+            <h1 className="text-xl font-semibold">Authentication service unavailable</h1>
+            <p className="text-sm text-muted-foreground">
               Question Maker could not verify your EduAI session. Your browser session was not
               treated as logged out. Try again when Core is available.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button type="button" onClick={() => window.location.reload()}>
-              Try again
-            </Button>
-          </CardContent>
-        </Card>
-      </QmAccessShell>
+            </p>
+          </div>
+          <Button type="button" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </div>
+      </main>
     );
   }
 

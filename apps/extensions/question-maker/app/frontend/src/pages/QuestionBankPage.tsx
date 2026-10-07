@@ -6,6 +6,7 @@
  *
  * Search / type / difficulty / AI / draft filters and sort are applied server-side
  * with limit/offset so pagination totals stay correct (#1040 review).
+ * The bank facet is enabled once a course is picked, since bank ids are course-scoped (#1762).
  */
 import { useEffect, useMemo, useState } from "react";
 import { PageHeading, Badge, QuestionStatusBadge, EmptyState, Button } from "@eduai/ui";
@@ -33,6 +34,11 @@ import {
   type QuestionSort,
 } from "@/components/question-bank/QuestionFilterToolbar";
 import { QuestionPreviewSheet } from "@/components/question-bank/QuestionPreviewSheet";
+import {
+  questionBankService,
+  type QuestionBank as QuestionBankModel,
+} from "@/services/questionBankService";
+import { toBankOptions } from "@/components/question-bank/questionListFilters";
 
 const COURSE_ALL = "__all__";
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -79,6 +85,42 @@ export default function QuestionBankPage() {
     courseFilter !== COURSE_ALL && Number.isFinite(Number(courseFilter))
       ? Number(courseFilter)
       : undefined;
+
+  const [courseBanks, setCourseBanks] = useState<QuestionBankModel[]>([]);
+  const [banksUnavailable, setBanksUnavailable] = useState(false);
+
+  // Bank ids belong to one course, so the facet only loads once a course is picked.
+  useEffect(() => {
+    setCourseBanks([]);
+    setBanksUnavailable(false);
+    if (courseId === undefined) return;
+    let cancelled = false;
+    questionBankService
+      .listBanks(courseId)
+      .then((banks) => {
+        if (!cancelled) setCourseBanks(banks);
+      })
+      .catch(() => {
+        if (!cancelled) setBanksUnavailable(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
+  const bankOptions = useMemo(() => toBankOptions(courseBanks), [courseBanks]);
+  const bankDisabledHint =
+    courseId === undefined
+      ? "Pick a course to filter by bank"
+      : banksUnavailable
+        ? "Banks unavailable"
+        : undefined;
+
+  // A bank id is meaningless in another course (and the API rejects a bank without a course).
+  const handleCourseChange = (value: string) => {
+    setCourseFilter(value);
+    setFilters((prev) => ({ ...prev, questionBankId: null }));
+  };
 
   const { questions, total, isLoading, error } = useAllQuestions({
     courseId,
@@ -136,7 +178,9 @@ export default function QuestionBankPage() {
         onSortChange={setSortBy}
         courseOptions={courseOptions}
         courseValue={courseFilter}
-        onCourseChange={setCourseFilter}
+        onCourseChange={handleCourseChange}
+        bankOptions={bankOptions}
+        bankDisabledHint={bankDisabledHint}
       />
 
       {!isLoading && !error && (total > 0 || hasFilters) && (

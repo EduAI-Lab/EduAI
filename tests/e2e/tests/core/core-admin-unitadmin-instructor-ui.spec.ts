@@ -428,12 +428,13 @@ test.describe("Unit Admin (unitadmin.cosc@eduai.local) — cross-course scope UI
       // enabled `link` role, since a disabled item may not expose one.
       await expect(page.getByText("Invitations", { exact: true })).toBeVisible();
 
-      // unitAdmins.canInvite defaults to false — the whole route redirects to
-      // /dashboard per its loader (unit-admin.invitations.tsx), matching the
-      // nav item's disabled state rather than a broken link.
+      // unitAdmins.canInvite defaults to false — the route answers with the
+      // generic 404 per its loader (unit-admin.invitations.tsx), matching the
+      // nav item's disabled state.
       await page.goto(`${CORE_URL}/unit-admin/invitations`);
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/dashboard/);
+      await expect(page).toHaveURL(/\/unit-admin\/invitations/);
+      await expect(page.getByText("404 — Page not found")).toBeVisible();
     } finally {
       await ctx.dispose();
     }
@@ -476,7 +477,7 @@ test.describe("Unit Admin (unitadmin.cosc@eduai.local) — cross-course scope UI
     }
   });
 
-  test("SECURITY: direct navigation to an ADMIN-only page redirects a UNIT_ADMIN away", async ({
+  test("SECURITY: direct navigation to an ADMIN-only page shows a UNIT_ADMIN the 404", async ({
     page,
     playwright,
   }) => {
@@ -486,7 +487,8 @@ test.describe("Unit Admin (unitadmin.cosc@eduai.local) — cross-course scope UI
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/admin/users`);
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/dashboard/);
+      await expect(page).toHaveURL(/\/admin\/users/);
+      await expect(page.getByText("404 — Page not found")).toBeVisible();
     } finally {
       await ctx.dispose();
     }
@@ -578,7 +580,7 @@ test.describe("Instructor (instructor.cs@eduai.local) — own-course console UI"
     }
   });
 
-  test("SECURITY: sidebar has no Administration group and admin routes redirect away", async ({
+  test("SECURITY: sidebar has no Administration group and admin routes show the 404", async ({
     page,
     playwright,
   }) => {
@@ -593,7 +595,8 @@ test.describe("Instructor (instructor.cs@eduai.local) — own-course console UI"
 
       await page.goto(`${CORE_URL}/admin/ai-models`);
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/dashboard/);
+      await expect(page).toHaveURL(/\/admin\/ai-models/);
+      await expect(page.getByText("404 — Page not found")).toBeVisible();
     } finally {
       await ctx.dispose();
     }

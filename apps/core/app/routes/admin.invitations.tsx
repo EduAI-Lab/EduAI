@@ -57,6 +57,7 @@ import {
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 import { asPresentText } from "~/lib/json-value";
 
 type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
@@ -94,7 +95,7 @@ const ROLE_LABEL = {
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
-  if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
+  if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) throw notFound(session.user);
   return {
     user: session.user,
     invitableRoles: invitableRolesFor(session.user.role),
@@ -552,3 +553,5 @@ function errorMessage(code: JsonValue, status: number, role?: string, details?: 
       return asPresentText(code) ?? `Request failed (${status}).`;
   }
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

@@ -27,6 +27,7 @@ import { apiFetch } from "~/hooks/api/config";
 import { usePolicies } from "~/hooks/api/use-policies";
 import { getEnvironmentHealth } from "~/lib/environment-health.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 import { getChatDailyLimitSettings } from "~/lib/chat-daily-limits.server";
 import type { ChatDailyLimitSettings } from "~/lib/chat-daily-limits";
 import { getBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings.server";
@@ -85,7 +86,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   if (session.user.role !== "ADMIN") {
-    return redirect("/dashboard");
+    throw notFound(session.user);
   }
 
   return {
@@ -230,3 +231,5 @@ export default function AdminSettingsPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

@@ -13,8 +13,9 @@ import {
   type BugReportSubmitData,
   type HistoryPayload,
 } from "@eduai/ui";
-import { getCoreStatusUrl } from "../lib/coreUrl";
+import { getCoreDashboardUrl, getCoreStatusUrl } from "../lib/coreUrl";
 import {
+  IconArrowLeft,
   IconBooks,
   IconDashboard,
   IconHelpCircle,
@@ -181,6 +182,15 @@ function AppLayoutInner() {
           LinkComponent: Link,
           onLogout: handleLogout,
         },
+        // Same "Back to EduAI" footer link Question Maker shows.
+        navFooter: [
+          {
+            title: "Back to EduAI",
+            url: getCoreDashboardUrl(),
+            icon: IconArrowLeft,
+            external: true,
+          },
+        ],
         // Guide-tour control lives in the sidebar footer (#740 / #952), not header chrome.
         footerLeading: <TourButton />,
       }}

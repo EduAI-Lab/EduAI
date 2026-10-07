@@ -14,6 +14,7 @@ import {
   Input,
   Badge,
 } from "@eduai/ui";
+import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import { questionService } from "../../services/questionService";
 import { questionBankService } from "../../services/questionBankService";
@@ -118,6 +119,7 @@ export function AddQuestionsToBankDialog({
     if (!courseId || !bankId || selectedIds.size === 0 || isSaving) return;
     setIsSaving(true);
     let added = 0;
+    let alreadyInBank = 0;
     let failed = 0;
     try {
       for (const questionId of selectedIds) {
@@ -125,17 +127,33 @@ export function AddQuestionsToBankDialog({
         try {
           await questionBankService.addQuestionToBank(courseId, bankId, questionId);
           added += 1;
-        } catch {
-          failed += 1;
+        } catch (err) {
+          // Core answers 409 when the bank already holds the question (added
+          // elsewhere since this dialog loaded): it is where the user wants it.
+          if (isAxiosError(err) && err.response?.status === 409) alreadyInBank += 1;
+          else failed += 1;
         }
       }
       if (added > 0) {
+        const notes = [
+          alreadyInBank ? `${alreadyInBank} already in the bank` : "",
+          failed ? `${failed} failed` : "",
+        ].filter(Boolean);
         toast("Questions added", {
           description: `${added} question${added === 1 ? "" : "s"} added to ${bankName || "bank"}${
-            failed ? ` (${failed} failed)` : ""
+            notes.length ? ` (${notes.join(", ")})` : ""
           }.`,
         });
         onAdded?.(added);
+        onClose();
+      } else if (alreadyInBank > 0 && failed === 0) {
+        toast("Already in bank", {
+          description: `${alreadyInBank === 1 ? "That question is" : "Those questions are"} already in ${
+            bankName || "this bank"
+          }.`,
+        });
+        // Refresh so the list shows the memberships the dialog didn't know about.
+        onAdded?.(0);
         onClose();
       } else {
         toast.error("Could not add questions", {

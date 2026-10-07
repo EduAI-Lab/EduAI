@@ -3,8 +3,15 @@
  * Defines navigation for login, homepage, assessments, help, and an optional API test route.
  */
 import { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from "react-router";
-import { Toaster, ThemeProvider, ThemeSyncInitializer } from "@eduai/ui";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  Link,
+  useSearchParams,
+} from "react-router";
+import { Toaster, ThemeProvider, ThemeSyncInitializer, NotFoundState } from "@eduai/ui";
 import { AuthProvider } from "./contexts/AuthContext";
 import { QmAppGate } from "./components/auth/QmAppGate";
 import { QmAppLayout } from "./components/layout/QmAppLayout";
@@ -195,7 +202,7 @@ function App() {
                           path="/assessment-variant"
                           element={<RedirectLegacyVariantRoute />}
                         />
-                        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="*" element={<NotFoundState LinkComponent={Link} />} />
                       </Route>
                       <Route path="/landing" element={<Navigate to="/dashboard" replace />} />
                       {import.meta.env.DEV && <Route path="/api-test" element={<ApiTestPage />} />}

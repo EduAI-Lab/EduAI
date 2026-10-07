@@ -31,6 +31,13 @@ export interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
    */
   launcher?: Pick<BrandSwitcherProps, "apps" | "currentAppId" | "role">;
   /**
+   * Links pinned to the top of the sidebar footer — e.g. the extensions'
+   * "Back to EduAI" link. Rendered without the nav group's own padding, so the
+   * rows line up with the main and secondary nav instead of sitting indented
+   * inside the footer's padding.
+   */
+  navFooter?: NavSecondaryItem[];
+  /**
    * Optional leading content in the sidebar footer (above the app switcher /
    * user menu) — e.g. AI Tutor's "Take Tour" control (#740).
    */
@@ -47,6 +54,7 @@ export function AppSidebar({
   user,
   navUser,
   launcher,
+  navFooter = [],
   footerLeading,
   ...props
 }: AppSidebarProps) {
@@ -84,6 +92,14 @@ export function AppSidebar({
         )}
       </SidebarContent>
       <SidebarFooter>
+        {navFooter.length > 0 && (
+          <NavSecondary
+            items={navFooter}
+            currentPath={currentPath}
+            LinkComponent={LinkComponent}
+            className="p-0"
+          />
+        )}
         {footerLeading}
         {launcher && <AppSwitcher {...launcher} />}
         <NavUser user={user} LinkComponent={LinkComponent} {...navUser} />

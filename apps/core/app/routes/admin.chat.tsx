@@ -23,6 +23,7 @@ import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { notFound } from "~/lib/not-found.server";
 import {
   cancelChatRequest,
   fetchChatWithRequestId,
@@ -36,7 +37,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   if (session.user.role !== "ADMIN") {
-    return redirect("/dashboard");
+    throw notFound(session.user);
   }
 
   const dbModels = await prisma.aIModel.findMany({
@@ -356,3 +357,5 @@ export default function AdminChatPage() {
     </CoreAppShell>
   );
 }
+
+export { RouteErrorState as ErrorBoundary } from "~/components/shared/route-error-state";

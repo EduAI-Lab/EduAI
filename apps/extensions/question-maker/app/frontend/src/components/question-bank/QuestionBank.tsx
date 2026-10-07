@@ -1,8 +1,9 @@
 /**
- * Question browser for the course Questions tab: a compact filter toolbar, a sort +
- * grid/list view toggle, and a responsive grid of question cards. Creation/upload
- * actions sit in the header; filtering is client-side. The cross-course Question
- * Library (pages/QuestionBankPage) shares the same toolbar for a consistent feel.
+ * Question browser for the course Questions tab and the bank detail page: a compact
+ * filter toolbar, a sort + grid/list view toggle, and a responsive grid of question
+ * cards. It is controlled — the page owns search/filters/sort and sends them to the
+ * server with limit/offset so totals stay correct (#1762). The only client-side step
+ * hides variants of a matched question that fail variant-level filters.
  */
 import { useMemo, useState } from "react";
 import { Button, cn, EmptyState } from "@eduai/ui";
@@ -21,18 +22,33 @@ import { QuestionCard } from "./QuestionCard";
 import {
   QuestionFilterToolbar,
   EMPTY_QUESTION_FILTERS,
+  countActiveFilters,
+  type BankOption,
   type QuestionFilters,
   type QuestionSort,
 } from "./QuestionFilterToolbar";
+import { variantMatchesFilters } from "./questionListFilters";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
 
 interface QuestionBankProps {
   variants: QuestionVariantEntry[];
+  /** Server total for the current filters (questions, not variant cards). */
+  total: number;
+  searchTerm: string;
+  onSearchChange: (value: string) => void;
+  filters: QuestionFilters;
+  onFiltersChange: (filters: QuestionFilters) => void;
+  sortBy: QuestionSort;
+  onSortChange: (sort: QuestionSort) => void;
+  /** Bank facet options — omit on surfaces fixed to one bank. */
+  bankOptions?: BankOption[];
   onViewVariant: (entry: QuestionVariantEntry) => void;
   onCreateVariant: (entry: QuestionVariantEntry) => void;
   onAddQuestion: () => void;
   onUploadQuestions: () => void;
   onRemoveFromBank?: (entry: QuestionVariantEntry) => void;
+  onMoveToBank?: (entry: QuestionVariantEntry) => void;
+  onAddToBank?: (entry: QuestionVariantEntry) => void;
   isLoading?: boolean;
   courseName?: string;
   emptyMessage?: string;
@@ -48,11 +64,21 @@ const timeValue = (entry: QuestionVariantEntry) =>
 
 export const QuestionBank = ({
   variants,
+  total,
+  searchTerm,
+  onSearchChange,
+  filters,
+  onFiltersChange,
+  sortBy,
+  onSortChange,
+  bankOptions,
   onViewVariant,
   onCreateVariant,
   onAddQuestion,
   onUploadQuestions,
   onRemoveFromBank,
+  onMoveToBank,
+  onAddToBank,
   isLoading = false,
   courseName,
   emptyMessage,
@@ -61,10 +87,7 @@ export const QuestionBank = ({
   onOpenProfile,
   compact = false,
 }: QuestionBankProps) => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState<QuestionSort>("newest");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
 
   // Every variant shares its base question's id, so a card needs an ordinal — "Variant 2
   // of #4" — to be distinguishable. Number the non-base variants of each question (a base
@@ -89,66 +112,16 @@ export const QuestionBank = ({
     return numbers;
   }, [variants]);
 
-  const filteredVariants = useMemo(() => {
-    let filtered = [...variants];
-    const term = searchTerm.trim().toLowerCase();
-    if (term) {
-      filtered = filtered.filter(
-        (entry) =>
-          entry.variant.questionText.toLowerCase().includes(term) ||
-          entry.questionDescription?.toLowerCase().includes(term) ||
-          entry.primaryTopicName?.toLowerCase().includes(term),
-      );
-    }
-    if (filters.questionTypes.length > 0) {
-      filtered = filtered.filter((entry) => filters.questionTypes.includes(entry.questionType));
-    }
-    if (filters.reasoningLevels.length > 0) {
-      filtered = filtered.filter(
-        (entry) =>
-          entry.variant.reasoningLevel &&
-          filters.reasoningLevels.includes(entry.variant.reasoningLevel),
-      );
-    }
-    if (filters.difficulties.length > 0) {
-      filtered = filtered.filter((entry) =>
-        filters.difficulties.includes(entry.variant.difficulty),
-      );
-    }
-    if (filters.aiGenerated !== "all") {
-      const wantAi = filters.aiGenerated === "ai";
-      filtered = filtered.filter((entry) => (entry.isAiGenerated === true) === wantAi);
-    }
-    if (filters.draftStatus !== "all") {
-      const wantDraft = filters.draftStatus === "draft";
-      filtered = filtered.filter((entry) => (entry.isDraft === true) === wantDraft);
-    }
+  const visibleVariants = useMemo(
+    () => variants.filter((entry) => variantMatchesFilters(entry, searchTerm, filters)),
+    [variants, searchTerm, filters],
+  );
 
-    switch (sortBy) {
-      case "newest":
-        filtered.sort((a, b) => timeValue(b) - timeValue(a));
-        break;
-      case "oldest":
-        filtered.sort((a, b) => timeValue(a) - timeValue(b));
-        break;
-      case "type":
-        filtered.sort((a, b) => a.questionType.localeCompare(b.questionType));
-        break;
-    }
-    return filtered;
-  }, [variants, searchTerm, sortBy, filters]);
-
-  const hasFilters =
-    searchTerm.trim() !== "" ||
-    filters.questionTypes.length > 0 ||
-    filters.reasoningLevels.length > 0 ||
-    filters.difficulties.length > 0 ||
-    filters.aiGenerated !== "all" ||
-    filters.draftStatus !== "all";
+  const hasFilters = searchTerm.trim() !== "" || countActiveFilters(filters) > 0;
 
   const clearAll = () => {
-    setSearchTerm("");
-    setFilters(EMPTY_QUESTION_FILTERS);
+    onSearchChange("");
+    onFiltersChange(EMPTY_QUESTION_FILTERS);
   };
 
   const dense = compact || view === "grid";
@@ -160,11 +133,11 @@ export const QuestionBank = ({
         <div>
           <h2 className="text-lg font-semibold text-foreground">Questions</h2>
           <p className="text-sm text-muted-foreground">
-            {variants.length === 0
-              ? "No questions yet"
-              : hasFilters
-                ? `${filteredVariants.length} of ${variants.length} shown`
-                : `${variants.length} question${variants.length === 1 ? "" : "s"} in this course`}
+            {hasFilters
+              ? `${total} matching`
+              : total === 0
+                ? "No questions yet"
+                : `${total} question${total === 1 ? "" : "s"} in this course`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -188,14 +161,15 @@ export const QuestionBank = ({
         </div>
       </div>
 
-      {variants.length > 0 && (
+      {(variants.length > 0 || hasFilters) && (
         <QuestionFilterToolbar
           searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
+          onSearchChange={onSearchChange}
           filters={filters}
-          onFiltersChange={setFilters}
+          onFiltersChange={onFiltersChange}
           sortBy={sortBy}
-          onSortChange={setSortBy}
+          onSortChange={onSortChange}
+          bankOptions={bankOptions}
           trailing={
             <div className="hidden items-center rounded-lg border border-border p-0.5 sm:inline-flex">
               <button
@@ -233,7 +207,7 @@ export const QuestionBank = ({
 
       {isLoading ? (
         <CardGridSkeleton count={6} columns={view === "grid" ? 3 : 1} />
-      ) : variants.length === 0 ? (
+      ) : variants.length === 0 && !hasFilters ? (
         !courseName && onOpenProfile ? (
           <EmptyState
             icon={<IconInfoCircle className="size-6" />}
@@ -275,7 +249,7 @@ export const QuestionBank = ({
             }
           />
         )
-      ) : filteredVariants.length === 0 ? (
+      ) : visibleVariants.length === 0 ? (
         <EmptyState
           size="sm"
           icon={<IconFilterX className="size-6" />}
@@ -297,7 +271,7 @@ export const QuestionBank = ({
           )}
           data-tour-id="question-list"
         >
-          {filteredVariants.map((entry, index) => (
+          {visibleVariants.map((entry, index) => (
             <QuestionCard
               key={`${entry.questionId}-${entry.variant.id}`}
               entry={entry}
@@ -306,6 +280,8 @@ export const QuestionBank = ({
               onView={onViewVariant}
               onCreateVariant={onCreateVariant}
               onRemoveFromBank={onRemoveFromBank}
+              onMoveToBank={onMoveToBank}
+              onAddToBank={onAddToBank}
               compact={dense}
             />
           ))}

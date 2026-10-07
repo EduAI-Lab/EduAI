@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./sonner": "./src/ui/sonner.tsx",
     "./page-loader": "./src/page-loader.tsx",
+    "./not-found-state": "./src/not-found-state.tsx",
     "./theme-provider": "./src/theme-provider.tsx",
     "./theme-sync": "./src/lib/theme-sync.ts",
     "./core-url": "./src/lib/core-url.ts",
