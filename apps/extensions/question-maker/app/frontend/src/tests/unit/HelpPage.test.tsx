@@ -6,8 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const { startTourMock } = vi.hoisted(() => ({ startTourMock: vi.fn() }));
-vi.mock("@/contexts/GuidedTourContext", () => ({
-  useGuidedTour: () => ({ startTour: startTourMock }),
+vi.mock("@eduai/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@eduai/ui")>()),
+  useTour: () => ({ startTour: startTourMock }),
 }));
 
 import { HelpPage } from "@/pages/HelpPage";

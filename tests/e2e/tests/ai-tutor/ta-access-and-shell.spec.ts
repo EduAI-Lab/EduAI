@@ -16,7 +16,7 @@
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { DEFAULT_PASSWORD, signOut } from "../helpers/auth";
-import { gotoAiTutor, sidebar } from "../helpers/at-ui";
+import { gotoAiTutor, openHelpTourEntry, sidebar } from "../helpers/at-ui";
 import { registerStudent, seedPublishedCourseAndEnroll } from "../helpers/at-student-fixtures";
 
 /**
@@ -224,11 +224,9 @@ test.describe("AI Tutor TA — Help and guided tour", () => {
       await expect(page.getByRole("heading", { name: /Help & guide/i })).toBeVisible();
 
       // `canAccessStudentTour` is STUDENT/TA (and, uniquely for a TA, on the
-      // instructor shell too), so the sparkle "Take tour" button must render.
+      // instructor shell too), so the help modal must offer the learner tour.
       await gotoAiTutor(page, "/student");
-      await expect(page.getByRole("button", { name: /take tour/i })).toBeVisible({
-        timeout: 20_000,
-      });
+      await expect(await openHelpTourEntry(page)).toBeVisible({ timeout: 20_000 });
     } finally {
       await seeded.dispose();
     }

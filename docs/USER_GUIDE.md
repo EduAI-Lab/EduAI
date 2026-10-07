@@ -183,7 +183,7 @@ Admin screens may contain user-submitted text or diagnostics; treat that content
 
 The tutor response is reviewed by a supervisor step before it is returned, but it is still AI-generated. Do not treat it as an answer key or as authoritative grading feedback. A requested model or mode may be unavailable because of administrator policy or activity configuration.
 
-Use **Take Tour** in the sidebar footer when it is available for your current student or TA view.
+For a guided tour, open the **(?)** help button in the page header and choose **Take the tour**. It is offered to students and TAs, and to unit administrators. Every app (Core, AI Tutor and Question Maker) starts its tour from the same button.
 
 ### Instructor: build course content
 

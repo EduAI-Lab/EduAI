@@ -45,7 +45,7 @@ app/
     EditActivityPanel.tsx            # Activity editing form
     AddCourseTopicsButton.tsx        # Inline topic creation
     ProgressBar.tsx / PublishMenu.tsx
-    TourButton.tsx / TourProvider.tsx # Guided-tour control + state machine (driver.js)
+    AiTutorTourProvider.tsx          # Mounts the shared @eduai/ui tour engine with this app's tours
     admin/
       AdminSettingsPanel.tsx         #   AI model policy + EduAI API key editor
       AiOversightPanel.tsx           #   AiInteractionTrace table
@@ -111,10 +111,8 @@ app/
     student-chat-history.ts / student-chat-history-types.ts
       # Chat-session list/restore, backed by the server (not localStorage)
     tours/
-      tour-definitions.ts            #   Three tours: student-journey, student-lesson-help, unit-admin-orientation
-      tour-engine.ts                 #   Session state machine (current step, route resolution)
-      tour-storage.ts                #   Completion flags (localStorage) + per-role tour access gates
-      tour-types.ts, tour-utils.ts
+      ai-tutor-tours.ts              #   Three tours: student-journey, student-lesson-help, unit-admin-orientation
+      tour-access.ts                 #   Which tour each role is offered, per page
 
   tests/                             # Test files (Vitest + jsdom)
   styles/
@@ -145,7 +143,7 @@ React Context + hooks exclusively — no Redux, Zustand, or other external state
 | Auth/User | `AuthProvider` | `useLocalUser()` | Current session (calls `GET /api/me`) |
 | Course Topics | `CourseTopicsProvider` | `useCourseTopicsContext()` | Topic list for one course, shared across its editor components |
 | Bug Report | `BugReportProvider` | `useBugReport()` | Console/network/screenshot capture + page context |
-| Tour | `TourProvider` | `useAppTour()` | Guided-tour session state |
+| Tour | `AiTutorTourProvider` | `useTour()` (from `@eduai/ui`) | Guided-tour session state |
 | Assistive Mode | `AssistiveModeProvider` | `useAssistiveMode()` | Reading-mode preference (`localStorage`-backed) |
 | UI Preferences | `UiPreferencesProvider` | `useUiPreferences()` | Density + reduced-motion (`localStorage`-backed) |
 | Shell Breadcrumbs | `ShellBreadcrumbProvider` | `useShellBreadcrumbs()` / `useShellBreadcrumbState()` | Each route publishes its own breadcrumb trail up to the shared header |
@@ -186,7 +184,6 @@ Uses shared `@eduai/ui` and tokens in `app.css` (Outfit typeface, UBC-aligned pa
 
 | Library | Purpose |
 | --- | --- |
-| `driver.js` | Guided product tours |
 | `streamdown` | Markdown rendering for AI chat messages (math via KaTeX, loaded on demand) |
 | `html2canvas` | Screenshot capture for bug reports |
 | `zod` | Request/response schema validation |
@@ -196,7 +193,7 @@ Uses shared `@eduai/ui` and tokens in `app.css` (Outfit typeface, UBC-aligned pa
 
 ## Guided tours
 
-Three tours built on `driver.js`, managed by the state machine in `lib/tours/`:
+Three tours, run by the shared `@eduai/ui` tour engine that Core and Question Maker also use, and launched from the header (?) help button:
 
 1. **`student-journey`** — full onboarding from dashboard to the AI chat panel, spanning multiple pages.
 2. **`student-lesson-help`** — contextual help within a lesson page.
@@ -208,5 +205,5 @@ Tours use `data-tour` attributes for targeting and `data-tour-route` for cross-p
 
 - **Runner**: Vitest with jsdom environment.
 - **Utilities**: `@testing-library/react`, `@testing-library/jest-dom`.
-- **Location**: `app/tests/`, plus test files co-located next to their source (e.g. `lib/tours/tour-engine.test.ts`).
+- **Location**: `app/tests/`, plus test files co-located next to their source (e.g. `lib/**/*.test.ts`).
 - **Run**: `npm run test` (all) or `npm run test:watch` (watch mode).

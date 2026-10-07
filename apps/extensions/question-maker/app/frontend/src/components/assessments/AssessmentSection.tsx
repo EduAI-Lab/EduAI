@@ -273,7 +273,7 @@ export const AssessmentSection = ({
               onClick={handleOpenCreateModal}
               disabled={!selectedCourseId || isSavingBlueprint}
               className="gap-1.5"
-              data-tour-id="add-assessment-btn"
+              data-tour="add-assessment-btn"
             >
               <IconPlus className="size-4" />
               {isSavingBlueprint ? "Saving…" : "New assessment"}
@@ -285,7 +285,7 @@ export const AssessmentSection = ({
       {isLoading ? (
         <ListSkeleton count={4} />
       ) : hasAssessments ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-tour-id="assessment-list">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-tour="assessment-list">
           {assessments.map((assessment, index) => {
             const total = countTotalQuestions(assessment);
             const dist = difficultyDistribution(assessment);
@@ -308,7 +308,7 @@ export const AssessmentSection = ({
                     openBuilder(assessment);
                   }
                 }}
-                data-tour-id={index === 0 ? "assessment-view-btn" : undefined}
+                data-tour={index === 0 ? "assessment-view-btn" : undefined}
                 className={cn(
                   "group flex cursor-pointer flex-col gap-3 rounded-[var(--radius-xl)] border border-l-4 border-border bg-card p-5 shadow-[var(--shadow-2xs)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   accent.bar,
@@ -470,7 +470,7 @@ export const AssessmentSection = ({
                 type="button"
                 className="w-full justify-start gap-2"
                 disabled={Boolean(exportDialogBlockReason)}
-                data-tour-id="export-canvas-btn"
+                data-tour="export-canvas-btn"
                 onClick={() => {
                   if (!exportDialogAssessment || exportDialogBlockReason) return;
                   onExportToCanvas(exportDialogAssessment.id, exportDialogAssessment.name);
@@ -487,7 +487,7 @@ export const AssessmentSection = ({
                 variant="outline"
                 className="w-full justify-start gap-2"
                 disabled={Boolean(exportDialogBlockReason)}
-                data-tour-id="export-word-btn"
+                data-tour="export-word-btn"
                 onClick={() => {
                   if (!exportDialogAssessment || exportDialogBlockReason) return;
                   void Promise.resolve(
@@ -506,7 +506,7 @@ export const AssessmentSection = ({
                 variant="outline"
                 className="w-full justify-start gap-2"
                 disabled={Boolean(exportDialogBlockReason)}
-                data-tour-id="export-txt-btn"
+                data-tour="export-txt-btn"
                 onClick={() => {
                   if (!exportDialogAssessment || exportDialogBlockReason) return;
                   onExportToTxt(exportDialogAssessment.id, exportDialogAssessment.name);

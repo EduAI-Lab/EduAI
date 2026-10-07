@@ -21,8 +21,7 @@ const {
   toastFn,
   useCourseFromRouteMock,
   useQmPermissionsForCourseMock,
-  guidedTour,
-  qmLayout,
+  tour,
   questionService,
   courseService,
   assessmentService,
@@ -38,14 +37,7 @@ const {
     toastFn: toast,
     useCourseFromRouteMock: vi.fn(),
     useQmPermissionsForCourseMock: vi.fn(),
-    guidedTour: {
-      startTour: vi.fn(),
-      registerOnTourEnd: vi.fn(),
-      registerStepAction: vi.fn(() => vi.fn()),
-      isActive: false as boolean,
-      activeTourId: null as string | null,
-    },
-    qmLayout: { setGuidedTourHandler: vi.fn() },
+    tour: { startTour: vi.fn() },
     questionService: {
       getQuestionsPage: vi.fn(),
       getQuestionStats: vi.fn(),
@@ -88,14 +80,6 @@ vi.mock("@/hooks/useQmPermissions", () => ({
   useQmPermissionsForCourse: () => useQmPermissionsForCourseMock(),
 }));
 
-vi.mock("@/contexts/GuidedTourContext", () => ({
-  useGuidedTour: () => guidedTour,
-}));
-
-vi.mock("@/components/layout/QmLayoutContext", () => ({
-  useQmLayout: () => qmLayout,
-}));
-
 // ── services ─────────────────────────────────────────────────────────────────
 vi.mock("@/services/questionService", () => ({ questionService }));
 
@@ -113,6 +97,7 @@ vi.mock("@/services/questionBankService", () => ({
 
 // ── @eduai/ui ────────────────────────────────────────────────────────────────
 vi.mock("@eduai/ui", () => ({
+  useTour: () => tour,
   PageTabs: ({ value, onValueChange, children }: any) => {
     tabsBox.value = value;
     tabsBox.onValueChange = onValueChange;
@@ -450,8 +435,6 @@ function setDefaultMocks(overrides: Partial<{ tab: string }> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  guidedTour.isActive = false;
-  guidedTour.activeTourId = null;
   setDefaultMocks();
 });
 
@@ -529,7 +512,7 @@ describe("CourseDetailPage main content", () => {
     expect(await screen.findByTestId("upload-dialog")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("open-profile"));
-    expect(guidedTour.startTour).toHaveBeenCalledWith("main");
+    expect(tour.startTour).toHaveBeenCalledWith("main");
   });
 
   it("opens and closes the question detail modal", async () => {
@@ -927,19 +910,5 @@ describe("CourseDetailPage overview tab actions", () => {
     await screen.findByTestId("overview-tab");
     fireEvent.click(screen.getByText("topics-action"));
     await waitFor(() => expect(courseService.getCourseTopics).toHaveBeenCalledTimes(2));
-  });
-});
-
-describe("CourseDetailPage guided tour", () => {
-  it("registers the tour handler and switches to assessments tab on the tour step", async () => {
-    guidedTour.isActive = true;
-    guidedTour.activeTourId = "main";
-    render(<CourseDetailPage />);
-    await screen.findByTestId("overview-tab");
-    expect(guidedTour.registerStepAction).toHaveBeenCalledWith(
-      "assessment-tab",
-      expect.any(Function),
-    );
-    expect(qmLayout.setGuidedTourHandler).toHaveBeenCalled();
   });
 });

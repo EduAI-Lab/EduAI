@@ -11,7 +11,7 @@
  * in through it (via the shared `helpers/auth` functions) authenticates the
  * page too, without re-implementing Core's sign-in form per spec.
  */
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { createAdmin, promoteUser, registerUser, signIn, signOut } from "./auth";
 
@@ -83,6 +83,18 @@ export async function gotoAiTutor(page: Page, path: string): Promise<void> {
   await expect(sidebar(page).getByRole("link", { name: "Dashboard", exact: true })).toBeVisible({
     timeout: 30_000,
   });
+}
+
+/**
+ * Open the header (?) help modal and return its "Take the tour" entry — the
+ * one place every app launches its guided tour from (#1754). A locator, so
+ * `toHaveCount(0)` asserts that no tour is offered here.
+ */
+export async function openHelpTourEntry(page: Page): Promise<Locator> {
+  await page.getByRole("button", { name: "Help for this page" }).click();
+  const dialog = page.getByTestId("page-help-dialog");
+  await expect(dialog).toBeVisible();
+  return dialog.getByRole("button", { name: "Take the tour" });
 }
 
 /**

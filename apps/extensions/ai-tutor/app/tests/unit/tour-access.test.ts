@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   canAccessStudentTour,
-  canAccessTour,
   canAccessUnitAdminTour,
+  resolveHelpTourId,
   resolveSuggestedTourId,
-} from "~/lib/tours/tour-storage";
+} from "~/lib/tours/tour-access";
 
 describe("tour access helpers", () => {
   it("allows students on student routes", () => {
@@ -44,12 +44,6 @@ describe("tour access helpers", () => {
     expect(canAccessUnitAdminTour("ADMIN", "/dashboard")).toBe(false);
   });
 
-  it("canAccessTour is the union the sidebar control gates on", () => {
-    expect(canAccessTour("UNIT_ADMIN", "/dashboard")).toBe(true);
-    expect(canAccessTour("STUDENT", "/student")).toBe(true);
-    expect(canAccessTour("INSTRUCTOR", "/dashboard")).toBe(false);
-  });
-
   it("suggests the unit-admin orientation for a unit admin", () => {
     expect(resolveSuggestedTourId("UNIT_ADMIN", "/dashboard")).toBe("unit-admin-orientation");
     expect(resolveSuggestedTourId("UNIT_ADMIN", "/instructor")).toBe("unit-admin-orientation");
@@ -63,5 +57,24 @@ describe("tour access helpers", () => {
 
   it("suggests lesson help on student lesson routes", () => {
     expect(resolveSuggestedTourId("STUDENT", "/student/lesson/1")).toBe("student-lesson-help");
+  });
+});
+
+describe("resolveHelpTourId (header help modal, #1754)", () => {
+  it("prefers the tour that belongs to the current page", () => {
+    expect(resolveHelpTourId("STUDENT", "/student/lesson/4")).toBe("student-lesson-help");
+    expect(resolveHelpTourId("UNIT_ADMIN", "/instructor")).toBe("unit-admin-orientation");
+  });
+
+  it("falls back to the role tour on pages without one", () => {
+    expect(resolveHelpTourId("STUDENT", "/settings")).toBe("student-journey");
+    expect(resolveHelpTourId("TA", "/help")).toBe("student-journey");
+    expect(resolveHelpTourId("UNIT_ADMIN", "/settings")).toBe("unit-admin-orientation");
+  });
+
+  it("offers nothing to roles that have no tour", () => {
+    expect(resolveHelpTourId("INSTRUCTOR", "/instructor")).toBeNull();
+    expect(resolveHelpTourId("ADMIN", "/dashboard")).toBeNull();
+    expect(resolveHelpTourId(undefined, "/dashboard")).toBeNull();
   });
 });

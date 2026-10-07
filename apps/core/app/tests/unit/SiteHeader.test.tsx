@@ -81,6 +81,16 @@ describe("CoreHeaderActions", () => {
     expect(container.querySelector('[data-tour="ai-status"]')).toBeInTheDocument();
   });
 
+  it("pins the page help slot after the common bundle, in the top-right corner (#1754)", () => {
+    render(
+      <ThemeProvider>
+        <CoreHeaderActions help={<button type="button">Help slot</button>} />
+      </ThemeProvider>,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[buttons.length - 1]).toHaveTextContent("Help slot");
+  });
+
   it("renders route-specific extraActions before the common bundle (e.g. chat's history toggle)", () => {
     render(
       <ThemeProvider>

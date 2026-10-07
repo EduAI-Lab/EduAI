@@ -4,6 +4,7 @@
  */
 import { useMemo } from "react";
 import { IconBooks, IconLibrary, IconHelpCircle, IconSettings } from "@tabler/icons-react";
+import { useAutoStartTour } from "@eduai/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
 import { useQuestionStats } from "@/hooks/useQuestionStats";
@@ -18,7 +19,6 @@ import {
   type QmDashboardQuickAction,
   type QmDashboardAnalytics,
 } from "@/components/dashboard/QmDashboardView";
-import { useAutoRedirectForMainTour } from "@/tour/useAutoRedirectForMainTour";
 
 const STAFF_ROLES = new Set(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
 
@@ -36,7 +36,8 @@ const DIFF_COLORS = {
 };
 
 export default function DashboardPage() {
-  useAutoRedirectForMainTour();
+  // First visit: the tour takes a new user to their courses and walks them through one.
+  useAutoStartTour("main");
   const { user } = useAuth();
   const { displayCourses, isLoading: coursesLoading } = useDisplayCourses();
   const { stats: questionStats } = useQuestionStats();
