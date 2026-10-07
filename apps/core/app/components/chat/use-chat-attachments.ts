@@ -15,6 +15,7 @@ export type ChatAttachmentItem = {
 const successSchema = z.object({ text: z.string(), truncated: z.boolean() });
 const failureSchema = z.object({ error: z.string() });
 const FALLBACK_ERROR = "We couldn't read this file. Try again, or attach a different copy.";
+const NETWORK_ERROR = "Couldn't upload this file. Check your connection and try again.";
 
 /** Upload one file to `/api/chat/attachments` and return its extracted text. */
 export async function uploadChatAttachment(
@@ -23,7 +24,13 @@ export async function uploadChatAttachment(
 ): Promise<{ text: string; truncated: boolean }> {
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch("/api/chat/attachments", { method: "POST", body: form, signal });
+  let response: Response;
+  try {
+    response = await fetch("/api/chat/attachments", { method: "POST", body: form, signal });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error(NETWORK_ERROR, { cause: error });
+  }
   const body = await response.json().catch(() => null);
   if (response.ok) {
     const parsed = successSchema.safeParse(body);
@@ -39,10 +46,12 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
   const upload = options.upload ?? uploadChatAttachment;
   const [entries, setEntries] = useState<Entry[]>([]);
   const [limitError, setLimitError] = useState<string | null>(null);
-  const live = useRef(new Map<string, File>());
+  const live = useRef(new Map<string, { file: File; status: ChatAttachmentItem["status"] }>());
 
   const patch = useCallback((id: string, next: Partial<Entry>) => {
-    if (!live.current.has(id)) return;
+    const tracked = live.current.get(id);
+    if (!tracked) return;
+    if (next.status) tracked.status = next.status;
     setEntries((current) => current.map((e) => (e.id === id ? { ...e, ...next } : e)));
   }, []);
 
@@ -75,7 +84,10 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
       );
       const created = accepted.map((file): Entry => {
         const id = crypto.randomUUID();
-        live.current.set(id, file);
+        live.current.set(id, {
+          file,
+          status: classifyAttachmentName(file.name) !== null ? "pending" : "failed",
+        });
         const supported = classifyAttachmentName(file.name) !== null;
         return {
           id,
@@ -90,8 +102,8 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
       });
       setEntries((current) => [...current, ...created]);
       for (const entry of created) {
-        const file = live.current.get(entry.id);
-        if (file && entry.status === "pending") start(entry.id, file);
+        const tracked = live.current.get(entry.id);
+        if (tracked && entry.status === "pending") start(entry.id, tracked.file);
       }
     },
     [start],
@@ -105,10 +117,15 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
 
   const retry = useCallback(
     (id: string) => {
-      const file = live.current.get(id);
-      if (!file || classifyAttachmentName(file.name) === null) return;
+      const tracked = live.current.get(id);
+      if (
+        !tracked ||
+        tracked.status !== "failed" ||
+        classifyAttachmentName(tracked.file.name) === null
+      )
+        return;
       patch(id, { status: "pending", error: null });
-      start(id, file);
+      start(id, tracked.file);
     },
     [patch, start],
   );

@@ -1,8 +1,8 @@
 // app/tests/unit/use-chat-attachments.test.tsx
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeTextDataUrl } from "~/lib/chat/chat-attachments";
-import { useChatAttachments } from "~/components/chat/use-chat-attachments";
+import { uploadChatAttachment, useChatAttachments } from "~/components/chat/use-chat-attachments";
 
 const file = (name: string) => new File(["x"], name);
 
@@ -61,6 +61,7 @@ describe("useChatAttachments", () => {
     await waitFor(() => expect(result.current.items[0]?.status).toBe("failed"));
     act(() => result.current.retry(result.current.items[0]!.id));
     await waitFor(() => expect(result.current.items[0]?.status).toBe("ready"));
+    expect(upload).toHaveBeenCalledTimes(2);
     act(() => result.current.remove(result.current.items[0]!.id));
     expect(result.current.items).toHaveLength(0);
     act(() => result.current.add([file("b.txt")]));
@@ -73,8 +74,69 @@ describe("useChatAttachments", () => {
     const upload = vi.fn().mockReturnValue(new Promise((r) => (resolve = r)));
     const { result } = renderHook(() => useChatAttachments({ upload }));
     act(() => result.current.add([file("a.txt")]));
-    act(() => result.current.remove(result.current.items[0]!.id));
+    const id = result.current.items[0]!.id;
+    act(() => result.current.remove(id));
     await act(async () => resolve({ text: "late", truncated: false }));
     expect(result.current.items).toHaveLength(0);
+    expect(upload).toHaveBeenCalledTimes(1);
+    act(() => result.current.retry(id));
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(result.current.items).toHaveLength(0);
+  });
+
+  it("does not re-upload a pending item on retry", () => {
+    const upload = vi.fn().mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    act(() => result.current.add([file("a.txt")]));
+    act(() => result.current.retry(result.current.items[0]!.id));
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-upload a ready item on retry", async () => {
+    const upload = vi.fn().mockResolvedValue({ text: "ok", truncated: false });
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    act(() => result.current.add([file("a.txt")]));
+    await waitFor(() => expect(result.current.items[0]?.status).toBe("ready"));
+    act(() => result.current.retry(result.current.items[0]!.id));
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it("retry on an unsupported file is a no-op", () => {
+    const upload = vi.fn();
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    act(() => result.current.add([file("photo.png")]));
+    act(() => result.current.retry(result.current.items[0]!.id));
+    expect(upload).not.toHaveBeenCalled();
+    expect(result.current.items[0]?.status).toBe("failed");
+  });
+});
+
+describe("uploadChatAttachment", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("maps a rejected fetch to a friendly sentence", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(uploadChatAttachment(file("a.txt"))).rejects.toThrow(
+      "Couldn't upload this file. Check your connection and try again.",
+    );
+  });
+
+  it("uses the fallback sentence for a non-JSON 500", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>", { status: 500 })));
+    await expect(uploadChatAttachment(file("a.txt"))).rejects.toThrow(
+      "We couldn't read this file. Try again, or attach a different copy.",
+    );
+  });
+
+  it("surfaces the server sentence on a 422", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: "No readable text.", code: "X" }), { status: 422 }),
+        ),
+    );
+    await expect(uploadChatAttachment(file("a.txt"))).rejects.toThrow("No readable text.");
   });
 });
