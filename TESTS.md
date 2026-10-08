@@ -1142,6 +1142,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`self-enrollment.panel.test.ts`](apps/core/app/tests/unit/self-enrollment.panel.test.ts) | (#1939) On a Draft course the self-enrollment section warns that students who open a link see "Can't join this course", labels the link "Waiting for publish" and offers Publish; an instructor without `instructors.canPublishCourses` is told to ask an administrator and gets no Publish button; a published course shows neither the warning nor the relabel. |
 | [`self-enroll-page.test.tsx`](apps/core/app/tests/unit/self-enroll-page.test.tsx) | (#1939) The student's "Can't join this course" page links to `/dashboard` (it renders outside the app shell, so it was a dead end), and a usable link shows Join course without that link. |
 | [`set-course-published.test.ts`](apps/core/app/tests/unit/set-course-published.test.ts) | (#1939) The request behind the course page's publish control: PATCH `/api/courses/:id/publish` to publish and `/unpublish` to unpublish, and a refusal rejects with a `CoursePublishError` carrying the HTTP status and the server's error code (`COURSE_PUBLISH_FAILED` when the body is not JSON). |
+| [`invitation-schemas.test.ts`](apps/core/app/tests/unit/invitation-schemas.test.ts) | (#1940) `defaultInviteRoleFor`: the Invite User dialog defaults to the least-privileged role, STUDENT, for both ADMIN and UNIT_ADMIN actors (never Administrator), and returns undefined for actors who cannot invite anyone (INSTRUCTOR, no role). |
 
 ## EduAI Integration Tests
 
