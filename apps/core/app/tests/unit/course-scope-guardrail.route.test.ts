@@ -258,9 +258,14 @@ beforeEach(() => {
     code: "COSC101",
   } as never);
   vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
-    { name: "Functions" },
-    { name: "Variables" },
+    { name: "Functions", reviewStatus: "ACCEPTED" },
+    { name: "Variables", reviewStatus: "ACCEPTED" },
   ] as never);
+  // Retrieval covers the base question, so turns that pass the guardrail reach
+  // the model instead of the #1936 no-coverage reply.
+  vi.mocked(findRelevantContent).mockResolvedValue([
+    { content: "Assignment 2 is due Friday.", similarity: 0.7, materialTitle: "Syllabus" },
+  ]);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
   vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
@@ -557,8 +562,8 @@ describe("POST /api/chat — course-scope guardrail", () => {
       name: null,
     } as never);
     vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
-      { name: "Functions" },
-      { name: "Variables" },
+      { name: "Functions", reviewStatus: "ACCEPTED" },
+      { name: "Variables", reviewStatus: "ACCEPTED" },
     ] as never);
 
     const res = await action(

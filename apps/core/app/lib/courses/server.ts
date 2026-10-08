@@ -210,6 +210,10 @@ export function invalidateCourseTopicNamesCache(courseId: string): void {
  * memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (reuses the RAG settings TTL —
  * both are low-churn, read-heavy per-course settings) to avoid a DB
  * round-trip on every course-chat turn.
+ *
+ * Only reviewed topics are returned (#1936): an unreviewed AI suggestion or the
+ * "Uncategorized" fallback is not course content, and a small chat model reads
+ * the prompt's topic list as if it were.
  */
 export async function getCourseTopicNamesCached(courseId: string): Promise<string[]> {
   pruneCourseTopicNamesCache();
@@ -221,7 +225,9 @@ export async function getCourseTopicNamesCached(courseId: string): Promise<strin
   }
 
   const topics = await getCourseTopics(courseId);
-  const value = topics.map((topic) => topic.name);
+  const value = topics
+    .filter((topic) => topic.reviewStatus === "ACCEPTED" && topic.name !== FALLBACK_TOPIC_NAME)
+    .map((topic) => topic.name);
 
   courseTopicNamesCache.set(courseId, {
     value,

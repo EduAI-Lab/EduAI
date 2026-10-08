@@ -1,5 +1,6 @@
 import type { JsonValue } from "@eduai/types";
 
+import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
@@ -207,6 +208,9 @@ export async function approveGeneratedTopic(
     data: { reviewStatus: "ACCEPTED" },
     select: { id: true, name: true },
   });
+  // Course chat only lists accepted topics (#1936), so an approval changes what
+  // the next turn's prompt should carry.
+  invalidateCourseTopicNamesCache(courseId);
   return { status: "200", topic: updated };
 }
 
