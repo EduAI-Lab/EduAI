@@ -260,7 +260,7 @@ export function HelpAssistant({ user }: { user: { id: string; role?: string | nu
           aria-haspopup="dialog"
           aria-controls={open ? PANEL_ID : undefined}
           onClick={() => setAssistantOpen(!open)}
-          className="fixed right-4 bottom-4 z-40 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-black/5 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:right-6 sm:bottom-6"
+          className="fixed right-4 bottom-4 z-40 flex size-12 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-black/5 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:right-6 sm:bottom-6"
         >
           {open ? (
             <IconX className="size-5" aria-hidden />
@@ -302,7 +302,7 @@ export function HelpAssistant({ user }: { user: { id: string; role?: string | nu
                   <button
                     type="button"
                     onClick={requestClearMaterialScope}
-                    className="shrink-0 rounded px-1 text-[0.6875rem] underline-offset-2 hover:underline"
+                    className="shrink-0 cursor-pointer rounded px-1 text-[0.6875rem] underline-offset-2 hover:underline"
                   >
                     Back to course
                   </button>
@@ -377,7 +377,7 @@ export function HelpAssistant({ user }: { user: { id: string; role?: string | nu
                             key={example.question}
                             type="button"
                             onClick={() => send(example.question)}
-                            className="rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                            className="cursor-pointer rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
                           >
                             {example.question}
                           </button>
