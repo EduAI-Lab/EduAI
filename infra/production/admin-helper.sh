@@ -170,6 +170,13 @@ case "${1:-}" in
     [ -f "$ENV_SOURCE" ] || die "environment source does not exist: $ENV_SOURCE"
     grep -q '^NODE_ENV=production$' "$ENV_SOURCE" || die "environment must set NODE_ENV=production"
     grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$ENV_SOURCE" && die "environment still contains placeholders"
+    # Settings whose absence breaks prod without an error at startup: no
+    # COOKIE_DOMAIN sends users back to sign in on every app switch (#1935), and
+    # an empty EDUAI_API_KEY makes Core reject every AI Tutor / Question Maker
+    # session check (#1904). This install overwrites the live file, so refuse it.
+    for required_key in BETTER_AUTH_URL COOKIE_DOMAIN EDUAI_API_KEY; do
+      grep -Eq "^${required_key}=.+$" "$ENV_SOURCE" || die "environment is missing $required_key"
+    done
     install -o root -g eduai -m 0640 "$ENV_SOURCE" "$CORE_ENV"
     echo "Installed $CORE_ENV"
     ;;
@@ -296,7 +303,7 @@ case "${1:-}" in
       service_key=$(openssl rand -hex 32)
       set_env_value "$CORE_ENV" EDUAI_API_KEY "$service_key"
     fi
-    set_env_value "$CORE_ENV" COOKIE_DOMAIN ".ok.ubc.ca"
+    set_env_value "$CORE_ENV" COOKIE_DOMAIN ".eduai.ok.ubc.ca"
     set_env_value "$CORE_ENV" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
     set_env_value "$CORE_ENV" VITE_EDUAI_URL "https://my.eduai.ok.ubc.ca"
     set_env_value "$CORE_ENV" VITE_AI_TUTOR_URL "https://aitutor.eduai.ok.ubc.ca"
