@@ -16,6 +16,16 @@ declare global {
   var __cronSchedulerInitPromise: Promise<void> | undefined;
 }
 
+/**
+ * Whether the web server may schedule SCRIPT jobs in-process. Production sets
+ * `CRON_WEB_SCHEDULER=false` so only the dedicated cron worker schedules jobs:
+ * the web user (`service_eduai`) can't read `/etc/eduai/cron.env`, so any run it
+ * won would fail (#1873). Unset keeps the web scheduler for dev and local setups.
+ */
+export function isWebCronSchedulerEnabled(): boolean {
+  return process.env.CRON_WEB_SCHEDULER?.trim().toLowerCase() !== "false";
+}
+
 function getTaskMap(): Map<string, ScheduledTask> {
   if (!globalThis.__cronTasks) globalThis.__cronTasks = new Map();
   return globalThis.__cronTasks;
@@ -91,6 +101,7 @@ export function rescheduleJob(jobName: string, schedule: string | null): void {
   if (!job?.script) return;
   // See ensureCronSchedulerRunning: CORE jobs are the worker's alone.
   if (job.execution === "CORE") return;
+  if (!isWebCronSchedulerEnabled()) return;
   scheduleOne(jobName, schedule ?? job.schedule, job.script);
 }
 
@@ -101,6 +112,13 @@ export function rescheduleJob(jobName: string, schedule: string | null): void {
  */
 export function ensureCronSchedulerRunning(): Promise<void> {
   if (globalThis.__cronSchedulerInitPromise) {
+    return globalThis.__cronSchedulerInitPromise;
+  }
+  if (!isWebCronSchedulerEnabled()) {
+    console.log(
+      "[cron] Web scheduler disabled (CRON_WEB_SCHEDULER=false); the cron worker owns scheduling",
+    );
+    globalThis.__cronSchedulerInitPromise = Promise.resolve();
     return globalThis.__cronSchedulerInitPromise;
   }
 
