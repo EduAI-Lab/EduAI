@@ -41,6 +41,11 @@ investigations.
 - Student retrieval applies material visibility, publish, exclusion, and
   availability filters. Staff retrieval does not apply those student-only
   filters.
+- The help assistant's documentation corpus (#1819) is embedded by the same
+  configured provider but stored separately in `help_doc_chunks`, so a docs
+  question never reads course material and vice versa. Its retrieval is
+  fail-closed too: a failure answers `retrieval_unavailable`, never "not
+  documented". See `apps/core/app/lib/assistant/help-docs/`.
 - vLLM fleet routing is optional. A structured `fleet.config.json` is preferred;
   legacy environment lists remain a fallback. Interactive and background work
   have separate pools when a heavy pool is configured.
