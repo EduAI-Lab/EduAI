@@ -127,7 +127,7 @@ async function expectExtractedPhraseNamedInRagSource(
   const systemBlock = buildRagSystemBlock(ragText);
   expect(systemBlock).toContain(`**Source**: ${extracted.title}`);
   expect(systemBlock).toContain(plantedPhrase);
-  expect(systemBlock).toContain("Cite the **Source** header");
+  expect(systemBlock).toContain("Do not write source names, file names, or a Sources line");
 }
 
 interface RoundTripCase {
@@ -306,6 +306,6 @@ describe("accepted course-material types → RAG path (#1785)", () => {
     expect(buildEmptyCourseRagBlock()).toBe(EMPTY_COURSE_RAG_INSTRUCTION);
     expect(buildEmptyCourseRagBlock()).toContain("did not return relevant excerpts");
     expect(buildEmptyCourseRagBlock()).toContain("Do not substitute general world knowledge");
-    expect(RAG_ANSWER_RULES).toContain("Cite the **Source** header");
+    expect(RAG_ANSWER_RULES).toContain("Do not write source names, file names, or a Sources line");
   });
 });

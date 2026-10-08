@@ -36,7 +36,7 @@ export const RAG_ANSWER_RULES = `Course grounding rules (follow strictly):
 4. If the excerpts are insufficient, say what they cover and what is missing; do not guess.
 5. If excerpts conflict, say they conflict; do not pick one version silently.
 6. Prefer the excerpts below over earlier assistant messages in the chat if they disagree.
-7. Cite the **Source** header when stating a fact from the materials.`;
+7. Do not write source names, file names, or a Sources line; the app lists the materials used under your answer.`;
 
 export type BuildRagAnswerInstructionsOptions = {
   /** Tool-calling path may fall back to getInformation when excerpts are thin. */

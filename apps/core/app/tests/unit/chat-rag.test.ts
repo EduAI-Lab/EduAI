@@ -80,7 +80,7 @@ describe("buildRagAnswerInstructions", () => {
     const text = buildRagAnswerInstructions();
     expect(text).toContain(RAG_COURSE_GROUNDING_INSTRUCTION);
     expect(text).toContain("do not support that premise");
-    expect(text).toContain("Cite the **Source** header");
+    expect(text).toContain("Do not write source names, file names, or a Sources line");
     expect(text).not.toMatch(/Morocco|FIFA/i);
   });
 
