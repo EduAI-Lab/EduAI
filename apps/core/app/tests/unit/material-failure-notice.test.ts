@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  describeUploadFailure,
   describeMaterialFailure,
   describeMaterialRetryFailure,
 } from "~/lib/material-failure-notice";
@@ -157,7 +158,7 @@ describe("describeMaterialFailure — failureCode refines the message", () => {
     });
 
     expect(notice?.kind).toBe("indexing-failed");
-    expect(notice?.description).toMatch(/search data couldn't be built/i);
+    expect(notice?.description).toMatch(/AI service rejected it while building search data/i);
     expect(notice?.canRetry).toBe(true);
   });
 
@@ -292,5 +293,26 @@ describe("describeMaterialRetryFailure", () => {
 
   it("says something useful when there is no message at all", () => {
     expect(describeMaterialRetryFailure("")).toMatch(/couldn't retry/i);
+  });
+});
+
+describe("describeUploadFailure (#1931)", () => {
+  it("names the recorded reason and points to the material's row", () => {
+    expect(describeUploadFailure("MATERIAL_EMBED_FAILED")).toBe(
+      "Couldn't prepare this file for search. See the file in the materials list for details and what to do next.",
+    );
+    expect(describeUploadFailure("MATERIAL_EXTRACT_FAILED")).toBe(
+      "Couldn't read this file. See the file in the materials list for details and what to do next.",
+    );
+  });
+
+  it("never tells the user to simply try again", () => {
+    for (const code of [
+      null,
+      "MATERIAL_EMBED_FAILED",
+      "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
+    ] as const) {
+      expect(describeUploadFailure(code)).not.toMatch(/please try again/i);
+    }
   });
 });

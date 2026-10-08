@@ -3,7 +3,7 @@
 // Integration test for material_embeddings vector insert via processMaterialEmbeddings (#54).
 // Uses real Postgres + pgvector; mocks only the remote embed API.
 
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 
 const EMBEDDING_DIMENSION = 1024;
 
@@ -30,7 +30,7 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { generateChecksum } from "~/lib/ai/file-processing";
+import { generateChecksum, joinSemanticChunks } from "~/lib/ai/file-processing";
 import { cleanupRbac, seedCourse } from "../helpers/rbac";
 
 let courseId: string;
@@ -85,5 +85,70 @@ describe("processMaterialEmbeddings vector insert (#54)", () => {
     expect(chunkCount).toBeGreaterThan(0);
     expect(embeddingCount).toBe(chunkCount);
     expect(embedMany).toHaveBeenCalled();
+  });
+});
+
+describe("processMaterialEmbeddings with the local CMPS embedding model (#1931)", () => {
+  const LOCAL_ENV = {
+    EMBEDDING_PROVIDER: "local",
+    VLLM_EMBEDDING_BASE_URL: "http://cmps01.ok.ubc.ca:8001/v1",
+    CMPS01_INTERNAL_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
+    VLLM_API_KEY: "cmps-test-key",
+  } as const;
+  const saved: Record<string, string | undefined> = {};
+  // Its own course: embedding settings are cached per course, and the cloud
+  // test above has already cached `wantsLocal: false` for the shared one.
+  let localCourseId: string;
+
+  beforeAll(async () => {
+    const course = await seedCourse({ name: "Local embedding chunk limit" });
+    localCourseId = course.id;
+  });
+
+  afterAll(async () => {
+    await cleanupRbac({ courseIds: [localCourseId] });
+  });
+
+  beforeEach(() => {
+    for (const [key, value] of Object.entries(LOCAL_ENV)) {
+      saved[key] = process.env[key];
+      process.env[key] = value;
+    }
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("never sends a semantic chunk wider than the local model's limit", async () => {
+    // Upload-path semantic chunks run to 1500 chars; a code-heavy slide of that
+    // width exceeds mxbai-embed-large's 512 tokens and failed on every attempt.
+    const codeSlide = Array.from(
+      { length: 30 },
+      (_, i) => `class Shape${i} extends Base { int area() { return w*h; } }`,
+    ).join("\n");
+    const content = joinSemanticChunks(["# Inheritance\n\nShort intro.", codeSlide]);
+
+    const material = await prisma.courseMaterial.create({
+      data: {
+        courseId: localCourseId,
+        title: `local-chunk-limit-${Date.now()}`,
+        mimeType: "application/pdf",
+        fileSize: content.length,
+        checksum: generateChecksum(content),
+        rawText: content,
+        status: "PROCESSING",
+      },
+    });
+
+    await processMaterialEmbeddings(material.id, content);
+
+    const sent = embedMany.mock.calls.flatMap(([args]) => args.values);
+    expect(sent.length).toBeGreaterThan(2);
+    for (const value of sent) expect(value.length).toBeLessThanOrEqual(480);
+    expect(sent.join("\n")).toContain("class Shape29 extends Base");
   });
 });

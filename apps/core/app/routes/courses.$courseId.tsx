@@ -38,6 +38,7 @@ import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.se
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
+import { describeUploadFailure } from "~/lib/material-failure-notice";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -366,11 +367,12 @@ export default function CourseDetailPage() {
             : "A file with identical content already exists in this course",
         };
       }
-      // The specific reason (#1791) shows on the settled row's failure popover.
+      // The full explanation and Try again (#1791) live on the settled row's
+      // failure popover; the alert names the reason and points there (#1931).
       case "failed":
         return {
           status: "failed",
-          message: "Processing failed for this file. Please try again.",
+          message: describeUploadFailure(outcome.failureCode),
         };
       case "processing":
         return { status: "processing" };

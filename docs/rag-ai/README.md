@@ -13,6 +13,7 @@ investigations.
 | --- | --- |
 | Understand a request to `POST /api/chat` | [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md) |
 | Understand indexing, embeddings, pgvector, and re-embedding | [`EMBEDDINGS.md`](./EMBEDDINGS.md) |
+| Understand how an uploaded material is stored, fails, retries, and is deleted or re-uploaded | [`EMBEDDINGS.md`](./EMBEDDINGS.md#material-lifecycle-storage-failure-retry-delete-and-re-upload) |
 | Understand Auto model selection and the vLLM fleet | [`MODEL_ROUTING.md`](./MODEL_ROUTING.md) |
 | Operate a vLLM host or fleet | [`VLLM.md`](./VLLM.md) |
 | Run the shared development deployment | [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) |

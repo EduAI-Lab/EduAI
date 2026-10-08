@@ -62,6 +62,7 @@ import {
 import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
+import { logSystemError } from "~/lib/logging.server";
 import {
   EXTRACTION_LEASE_MS,
   MAX_EXTRACTION_ATTEMPTS,
@@ -349,6 +350,20 @@ describe("sweepStrandedMaterialExtractions", () => {
     await sweepStrandedMaterialExtractions(CTX);
 
     expect(startTopicAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("records which material failed in the system log (#1931)", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    expect(logSystemError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "MATERIAL_EMBED_FAILED",
+        details: { materialId: "mat-1" },
+      }),
+    );
   });
 
   it("keeps going after one row fails so a single bad upload cannot stall the sweep", async () => {

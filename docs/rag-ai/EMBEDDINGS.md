@@ -11,7 +11,7 @@ embeddings read server environment variables and optional course settings only.
 ```mermaid
 flowchart LR
   U[Upload course material] --> X[Validate and extract text]
-  X --> C[Semantic chunks ~1500 chars + 80-char overlap]
+  X --> C[Semantic chunks ~1500 chars + 80-char overlap; re-split to 480 for the local model]
   C --> E[embedMany in bounded batches]
   E --> V["material_embeddings: vector(1024)"]
   Q[Course chat question] --> QE[generateEmbedding]
@@ -24,6 +24,100 @@ The upload path preserves Markdown structure, equations, and tables where the
 extractor can identify them. It records `CourseMaterial`, `MaterialChunk`, and
 `MaterialEmbedding` rows. Re-indexing replaces a material's vectors only after
 the new embeddings have succeeded.
+
+## Material lifecycle: storage, failure, retry, delete and re-upload
+
+Source: `uploadMaterial`, `reclaimProvisionalRow` and `reprocessMaterial` in
+[`routes/api/courses.materials.$.ts`](../../apps/core/app/routes/api/courses.materials.$.ts),
+and `runMaterialExtraction`, `claimRestoreTarget` and `failMaterial` in
+[`lib/materials/extraction-job.server.ts`](../../apps/core/app/lib/materials/extraction-job.server.ts).
+
+### What is stored where
+
+| Data | Table / column | Kept until |
+| --- | --- | --- |
+| Material row: title, type, size, status, failure code, uploader, `deletedAt` | `course_materials` | Hard-deleted by `purge-deleted-materials` 90 days after a soft delete |
+| Raw uploaded bytes | `material_upload_blobs` | The material reaches READY, FAILED, or becomes a duplicate receipt. **The original file is not kept.** |
+| Extracted text | `course_materials.rawText` | With the row; survives an embedding failure |
+| Chunks and vectors | `material_chunks`, `material_embeddings` | With the row; replaced (never appended) on every re-embed |
+
+`checksum` is first `pending:<sha256 of the file bytes>`, then becomes the hash
+of the **extracted text** once extraction finalizes the row. `(courseId,
+checksum)` is unique, and soft-deleted rows count, so duplicates are detected on
+text content, not on file name or bytes.
+
+### Upload
+
+1. One write creates the row (`PROCESSING`, `pending:` checksum) and the bytes,
+   and the request answers `202`. The rest runs in the background under a
+   15-minute lease that a running job renews; the sweeper (every ≤5 minutes)
+   resumes any row whose lease expired, from the stored bytes.
+2. Extract the text, then look for another row in the course with the same text
+   checksum (deleted rows included). See *Re-upload* below when one exists.
+3. Otherwise finalize: real title, text checksum, `rawText`.
+4. Chunk and embed with `replace: true`, mark `READY`, discard the bytes, start
+   topic analysis.
+
+### Embedding fails after the text was saved
+
+The row becomes `FAILED` with `MATERIAL_EMBED_FAILED` (or
+`MATERIAL_EMBED_RATE_LIMITED` / `MATERIAL_EMBED_PROVIDER_UNAVAILABLE` for a
+transient provider error). `rawText` stays; the bytes are discarded; the error
+goes to Admin → Logs with `details.materialId`. Chunks and vectors are written
+in one transaction only after every embedding succeeds, so a failed first
+attempt leaves none and the file is absent from chat until it recovers.
+Retrieval filters on `"deletedAt" IS NULL`, not on status: a material that was
+READY and then fails a re-embed keeps serving its previous vectors.
+
+### Try again
+
+`POST …/materials/<id>/reprocess` re-runs **only the embedding**, from the
+stored `rawText`; nothing is re-read from a file. Allowed when the row is
+`FAILED`, not deleted, not a duplicate receipt and has text, for instructors and
+above or a TA retrying their own upload. The row is claimed with one conditional
+update, so a double click starts one run. A row that failed at extraction has
+no text and no bytes, so it is not offered a retry: the file must be uploaded
+again.
+
+### Delete
+
+A delete is soft: it stamps `deletedAt` / `deletedBy` and audits
+`MATERIAL_DELETED`. Text, chunks and vectors remain until the purge job, but
+every retrieval query filters `"deletedAt" IS NULL`, so chat stops using the
+material immediately.
+
+### Re-upload of the same content
+
+A new upload of content whose text checksum matches an existing row does not
+add a second material:
+
+| Existing row | Result |
+| --- | --- |
+| Deleted (any status), or not deleted and `FAILED` | **Restore**: the existing row is un-deleted (a deleted row also takes the new uploader), its `rawText` is set from the **new upload's** extracted text — identical by definition of the match — and it is re-embedded. |
+| `READY`, not deleted | Nothing added; the upload reports "already on the course". |
+| Being restored by another upload | The new upload waits for the next sweep and then reports the settled outcome. |
+
+The new upload's own row becomes a **receipt**: `FAILED` with `duplicateOfId`
+pointing at the existing row and `duplicateResolution` `RESTORED` or
+`EXISTING`. A receipt for a failed restore also carries the same failure code.
+The client reports the outcome and then soft-deletes the receipt, which is why
+the table shows soft-deleted `pending:` rows after re-uploads.
+
+Re-uploading the exact same **bytes** while an earlier upload of them is still
+stranded or failed reclaims that row instead (`reclaimProvisionalRow`); while it
+is still processing, the upload answers `409`.
+
+### Behaviour that is intended but can surprise
+
+- Duplicates match on extracted text, so a renamed copy of a file is the same
+  material and a restore keeps the original title.
+- A restore that fails leaves the previously deleted material **visible** as
+  FAILED, so the failure is not hidden (#1791).
+- Receipt cleanup is done by the browser. If the tab closes before the upload
+  settles, the receipt stays in the list as "already on the course" until
+  someone removes it.
+- Try again, delete-and-re-upload and re-uploading all embed the same text, so a
+  failure caused by the text itself fails the same way each time (#1931).
 
 ## Current schema and settings
 
@@ -180,7 +274,10 @@ images. It validates the declared type and file signature, limits normal uploads
 to 50 MiB (images to 10 MiB), protects ZIP containers with entry/size/total
 limits, and rejects extracted text over 20 million characters. Semantic chunks
 target 1,500 characters with 80-character overlap; equations are kept intact
-where possible.
+where possible. With the local embedding model, chunks wider than its limit
+(`OLLAMA_EMBED_CHUNK_SIZE`, default 480 characters) are re-split before
+embedding: a dense 1,500-character chunk exceeds `mxbai-embed-large`'s 512
+tokens (#1931).
 
 Images (#1903) are transcribed once, in the background extraction job, by a
 vision model (`MATERIAL_IMAGE_MODEL`, default `qwen3.8-27b-instruct`, the only
