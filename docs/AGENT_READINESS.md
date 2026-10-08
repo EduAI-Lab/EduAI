@@ -17,9 +17,9 @@ The machine-readable source of truth for **REST endpoints** is [`apps/core/app/l
 | **Learning chat tools** | 3 tools | RAG + web (course-scoped RAG requires a selected course) |
 | **Instructor chat tools** | 4 tools (all read) | Course-scoped, hard-pinned to one published course the caller instructs (#1659) |
 | **Admin chat tools** | 63 tools (25 read, 38 write) | Platform-wide; writes require `confirmed: true` after admin approval in a **later** chat turn. 62 of 63 map 1:1 to a REST endpoint via `manifest.ts`'s `adminChatTool` field; `searchCourseMaterials` (#1658) is in-process RAG with no REST route, same as learning chat's `getInformation` |
-| **REST — manifest `ready`** | 86 / 122 endpoints (~70%) | Full inventory in `manifest.ts`; unit tests enforce coverage |
+| **REST — manifest `ready`** | 88 / 130 endpoints (~68%) | Full inventory in `manifest.ts`; unit tests enforce coverage |
 | **REST — `partial`** | 0 endpoints | All gaps closed or reclassified |
-| **REST — `excluded`** | 36 endpoints | Auth, streaming chat/completion, uploads, self-service, test hooks — by design |
+| **REST — `excluded`** | 42 endpoints | Auth, streaming chat/completion, uploads, self-service, test hooks — by design |
 
 > Counts are derived from `manifest.ts` at the time of writing. Re-derive them rather than trusting this table: `grep -c 'readiness: "ready"' apps/core/app/lib/agent-readiness/manifest.ts` (and the same for `partial` / `excluded`).
 
@@ -178,7 +178,7 @@ RAG search still has no standalone HTTP route, by design — it is reached in-pr
 
 ### Not agent-ready (explicitly out of scope)
 
-36 endpoints carry `readiness: "excluded"` with a `reason`. Representative entries:
+42 endpoints carry `readiness: "excluded"` with a `reason`. Representative entries:
 
 | Method | Path | Reason |
 | ------ | ---- | ------ |
