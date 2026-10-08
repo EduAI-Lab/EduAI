@@ -106,6 +106,7 @@ import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-me
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
+import { COURSE_MATERIALS_NO_COVERAGE_REPLY } from "~/lib/ai/course-grounding";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -340,7 +341,7 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamConfig().system).toContain("Gradient descent minimizes loss.");
     });
 
-    it("injects empty-material instruction when course-intent query has no hits", async () => {
+    it("replies with fixed text, without the model, when a course-intent query has no hits (#1936)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
@@ -353,8 +354,87 @@ describe("Smart course RAG gate (#484)", () => {
         ),
       );
       expect(res.status).toBe(200);
-      expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
-      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
+      const body = await res.json();
+      expect(body.content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(body.ragSources).toEqual([]);
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("replies with fixed text when the question names an item no excerpt mentions (#1936 Lab 15)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "msg-1",
+                role: "user",
+                content: "When is Lab 15 due, and what topic does it cover?",
+              },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()).content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(streamText).not.toHaveBeenCalled();
+      const persisted = vi
+        .mocked(prisma.chatMessage.createMany)
+        .mock.calls.flatMap(
+          (call) =>
+            (call[0] as { data: Array<{ role: string; content: { metadata?: JsonObject } }> }).data,
+        );
+      const assistant = persisted.find((row) => row.role === "assistant");
+      expect(assistant?.content.metadata?.ragSources).toEqual([]);
+    });
+
+    it("answers a question the excerpts cover and reports the retrieved materials (#1936)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        },
+        { content: "iClicker Questions: 5%", similarity: 0.6, materialTitle: "301_1_Intro" },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "When is Lab 14 due?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
+      expect((await res.json()).ragSources).toEqual([
+        "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        "301_1_Intro",
+      ]);
+    });
+
+    it("keeps the model call for a custom system prompt with no hits (extensions)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            systemPrompt: "Return JSON only.",
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
     });
 
     it("fails closed with RAG_DIMENSION_MISMATCH when retrieval throws for a course-intent query (#225 RAG-01)", async () => {
