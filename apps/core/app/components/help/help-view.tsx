@@ -3,6 +3,11 @@
  * at /help, Core had none). A static, role-aware written guide: a jump-link rail
  * on the left, stacked topic cards on the right. Admin-only topics are filtered
  * out for students/staff so the guide reads as complete for whoever opens it.
+ *
+ * This is the READ surface — browsable and curated. The help assistant is the ASK
+ * surface; the "Ask a question" hand-off below connects the two (#1824) for a
+ * reader who browsed here and did not find their answer. Role filtering goes
+ * through the same slice mapping the assistant's retrieval uses (#1819).
  */
 import { Link } from "react-router";
 import {
@@ -12,21 +17,22 @@ import {
   IconFileText,
   IconShieldLock,
   IconCommand,
+  IconSparkles,
   type Icon,
 } from "@tabler/icons-react";
 import { Button, PageHeading, useTour } from "@eduai/ui";
+
+import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
+import { canReadHelpSlice, type HelpSlice } from "~/lib/help/role-slices";
 
 type HelpTopic = {
   id: string;
   title: string;
   icon: Icon;
-  /** Roles allowed to see this topic; omit to show it to everyone. */
-  roles?: string[];
+  /** The lowest documentation slice that may read this topic; omit for everyone. */
+  slice?: HelpSlice;
   points: React.ReactNode[];
 };
-
-const STAFF = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
-const ADMINS = ["ADMIN", "UNIT_ADMIN"];
 
 const TOPICS: HelpTopic[] = [
   {
@@ -91,7 +97,7 @@ const TOPICS: HelpTopic[] = [
     id: "materials",
     title: "Course materials",
     icon: IconFileText,
-    roles: STAFF,
+    slice: "instructor",
     points: [
       "Upload materials on a course's Materials tab. Each file is processed so the chatbot can search and cite it.",
       "Watch the status chip: Processing means the file is still being prepared, Ready means it's live for chat, Failed means it needs a re-upload.",
@@ -102,7 +108,7 @@ const TOPICS: HelpTopic[] = [
     id: "administration",
     title: "Administration",
     icon: IconShieldLock,
-    roles: ADMINS,
+    slice: "admin",
     points: [
       <>
         Manage platform accounts under{" "}
@@ -117,14 +123,27 @@ const TOPICS: HelpTopic[] = [
   },
 ];
 
-export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean }) {
+export function HelpView({
+  role,
+  isTA = false,
+  onAskAssistant,
+}: {
+  role?: string;
+  isTA?: boolean;
+  /**
+   * Opens the help assistant with its input focused. Passed only when the
+   * assistant is visible — the route decides that with the same predicate the
+   * bubble uses, so this button never promises something that won't open.
+   */
+  onAskAssistant?: () => void;
+}) {
   const { startTour } = useTour();
   // TAs are platform STUDENTs (Enrollment.role carries TA). They can upload
   // and manage their own course materials (AUTH-08), so they need the
-  // materials topic even though session.user.role is not in STAFF.
+  // materials topic even though their platform role is in the student slice.
   const topics = TOPICS.filter((t) => {
-    if (!t.roles) return true;
-    if (role && t.roles.includes(role)) return true;
+    if (!t.slice) return true;
+    if (canReadHelpSlice(role, t.slice)) return true;
     return isTA && t.id === "materials";
   });
 
@@ -135,10 +154,18 @@ export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean
           heading="Help & guide"
           subheading="How to get around EduAI and make the most of it."
         />
-        <Button type="button" variant="outline" size="sm" onClick={() => startTour("dashboard")}>
-          <IconRocket className="size-4" aria-hidden />
-          Replay guided tour
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {onAskAssistant ? (
+            <Button type="button" size="sm" onClick={onAskAssistant}>
+              <IconSparkles className="size-4" aria-hidden />
+              Ask {ASSISTANT_DISPLAY_NAME} a question
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={() => startTour("dashboard")}>
+            <IconRocket className="size-4" aria-hidden />
+            Replay guided tour
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[200px_1fr] lg:items-start">

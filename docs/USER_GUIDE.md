@@ -34,6 +34,19 @@ You remain signed in because Core provides the shared session for all three appl
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
 
+## Ask Penny, the help assistant
+
+When an administrator has turned it on, **Penny** sits in the bottom-right corner of every Core page (on chat pages it moves to a button in the header so it does not cover the message box).
+
+- Ask how to do something in EduAI — for example "How do I join a course?" or "How do I report a bug?". Penny answers only from this user guide, filtered to your role, and links the guide pages it used.
+- Inside a course, Penny can also answer questions about that course's materials, and when you preview a material you can choose **Ask Penny about this** to ask about that file. The panel header always says which course or material it is looking at.
+- Platform how-to questions still work inside a course: Penny always searches the guide as well.
+- If the guide does not cover your question, Penny says so instead of guessing. If it says it is temporarily unavailable, the search service is down; try again later.
+- Conversations are kept only in this browser tab. Opening a different course or material starts a new conversation.
+- Open the **gear** in Penny's header to choose which AI provider and model answer you, or to save your own API key for that provider. A saved key is never shown again — only its last four characters. Penny never accepts a key typed into a question.
+
+Penny is a guide, not an answer key: for assessment-style questions it explains the approach rather than handing over a solution.
+
 ## Sign in and account setup
 
 1. Sign in through EduAI Core.
