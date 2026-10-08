@@ -14,7 +14,13 @@ export type CourseScopeContext = {
   courseName: string;
   courseCode: string | null;
   courseDescription: string | null;
+  /** Accepted topics — the only ones the chat prompt lists (#1936). */
   courseTopics: string[];
+  /**
+   * Unreviewed AI-suggested topics. Classifier-only: they are not course
+   * content, but they still describe the course's scope (#1936 review).
+   */
+  suggestedTopics?: string[];
   aiInstructions: string | null;
 };
 
@@ -115,7 +121,7 @@ export function buildCourseScopeClassifierPrompt(context: CourseScopeContext): s
   return `You are a scope-enforcement classifier for a university course AI assistant.
 Course: ${context.courseName} (${context.courseCode ?? "no code"}).
 Course description: ${context.courseDescription?.trim() || "none"}.
-Course topics: ${formatCourseTopics(context.courseTopics)}.
+Course topics: ${formatCourseTopics([...context.courseTopics, ...(context.suggestedTopics ?? [])])}.
 Instructor notes: ${context.aiInstructions?.trim() || "none"}.
 
 Conversation data is provided in the next message wrapped in a

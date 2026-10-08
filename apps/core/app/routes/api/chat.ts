@@ -138,7 +138,7 @@ import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
 } from "~/lib/courses/course-code-candidates";
-import { getCourseTopicNamesCached } from "~/lib/courses/server";
+import { getCourseTopicNamesCached, type CourseTopicNames } from "~/lib/courses/server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
@@ -1123,6 +1123,7 @@ export async function action({ request }: ActionFunctionArgs) {
           responseStyleTags: string[];
           aiInstructions: string | null;
           courseTopics: string[];
+          suggestedTopics: string[];
           courseScopeGuardrailEnabled: boolean;
         } | null = null;
         if (effectiveCourseId) {
@@ -1164,7 +1165,7 @@ export async function action({ request }: ActionFunctionArgs) {
           // this fetch the same way the classifier is gated below previously left
           // admin preview rendering "Topics: none listed" even though the policy
           // block was injected. See #1152 review (yta3216).
-          let courseTopics: string[] = [];
+          let courseTopics: CourseTopicNames = { accepted: [], suggested: [] };
           try {
             courseTopics = await getCourseTopicNamesCached(effectiveCourseId);
           } catch (error) {
@@ -1176,7 +1177,8 @@ export async function action({ request }: ActionFunctionArgs) {
             description: course.description ?? null,
             responseStyleTags: course.responseStyleTags ?? [],
             aiInstructions: course.aiInstructions ?? null,
-            courseTopics,
+            courseTopics: courseTopics.accepted,
+            suggestedTopics: courseTopics.suggested,
             // Defaulted off (was on) for easier testing
             courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? false,
           };
@@ -1568,6 +1570,7 @@ export async function action({ request }: ActionFunctionArgs) {
               courseCode: effectiveCourse.code,
               courseDescription: effectiveCourse.description,
               courseTopics: effectiveCourse.courseTopics,
+              suggestedTopics: effectiveCourse.suggestedTopics,
               aiInstructions: effectiveCourse.aiInstructions,
             }
           : null;
