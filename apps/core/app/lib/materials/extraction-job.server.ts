@@ -124,6 +124,8 @@ export async function failMaterial(
       code,
       message,
       error: cause,
+      // Lets Admin → Logs tie the failure to its material (#1931).
+      details: { materialId },
     }),
   );
 }

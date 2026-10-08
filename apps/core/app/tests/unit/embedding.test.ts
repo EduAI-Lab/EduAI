@@ -414,6 +414,32 @@ describe("resolveMaterialChunks", () => {
     expect(resolveMaterialChunks(content)).toEqual([]);
   });
 
+  it("re-splits semantic chunks wider than the local model's limit (#1931)", () => {
+    // A code-heavy slide: within the upload path's 1500-char semantic limit, but
+    // far more tokens than mxbai-embed-large's 512 accept.
+    const codeSlide = Array.from(
+      { length: 40 },
+      (_, i) => `class Shape${i} extends Base { int area() { return w*h; } }`,
+    ).join("\n");
+    const content = joinSemanticChunks(["# Inheritance\n\nShort intro.", codeSlide]);
+    expect(codeSlide.length).toBeGreaterThan(480);
+
+    const resolved = resolveMaterialChunks(content, 480, 48, 480);
+
+    expect(resolved.length).toBeGreaterThan(2);
+    for (const chunk of resolved) expect(chunk.length).toBeLessThanOrEqual(480);
+    expect(resolved[0]).toBe("# Inheritance\n\nShort intro.");
+    // Nothing is lost: every line of the slide survives in some chunk.
+    expect(resolved.join("\n")).toContain("class Shape39 extends Base");
+  });
+
+  it("keeps semantic chunks whole when no semantic limit is given (cloud)", () => {
+    const longSection = "word ".repeat(250).trim();
+    const content = joinSemanticChunks(["Intro.", longSection]);
+
+    expect(resolveMaterialChunks(content, 800, 80)).toEqual(["Intro.", longSection]);
+  });
+
   it("uses the shared separator constant from file-processing", () => {
     expect(SEMANTIC_CHUNK_SEPARATOR).toBe("--- CHUNK SEPARATOR ---");
   });

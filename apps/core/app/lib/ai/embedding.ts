@@ -905,17 +905,29 @@ function usesVllmEmbeddingEndpoint(): boolean {
   return Boolean(process.env.VLLM_EMBEDDING_BASE_URL?.trim());
 }
 
-/** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
+/**
+ * Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting.
+ *
+ * Upload-path semantic chunks run up to 1500 characters. A cloud model takes that
+ * comfortably, but the local model (mxbai-embed-large, 512 tokens) rejects a dense
+ * one — code-heavy slides, for example — with a context-window error on every
+ * attempt (#1931). Pass `semanticMaxChunkSize` to re-split semantic chunks above
+ * that width; leave it unset to keep them whole.
+ */
 export function resolveMaterialChunks(
   content: string,
   maxChunkSize: number = 800,
   overlap: number = 80,
+  semanticMaxChunkSize?: number,
 ): string[] {
   if (content.includes(SEMANTIC_CHUNK_SEPARATOR)) {
-    return content
+    const semantic = content
       .split(SEMANTIC_CHUNK_SEPARATOR)
       .map((chunk) => chunk.trim())
       .filter((chunk) => chunk.length > 0);
+    return semanticMaxChunkSize === undefined
+      ? semantic
+      : enforceMaxChunkSize(semantic, semanticMaxChunkSize, overlap);
   }
 
   return generateChunks(content, maxChunkSize, overlap);
@@ -1695,7 +1707,12 @@ export async function processMaterialEmbeddings(
   const settings =
     options?.embeddingSettings ?? (await loadEffectiveEmbeddingSettings(material.courseId));
   const { maxChunkSize, overlap } = resolveChunkParams(settings.wantsLocal);
-  const chunks = resolveMaterialChunks(content, maxChunkSize, overlap);
+  const chunks = resolveMaterialChunks(
+    content,
+    maxChunkSize,
+    overlap,
+    settings.wantsLocal ? maxChunkSize : undefined,
+  );
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
