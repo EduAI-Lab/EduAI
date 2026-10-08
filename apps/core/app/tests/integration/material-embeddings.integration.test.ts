@@ -96,6 +96,18 @@ describe("processMaterialEmbeddings with the local CMPS embedding model (#1931)"
     VLLM_API_KEY: "cmps-test-key",
   } as const;
   const saved: Record<string, string | undefined> = {};
+  // Its own course: embedding settings are cached per course, and the cloud
+  // test above has already cached `wantsLocal: false` for the shared one.
+  let localCourseId: string;
+
+  beforeAll(async () => {
+    const course = await seedCourse({ name: "Local embedding chunk limit" });
+    localCourseId = course.id;
+  });
+
+  afterAll(async () => {
+    await cleanupRbac({ courseIds: [localCourseId] });
+  });
 
   beforeEach(() => {
     for (const [key, value] of Object.entries(LOCAL_ENV)) {
@@ -122,7 +134,7 @@ describe("processMaterialEmbeddings with the local CMPS embedding model (#1931)"
 
     const material = await prisma.courseMaterial.create({
       data: {
-        courseId,
+        courseId: localCourseId,
         title: `local-chunk-limit-${Date.now()}`,
         mimeType: "application/pdf",
         fileSize: content.length,
