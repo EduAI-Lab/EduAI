@@ -175,6 +175,7 @@ import { shouldInjectCourseRag, shouldPrefetchCourseRag } from "~/lib/ai/course-
 import {
   buildCappedRagContextText,
   buildEmptyCourseRagBlock,
+  selectCappedRagExcerpts,
   buildRagSystemBlock,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
@@ -2150,6 +2151,8 @@ export async function action({ request }: ActionFunctionArgs) {
         let useToolCalling: boolean;
         let toolMaxTokens: number | undefined;
         let courseRagHits: HybridRagHit[] = [];
+        /** The hits that fit the prompt (#1936) — what the model sees, after the caps. */
+        let courseRagExcerpts: HybridRagHit[] = [];
         let courseRagContextText = "";
         let courseRagInject = false;
         let effectiveForceHybridRag = forceHybridRag;
@@ -2458,6 +2461,11 @@ export async function action({ request }: ActionFunctionArgs) {
               hits: courseRagHits,
             });
             if (courseRagInject && courseRagHits.length > 0) {
+              courseRagExcerpts = selectCappedRagExcerpts(
+                courseRagHits,
+                HYBRID_RAG_MAX_CHUNKS,
+                HYBRID_RAG_MAX_CONTEXT_CHARS,
+              );
               courseRagContextText = buildCappedRagContextText(
                 courseRagHits,
                 HYBRID_RAG_MAX_CHUNKS,
@@ -2467,34 +2475,40 @@ export async function action({ request }: ActionFunctionArgs) {
           }
 
           if (effectiveCourseId) {
-            turnRagSources = courseRagContextText
-              ? ragSourceTitles(courseRagHits.slice(0, HYBRID_RAG_MAX_CHUNKS))
-              : [];
+            turnRagSources = ragSourceTitles(courseRagExcerpts);
 
             // #1936: when retrieval can't support a course question — nothing came
-            // back, or the question names an item ("Lab 15") no excerpt mentions —
-            // reply with fixed text rather than let the model fill the gap. Only the
-            // default tutor: a custom system prompt (extensions, structured
-            // generation) and service-key callers keep their own handling, and an
-            // attached file may hold the answer the materials don't.
+            // back on the opening question, or the question names an item ("Lab 15")
+            // none of the excerpts the model would see mentions — reply with fixed
+            // text rather than let the model fill the gap. Skipped where something
+            // else could hold the answer: service-key callers (AI Tutor / Question
+            // Maker) keep their own handling, an attached file may answer it, and
+            // the tool loop can search again or go to the web.
             const conversationHasAttachments = trimmedMessages.some(
               (message) =>
                 Array.isArray(message.experimental_attachments) &&
                 message.experimental_attachments.length > 0,
             );
             const noCoverageReason = resolveNoCoverageReason({
-              eligible: !resolvedSystemPrompt && !isServiceKeyCaller && !conversationHasAttachments,
+              eligible: !isServiceKeyCaller && !conversationHasAttachments && !useToolCalling,
               courseRagNeeded,
+              isFollowUp: trimmedMessages.some((message) => message.role === "assistant"),
               question: userQuestion,
-              hits: courseRagHits,
+              excerpts: courseRagExcerpts,
             });
             if (noCoverageReason) {
-              chatApiDebug("Course materials do not cover turn", {
+              // Always on (not debug-gated) so prod can count how often this fires.
+              console.info("[course-grounding] materials do not cover turn", {
                 chatId: chat.id,
                 courseId: effectiveCourseId,
                 reason: noCoverageReason,
                 ragChunkCount: courseRagHits.length,
               });
+              // No model ran, so the turn should not spend the local daily cap.
+              if (localDailyCapCharge) {
+                await refundLocalChatDailyCap(localDailyCapCharge);
+                localDailyCapCharge = null;
+              }
               // No material answered this turn, whatever retrieval returned.
               turnRagSources = [];
               return respondWithFixedAssistantText(

@@ -16,26 +16,45 @@ export const COURSE_MATERIALS_NO_COVERAGE_REPLY =
   "The course materials don't cover this. Check Canvas or ask your instructor.";
 
 /** A numbered course item named in a question, e.g. "Lab 15". */
-export type CourseItemRef = { kind: string; number: number };
+export type CourseItemRef = { kind: CourseItemKind; number: number };
 
-const COURSE_ITEM_KINDS = [
-  "lab",
-  "assignment",
-  "quiz",
-  "lecture",
-  "week",
-  "module",
-  "chapter",
-  "unit",
-  "homework",
-  "project",
-  "midterm",
-  "exam",
-  "tutorial",
+/**
+ * Graded or scheduled items, the ones a student asks due dates and weights
+ * about — the shape of the #1936 failure. Content containers (lecture, week,
+ * chapter, module) are left out on purpose: their later chunks rarely repeat
+ * the number, so a literal check would send covered questions to Canvas.
+ *
+ * Each kind lists the spellings that name it in a question; matching against
+ * excerpts also accepts abbreviations (see `refPatterns`).
+ */
+const COURSE_ITEMS = [
+  { kind: "lab", aliases: ["lab"] },
+  { kind: "assignment", aliases: ["assignment", "assgn", "assn", "asgn", "asg"] },
+  { kind: "quiz", aliases: ["quiz"] },
+  { kind: "homework", aliases: ["homework", "hw"] },
+  { kind: "project", aliases: ["project"] },
+  { kind: "midterm", aliases: ["midterm"] },
+  { kind: "exam", aliases: ["exam"] },
+  { kind: "tutorial", aliases: ["tutorial"] },
+  { kind: "problem set", aliases: ["problem set", "pset"] },
 ] as const;
 
+/** A graded item kind the coverage check knows, e.g. "lab". */
+export type CourseItemKind = (typeof COURSE_ITEMS)[number]["kind"];
+
+const KIND_BY_ALIAS = new Map<string, CourseItemKind>(
+  COURSE_ITEMS.flatMap((item) => item.aliases.map((alias) => [alias, item.kind] as const)),
+);
+
+/**
+ * A number right after the item word that is really a weight, time, or score:
+ * "exam 40%", "midterm 2pm", "quiz 5 marks". Also rules out "3.2" section
+ * numbering.
+ */
+const NOT_AN_ITEM_NUMBER = String.raw`(?![\d%]|\.\d|\s*(?:%|percent\b|am\b|pm\b|marks?\b|points?\b|pts\b))`;
+
 const COURSE_ITEM_REF_RE = new RegExp(
-  `\\b(${COURSE_ITEM_KINDS.join("|")})s?[\\s_-]*(?:#|no\\.?\\s*|number\\s*)?0*(\\d{1,3})(?!\\d)`,
+  String.raw`\b(${[...KIND_BY_ALIAS.keys()].sort((a, b) => b.length - a.length).join("|")})s?[\s_-]*(?:#|no\.?\s*|number\s*)?0*(\d{1,3})${NOT_AN_ITEM_NUMBER}`,
   "gi",
 );
 
@@ -44,7 +63,8 @@ export function extractCourseItemRefs(question: string): CourseItemRef[] {
   const refs: CourseItemRef[] = [];
   const seen = new Set<string>();
   for (const match of question.matchAll(COURSE_ITEM_REF_RE)) {
-    const kind = match[1].toLowerCase();
+    const kind = KIND_BY_ALIAS.get(match[1].toLowerCase());
+    if (!kind) continue;
     const number = Number(match[2]);
     const key = `${kind}:${number}`;
     if (seen.has(key)) continue;
@@ -54,47 +74,79 @@ export function extractCourseItemRefs(question: string): CourseItemRef[] {
   return refs;
 }
 
-/**
- * Matches the item written as the kind word or any abbreviation of it at least
- * `minPrefix` letters long: "lab", 15 → "Lab 15", "lab15", "LAB-15", "Lab 015";
- * "chapter", 3 → "Ch. 3", "Chap 3"; with minPrefix 1, "lecture", 14 → "L14".
- * Never "Lab 150" or "Lab 15" inside "XLab 15".
- */
-function refPattern(ref: CourseItemRef, minPrefix: number): RegExp {
-  const kind = ref.kind;
-  // "chapter" with minPrefix 2 → "ch(?:a(?:p(?:t(?:e(?:r)?)?)?)?)?"
-  let word = "";
-  for (let i = kind.length - 1; i >= minPrefix; i--) {
-    word = `(?:${kind[i]}${word})?`;
+/** "chapter" with minPrefix 2 → "ch(?:a(?:p(?:t(?:e(?:r)?)?)?)?)?" — any abbreviation of the word. */
+function prefixAlternation(word: string, minPrefix: number): string {
+  let tail = "";
+  for (let i = word.length - 1; i >= minPrefix; i--) {
+    tail = `(?:${word[i]}${tail})?`;
   }
-  word = kind.slice(0, minPrefix) + word;
-  return new RegExp(`(?<![a-z])${word}s?\\.?[\\s_-]*(?:#|no\\.?\\s*)?0*${ref.number}(?!\\d)`, "i");
+  return word.slice(0, minPrefix) + tail;
 }
 
 /**
- * Course items the question names that no retrieved excerpt or material title
- * mentions. Lenient on purpose — a title match counts, abbreviations count —
- * because a wrong "not covered" sends a student away from a real answer. File
- * names abbreviate hardest ("ZZ-TEST-DATA301-L14-Data-Cleaning"), so a title
- * may shorten the kind to one letter; body text needs two ("Ch. 3", "Lec 14").
+ * Patterns that count as mentioning the item in an excerpt and in a material
+ * title. "lab", 15 → "Lab 15", "lab15", "LAB-15", "Lab 015", never "Lab 150"
+ * or "XLab 15". Body text accepts the word, its aliases ("HW3"), any
+ * abbreviation of two letters or more ("Asg 2"), and a capital initial glued
+ * to the number ("A2", "L14"). File names abbreviate hardest
+ * ("ZZ-TEST-DATA301-L14-Data-Cleaning"), so a title may use any initial.
+ */
+/** What counts as a mention of one item, in excerpt text and in a material title. */
+type CourseItemPatterns = { content: RegExp[]; title: RegExp };
+
+function refPatterns(ref: CourseItemRef): CourseItemPatterns {
+  const number = String.raw`s?\.?[\s_-]*(?:#|no\.?\s*)?0*${ref.number}(?!\d)`;
+  const itemAliases = COURSE_ITEMS.find((item) => item.kind === ref.kind)?.aliases ?? [ref.kind];
+  const aliases = itemAliases.map((alias) => alias.replace(/ /g, String.raw`[\s_-]*`));
+  const contentWords = [prefixAlternation(ref.kind.replace(/ /g, ""), 2), ...aliases];
+  const titleWords = [prefixAlternation(ref.kind.replace(/ /g, ""), 1), ...aliases];
+  const initial = ref.kind[0].toUpperCase();
+  return {
+    content: [
+      new RegExp(String.raw`(?<![a-z])(?:${contentWords.join("|")})${number}`, "i"),
+      new RegExp(String.raw`(?<![A-Za-z])${initial}[-_]?0*${ref.number}(?!\d)`),
+    ],
+    title: new RegExp(String.raw`(?<![a-z])(?:${titleWords.join("|")})${number}`, "i"),
+  };
+}
+
+/**
+ * Course items the question names that no excerpt or material title
+ * mentions. Lenient on purpose — titles and abbreviations count — because a
+ * wrong "not covered" sends a student away from a real answer.
  */
 export function findUncoveredCourseItemRefs(
   question: string,
-  hits: HybridRagHit[],
+  excerpts: HybridRagHit[],
 ): CourseItemRef[] {
   return extractCourseItemRefs(question).filter((ref) => {
-    const inContent = refPattern(ref, 2);
-    const inTitle = refPattern(ref, 1);
-    return !hits.some((hit) => inContent.test(hit.content) || inTitle.test(hit.materialTitle));
+    const patterns = refPatterns(ref);
+    return !excerpts.some(
+      (excerpt) =>
+        patterns.content.some((pattern) => pattern.test(excerpt.content)) ||
+        patterns.title.test(excerpt.materialTitle),
+    );
   });
 }
 
 export type NoCoverageInput = {
-  /** Default course tutor turn — not a custom prompt, service key, or admin/instructor mode. */
+  /**
+   * Default course tutor on the no-tools path, with nothing else that could
+   * hold the answer: not a service-key caller (AI Tutor / Question Maker), no
+   * attached file, and no tool loop that could search again or go to the web.
+   */
   eligible: boolean;
   courseRagNeeded: boolean;
+  /**
+   * The chat already has an assistant turn. Retrieval runs on the latest
+   * message alone, so "Continue" or "give an example of that" finds nothing
+   * even when the conversation is grounded — empty retrieval only means "not
+   * covered" on the opening question.
+   */
+  isFollowUp: boolean;
   question: string;
-  hits: HybridRagHit[];
+  /** The excerpts the model would actually see this turn, after the chunk and size caps. */
+  excerpts: HybridRagHit[];
 };
 
 /** Why the course materials can't support this turn, or null when the model should answer. */
@@ -102,8 +154,8 @@ export function resolveNoCoverageReason(
   input: NoCoverageInput,
 ): "no-hits" | "uncovered-item" | null {
   if (!input.eligible || !input.courseRagNeeded) return null;
-  if (input.hits.length === 0) return "no-hits";
-  if (findUncoveredCourseItemRefs(input.question, input.hits).length > 0) {
+  if (input.excerpts.length === 0) return input.isFollowUp ? null : "no-hits";
+  if (findUncoveredCourseItemRefs(input.question, input.excerpts).length > 0) {
     return "uncovered-item";
   }
   return null;

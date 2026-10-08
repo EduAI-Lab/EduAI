@@ -420,13 +420,13 @@ describe("Smart course RAG gate (#484)", () => {
       ]);
     });
 
-    it("keeps the model call for a custom system prompt with no hits (extensions)", async () => {
+    it("still replies with fixed text when a student has saved a system prompt (PR #1946 review)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
         makeRequest(
           baseBody({
-            systemPrompt: "Return JSON only.",
+            systemPrompt: "Explain like I'm new to this.",
             messages: [
               { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
             ],
@@ -434,7 +434,48 @@ describe("Smart course RAG gate (#484)", () => {
         ),
       );
       expect(res.status).toBe(200);
+      expect((await res.json()).content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("lets a follow-up with empty retrieval reach the model (PR #1946 review)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      // History comes from the DB, newest first: an earlier grounded exchange.
+      vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+        storedRecord("stored-1", "assistant", "Trees are hierarchical."),
+        storedRecord("stored-0", "user", "What did chapter 3 say about trees?"),
+      ] as never);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-3", role: "user", content: "Can you give an example of that?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
       expect(streamText).toHaveBeenCalled();
+      expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
+    });
+
+    it("checks coverage against the excerpts that fit the prompt, not every hit (PR #1946 review)", async () => {
+      // A course ragTopK can return more hits than the 4-chunk cap lets in.
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        ...Array.from({ length: 4 }, (_, i) => ({
+          content: `Tidy data note ${i}.`,
+          similarity: 0.8 - i * 0.01,
+          materialTitle: "Notes",
+        })),
+        { content: "Lab 15 is due Dec 1.", similarity: 0.6, materialTitle: "Notes" },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({ messages: [{ id: "msg-1", role: "user", content: "When is Lab 15 due?" }] }),
+        ),
+      );
+      expect((await res.json()).content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(streamText).not.toHaveBeenCalled();
     });
 
     it("fails closed with RAG_DIMENSION_MISMATCH when retrieval throws for a course-intent query (#225 RAG-01)", async () => {
@@ -663,6 +704,18 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Late work loses 10%");
       expect(lastStreamConfig().system).toContain("getInformation");
+    });
+
+    it("leaves an uncovered question to the tool loop, which can search again (PR #1946 review)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({ messages: [{ id: "msg-1", role: "user", content: "When is Lab 15 due?" }] }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
     });
 
     it("fails closed on the tool path too when retrieval throws for a course-intent query (#225 RAG-01)", async () => {
