@@ -175,6 +175,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.cancel.ts",
   }),
   entry({
+    method: "POST",
+    path: "/api/chat/attachments",
+    readiness: "excluded",
+    reason:
+      "Browser-only multipart file extraction for the chat composer (#1902); not an agent operation",
+    routeFile: "routes/api/chat.attachments.ts",
+  }),
+  entry({
     method: "GET",
     path: "/api/ai-jobs/:jobId",
     readiness: "excluded",

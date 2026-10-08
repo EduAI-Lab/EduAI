@@ -12,6 +12,7 @@ import {
 import { IconHistory } from "@tabler/icons-react";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import type { ChatSubmitOptions } from "~/components/chat/chat-input";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
 import { ChatHistoryRail } from "~/components/chat/chat-history-rail";
@@ -731,14 +732,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }, [stopActiveChatRequest]);
 
   const onSubmit = useCallback(
-    (e: React.FormEvent<HTMLFormElement>) => {
+    (e: React.FormEvent<HTMLFormElement>, options?: ChatSubmitOptions) => {
       // Share the chip's in-flight guard: a chip's `append` sets the ref
       // synchronously but `isLoading` only flips on the next render, so an
       // Enter/Send fired in that window would otherwise submit a second
       // concurrent request. Bail while a chip submit is still settling.
       if (promptSubmitInFlightRef.current) {
         e.preventDefault();
-        return;
+        return false;
       }
       if (!chatId) {
         postAssistiveClientEvent({
@@ -761,7 +762,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           },
         });
       }
-      handleSubmit(e);
+      handleSubmit(e, options);
     },
     [adhdAssist, chatId, handleSubmit],
   );

@@ -10,8 +10,9 @@ import {
   IconFocusCentered,
   IconBooksOff,
   IconLoader2,
+  IconPaperclip,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { useMotionReducedPreference } from "~/components/assistive/ui-preferences-provider";
@@ -26,12 +27,19 @@ import {
   ASSISTIVE_INPUT_ANCHOR_CLASS,
   CHAT_MESSAGE_INPUT_ID,
 } from "~/components/assistive/active-highlight";
+import { CHAT_ATTACHMENT_ACCEPT } from "~/lib/chat/attachment-types";
+import type { ChatTextAttachment } from "~/lib/chat/chat-attachments";
+import { ChatAttachmentChips } from "./chat-attachment-chips";
+import { useChatAttachments } from "./use-chat-attachments";
+
+export type ChatSubmitOptions = { experimental_attachments?: ChatTextAttachment[] };
 
 interface ChatInputProps {
   input: string;
   isLoading: boolean;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  /** Return `false` when the send was swallowed so the composer keeps its attached files. */
+  onSubmit: (e: React.FormEvent<HTMLFormElement>, options?: ChatSubmitOptions) => boolean | void;
   onStop?: () => void;
   selectedCourseId: string | null;
   setSelectedCourseId: (value: string | null) => void;
@@ -76,6 +84,8 @@ interface ChatInputProps {
   systemPrompt?: string | null;
   onSystemPromptSave?: (p: string | null) => void;
   disabledReason?: string;
+  /** #1902: show the paperclip and accept dropped files. */
+  attachmentsEnabled?: boolean;
 }
 
 const TOOLBAR_CHIP =
@@ -111,10 +121,14 @@ export function ChatInput({
   systemPrompt,
   onSystemPromptSave,
   disabledReason,
+  attachmentsEnabled = true,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { apiKeys, isProviderConfigured, updateProviderSettings, removeProviderSettings } =
     useApiKeys();
+
+  const attachments = useChatAttachments();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleValueChange = (value: string) => {
     const event = {
@@ -124,12 +138,27 @@ export function ChatInput({
     onInputChange(event);
   };
 
+  // A regenerate-in-flight preview must block a normal send too — otherwise
+  // the send uses the pre-toggle mode while the preview can later flip it,
+  // leaving the new answer and the toggle out of sync (#1365 review).
+  const canSend =
+    !isLoading &&
+    !assistBusy &&
+    !disabledReason &&
+    input.trim().length > 0 &&
+    !attachments.isBlocking;
+
   const handleSubmit = () => {
+    if (!canSend) return;
     const formEvent = {
       preventDefault: () => {},
       currentTarget: {} as HTMLFormElement,
     } as React.FormEvent<HTMLFormElement>;
-    onSubmit(formEvent);
+    const sent =
+      attachments.attachments.length > 0
+        ? onSubmit(formEvent, { experimental_attachments: attachments.attachments })
+        : onSubmit(formEvent);
+    if (sent !== false) attachments.clear();
   };
 
   const selectedCourse = selectedCourseId
@@ -139,10 +168,6 @@ export function ChatInput({
     ? (selectedCourse?.label ?? selectedCourse?.code ?? selectedCourseId)
     : null;
 
-  // A regenerate-in-flight preview must block a normal send too — otherwise
-  // the send uses the pre-toggle mode while the preview can later flip it,
-  // leaving the new answer and the toggle out of sync (#1365 review).
-  const canSend = !isLoading && !assistBusy && !disabledReason && input.trim().length > 0;
   const controlsDisabled = !!disabledReason;
   const motionReduced = useMotionReducedPreference();
   const chipPress = motionReduced
@@ -164,6 +189,17 @@ export function ChatInput({
           )}
 
           <div
+            data-testid="chat-composer"
+            onDragOver={(e) => {
+              if (attachmentsEnabled) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              // Always claim the drop so the browser never navigates to the file.
+              if (!attachmentsEnabled) return;
+              e.preventDefault();
+              if (controlsDisabled || isLoading) return;
+              attachments.add(Array.from(e.dataTransfer.files));
+            }}
             className={cn(
               "overflow-hidden rounded-2xl border border-border/60 bg-muted/10 shadow-sm transition-[box-shadow,border-color,transform] duration-300 ease-out focus-within:border-border/80 focus-within:shadow-md",
               !motionReduced && "focus-within:scale-[1.004]",
@@ -171,6 +207,18 @@ export function ChatInput({
               controlsDisabled && "pointer-events-none opacity-40",
             )}
           >
+            {attachmentsEnabled && (attachments.items.length > 0 || attachments.limitError) && (
+              <div className="px-3 pt-2.5">
+                <ChatAttachmentChips
+                  items={attachments.items}
+                  onRemove={attachments.remove}
+                  onRetry={attachments.retry}
+                />
+                {attachments.limitError && (
+                  <p className="mt-1 text-xs text-destructive">{attachments.limitError}</p>
+                )}
+              </div>
+            )}
             <PromptInput
               value={input}
               onValueChange={handleValueChange}
@@ -322,6 +370,36 @@ export function ChatInput({
               </div>
 
               <div className="flex shrink-0 items-center gap-1">
+                {attachmentsEnabled && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      data-testid="chat-attachment-input"
+                      type="file"
+                      multiple
+                      accept={CHAT_ATTACHMENT_ACCEPT}
+                      className="hidden"
+                      onChange={(e) => {
+                        attachments.add(Array.from(e.target.files ?? []));
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={controlsDisabled || isLoading}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={cn(
+                        "h-7 w-7 rounded-lg border border-border/50 bg-background/80 p-0 text-foreground/75 hover:bg-muted hover:text-foreground",
+                        chipPress,
+                      )}
+                      aria-label="Attach files"
+                    >
+                      <IconPaperclip size={14} stroke={2} />
+                    </Button>
+                  </>
+                )}
                 <Button
                   type="button"
                   variant="ghost"
