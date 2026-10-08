@@ -7,6 +7,7 @@ import { useCoreSidebarProps, type UseCoreSidebarPropsOptions } from "~/componen
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette";
+import { CorePageHelp } from "~/components/help/core-page-help";
 import { CurrentUserIdProvider } from "~/contexts/current-user";
 import type { User } from "~/lib/auth/types";
 
@@ -44,13 +45,21 @@ export function resolveCoreHeaderTitle(pathname: string, title?: string): string
 /**
  * The header's fixed right-hand action bundle, identical across every Core
  * page: quick search, live AI-service status, theme toggle, and the bug
- * report trigger. `extraActions` renders BEFORE this bundle, for the rare
+ * report trigger, with the page help (?) button pinned last so it sits in the
+ * top-right corner (#1754). `extraActions` renders BEFORE this bundle, for the rare
  * route that needs its own control there too (e.g. the chat page's mobile
  * history toggle) — mirrors the old bespoke SiteHeader's
  * `{actions}{CommandSearchButton}{AIServiceIndicators}{themeToggle}{BugReportSubmitDialog}`
  * order exactly.
  */
-export function CoreHeaderActions({ extraActions }: { extraActions?: React.ReactNode }) {
+export function CoreHeaderActions({
+  extraActions,
+  help,
+}: {
+  extraActions?: React.ReactNode;
+  /** The page help trigger. A slot (not built here) so this bundle renders without a router in tests. */
+  help?: React.ReactNode;
+}) {
   return (
     <>
       {extraActions}
@@ -63,6 +72,7 @@ export function CoreHeaderActions({ extraActions }: { extraActions?: React.React
         <ThemeToggle />
       </span>
       <BugReportSubmitDialog />
+      {help}
     </>
   );
 }
@@ -75,8 +85,6 @@ export interface CoreAppShellProps {
   breadcrumbs?: React.ReactNode;
   /** Route-specific header control(s) rendered before the common action bundle (e.g. chat's history toggle). */
   actions?: React.ReactNode;
-  /** Route-specific floating content mounted alongside the command palette (e.g. dashboard's ProductTour). */
-  tour?: React.ReactNode;
   /** Sidebar variant override — e.g. `"inset"` for the unit-chats and admin-chat pages. */
   sidebarVariant?: AppSidebarProps["variant"];
   /** Sidebar nav overrides, forwarded to `useCoreSidebarProps`. Unused by any route today; kept for parity with the old `AppSidebar` component's flexibility. */
@@ -96,7 +104,7 @@ export interface CoreAppShellProps {
  * Core's composition of the shared `@eduai/ui` `AppShell` (issue #764 core
  * parity) — the single place that assembles Core's sidebar (RBAC nav, logout),
  * header (search, AI status, theme, bug report), command palette, and
- * per-route breadcrumbs/tour, instead of every route hand-assembling
+ * per-route breadcrumbs, instead of every route hand-assembling
  * `SidebarProvider > AppSidebar + SidebarInset > SiteHeader`.
  */
 export function CoreAppShell({
@@ -104,7 +112,6 @@ export function CoreAppShell({
   title,
   breadcrumbs,
   actions,
-  tour,
   sidebarVariant,
   sidebarProps,
   insetClassName,
@@ -126,13 +133,10 @@ export function CoreAppShell({
         sidebar={sidebar}
         title={resolvedTitle}
         breadcrumbs={breadcrumbs}
-        headerActions={<CoreHeaderActions extraActions={actions} />}
-        commandPalette={
-          <>
-            <CommandPalette user={user} />
-            {tour}
-          </>
+        headerActions={
+          <CoreHeaderActions extraActions={actions} help={<CorePageHelp role={user.role} />} />
         }
+        commandPalette={<CommandPalette user={user} />}
         insetClassName={insetClassName}
         mainClassName={mainClassName}
         providerClassName={providerClassName}

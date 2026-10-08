@@ -13,7 +13,7 @@
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { createAdmin, DEFAULT_PASSWORD, promoteUser, registerUser, signOut } from "../helpers/auth";
-import { gotoAiTutor, loginAsAdmin, openTab, sidebar } from "../helpers/at-ui";
+import { gotoAiTutor, loginAsAdmin, openHelpTourEntry, openTab, sidebar } from "../helpers/at-ui";
 import { seedAtCourse, seedCourseWithActivity } from "../helpers/at-admin-fixtures";
 
 test.describe("AI Tutor ADMIN — sign-in and landing", () => {
@@ -318,12 +318,11 @@ test.describe("AI Tutor ADMIN — sign-out", () => {
 
 test.describe("AI Tutor ADMIN — shell affordances scoped to other roles", () => {
   test("the guided tour is not offered to an admin", async ({ page }) => {
-    // `canAccessStudentTour` is STUDENT/TA only, so the sparkle button never
-    // renders for an admin — correct. Recorded because Help still tells admins
-    // to look for it (see the Help finding in the workflow doc).
+    // `resolveHelpTourId` has no tour for ADMIN, so the header help modal
+    // offers the page's help without a tour entry.
     await loginAsAdmin(page, "at-admin-no-tour");
     await gotoAiTutor(page, "/instructor");
-    await expect(page.getByRole("button", { name: /take tour/i })).toHaveCount(0);
+    await expect(await openHelpTourEntry(page)).toHaveCount(0);
   });
 
   test("/unsupported-role bounces a supported role back to the dashboard", async ({ page }) => {

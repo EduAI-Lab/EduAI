@@ -23,13 +23,12 @@ import {
   Alert,
   AlertDescription,
   resolvePaletteAccent,
+  useTour,
 } from "@eduai/ui";
 import { CourseDetailSkeleton } from "@/components/shared/Skeletons";
 import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
 import { useQuestionListControls } from "../hooks/useQuestionListControls";
 import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
-import { useGuidedTour } from "../contexts/GuidedTourContext";
-import { useQmLayout } from "../components/layout/QmLayoutContext";
 import { questionService } from "../services/questionService";
 import type { ProviderApiKeys } from "../services/apiKeyStorage";
 import { courseService } from "../services/courseService";
@@ -152,14 +151,7 @@ export const CourseDetailPage = () => {
     hasCourseAccess,
     accessLoading,
   } = useQmPermissionsForCourse(courseId);
-  const { setGuidedTourHandler } = useQmLayout();
-  const {
-    startTour,
-    registerOnTourEnd,
-    registerStepAction,
-    isActive: isTourActive,
-    activeTourId,
-  } = useGuidedTour();
+  const { startTour } = useTour();
 
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
   const openCanvasImport = useCallback(() => setIsCanvasImportOpen(true), []);
@@ -512,28 +504,6 @@ export const CourseDetailPage = () => {
   useEffect(() => {
     if (courseId) void loadTopicsForCourse(courseId);
   }, [courseId, loadTopicsForCourse]);
-
-  // ── Guided tour wiring ──────────────────────────────────────────────────────
-  // Starting the tour from this page sends the user back to course selection so
-  // step 1 begins there; the tour returns to a course on this page.
-  const handleGuidedTourClick = useCallback(() => {
-    startTour("main");
-    registerOnTourEnd(() => navigate("/courses"));
-  }, [startTour, registerOnTourEnd, navigate]);
-
-  useEffect(() => {
-    setGuidedTourHandler(handleGuidedTourClick);
-    return () => setGuidedTourHandler(null);
-  }, [handleGuidedTourClick, setGuidedTourHandler]);
-
-  // Tour: switch to the Assessments tab when that step runs.
-  useEffect(() => {
-    if (!isTourActive || activeTourId !== "main") return;
-    const unregister = registerStepAction("assessment-tab", () => {
-      setActiveTab("assessments");
-    });
-    return unregister;
-  }, [isTourActive, activeTourId, registerStepAction, setActiveTab]);
 
   // ── Derived data ────────────────────────────────────────────────────────────
   const variantEntries = useMemo<QuestionVariantEntry[]>(() => {
@@ -1104,7 +1074,9 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
-          <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
+          <PageTabsTrigger value="assessments" data-tour="assessment-tab">
+            Assessments
+          </PageTabsTrigger>
           {canUseLinkedCanvas && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
         </PageTabsList>
 

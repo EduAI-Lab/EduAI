@@ -5,6 +5,7 @@ import {
   TOOL_RAG_MAX_CHARS_PER_CHUNK,
 } from "~/lib/ai/tool-output-limits";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { isImageAttachment } from "~/lib/chat/chat-attachments";
 
 // Re-export the shared tool-output limits so existing importers (and tests) that
 // reach for them via `~/lib/chat-rag` keep working after the extraction (#260).
@@ -183,6 +184,7 @@ export type ChatSessionMessage = {
   role?: string;
   content?: unknown;
   parts?: unknown;
+  experimental_attachments?: unknown;
 };
 
 function safeJsonLength<T>(value: T): number {
@@ -283,7 +285,12 @@ const imagePartSchema = z
       (part.image_url !== undefined && part.image_url !== null),
   );
 
-/** True when the message includes image parts (AI SDK content/parts arrays). */
+const attachmentLikeSchema = z.object({
+  contentType: z.string().optional().catch(undefined),
+  url: z.string().optional().catch(undefined),
+});
+
+/** True when the message includes image parts or image attachments (AI SDK content/parts/attachments). */
 export function messageHasImageParts(message?: ChatSessionMessage): boolean {
   if (!message) return false;
   for (const value of [message.content, message.parts]) {
@@ -291,7 +298,8 @@ export function messageHasImageParts(message?: ChatSessionMessage): boolean {
       return true;
     }
   }
-  return false;
+  const attachments = z.array(attachmentLikeSchema).safeParse(message.experimental_attachments);
+  return attachments.success && attachments.data.some((a) => isImageAttachment(a));
 }
 
 function totalMessageChars<T extends ChatSessionMessage>(

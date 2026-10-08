@@ -18,6 +18,7 @@ import { createTeachingInstructor, type InstructorFixture } from "../helpers/at-
 import {
   commandPalette,
   gotoAiTutor,
+  openHelpTourEntry,
   sidebar,
   sidebarHrefs,
   userMenuButton,
@@ -228,18 +229,17 @@ test.describe("INSTRUCTOR shell and navigation", () => {
   test("no guided tour is offered to an instructor", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    // `canAccessTour` admits STUDENT/TA on the student shell and UNIT_ADMIN on
-    // /dashboard + /instructor — INSTRUCTOR is in neither branch, so the
-    // sidebar-footer control never renders. `tour-storage.ts` says why: the
-    // unit-admin tour is unit-scoped and staff-voiced, and extending it to
-    // instructors would need its own copy rather than another role in the list.
-    // Asserted on both routes the unit-admin tour is offered from, so a future
-    // instructor tour turns this into a deliberate, visible change.
-    const tourButton = sidebar(page).getByRole("button", { name: /Take Tour|Stop Tour/ });
-    await expect(tourButton).toHaveCount(0);
+    // `resolveHelpTourId` offers STUDENT/TA the learner tours and UNIT_ADMIN
+    // the unit tour — INSTRUCTOR gets none, so the help modal has no tour
+    // entry. `tour-access.ts` says why: the unit-admin tour is unit-scoped and
+    // staff-voiced, and extending it to instructors would need its own copy
+    // rather than another role in the list. Asserted on both routes the
+    // unit-admin tour is offered from, so a future instructor tour turns this
+    // into a deliberate, visible change.
+    await expect(await openHelpTourEntry(page)).toHaveCount(0);
 
     await gotoAiTutor(page, "/instructor");
-    await expect(tourButton).toHaveCount(0);
+    await expect(await openHelpTourEntry(page)).toHaveCount(0);
   });
 
   test("breadcrumbs trace the content hierarchy", async ({ page }) => {

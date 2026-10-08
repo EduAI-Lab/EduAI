@@ -138,7 +138,7 @@ function QuestionFileUploadZone({
   return (
     <label
       htmlFor={id}
-      data-tour-id="upload-file"
+      data-tour="upload-file"
       className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-muted/50 cursor-pointer"
     >
       <IconUpload className="h-10 w-10 text-muted-foreground" />
@@ -1159,10 +1159,7 @@ export const QuestionUploadDialog = ({
                   </CardHeader>
                 </Card>
               ) : (
-                <Card
-                  data-tour-id="upload-assessment-meta"
-                  className="shrink-0 w-full md:w-[280px]"
-                >
+                <Card data-tour="upload-assessment-meta" className="shrink-0 w-full md:w-[280px]">
                   <CardHeader className="space-y-1">
                     <CardTitle className="text-base font-semibold">Assessment details</CardTitle>
                     <p className="text-xs text-muted-foreground">
@@ -1246,7 +1243,7 @@ export const QuestionUploadDialog = ({
                             </p>
                           </CardHeader>
                           <CardContent className="space-y-4">
-                            <div className="space-y-2" data-tour-id="upload-model">
+                            <div className="space-y-2" data-tour="upload-model">
                               <Label htmlFor="ai-model-expanded">AI model</Label>
                               <Select value={aiModel} onValueChange={setAiModel}>
                                 <SelectTrigger id="ai-model-expanded">
@@ -1395,7 +1392,7 @@ export const QuestionUploadDialog = ({
                         </Card>
                       )}
                     </div>
-                    <Card data-tour-id="upload-review" className="flex-1 min-h-0 flex flex-col">
+                    <Card data-tour="upload-review" className="flex-1 min-h-0 flex flex-col">
                       <CardHeader className="flex flex-row items-center justify-between shrink-0">
                         <CardTitle className="text-base font-semibold">
                           Review extracted questions ({draftQuestions.length})
@@ -1633,7 +1630,7 @@ export const QuestionUploadDialog = ({
                       </p>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="space-y-2" data-tour-id="upload-model">
+                      <div className="space-y-2" data-tour="upload-model">
                         <Label htmlFor="ai-model">AI model</Label>
                         <Select value={aiModel} onValueChange={setAiModel}>
                           <SelectTrigger id="ai-model">
@@ -1843,7 +1840,7 @@ export const QuestionUploadDialog = ({
                       variant="default"
                       onClick={() => void handleSave()}
                       disabled={!canSave}
-                      data-tour-id="upload-create"
+                      data-tour="upload-create"
                     >
                       {processingStage === "saving" && <Spinner className="mr-2" />}
                       {processingStage === "saving" ? "Saving…" : "Save questions"}
@@ -1866,7 +1863,7 @@ export const QuestionUploadDialog = ({
                       variant="default"
                       onClick={() => void handleSave()}
                       disabled={!canSave}
-                      data-tour-id="upload-create"
+                      data-tour="upload-create"
                     >
                       {processingStage === "saving" && <Spinner className="mr-2" />}
                       {processingStage === "saving" ? "Saving…" : "Save questions"}

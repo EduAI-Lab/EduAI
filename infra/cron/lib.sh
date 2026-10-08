@@ -19,7 +19,23 @@ else
   exit 1
 fi
 unset _LIB_DIR
-export PGPASSWORD="$DB_PASS"
+export PGPASSWORD="${DB_PASS:-}"
+
+# Per-database connection settings (#1873). Production's three databases differ
+# in name, user and password, so each can be set on its own; anything unset falls
+# back to the shared DB_USER / DB_PASS and the local development names.
+DB_NAME_CORE="${DB_NAME_CORE:-eduai}"
+DB_NAME_TUTOR="${DB_NAME_TUTOR:-ai-tutor}"
+DB_NAME_QM="${DB_NAME_QM:-question-maker}"
+DB_USER_CORE="${DB_USER_CORE:-${DB_USER:-}}"
+DB_USER_TUTOR="${DB_USER_TUTOR:-${DB_USER:-}}"
+DB_USER_QM="${DB_USER_QM:-${DB_USER:-}}"
+DB_PASS_CORE="${DB_PASS_CORE:-${DB_PASS:-}}"
+DB_PASS_TUTOR="${DB_PASS_TUTOR:-${DB_PASS:-}}"
+DB_PASS_QM="${DB_PASS_QM:-${DB_PASS:-}}"
+DB_CONTAINER_CORE="${DB_CONTAINER_CORE:-eduai-db}"
+DB_CONTAINER_TUTOR="${DB_CONTAINER_TUTOR:-eduai-ai-tutor-db}"
+DB_CONTAINER_QM="${DB_CONTAINER_QM:-eduai-question-maker-db}"
 
 log() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" | tee -a "$AUDIT_LOG"
@@ -31,9 +47,9 @@ die() {
   exit 1
 }
 
-psql_core()  { psql -h "$DB_HOST" -p "$DB_PORT_CORE"  -U "$DB_USER" -d eduai           "$@"; }
-psql_tutor() { psql -h "$DB_HOST" -p "$DB_PORT_TUTOR" -U "$DB_USER" -d ai-tutor        "$@"; }
-psql_qm()    { psql -h "$DB_HOST" -p "$DB_PORT_QM"    -U "$DB_USER" -d question-maker  "$@"; }
+psql_core()  { PGPASSWORD="$DB_PASS_CORE"  psql -h "$DB_HOST" -p "$DB_PORT_CORE"  -U "$DB_USER_CORE"  -d "$DB_NAME_CORE"  "$@"; }
+psql_tutor() { PGPASSWORD="$DB_PASS_TUTOR" psql -h "$DB_HOST" -p "$DB_PORT_TUTOR" -U "$DB_USER_TUTOR" -d "$DB_NAME_TUTOR" "$@"; }
+psql_qm()    { PGPASSWORD="$DB_PASS_QM"    psql -h "$DB_HOST" -p "$DB_PORT_QM"    -U "$DB_USER_QM"    -d "$DB_NAME_QM"    "$@"; }
 
 # ── Cron status reporting ────────────────────────────────────────────────────
 # Usage: cron_start <job_name>   → sets CRON_RUN_ID and CRON_LEASE_OWNER

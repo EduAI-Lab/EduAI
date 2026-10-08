@@ -37,6 +37,8 @@ import {
   getPdfExtractionMaxRssMb,
   readChildRssBytes,
   PdfExtractionBusyError,
+  MAX_IMAGE_UPLOAD_BYTES,
+  ExtractionBusyError,
 } from "~/lib/ai/file-processing";
 
 // mammoth now runs inside the isolated extraction worker (#1494 review), a separate
@@ -223,9 +225,9 @@ describe("validateFile", () => {
   });
 
   it("rejects an unsupported MIME type with a message naming the type", () => {
-    const result = validateFile(makeFile("image/png", 100));
+    const result = validateFile(makeFile("image/gif", 100));
     expect(result.isValid).toBe(false);
-    expect(result.error).toContain("image/png");
+    expect(result.error).toContain("image/gif");
   });
 
   it("accepts an empty type when the .md extension identifies it (Windows browsers)", () => {
@@ -236,7 +238,7 @@ describe("validateFile", () => {
     const result = validateFile({ name: "notes.xyz", type: "", size: 100 });
     expect(result.isValid).toBe(false);
     expect(result.error).toBe(
-      "File type  is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX",
+      "File type  is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX, PNG, JPG, WEBP",
     );
   });
 
@@ -334,7 +336,7 @@ describe("validateFileSignature", () => {
   });
 
   it("does not sniff unrecognized declared types (validateFile already rejects those)", async () => {
-    const file = new File(["<binary>"], "image.png", { type: "image/png" });
+    const file = new File(["<binary>"], "image.gif", { type: "image/gif" });
     const result = await validateFileSignature(file);
     expect(result.isValid).toBe(true);
   });
@@ -1160,9 +1162,9 @@ describe("readChildRssBytes", () => {
 
 describe("processUploadedFile", () => {
   it("rejects unsupported file types with the raw validateFile error (not wrapped)", async () => {
-    const file = new File(["hi"], "image.png", { type: "image/png" });
+    const file = new File(["hi"], "image.gif", { type: "image/gif" });
     await expect(processUploadedFile(file)).rejects.toThrow(
-      /File type image\/png is not supported/,
+      /File type image\/gif is not supported/,
     );
     await expect(processUploadedFile(file)).rejects.not.toThrow(/Failed to process file/);
   });
@@ -1285,5 +1287,209 @@ describe("processUploadedFile (#949 split)", () => {
 
     await expect(validateUploadedFile(spoofed)).rejects.toThrow(expected);
     await expect(processUploadedFile(spoofed)).rejects.toThrow(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Image course materials (#1903)
+// ---------------------------------------------------------------------------
+
+const img = (bytes: number[], type: string, name = "a.img") =>
+  new File([new Uint8Array(bytes)], name, { type });
+
+describe("image uploads (#1903)", () => {
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
+  const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const WEBP = [0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50];
+
+  it.each([
+    ["image/png", PNG],
+    ["image/jpeg", JPEG],
+    ["image/webp", WEBP],
+  ])("validateFile accepts %s", (type, bytes) => {
+    expect(validateFile(img(bytes, type)).isValid).toBe(true);
+  });
+
+  it("validateFile accepts an image whose browser-reported type is empty, by extension", () => {
+    expect(validateFile({ name: "slide.PNG", type: "", size: 100 }).isValid).toBe(true);
+    expect(validateFile({ name: "photo.jpg", type: "", size: 100 }).isValid).toBe(true);
+    expect(validateFile({ name: "photo.jpeg", type: "", size: 100 }).isValid).toBe(true);
+    expect(validateFile({ name: "fig.webp", type: "", size: 100 }).isValid).toBe(true);
+  });
+
+  it("validateFile still rejects other image types and names the supported ones", () => {
+    const result = validateFile(img(PNG, "image/gif"));
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain("image/gif");
+    expect(result.error).toContain("PNG");
+    expect(result.error).toContain("WEBP");
+  });
+
+  it("validateFile rejects an image over the image size cap but not a document of that size", () => {
+    const big = img(PNG, "image/png");
+    Object.defineProperty(big, "size", { value: MAX_IMAGE_UPLOAD_BYTES + 1 });
+    const result = validateFile(big);
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain("Image size");
+
+    const atCap = img(PNG, "image/png");
+    Object.defineProperty(atCap, "size", { value: MAX_IMAGE_UPLOAD_BYTES });
+    expect(validateFile(atCap).isValid).toBe(true);
+
+    const bigPdf = img([0x25, 0x50, 0x44, 0x46], "application/pdf", "a.pdf");
+    Object.defineProperty(bigPdf, "size", { value: MAX_IMAGE_UPLOAD_BYTES + 1 });
+    expect(validateFile(bigPdf).isValid).toBe(true);
+  });
+
+  it.each([
+    ["image/png", PNG],
+    ["image/jpeg", JPEG],
+    ["image/webp", WEBP],
+  ])("validateFileSignature accepts real %s bytes", async (type, bytes) => {
+    expect((await validateFileSignature(img(bytes, type))).isValid).toBe(true);
+  });
+
+  it("validateFileSignature resolves an empty declared type from the extension before sniffing", async () => {
+    const png = new File([new Uint8Array(PNG)], "slide.png", { type: "" });
+    expect((await validateFileSignature(png)).isValid).toBe(true);
+    const fake = new File([new Uint8Array(JPEG)], "slide.png", { type: "" });
+    expect((await validateFileSignature(fake)).isValid).toBe(false);
+  });
+
+  it("validateFileSignature rejects mislabeled image bytes", async () => {
+    expect((await validateFileSignature(img(JPEG, "image/png"))).isValid).toBe(false);
+    expect((await validateFileSignature(img(PNG, "image/webp"))).isValid).toBe(false);
+    // RIFF without the WEBP tag (e.g. a WAV) must not pass as WebP.
+    const wav = [0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x41, 0x56, 0x45];
+    expect((await validateFileSignature(img(wav, "image/webp"))).isValid).toBe(false);
+    // A document declared as an image is rejected too.
+    const pdf = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0, 0, 0, 0];
+    expect((await validateFileSignature(img(pdf, "image/png"))).isValid).toBe(false);
+  });
+
+  it("validateFileSignature rejects image bytes declared as plain text or markdown", async () => {
+    expect((await validateFileSignature(img(PNG, "text/plain"))).isValid).toBe(false);
+    expect((await validateFileSignature(img(JPEG, "text/markdown"))).isValid).toBe(false);
+    expect((await validateFileSignature(img(WEBP, "text/plain"))).isValid).toBe(false);
+  });
+
+  it("validateUploadedFile lets a real image through to extraction", async () => {
+    await expect(validateUploadedFile(img(PNG, "image/png", "board.png"))).resolves.toBeUndefined();
+  });
+
+  describe("extraction", () => {
+    afterEach(() => {
+      vi.doUnmock("~/lib/ai/image-text-extraction.server");
+    });
+
+    it("routes each image type through the vision extractor with the file's bytes", async () => {
+      const extractImageText = vi.fn().mockResolvedValue({
+        content: "Whiteboard: quicksort pivots",
+        model: "qwen3.8-27b-instruct",
+      });
+      vi.doMock("~/lib/ai/image-text-extraction.server", () => ({ extractImageText }));
+
+      for (const [type, bytes] of [
+        ["image/png", PNG],
+        ["image/jpeg", JPEG],
+        ["image/webp", WEBP],
+      ] as const) {
+        extractImageText.mockClear();
+        const info = await extractUploadedFileContent(img([...bytes], type, "board.img"));
+
+        expect(info.content).toContain("quicksort pivots");
+        expect(info.mimeType).toBe(type);
+        expect(info.title).toBe("board");
+        const metadata = info.metadata as JsonObject | undefined;
+        expect(metadata?.processingLibrary).toBe("Vision model (qwen3.8-27b-instruct)");
+        expect(metadata?.imageTranscribed).toBe(true);
+        const [sentBytes, sentMime] = extractImageText.mock.calls[0]!;
+        expect(Array.from(sentBytes as Uint8Array)).toEqual(bytes);
+        expect(sentMime).toBe(type);
+      }
+    });
+
+    it("resolves an empty browser-reported type from the extension before extracting", async () => {
+      const extractImageText = vi
+        .fn()
+        .mockResolvedValue({ content: "Figure 3", model: "qwen3.8-27b-instruct" });
+      vi.doMock("~/lib/ai/image-text-extraction.server", () => ({ extractImageText }));
+
+      const info = await extractUploadedFileContent(
+        new File([new Uint8Array(PNG)], "fig.png", { type: "" }),
+      );
+
+      expect(info.mimeType).toBe("image/png");
+      expect(extractImageText.mock.calls[0]![1]).toBe("image/png");
+    });
+
+    it("fails the file with the extractor's message, wrapped like other extraction errors", async () => {
+      vi.doMock("~/lib/ai/image-text-extraction.server", () => ({
+        extractImageText: vi
+          .fn()
+          .mockRejectedValue(new Error("Image text extraction failed: connect ECONNREFUSED")),
+      }));
+
+      await expect(extractUploadedFileContent(img(PNG, "image/png", "board.png"))).rejects.toThrow(
+        "Failed to process file board.png: Image text extraction failed: connect ECONNREFUSED",
+      );
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Capacity errors reach the extraction job unwrapped (#1903 review)
+// ---------------------------------------------------------------------------
+// The job retries a material only when the error it catches is an
+// ExtractionBusyError. extractPdfText and extractUploadedFileContent used to re-wrap
+// every error in a plain Error, so a busy PDF worker reached the job as an ordinary
+// failure and the material was failed instead of retried. These run the real
+// limiter, not a mock: a mocked extractor is what hid the wrapping.
+describe("busy errors pass through extraction unwrapped", () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    resetPdfExtractionConcurrencyForTests();
+    vi.doUnmock("~/lib/ai/image-text-extraction.server");
+  });
+
+  it("PdfExtractionBusyError is an ExtractionBusyError", () => {
+    expect(new PdfExtractionBusyError()).toBeInstanceOf(ExtractionBusyError);
+  });
+
+  it("a full PDF worker pool reaches the caller as the busy error itself", async () => {
+    process.env.PDF_EXTRACTION_MAX_CONCURRENT = "1";
+    process.env.PDF_EXTRACTION_MAX_QUEUED = "0";
+    resetPdfExtractionConcurrencyForTests();
+    const release = await holdPdfExtractionSlotForTests();
+    try {
+      const pdf = new File([new TextEncoder().encode("%PDF-1.4\n%%EOF")], "a.pdf", {
+        type: "application/pdf",
+      });
+      const error = await extractUploadedFileContent(pdf).catch((e: Error) => e);
+      expect(error).toBeInstanceOf(PdfExtractionBusyError);
+      expect(error).toBeInstanceOf(ExtractionBusyError);
+      expect((error as Error).message).not.toMatch(/^Failed to/);
+    } finally {
+      release();
+    }
+  });
+
+  it("an unavailable vision host reaches the caller as the busy error itself", async () => {
+    vi.doMock("~/lib/ai/image-text-extraction.server", () => ({
+      extractImageText: vi
+        .fn()
+        .mockRejectedValue(new ExtractionBusyError("vision host unavailable")),
+    }));
+    const png = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "slide.png",
+      { type: "image/png" },
+    );
+
+    const error = await extractUploadedFileContent(png).catch((e: Error) => e);
+
+    expect(error).toBeInstanceOf(ExtractionBusyError);
+    expect((error as Error).message).toBe("vision host unavailable");
   });
 });

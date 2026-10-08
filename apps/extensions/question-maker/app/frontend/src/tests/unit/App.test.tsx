@@ -29,8 +29,8 @@ vi.mock("@/components/layout/QmAppLayout", () => ({
     </div>
   ),
 }));
-vi.mock("@/contexts/GuidedTourContext", () => ({
-  GuidedTourProvider: ({ children }: any) => <>{children}</>,
+vi.mock("@/tour/QmTourProvider", () => ({
+  QmTourProvider: ({ children }: any) => <>{children}</>,
 }));
 vi.mock("@/contexts/BugReportContext", () => ({
   BugReportProvider: ({ children }: any) => <>{children}</>,

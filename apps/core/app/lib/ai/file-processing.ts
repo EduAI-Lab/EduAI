@@ -1,7 +1,9 @@
 import type { ValidationResult } from "~/lib/validation-result";
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import {
   ACCEPTED_MATERIAL_MIME_TYPES,
   ACCEPTED_MATERIAL_TYPE_LABELS,
+  isImageMaterialMimeType,
   resolveMaterialMimeType,
 } from "~/lib/materials/accepted-types";
 import { z } from "zod";
@@ -624,6 +626,12 @@ export async function extractTextFromFile(file: File | any, content: string): Pr
 }
 
 /**
+ * Cap for image uploads (#1903). Each image becomes one vision-model request,
+ * and a photo this large carries no more legible text than a smaller one.
+ */
+export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/**
  * Validate file type and size
  */
 export function validateFile(file: File | any): ValidationResult {
@@ -634,6 +642,13 @@ export function validateFile(file: File | any): ValidationResult {
     return {
       isValid: false,
       error: `File type ${mimeType} is not supported. Supported types: ${ACCEPTED_MATERIAL_TYPE_LABELS}`,
+    };
+  }
+
+  if (isImageMaterialMimeType(mimeType) && file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    return {
+      isValid: false,
+      error: `Image size ${file.size} bytes exceeds maximum allowed size of ${MAX_IMAGE_UPLOAD_BYTES} bytes`,
     };
   }
 
@@ -656,9 +671,13 @@ export function validateFile(file: File | any): ValidationResult {
 // the RAG corpus, or get routed to the wrong extractor entirely.
 
 /** Bytes sampled from the start of the file to identify its real format. */
-const MAGIC_BYTE_SNIFF_LENGTH = 8;
+const MAGIC_BYTE_SNIFF_LENGTH = 12; // WebP's "WEBP" tag sits at bytes 8-11
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // "%PDF"
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG_MAGIC = [0xff, 0xd8, 0xff];
+const RIFF_MAGIC = [0x52, 0x49, 0x46, 0x46]; // "RIFF"
+const WEBP_TAG = [0x57, 0x45, 0x42, 0x50]; // "WEBP", after RIFF + 4-byte size
 // DOCX/PPTX are ZIP containers; PK\x03\x04 is the common case, PK\x05\x06 and
 // PK\x07\x08 cover empty/spanned archives that a real Office file won't be,
 // but are still valid ZIP signatures worth recognizing as "not plain text".
@@ -679,6 +698,27 @@ function looksLikePdf(bytes: Uint8Array): boolean {
 
 function looksLikeZipContainer(bytes: Uint8Array): boolean {
   return ZIP_MAGICS.some((magic) => bytesStartWith(bytes, magic));
+}
+
+function looksLikePng(bytes: Uint8Array): boolean {
+  return bytesStartWith(bytes, PNG_MAGIC);
+}
+
+function looksLikeJpeg(bytes: Uint8Array): boolean {
+  return bytesStartWith(bytes, JPEG_MAGIC);
+}
+
+// RIFF is a generic container (WAV and AVI share it), so the WEBP tag is required.
+function looksLikeWebp(bytes: Uint8Array): boolean {
+  return (
+    bytesStartWith(bytes, RIFF_MAGIC) &&
+    bytes.length >= 12 &&
+    WEBP_TAG.every((b, i) => bytes[8 + i] === b)
+  );
+}
+
+function looksLikeImage(bytes: Uint8Array): boolean {
+  return looksLikePng(bytes) || looksLikeJpeg(bytes) || looksLikeWebp(bytes);
 }
 
 /**
@@ -737,9 +777,33 @@ export async function validateFileSignature(
       }
       return { isValid: true };
 
+    case "image/png":
+    case "image/jpeg":
+    case "image/webp": {
+      const declared = resolveMaterialMimeType(file);
+      const matches =
+        declared === "image/png"
+          ? looksLikePng(head)
+          : declared === "image/jpeg"
+            ? looksLikeJpeg(head)
+            : looksLikeWebp(head);
+      if (!matches) {
+        return {
+          isValid: false,
+          error: `File declared as ${declared} does not match that image format`,
+        };
+      }
+      return { isValid: true };
+    }
+
     case "text/plain":
     case "text/markdown":
-      if (looksLikePdf(head) || looksLikeZipContainer(head) || looksLikeBinaryNoise(head)) {
+      if (
+        looksLikePdf(head) ||
+        looksLikeZipContainer(head) ||
+        looksLikeImage(head) ||
+        looksLikeBinaryNoise(head)
+      ) {
         return {
           isValid: false,
           error: `File declared as ${resolveMaterialMimeType(file)} looks like binary content, not plain text`,
@@ -856,7 +920,9 @@ export const PDF_EXTRACTION_DEFAULT_MAX_QUEUED = 16;
  * Thrown when the waiting queue is full. Callers may map this to HTTP 503.
  * Message includes "busy" / "capacity" for easy matching.
  */
-export class PdfExtractionBusyError extends Error {
+export { ExtractionBusyError };
+
+export class PdfExtractionBusyError extends ExtractionBusyError {
   constructor(
     message = "PDF extraction busy: capacity exceeded (too many concurrent/queued extractions)",
   ) {
@@ -1376,6 +1442,9 @@ export async function extractPdfText(
       },
     };
   } catch (error) {
+    // A full worker pool is not a fact about this PDF; let it reach the job unwrapped
+    // so the material is retried rather than failed (#1903 review).
+    if (error instanceof ExtractionBusyError) throw error;
     throw new Error(
       `Failed to extract text from PDF: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
@@ -1706,6 +1775,24 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
         break;
       }
 
+      case "image/png":
+      case "image/jpeg":
+      case "image/webp": {
+        // Dynamic import: the `.server` module must stay out of client bundles
+        // (this file is also shipped to the browser for `validateFile`).
+        const { extractImageText } = await import("~/lib/ai/image-text-extraction.server");
+        const result = await extractImageText(
+          new Uint8Array(await file.arrayBuffer()),
+          resolveMaterialMimeType(file),
+        );
+        content = result.content;
+        metadata = {
+          processingMethod: `Vision model (${result.model})`,
+          imageTranscribed: true,
+        };
+        break;
+      }
+
       default:
         throw new Error(`Unsupported file type: ${resolveMaterialMimeType(file)}`);
     }
@@ -1744,6 +1831,9 @@ export async function extractUploadedFileContent(file: File): Promise<FileInfo> 
       },
     };
   } catch (error) {
+    // Capacity and host outages pass through untouched: the job retries an
+    // ExtractionBusyError, and wrapping it here is what used to hide it (#1903 review).
+    if (error instanceof ExtractionBusyError) throw error;
     throw new Error(
       `Failed to process file ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
     );

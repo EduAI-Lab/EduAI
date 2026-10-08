@@ -304,9 +304,9 @@ export default function InstructorChatPage() {
   }, [stop]);
 
   const handleChatSubmit = useCallback<typeof handleSubmit>(
-    (event) => {
+    (event, options) => {
       setChatError(null);
-      handleSubmit(event);
+      handleSubmit(event, options);
     },
     [handleSubmit],
   );

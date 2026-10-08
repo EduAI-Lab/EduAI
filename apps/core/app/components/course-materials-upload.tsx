@@ -181,7 +181,7 @@ export function CourseMaterialsUpload({
             </span>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            PDF, DOCX, PPTX, TXT, MD · select several to upload them together
+            PDF, DOCX, PPTX, TXT, MD, PNG, JPG, WebP · select several to upload them together
           </p>
         </div>
       </button>

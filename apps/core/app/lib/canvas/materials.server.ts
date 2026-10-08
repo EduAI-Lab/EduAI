@@ -15,6 +15,7 @@ import {
 import {
   ACCEPTED_MATERIAL_MIME_TYPES,
   MATERIAL_MIME_BY_EXTENSION,
+  isImageMaterialMimeType,
 } from "~/lib/materials/accepted-types";
 import { isChecksumConflict } from "~/lib/materials/extraction-job.server";
 import type {
@@ -29,8 +30,17 @@ import { startTopicAnalysis } from "~/lib/topics/job.server";
 // the upload route accepts. The extension map is a `Map` because the key is a
 // filename suffix, not a union: the loop below walks every entry looking for
 // the one a given name ends with.
-const ALLOWED_MIME_TYPES: ReadonlySet<string> = new Set(ACCEPTED_MATERIAL_MIME_TYPES);
-const EXTENSION_MIME: ReadonlyMap<string, string> = MATERIAL_MIME_BY_EXTENSION;
+//
+// Images (#1903) are upload-only. Each one costs a vision-model call and a
+// Canvas course's Files tab is full of lecture figures, and the Canvas download
+// path (`SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION` in client.server.ts) has no
+// image entries, so listing them here would offer files the importer then fails on.
+const ALLOWED_MIME_TYPES: ReadonlySet<string> = new Set(
+  ACCEPTED_MATERIAL_MIME_TYPES.filter((mimeType) => !isImageMaterialMimeType(mimeType)),
+);
+const EXTENSION_MIME: ReadonlyMap<string, string> = new Map(
+  [...MATERIAL_MIME_BY_EXTENSION].filter(([, mimeType]) => !isImageMaterialMimeType(mimeType)),
+);
 
 export class CanvasMaterialSyncError extends Error {
   readonly statusCode: number;

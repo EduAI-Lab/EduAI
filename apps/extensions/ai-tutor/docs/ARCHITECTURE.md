@@ -54,14 +54,14 @@ The SPA's React tree is wrapped by five providers, in this exact order, in
 ```tsx
 <AuthProvider initialUser={null}>
   <BugReportProvider>
-    <TourProvider>
+    <AiTutorTourProvider>
       <AssistiveModeProvider>
         <UiPreferencesProvider>
           <ThemeSyncInitializer />
           <Outlet />
         </UiPreferencesProvider>
       </AssistiveModeProvider>
-    </TourProvider>
+    </AiTutorTourProvider>
   </BugReportProvider>
 </AuthProvider>
 ```
@@ -75,13 +75,13 @@ for every user including the pre-auth home page, so they stay outside `AuthProvi
 | --- | --- | --- |
 | `AuthProvider` | [`app/hooks/useLocalUser.tsx`](../app/hooks/useLocalUser.tsx) | Outermost. On mount it calls `GET /api/me` (with retry, since a fresh dev-stack API may not be listening yet) and exposes the session user via context. Every other provider and route loader assumes auth state is resolvable. |
 | `BugReportProvider` | [`app/components/bug-report/BugReportProvider.tsx`](../app/components/bug-report/BugReportProvider.tsx) | Wraps everything inside it because `useBugReportCapture` monkey-patches `window.fetch` and `console.{log,warn,error}` on mount. It must be live before any user-facing flow starts producing logs a bug report might want to capture. |
-| `TourProvider` | [`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx) | Consumes `useLocation` / `useNavigate` and drives DOM-level highlighting via `driver.js`; depends on the route subtree being mounted. |
+| `AiTutorTourProvider` | [`app/components/AiTutorTourProvider.tsx`](../app/components/AiTutorTourProvider.tsx) | Mounts the shared `@eduai/ui` `TourProvider` with this app's tours. Consumes `useLocation` / `useNavigate`; depends on the route subtree being mounted. |
 | `AssistiveModeProvider` | [`app/components/settings/assistive-mode.tsx`](../app/components/settings/assistive-mode.tsx) | Reads its preference from `localStorage` (this is a client-only SPA — there is no server-resolved initial value to hand it) and toggles `<html data-assistive>`. |
 | `UiPreferencesProvider` | [`app/components/settings/ui-preferences.tsx`](../app/components/settings/ui-preferences.tsx) | Same `localStorage`-backed pattern, for density and reduced-motion (`data-density` / `data-reduce-motion`). |
 
 If `AuthProvider` is moved inside `BugReportProvider`, the patched `fetch` runs before the
 auth bootstrap and can capture noise from unauthenticated `/api/me` calls in every bug report.
-If `TourProvider` is moved outside the route tree, `useLocation` will throw.
+If `AiTutorTourProvider` is moved outside the route tree, `useLocation` will throw.
 
 ---
 
@@ -277,25 +277,23 @@ CUID) with no local foreign key.
 
 ## Tour System Contract
 
-Tours are powered by [driver.js](https://driverjs.com) and orchestrated by
-[`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx) plus the engine in
-[`app/lib/tours/`](../app/lib/tours/). Three tours are defined
-(`app/lib/tours/tour-definitions.ts`): `student-journey`, `student-lesson-help`, and
-`unit-admin-orientation` — the last is staff-voiced and scoped to exactly the `/dashboard` and
-`/instructor` routes it walks.
+Tours run on the shared engine in `@eduai/ui` (`packages/ui/src/tour/`), the same one Core and
+Question Maker use (#1754). This app supplies only data: three tours in
+[`app/lib/tours/ai-tutor-tours.ts`](../app/lib/tours/ai-tutor-tours.ts) — `student-journey`,
+`student-lesson-help`, and the staff-voiced `unit-admin-orientation` — and the role/page rules for
+which one the header (?) help modal offers, in [`app/lib/tours/tour-access.ts`](../app/lib/tours/tour-access.ts).
 
 The contract that route components must honor:
 
 | Attribute | Purpose | Example |
 | --- | --- | --- |
-| `data-tour="<step-id>"` | Marks an element as the target for a tour step. The step's `target` selector in `tour-definitions.ts` is `[data-tour="<step-id>"]`. | `<header data-tour="student-dashboard-header">` |
-| `data-tour-route="<href>"` | On a "selectable" card, tells the engine which route to follow next when this card is highlighted. Read via `readRouteFromElement()` in `tour-utils.ts` and stored in `selectedCourseRoute` / `selectedModuleRoute` / `selectedLessonRoute` on the session context. | `data-tour-route={`/student/courses/${course.id}`}` |
-| `emptyTarget` (in the step definition, not a DOM attribute) | An optional selector for an empty-state sentinel. When it appears before the real target, the step and everything downstream that depends on it are skipped immediately instead of stalling on the full 4s timeout. | A course with no modules yet. |
+| `data-tour="<key>"` | Marks an element as the target for a tour step whose `target` is `"<key>"`. | `<header data-tour="student-dashboard-header">` |
+| `data-tour-route="<href>"` | On a "selectable" card, the route a step with `captureRoute` stores (as `course` / `module` / `lesson`) for later steps to resolve their page from. | `data-tour-route={`/student/courses/${course.id}`}` |
+| `emptyTarget` (in the step definition, not a DOM attribute) | An optional `data-tour` key for an empty-state sentinel. When it appears before the real target, the step and everything downstream that depends on it are skipped immediately instead of stalling on the timeout. | A course with no modules yet. |
 
-**Removing or renaming `data-tour`/`data-tour-route` silently breaks the tour** — `waitForElement()`
-in `tour-utils.ts` will time out after 4s and the step will be skipped via
-`moveSessionAfterMissingTarget`. There is no compile-time guard; grep for the value before deleting
-markup.
+**Removing or renaming `data-tour`/`data-tour-route` silently breaks the tour** — the engine waits
+for the target (up to 4s after changing page) and then skips the step. There is no compile-time
+guard; grep for the value before deleting markup.
 
 ---
 
@@ -359,8 +357,8 @@ side would 400 every AI request.
 ### 3. Tour DOM selectors
 
 Covered above in [Tour System Contract](#tour-system-contract). Steps in
-`app/lib/tours/tour-definitions.ts` reference DOM by `[data-tour="..."]` selectors, matched at
-runtime via `document.querySelector` — there is no static checking.
+`app/lib/tours/ai-tutor-tours.ts` reference DOM by `data-tour` keys, matched at runtime — there is
+no static checking.
 
 ---
 

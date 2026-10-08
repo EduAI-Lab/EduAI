@@ -8,7 +8,7 @@
  */
 import type { JsonValue } from "@eduai/types";
 
-import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import {
@@ -33,7 +33,7 @@ import {
 } from "@eduai/ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@eduai/ui";
 import { Badge, Switch, cn, QuestionStatusBadge, VariantBadge, ConfirmDialog } from "@eduai/ui";
-import { PermissionGate } from "@eduai/ui";
+import { LocalTour, PermissionGate, type LocalTourProps } from "@eduai/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   Question,
@@ -544,77 +544,40 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   const [errorModalOpen, setErrorModalOpen] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState<string>("");
   const [modalTourOpen, setModalTourOpen] = useState(false);
-  const [modalTourStepIndex, setModalTourStepIndex] = useState(0);
   const showNewUserHint = createProps?.totalQuestionsInBank === 0;
   const isDialogOpenRef = useRef(open);
 
-  const modalTourSteps = useMemo<{ id: string; content: string }[]>(
+  const modalTourSteps = useMemo<LocalTourProps["steps"]>(
     () => [
       {
-        id: "aq-metadata",
-        content:
-          "Step 1: Set the question type, primary topic, difficulty, and reasoning in Question Parameters.",
+        id: "metadata",
+        target: "aq-metadata",
+        title: "Set the question parameters",
+        body: "Choose the question type, primary topic, difficulty and reasoning focus.",
       },
       {
-        id: "aq-form-fields",
-        content:
-          "Step 2: You can enter the full question  manually in the Question content box on the right.",
+        id: "manual",
+        target: "aq-form-fields",
+        title: "Write it yourself",
+        body: "Enter the full question manually in the question content fields.",
       },
       {
-        id: "aq-ai-prompt",
-        content:
-          "Step 3: Or you can type a prompt and click Generate to have the AI create a question for you in about 15–60 seconds.",
+        id: "generate",
+        target: "aq-ai-toggle",
+        placement: "bottom",
+        title: "Or generate it with AI",
+        body: "Open Generate, describe the question you want, and the AI drafts it in about 15–60 seconds.",
       },
       {
-        id: "aq-save-area",
-        content:
-          "Step 4: When you are happy with the question, mark it as reviewed (or leave as draft) and save.",
+        id: "save",
+        target: "aq-save-area",
+        placement: "top",
+        title: "Review and save",
+        body: "When you're happy with the question, mark it as reviewed (or leave it as a draft) and save.",
       },
     ],
     [],
   );
-
-  const [tourHighlightRect, setTourHighlightRect] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const currentStepId = modalTourSteps[modalTourStepIndex]?.id;
-
-  useLayoutEffect(() => {
-    if (!modalTourOpen || currentStepId == null) {
-      setTourHighlightRect(null);
-      return;
-    }
-    const target = document.querySelector(
-      `[data-tour-id="${currentStepId}"]`,
-    ) as HTMLElement | null;
-    if (!target) {
-      setTourHighlightRect(null);
-      return;
-    }
-    const updateRect = () => {
-      const rect = target.getBoundingClientRect();
-      setTourHighlightRect({
-        top: rect.top - 4,
-        left: rect.left - 4,
-        width: rect.width + 8,
-        height: rect.height + 8,
-      });
-    };
-    target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-    updateRect();
-    const observer = new ResizeObserver(updateRect);
-    observer.observe(target);
-    window.addEventListener("resize", updateRect);
-    window.addEventListener("scroll", updateRect, true);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateRect);
-      window.removeEventListener("scroll", updateRect, true);
-    };
-  }, [modalTourOpen, currentStepId]);
 
   const eduaiStatus = useEduAIStatus();
   const { setQuestionGenerationPhase } = eduaiStatus;
@@ -680,7 +643,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       // would carry one author's decision into the next question they write.
       setShareWithExtensions(false);
       setModalTourOpen(false);
-      setModalTourStepIndex(0);
       setQuestionGenerationPhase(null);
       return;
     }
@@ -2188,7 +2150,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                       size="sm"
                       className="h-9 gap-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/90"
                       aria-label="Generate with AI assistant"
-                      data-tour-id="aq-ai-toggle"
+                      data-tour="aq-ai-toggle"
                     >
                       <IconRobot className="h-4 w-4" />
                       <span>Generate</span>
@@ -2212,10 +2174,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9"
-                    onClick={() => {
-                      setModalTourStepIndex(0);
-                      setModalTourOpen(true);
-                    }}
+                    onClick={() => setModalTourOpen(true)}
                     aria-label="Open workflow guide"
                   >
                     <IconHelpCircle className="h-5 w-5" />
@@ -2226,100 +2185,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           </div>
         </DialogHeader>
 
-        {modalTourOpen && (
-          <>
-            <div
-              className="fixed inset-0 z-100 bg-black/50"
-              onClick={() => setModalTourOpen(false)}
-              aria-hidden="true"
-            />
-            {tourHighlightRect && (
-              <div
-                className="fixed z-101 rounded-lg border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] pointer-events-none transition-all duration-200"
-                style={{
-                  top: tourHighlightRect.top,
-                  left: tourHighlightRect.left,
-                  width: tourHighlightRect.width,
-                  height: tourHighlightRect.height,
-                }}
-              />
-            )}
-            <div
-              className="fixed z-102 w-xs max-w-[calc(100vw-2rem)] pointer-events-auto"
-              style={(() => {
-                const pad = 12;
-                const tw = 320;
-                const th = 160;
-                if (!tourHighlightRect)
-                  return {
-                    top: window.innerHeight / 2 - th / 2,
-                    left: Math.max(
-                      pad,
-                      Math.min(window.innerWidth - tw - pad, window.innerWidth / 2 - tw / 2),
-                    ),
-                  };
-                const belowTop = tourHighlightRect.top + tourHighlightRect.height + pad;
-                const aboveBottom = tourHighlightRect.top - pad - th;
-                const top =
-                  belowTop + th <= window.innerHeight - pad
-                    ? belowTop
-                    : aboveBottom >= pad
-                      ? aboveBottom
-                      : pad;
-                const left = Math.max(
-                  pad,
-                  Math.min(
-                    window.innerWidth - tw - pad,
-                    tourHighlightRect.left + tourHighlightRect.width / 2 - tw / 2,
-                  ),
-                );
-                return { top, left };
-              })()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="rounded-lg border bg-background p-4 shadow-xl">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <p className="text-sm text-foreground leading-relaxed flex-1">
-                    {modalTourSteps[modalTourStepIndex]?.content}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-foreground shrink-0 -mt-1 -mr-1"
-                    onClick={() => setModalTourOpen(false)}
-                  >
-                    Skip
-                  </Button>
-                </div>
-                <div className="flex justify-between items-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setModalTourStepIndex((i) => Math.max(0, i - 1))}
-                    disabled={modalTourStepIndex === 0}
-                  >
-                    Back
-                  </Button>
-                  {modalTourStepIndex === modalTourSteps.length - 1 ? (
-                    <Button type="button" size="sm" onClick={() => setModalTourOpen(false)}>
-                      Done
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => setModalTourStepIndex((i) => i + 1)}
-                    >
-                      Next
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
+        <LocalTour steps={modalTourSteps} open={modalTourOpen} onOpenChange={setModalTourOpen} />
 
         <div className="h-[70vh] min-h-0 overflow-y-auto pr-1">
           <div className="flex flex-col gap-4 pb-4">
@@ -2330,7 +2196,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
               </p>
             )}
 
-            <div className="rounded-lg border border-border bg-card p-5" data-tour-id="aq-metadata">
+            <div className="rounded-lg border border-border bg-card p-5" data-tour="aq-metadata">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
                 Question Parameters
               </h2>
@@ -2364,7 +2230,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
 
             <div
               className="rounded-lg border border-border bg-card p-5 flex flex-col"
-              data-tour-id="aq-form-fields"
+              data-tour="aq-form-fields"
             >
               <QuestionOutputPanel
                 questionType={form.questionType}
@@ -2396,7 +2262,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           </div>
         </div>
 
-        <DialogFooter className="pt-4 flex-col sm:flex-row gap-3" data-tour-id="aq-save-area">
+        <DialogFooter className="pt-4 flex-col sm:flex-row gap-3" data-tour="aq-save-area">
           <PermissionGate allow={canApproveVariant}>
             <div className="flex flex-col gap-2">
               <div className="flex items-center space-x-2">

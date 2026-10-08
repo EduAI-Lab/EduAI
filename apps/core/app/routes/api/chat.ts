@@ -142,6 +142,8 @@ import { getCourseTopicNamesCached } from "~/lib/courses/server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
+import { parseMessageAttachments, toModelMessage } from "~/lib/chat/chat-attachments";
+import { CHAT_MAX_ATTACHMENT_CHARS_DEFAULT } from "~/lib/chat/attachment-types";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import {
@@ -969,6 +971,23 @@ export async function action({ request }: ActionFunctionArgs) {
         );
         const latestRawUserMessage = extractMessageText(normalizedIncomingMessages.at(-1));
 
+        // #1902: validate attachments on the client's turns before anything is
+        // persisted. Image attachments are skipped here and fall through to the
+        // Course Chat image guard below (#1266 is unchanged).
+        const maxAttachmentChars = parseEnvInt(
+          process.env.CHAT_MAX_ATTACHMENT_CHARS,
+          CHAT_MAX_ATTACHMENT_CHARS_DEFAULT,
+        );
+        for (const message of normalizedIncomingMessages) {
+          const attachments = parseMessageAttachments(message, maxAttachmentChars);
+          if (!attachments.ok) {
+            return new Response(
+              JSON.stringify({ error: attachments.error, code: attachments.code }),
+              { status: attachments.status, headers: { "Content-Type": "application/json" } },
+            );
+          }
+        }
+
         // Resolve course code to internal ID when needed.
         // Prefer exact match; fall back to common whitespace variants because
         // callers (e.g. QM before coreCourseId pass-through) sometimes send
@@ -1457,7 +1476,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // Cap oversized tool results (#260), then digest older turns when the thread
         // exceeds the char budget (#259). Budget accounting counts tool payloads.
         let modelMessages = prepareBoundedSessionContext(
-          capToolResultsInMessages(trimmedMessages),
+          capToolResultsInMessages(trimmedMessages.map(toModelMessage)),
           {
             priorOmittedCount,
             priorOlderEntries,
@@ -1489,7 +1508,11 @@ export async function action({ request }: ActionFunctionArgs) {
           .reverse()
           .find((m) => m.role === "user");
         const lastUserMessageTextForRouting = extractMessageText(lastUserMessageForRouting);
-        const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
+        // Check every incoming turn, not just the last: an image attachment on an
+        // earlier client turn would otherwise be persisted and sent to the model.
+        const imagesPresent =
+          messageHasImageParts(lastUserMessageForRouting) ||
+          normalizedIncomingMessages.some((m) => messageHasImageParts(m));
         // Scan from the end for the last user-role index directly, instead of
         // relying on the reverse().find() above returning the same object
         // reference as trimmedMessages — a lastIndexOf reference lookup would
@@ -2579,7 +2602,7 @@ export async function action({ request }: ActionFunctionArgs) {
             reserveToolSteps: budgetReserveToolSteps,
           });
           modelMessages = prepareBoundedSessionContext(
-            capToolResultsInMessages(trimmedMessages, budgetToolResultCap),
+            capToolResultsInMessages(trimmedMessages.map(toModelMessage), budgetToolResultCap),
             {
               charBudget: historyCharBudget,
               recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,
