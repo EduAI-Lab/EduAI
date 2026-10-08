@@ -114,6 +114,9 @@ function ChatMessageBody({
   materialSources,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
+  // Only turns the server tagged with retrieved sources (course retrieval ran)
+  // lose model-written citations; admin and general chat keep their text as-is.
+  const stripsCitations = message.role === "assistant" && materialSources !== undefined;
 
   const handleCopy = async () => {
     // Extract text content from all text parts
@@ -125,7 +128,10 @@ function ChatMessageBody({
       coerceMessageContent(message.content) ||
       "";
 
-    await navigator.clipboard.writeText(textContent);
+    // Copy what the student sees: no invented citation on a course turn (#1936).
+    await navigator.clipboard.writeText(
+      stripsCitations ? stripModelSourceCitations(textContent) : textContent,
+    );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -191,7 +197,9 @@ function ChatMessageBody({
   // retrieved materials are listed below the reply from metadata instead.
   const normalizedContent = isUser
     ? rawTextContent
-    : normalizeMathMarkdown(stripModelSourceCitations(rawTextContent));
+    : normalizeMathMarkdown(
+        stripsCitations ? stripModelSourceCitations(rawTextContent) : rawTextContent,
+      );
   // #699: relabel Assistive policy headings at display time only (non-user).
   // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
   // defer full reorder + diagram widgets until structure is safe (idle stream,

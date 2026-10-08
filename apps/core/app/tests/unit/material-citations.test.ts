@@ -45,6 +45,33 @@ describe("stripModelSourceCitations", () => {
     expect(stripModelSourceCitations(text)).toBe(text);
   });
 
+  it("keeps a markdown link citation whole (PR #1946 review)", () => {
+    const text = "See the docs (Source: [docs](https://docs.python.org/3/)).";
+    expect(stripModelSourceCitations(text)).toBe(text);
+  });
+
+  it("never touches code (PR #1946 review)", () => {
+    const fenced = [
+      "Copy it like this:",
+      "```python",
+      "def copy_file(source: str, dest: str) -> None:",
+      "    pass",
+      "```",
+      "```yaml",
+      "source: data/raw.csv",
+      "sources:",
+      "  - a.csv",
+      "```",
+    ].join("\n");
+    expect(stripModelSourceCitations(fenced)).toBe(fenced);
+
+    const unfenced = "Call copy_file(source: str, dest: str) or set `(Source: x)` in YAML.";
+    expect(stripModelSourceCitations(unfenced)).toBe(unfenced);
+    expect(stripModelSourceCitations("source: data/raw.csv\nsources:\n  - a.csv")).toBe(
+      "source: data/raw.csv\nsources:\n  - a.csv",
+    );
+  });
+
   it("leaves ordinary prose about sources alone", () => {
     const text = "Primary sources are first-hand accounts. The source code is on GitHub.";
     expect(stripModelSourceCitations(text)).toBe(text);

@@ -629,6 +629,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               throw new Error(`Regenerate failed with ${response.status}`);
             }
             const data = await response.json();
+            // The regenerated answer ran its own retrieval; keep its Sources line
+            // in step with the new text (#1936).
+            const regeneratedSources = ragSourcesFromMessage({ metadata: data });
+            if (regeneratedSources) {
+              setRagSourcesByMessageId((prev) => ({
+                ...prev,
+                [lastMessage.id]: regeneratedSources,
+              }));
+            }
             const rawContent = asText(data.content);
             content = rawContent?.trim() ? rawContent : undefined;
             if (!content) {

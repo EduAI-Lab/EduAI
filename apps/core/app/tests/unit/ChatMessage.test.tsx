@@ -385,6 +385,28 @@ describe("ChatMessage — course-material sources", () => {
     ).toBeInTheDocument();
   });
 
+  it("leaves a turn with no course retrieval untouched (PR #1946 review)", () => {
+    const adminMessage: Message = {
+      id: "4",
+      role: "assistant",
+      content: "Bug report 12\n\n- **Source:** AI_TUTOR",
+      createdAt: new Date(),
+    };
+    render(<ChatMessage message={adminMessage} />);
+
+    expect(screen.getByText(/AI_TUTOR/)).toBeInTheDocument();
+  });
+
+  it("copies the reply without the hidden citation (PR #1946 review)", async () => {
+    render(<ChatMessage message={citedMessage} materialSources={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy message" }));
+
+    await vi.waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith("Lab 14 is due Nov 20."),
+    );
+  });
+
   it("shows no Sources line when nothing was retrieved", () => {
     render(<ChatMessage message={citedMessage} materialSources={[]} />);
 
