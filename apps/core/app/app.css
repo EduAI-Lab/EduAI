@@ -48,3 +48,10 @@
   color: var(--foreground);
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 35%, transparent);
 }
+
+/* Help assistant (#1822): lift bottom toasts clear of the floating bubble — only
+   while the bubble is actually VISIBLE (the widget sets this attribute), so a page
+   where the assistant is mounted but hidden never shifts its toasts for nothing. */
+html[data-assistant-bubble="visible"] [data-sonner-toaster][data-y-position="bottom"] {
+  bottom: calc(var(--offset-bottom, 24px) + 4.5rem);
+}

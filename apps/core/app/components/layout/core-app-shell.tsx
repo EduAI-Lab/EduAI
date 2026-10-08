@@ -8,6 +8,7 @@ import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette";
 import { CorePageHelp } from "~/components/help/core-page-help";
+import { AssistantHeaderButton, HelpAssistant } from "~/components/assistant/help-assistant";
 import { CurrentUserIdProvider } from "~/contexts/current-user";
 import type { User } from "~/lib/auth/types";
 
@@ -54,9 +55,16 @@ export function resolveCoreHeaderTitle(pathname: string, title?: string): string
  */
 export function CoreHeaderActions({
   extraActions,
+  assistant,
   help,
 }: {
   extraActions?: React.ReactNode;
+  /**
+   * The help assistant's header trigger (#1822) — only shown on chat screens,
+   * where a floating bubble would cover the composer. A slot for the same reason
+   * as `help`.
+   */
+  assistant?: React.ReactNode;
   /** The page help trigger. A slot (not built here) so this bundle renders without a router in tests. */
   help?: React.ReactNode;
 }) {
@@ -72,6 +80,7 @@ export function CoreHeaderActions({
         <ThemeToggle />
       </span>
       <BugReportSubmitDialog />
+      {assistant}
       {help}
     </>
   );
@@ -134,7 +143,11 @@ export function CoreAppShell({
         title={resolvedTitle}
         breadcrumbs={breadcrumbs}
         headerActions={
-          <CoreHeaderActions extraActions={actions} help={<CorePageHelp role={user.role} />} />
+          <CoreHeaderActions
+            extraActions={actions}
+            assistant={<AssistantHeaderButton />}
+            help={<CorePageHelp role={user.role} />}
+          />
         }
         commandPalette={<CommandPalette user={user} />}
         insetClassName={insetClassName}
@@ -143,6 +156,9 @@ export function CoreAppShell({
       >
         {children}
       </AppShell>
+      {/* #1822: the one mount point for the help assistant. It renders nothing
+          unless the root loader's gate says it could answer for this user. */}
+      <HelpAssistant user={user} />
     </CurrentUserIdProvider>
   );
 }
