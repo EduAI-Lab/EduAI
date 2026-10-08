@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { encrypt, decrypt } from "~/lib/canvas/encryption";
+import { encrypt } from "~/lib/canvas/encryption";
+import { plainKey } from "~/lib/assistant/user-ai-keys.server";
 import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import {
   BEDROCK_USER_SETTINGS_ERROR,
@@ -11,6 +12,7 @@ export async function getUserProviderSettings(userId: string): Promise<UserProvi
   const rows = await prisma.userProviderSettings.findMany({
     where: { userId },
     select: {
+      id: true,
       isEnabled: true,
       apiKey: true,
       baseUrl: true,
@@ -23,7 +25,9 @@ export async function getUserProviderSettings(userId: string): Promise<UserProvi
     if (isBedrockProviderName(row.provider.name)) continue;
     settings[row.provider.name] = {
       isEnabled: row.isEnabled,
-      apiKey: row.apiKey ? decrypt(row.apiKey) : undefined,
+      // #1818: the shared decrypt helper — an undecryptable row reads as "no key"
+      // instead of throwing out of every chat/completion request this user makes.
+      apiKey: plainKey(row) ?? undefined,
       baseUrl: row.baseUrl ?? undefined,
     };
   }

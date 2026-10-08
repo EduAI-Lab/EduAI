@@ -12,6 +12,7 @@ import {
   isBedrockProviderName,
 } from "~/lib/ai/routing/bedrock/bedrock-settings";
 import { withErrorResponse } from "~/lib/errors.server";
+import { maskKey, plainKey } from "~/lib/assistant/user-ai-keys.server";
 
 const PROVIDER_SETTINGS_MAX_BODY_BYTES = 32 * 1024;
 const PROVIDER_NAME_MAX_CHARS = 64;
@@ -35,6 +36,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const rows = await prisma.userProviderSettings.findMany({
         where: { userId: session.user.id },
         select: {
+          id: true,
           isEnabled: true,
           apiKey: true,
           baseUrl: true,
@@ -44,12 +46,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
       const result = rows
         .filter((row) => !isBedrockProviderName(row.provider.name))
-        .map((row) => ({
-          providerName: row.provider.name,
-          isEnabled: row.isEnabled,
-          hasKey: row.apiKey != null,
-          baseUrl: row.baseUrl,
-        }));
+        .map((row) => {
+          // #1818: ask the decrypt helper, never row existence — a row may carry
+          // only an assistant model choice, or a key that no longer decrypts.
+          const key = plainKey(row);
+          return {
+            providerName: row.provider.name,
+            isEnabled: row.isEnabled,
+            hasKey: key !== null,
+            maskedKey: maskKey(key),
+            baseUrl: row.baseUrl,
+          };
+        });
 
       return new Response(JSON.stringify(result), {
         status: 200,
