@@ -63,6 +63,10 @@ Production scripts source `/etc/eduai/cron.env`. Local development uses
 
 - `DB_HOST`, `DB_PORT_CORE`, `DB_PORT_TUTOR`, `DB_PORT_QM`;
 - `DB_USER`, `DB_PASS`, and the separate Question Maker password when required;
+- optional per-database `DB_NAME_*`, `DB_USER_*`, `DB_PASS_*` and `DB_CONTAINER_*`
+  (`CORE`, `TUTOR`, `QM`), which production needs because its databases differ in name,
+  user and password; unset values fall back to the shared `DB_USER` / `DB_PASS` and the
+  development names;
 - `BACKUP_DIR`, `BACKUP_RETAIN_DAYS`, and either `OFFSITE_BUCKET` or
   `LOCAL_OFFSITE_DIR`;
 - `AUDIT_LOG` and `ALERT_EMAIL`;
@@ -98,10 +102,11 @@ The local dry-run requires the development databases or PostgreSQL client tools.
 It writes to the configured local backup paths and can use
 `LOCAL_OFFSITE_DIR` instead of performing an S3 copy.
 
-The standalone lease contract test is:
+The contract tests are:
 
 ```bash
 bash infra/cron/tests/standalone-lease-contract.test.sh
+bash infra/cron/tests/per-db-settings.test.sh
 ```
 
 ## Installation on a non-s378 host
