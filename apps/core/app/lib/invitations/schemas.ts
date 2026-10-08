@@ -24,6 +24,19 @@ export function invitableRolesFor(actorRole: string | null | undefined): readonl
   return [];
 }
 
+/**
+ * Least-privilege default for the Invite User role dropdown (#1940).
+ * Capability order in `invitableRolesFor` is not UI order — ADMIN is listed
+ * first there, which previously pre-selected Administrator.
+ */
+export function defaultInviteRoleFor(
+  actorRole: string | null | undefined,
+): InvitableRole | undefined {
+  const roles = invitableRolesFor(actorRole);
+  if (roles.includes("STUDENT")) return "STUDENT";
+  return roles[0];
+}
+
 export const createInvitationSchema = z
   .object({
     email: z.string().email("Please enter a valid email address"),

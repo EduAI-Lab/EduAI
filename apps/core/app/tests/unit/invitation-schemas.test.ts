@@ -3,6 +3,7 @@ import {
   createInvitationSchema,
   acceptInvitationSchema,
   invitableRolesFor,
+  defaultInviteRoleFor,
 } from "~/lib/invitations/schemas";
 
 describe("createInvitationSchema", () => {
@@ -121,6 +122,19 @@ describe("invitableRolesFor", () => {
     expect(invitableRolesFor("INSTRUCTOR")).toEqual([]);
     expect(invitableRolesFor("STUDENT")).toEqual([]);
     expect(invitableRolesFor(null)).toEqual([]);
+  });
+});
+
+// #1940 — Invite User must not pre-select Administrator (least privilege).
+describe("defaultInviteRoleFor", () => {
+  it("defaults ADMIN and UNIT_ADMIN invite forms to STUDENT", () => {
+    expect(defaultInviteRoleFor("ADMIN")).toBe("STUDENT");
+    expect(defaultInviteRoleFor("UNIT_ADMIN")).toBe("STUDENT");
+  });
+
+  it("returns undefined when the actor cannot invite anyone", () => {
+    expect(defaultInviteRoleFor("INSTRUCTOR")).toBeUndefined();
+    expect(defaultInviteRoleFor(null)).toBeUndefined();
   });
 });
 

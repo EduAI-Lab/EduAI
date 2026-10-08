@@ -4,7 +4,7 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
-import { invitableRolesFor } from "~/lib/invitations/schemas";
+import { defaultInviteRoleFor, invitableRolesFor } from "~/lib/invitations/schemas";
 import { firstFieldError } from "~/lib/form-errors";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 import {
@@ -146,7 +146,9 @@ export default function InvitationsPage() {
   // Invite form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<InviteRole>((invitableRoles[0] as InviteRole) ?? "INSTRUCTOR");
+  const [role, setRole] = useState<InviteRole>(
+    (defaultInviteRoleFor(user.role) as InviteRole | undefined) ?? "STUDENT",
+  );
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -170,7 +172,7 @@ export default function InvitationsPage() {
   const resetForm = () => {
     setEmail("");
     setName("");
-    setRole((invitableRoles[0] as InviteRole) ?? "INSTRUCTOR");
+    setRole((defaultInviteRoleFor(user.role) as InviteRole | undefined) ?? "STUDENT");
     setSelectedUnits([]);
     setFormError(null);
   };
