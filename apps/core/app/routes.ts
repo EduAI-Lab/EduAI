@@ -27,6 +27,7 @@ export default [
   ]),
   route("/settings", "routes/settings.tsx"),
   route("/help", "routes/help.tsx"),
+  route("/help/guide/:pageId", "routes/help.guide.$pageId.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),
   route("/api/chat/cancel", "routes/api/chat.cancel.ts"),
@@ -122,5 +123,10 @@ export default [
   route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
   route("/api/e2e/seed", "routes/api/e2e.seed.ts"),
   route("/api/user-provider-settings", "routes/api/user-provider-settings.ts"),
+  route("/api/assistant/ask", "routes/api/assistant.ask.ts"),
+  route("/api/assistant/settings", "routes/api/assistant.settings.ts"),
+  route("/api/assistant/settings/reset", "routes/api/assistant.settings.reset.ts"),
+  route("/api/assistant/settings/models", "routes/api/assistant.settings.models.ts"),
+  route("/api/admin/assistant-settings", "routes/api/admin.assistant-settings.ts"),
   route("/api/cron/notify-api-key-expiry", "routes/api/cron.notify-api-key-expiry.ts"),
 ] satisfies RouteConfig;
