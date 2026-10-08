@@ -7,6 +7,20 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
+// #1817: the help assistant's tuning card loads with the page.
+vi.mock("~/lib/assistant/assistant-settings.server", () => ({
+  getAssistantSettings: vi.fn().mockResolvedValue({
+    enableHelpAssistant: false,
+    enableStudentMaterialQuestions: true,
+    maxDocs: 3,
+    routerModel: "",
+    defaultModel: "",
+  }),
+}));
+vi.mock("~/lib/ai/providers.server", () => ({
+  listActiveChatModels: vi.fn().mockResolvedValue([{ id: "vllm:qwen3.5-9b-instruct" }]),
+}));
+
 import { loader } from "~/routes/admin.ai-models";
 import { auth } from "~/lib/auth/server";
 
@@ -42,6 +56,16 @@ describe("admin.ai-models loader", () => {
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
     const result = await loader(makeArgs());
-    expect(result).toEqual({ user: { id: "admin-1", role: "ADMIN" } });
+    expect(result).toEqual({
+      user: { id: "admin-1", role: "ADMIN" },
+      assistantSettings: {
+        enableHelpAssistant: false,
+        enableStudentMaterialQuestions: true,
+        maxDocs: 3,
+        routerModel: "",
+        defaultModel: "",
+      },
+      assistantModelOptions: ["vllm:qwen3.5-9b-instruct"],
+    });
   });
 });
