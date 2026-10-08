@@ -22,6 +22,7 @@ import { shouldApplyAssistiveDisplayTransform } from "~/components/chat/chat-pro
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
+import { stripModelSourceCitations } from "~/lib/chat/material-citations";
 import { ChatAttachmentChips } from "./chat-attachment-chips";
 // Streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
 // Every Core surface that renders markdown reaches ChatMessage, so importing here
@@ -40,6 +41,11 @@ export interface ChatMessageProps {
   showContinue?: boolean;
   onContinue?: () => void;
   continueDisabled?: boolean;
+  /**
+   * Course materials retrieved for this turn, from server metadata (#1936).
+   * Listed under the reply; undefined when the turn ran no course retrieval.
+   */
+  materialSources?: string[];
 }
 
 /**
@@ -105,6 +111,7 @@ function ChatMessageBody({
   showContinue = false,
   onContinue,
   continueDisabled = false,
+  materialSources,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -180,7 +187,11 @@ function ChatMessageBody({
   // If no parts, fallback to message content — coerce to string regardless of DB shape
   const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
   const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
-  const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+  // #1936: a model's own "(Source: …)" can name a file that doesn't exist; the
+  // retrieved materials are listed below the reply from metadata instead.
+  const normalizedContent = isUser
+    ? rawTextContent
+    : normalizeMathMarkdown(stripModelSourceCitations(rawTextContent));
   // #699: relabel Assistive policy headings at display time only (non-user).
   // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
   // defer full reorder + diagram widgets until structure is safe (idle stream,
@@ -312,6 +323,12 @@ function ChatMessageBody({
                 </Button>
               </div>
             )}
+
+            {materialSources && materialSources.length > 0 ? (
+              <p className="text-xs text-muted-foreground px-1">
+                Sources: {materialSources.join(", ")}
+              </p>
+            ) : null}
 
             {answeredByLabel ? (
               <p className="text-xs text-muted-foreground px-1">Answered by {answeredByLabel}</p>
