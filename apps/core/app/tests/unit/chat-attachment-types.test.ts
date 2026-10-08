@@ -23,12 +23,18 @@ describe("classifyAttachmentName", () => {
     },
   );
 
-  it.each(["photo.png", "scan.jpg", "book.xlsx", "archive.zip", "noextension", "notebook.ipynb"])(
-    "rejects %s",
-    (name) => {
-      expect(classifyAttachmentName(name)).toBeNull();
-    },
-  );
+  it.each([
+    "photo.png",
+    "scan.jpg",
+    "scan.JPEG",
+    "diagram.webp",
+    "book.xlsx",
+    "archive.zip",
+    "noextension",
+    "notebook.ipynb",
+  ])("rejects %s", (name) => {
+    expect(classifyAttachmentName(name)).toBeNull();
+  });
 });
 
 describe("CHAT_ATTACHMENT_ACCEPT", () => {
@@ -42,6 +48,13 @@ describe("CHAT_ATTACHMENT_ACCEPT", () => {
       ...CHAT_ATTACHMENT_TEXT_EXTENSIONS,
     ]) {
       expect(CHAT_ATTACHMENT_ACCEPT.split(",")).toContain(ext);
+    }
+  });
+
+  // #1903 added image course materials to the shared list; chat stays text-only.
+  it("offers no image extension even though course materials accept images", () => {
+    for (const ext of [".png", ".jpg", ".jpeg", ".webp"]) {
+      expect(CHAT_ATTACHMENT_ACCEPT.split(",")).not.toContain(ext);
     }
   });
 });
