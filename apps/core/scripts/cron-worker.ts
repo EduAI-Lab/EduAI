@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envPath = resolve(appRoot, ".env");
-if (existsSync(envPath)) loadEnvFile(envPath);
+// Production reads its settings from the systemd EnvironmentFile. The release's
+// apps/core/.env is a placeholder copy of .env.example that `npm ci` creates
+// owner-only (0600) for service_eduai: the eduai-cron user can't read it, and
+// its development values must not fill in settings production leaves unset
+// (#1873).
+if (process.env.NODE_ENV !== "production" && existsSync(envPath)) loadEnvFile(envPath);
 
 const [{ default: prisma }, { refreshCronSchedules, stopCronScheduler }] = await Promise.all([
   import("../app/lib/prisma.server"),
