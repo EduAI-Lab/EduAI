@@ -145,6 +145,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `PDF_EXTRACTION_MAX_CONCURRENT` / `PDF_EXTRACTION_MAX_QUEUED` / `PDF_EXTRACTION_MAX_RSS_MB` | `4` / `16` / host-derived | Per-process PDF extraction concurrency, queue depth, and RSS ceiling |
 | `MATERIAL_IMAGE_MODEL` / `MATERIAL_IMAGE_TIMEOUT_MS` | `qwen3.8-27b-instruct` / `60000` | Vision model that transcribes PNG/JPEG/WebP course materials at ingest (#1903); must support images. The host is resolved through the fleet as a background job (the default 27B is served by cmps02); `VLLM_BASE_URL` is used only when fleet routing is disabled |
 | `MATERIAL_IMAGE_MAX_CONCURRENT` / `MATERIAL_IMAGE_MAX_QUEUED` | `2` / `16` | Per-process cap on concurrent image transcriptions and the queue behind it; past the queue an upload is released for a later sweep (`MATERIAL_EXTRACT_BUSY`) |
+| `MATERIAL_EMBED_MAX_CONCURRENT` | `4` | Per-process cap on materials sending embedding requests at once (#1876). Uploads beyond it wait for a slot instead of all calling the embedding service together, which also serves course-chat questions. Valid range 1–32; anything else uses the default |
 | `FIRECRAWL_API_KEY` | — | Enables the `webSearch` / `fetchPage` chat tools; unset disables them |
 
 #### Auto routing, fleet, and overflow
