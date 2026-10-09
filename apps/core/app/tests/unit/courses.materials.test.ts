@@ -50,6 +50,7 @@ vi.mock("~/lib/ai/embedding", () => ({
   // can record MATERIAL_EMBED_RATE_LIMITED instead of a flat embed failure.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
   isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
+  isEmbeddingProviderUnavailableError: vi.fn().mockReturnValue(false),
 }));
 
 // #1624: every material that reaches READY gets topic analysis, including one
