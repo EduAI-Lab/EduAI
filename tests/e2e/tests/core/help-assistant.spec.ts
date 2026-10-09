@@ -27,6 +27,15 @@ async function injectSession(page: Page, requestCtx: APIRequestContext): Promise
   await page.context().addCookies(cookies);
 }
 
+// The dashboard's guided tour auto-starts once per browser and its full-screen
+// overlay intercepts clicks on the bubble. Pre-seed the "already seen" flag so it
+// never opens, same pattern as core-admin-unitadmin-instructor-ui.spec.ts.
+async function skipDashboardTour(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("eduai:tour:dashboard:v1", "1");
+  });
+}
+
 async function setHelpAssistant(adminCtx: APIRequestContext, enabled: boolean): Promise<void> {
   const res = await adminCtx.patch(`${CORE_URL}/api/admin/assistant-settings`, {
     data: { enableHelpAssistant: enabled },
@@ -52,6 +61,7 @@ test.describe("Penny help assistant (#1816)", () => {
 
       await createInstructor(instrCtx, { prefix: "penny-instr" });
       await injectSession(page, instrCtx);
+      await skipDashboardTour(page);
 
       const askBodies: Array<{ question: string }> = [];
       await page.route("**/api/assistant/ask", async (route) => {
