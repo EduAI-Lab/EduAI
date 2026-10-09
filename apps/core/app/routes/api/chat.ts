@@ -1585,20 +1585,27 @@ export async function action({ request }: ActionFunctionArgs) {
         // #1938: the platform switch is the `chat.courseScopeGuardrailEnabled`
         // admin policy (a cached read), checked inside the promise so it still
         // overlaps the prefetch; off resolves to no verdict, i.e. Layer A only.
+        // A failed policy read fails open the same way. The catch also keeps
+        // the promise handled when the turn returns early before awaiting it.
         const courseScopeCheckPromise: Promise<CourseScopeVerdict | null> | null =
           effectiveCourse?.courseScopeGuardrailEnabled &&
           courseScopeContext &&
           !isServiceKeyCaller &&
           !isPrivilegedChatMode(chatMode)
-            ? getPolicy("chat.courseScopeGuardrailEnabled").then((platformOn) =>
-                platformOn
-                  ? resolveCourseScopeVerdict({
-                      message: lastUserMessageTextForRouting,
-                      context: courseScopeContext,
-                      recentConversation: recentCourseScopeConversation,
-                    })
-                  : null,
-              )
+            ? getPolicy("chat.courseScopeGuardrailEnabled")
+                .then((platformOn) =>
+                  platformOn
+                    ? resolveCourseScopeVerdict({
+                        message: lastUserMessageTextForRouting,
+                        context: courseScopeContext,
+                        recentConversation: recentCourseScopeConversation,
+                      })
+                    : null,
+                )
+                .catch((err) => {
+                  console.warn("[course-scope] policy read failed; failing open", err);
+                  return null;
+                })
             : null;
 
         // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —

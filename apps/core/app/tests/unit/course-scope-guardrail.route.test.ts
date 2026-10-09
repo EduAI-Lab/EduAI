@@ -455,6 +455,24 @@ describe("POST /api/chat — course-scope guardrail", () => {
     expect(res.status).toBe(200);
   });
 
+  it("fails open with Layer A when the platform policy read fails (#1938 review)", async () => {
+    // e.g. the system_config read throws while the policy cache is expired.
+    vi.mocked(getPolicy).mockImplementation(async (key: string) => {
+      if (key === "chat.courseScopeGuardrailEnabled") throw new Error("db unavailable");
+      return false;
+    });
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(vi.mocked(streamText).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("SCOPE:Intro to Programming"),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("redirects an off-topic turn instead of calling streamText, and persists the redirect", async () => {
     vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
       blocked: true,
