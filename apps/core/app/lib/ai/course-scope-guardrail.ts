@@ -1,8 +1,10 @@
 /**
  * Course-scope chat guardrail. Layer A is an always-on system-prompt policy for
  * browser learning chat. Layer B is a per-course second-pass classifier that
- * can redirect clearly off-topic turns before the main model. Layer B fails
- * open: an unreachable classifier must never block a student's real question.
+ * can redirect clearly off-topic turns before the main model; it runs when the
+ * course opts in and the `chat.courseScopeGuardrailEnabled` admin policy is on
+ * (#1938). Layer B fails open: an unreachable classifier must never block a
+ * student's real question.
  */
 import { generateText } from "ai";
 import { z } from "zod";
@@ -34,11 +36,6 @@ export type CourseScopeVerdict = {
   blocked: boolean;
   classification: CourseScopeClassification | null;
 };
-
-export function courseScopeGuardrailEnabled(): boolean {
-  const raw = process.env.COURSE_SCOPE_GUARDRAIL_ENABLED?.trim().toLowerCase();
-  return raw === "1" || raw === "true";
-}
 
 export const MAX_COURSE_SCOPE_HISTORY_TURNS = 6;
 const MAX_COURSE_SCOPE_HISTORY_TURN_CHARS = 1_000;
