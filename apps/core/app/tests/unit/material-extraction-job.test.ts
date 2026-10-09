@@ -25,6 +25,8 @@ vi.mock("~/lib/ai/embedding", () => ({
   // MATERIAL_EMBED_RATE_LIMITED rather than a flat MATERIAL_EMBED_FAILED.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
   isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
+  // #1876: a server error or dropped connection is recorded as provider-unavailable.
+  isEmbeddingProviderUnavailableError: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("~/lib/ai/file-processing", async () => {
@@ -55,6 +57,7 @@ vi.mock("~/lib/topics/job.server", () => ({
 
 import prisma from "~/lib/prisma.server";
 import {
+  isEmbeddingProviderUnavailableError,
   isEmbeddingTimeoutError,
   isTransientEmbeddingError,
   processMaterialEmbeddings,
@@ -62,6 +65,7 @@ import {
 import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
 import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
+import { logSystemError } from "~/lib/logging.server";
 import {
   EXTRACTION_LEASE_MS,
   MAX_EXTRACTION_ATTEMPTS,
@@ -121,6 +125,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
   vi.mocked(isTransientEmbeddingError).mockReturnValue(false);
   vi.mocked(isEmbeddingTimeoutError).mockReturnValue(false);
+  vi.mocked(isEmbeddingProviderUnavailableError).mockReturnValue(false);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
     bytes: Buffer.from("hello"),
@@ -349,6 +354,20 @@ describe("sweepStrandedMaterialExtractions", () => {
     await sweepStrandedMaterialExtractions(CTX);
 
     expect(startTopicAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("records which material failed in the system log (#1931)", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    expect(logSystemError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "MATERIAL_EMBED_FAILED",
+        details: { materialId: "mat-1" },
+      }),
+    );
   });
 
   it("keeps going after one row fails so a single bad upload cannot stall the sweep", async () => {
@@ -906,6 +925,14 @@ describe("resolveFailureCode", () => {
     );
   });
 
+  it("reports a server error or dropped connection as unavailable, not rate-limited (#1876)", () => {
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(isEmbeddingProviderUnavailableError).mockReturnValue(true);
+    expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("502 Bad Gateway"))).toBe(
+      "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
+    );
+  });
+
   it("reports a timed-out provider as unavailable, not rate-limited", () => {
     vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
     vi.mocked(isEmbeddingTimeoutError).mockReturnValue(true);
@@ -1092,6 +1119,35 @@ describe("runMaterialExtraction duplicate resolution (#1791)", () => {
         duplicateResolution: "RESTORED",
       }),
     );
+  });
+
+  it("re-runs topic analysis for a restored material (#1937)", async () => {
+    // Deleting the material removed the suggestions only it produced, and its
+    // earlier analysis is COMPLETED under the same content key — so the restore
+    // has to ask for that run again or the file's topics never come back.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY", deletedAt: new Date() }) as never,
+    );
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(startTopicAnalysis).toHaveBeenCalledWith({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["winner-1"],
+      rerunCompleted: true,
+    });
+  });
+
+  it("does not start topic analysis when the restore's embedding fails (#1937)", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY", deletedAt: new Date() }) as never,
+    );
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(startTopicAnalysis).not.toHaveBeenCalled();
   });
 
   it("marks an untouched winner EXISTING - nothing was added", async () => {

@@ -32,6 +32,12 @@ export type ManagerViewClientGates = {
    * is always going to 403 has no business being on screen.
    */
   canReviewTopicSuggestions: boolean;
+  /**
+   * Publish / unpublish from the course page (#1939). Mirrors
+   * `PATCH /api/courses/:id/publish`: rank >= 2, and an instructor only while
+   * `instructors.canPublishCourses` is on.
+   */
+  canPublishCourse: boolean;
   canDeleteMaterial: (uploadedBy: string | null | undefined) => boolean;
 };
 
@@ -59,6 +65,10 @@ export function resolveManagerViewClientGates(
   // Mirrors the endpoint's rank >= 2, which includes unit admins.
   const canReviewTopicSuggestions =
     access === "admin" || access === "unit" || access === "instructor";
+  const canPublishCourse =
+    access === "admin" ||
+    access === "unit" ||
+    (access === "instructor" && isEnabled("instructors.canPublishCourses"));
 
   // Own-upload for TA; admin/unit/instructor any — independent of topics policy (#1390).
   const canDeleteMaterial = (uploadedBy: string | null | undefined) =>
@@ -74,6 +84,7 @@ export function resolveManagerViewClientGates(
     canManageStudentEnrollments,
     canManageRagSettings,
     canReviewTopicSuggestions,
+    canPublishCourse,
     canDeleteMaterial,
   };
 }

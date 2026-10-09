@@ -61,7 +61,8 @@ describe("GET /api/courses/:id/topics — requireServiceKey guard (integration)"
     expect(body).toHaveProperty("topics");
     expect(body.topics).toHaveLength(2);
     expect(getCourseTopicsWithSources).toHaveBeenCalledOnce();
-    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false);
+    // #1937: extensions author against suggestions too, so they get the staff view.
+    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "staff");
   });
 
   it("returns 401 Unauthorized (session path) when no Authorization header is sent", async () => {

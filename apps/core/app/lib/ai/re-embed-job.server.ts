@@ -685,17 +685,25 @@ export async function startOrResumeReEmbedJob(
     throw error;
   }
   if (!claimed) {
-    if (acquired.created && record.status === "PENDING") {
+    // A concurrent duplicate request (same idempotency key) can claim the row
+    // this call just created before this call gets to it. That row is running
+    // under the winner's lease, not orphaned, so only a row that is still
+    // unclaimed is compensated.
+    const current = await reEmbedJobClient().findUnique({ where: { id: record.id } });
+    if (
+      acquired.created &&
+      record.status === "PENDING" &&
+      (!current || current.status === "PENDING")
+    ) {
       await compensatePendingStart(record.id);
       throw new Error("Failed to claim newly-created re-embed job");
     }
     // A concurrent worker won the lease. Return the durable row without
     // attempting a second provider execution.
-    const current = await reEmbedJobClient().findUnique({ where: { id: record.id } });
     return {
       ...acquired,
       job: current ? toSnapshot(current) : acquired.job,
-      created: false,
+      created: acquired.created,
     };
   }
 

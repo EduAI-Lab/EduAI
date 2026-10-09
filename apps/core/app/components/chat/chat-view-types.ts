@@ -105,6 +105,11 @@ export type ChatViewSharedProps = {
   adhdAssistByMessageId?: Record<string, boolean>;
   /** Whether the in-flight request was made with Assist on. */
   streamingAdhdAssist?: boolean;
+  /**
+   * Course materials retrieved for each assistant message, keyed by message id
+   * (#1936). Shown as the message's sources instead of model-written citations.
+   */
+  ragSourcesByMessageId?: Record<string, string[]>;
 
   /**
    * The failure to surface inline in the conversation when the latest turn

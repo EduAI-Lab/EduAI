@@ -12,12 +12,12 @@ import {
   buildCourseScopeClassifierUserPrompt,
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
-  courseScopeGuardrailEnabled,
   resolveCourseScopeVerdict,
   shouldBlockCourseScopeClassification,
   shouldSkipCourseScopeCheck,
 } from "~/lib/ai/course-scope-guardrail";
 import { logSystemError } from "~/lib/logging.server";
+import { POLICY_FLAGS } from "~/lib/policy-flags";
 
 /** The JSON payload `buildCourseScopeClassifierUserPrompt` wraps in the tag. */
 type CourseScopeClassifierPayload = {
@@ -43,24 +43,16 @@ const baseContext = {
 };
 
 afterEach(() => {
-  delete process.env.COURSE_SCOPE_GUARDRAIL_ENABLED;
   delete process.env.COURSE_SCOPE_MIN_CONFIDENCE;
   vi.restoreAllMocks();
   vi.doUnmock("~/lib/ai/routing/classifier-client");
 });
 
-describe("courseScopeGuardrailEnabled", () => {
-  it("defaults to disabled", () => {
-    expect(courseScopeGuardrailEnabled()).toBe(false);
-  });
-
-  it("is enabled by '1' or 'true'", () => {
-    process.env.COURSE_SCOPE_GUARDRAIL_ENABLED = "1";
-    expect(courseScopeGuardrailEnabled()).toBe(true);
-    process.env.COURSE_SCOPE_GUARDRAIL_ENABLED = "true";
-    expect(courseScopeGuardrailEnabled()).toBe(true);
-    process.env.COURSE_SCOPE_GUARDRAIL_ENABLED = "false";
-    expect(courseScopeGuardrailEnabled()).toBe(false);
+describe("platform switch (#1938)", () => {
+  it("is an admin policy that defaults on, so each course's own toggle decides", () => {
+    // Was the COURSE_SCOPE_GUARDRAIL_ENABLED env var, default off and absent from
+    // the prod env, which made every course's "Restrict" toggle a silent no-op.
+    expect(POLICY_FLAGS["chat.courseScopeGuardrailEnabled"]).toMatchObject({ default: true });
   });
 });
 
@@ -82,6 +74,22 @@ describe("parseCourseScopeJson", () => {
 
   it("throws when the JSON doesn't match the schema", () => {
     expect(() => parseCourseScopeJson('{"onTopic":"yes"}')).toThrow();
+  });
+});
+
+describe("suggested topics (#1936)", () => {
+  const withSuggested = { ...baseContext, suggestedTopics: ["Tidy data"] };
+
+  it("keeps unreviewed suggestions out of the chat policy prompt", () => {
+    const prompt = buildCourseScopePolicyPrompt(withSuggested);
+    expect(prompt).toContain("Topics: Variables, Functions\n");
+    expect(prompt).not.toContain("Tidy data");
+  });
+
+  it("gives them to the classifier so an unreviewed course still has a scope", () => {
+    expect(buildCourseScopeClassifierPrompt(withSuggested)).toContain(
+      "Course topics: Variables, Functions, Tidy data.",
+    );
   });
 });
 

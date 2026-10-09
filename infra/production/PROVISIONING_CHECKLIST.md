@@ -49,6 +49,8 @@ evidence in the deployment handoff.
       templates when AI Tutor is enabled.
 - [ ] Keep environment files root-owned with the group/read permissions expected
       by the systemd units; do not place secrets in the release checkout.
+- [ ] Confirm `COOKIE_DOMAIN=.eduai.ok.ubc.ca` in Core's environment (without it
+      every app switch asks users to sign in again, #1935).
 - [ ] Confirm production URLs, cookie domain, CORS origins, ports, database URLs,
       and API-key relationships.
 - [ ] Confirm session/authentication secrets are stable for the release and are

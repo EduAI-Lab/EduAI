@@ -81,7 +81,11 @@ export function ChatTranscriptViewer({
       ) : (
         <div className="space-y-5">
           {messages.map((message, index) => (
-            <ChatMessage key={message.id || `msg-${index}`} message={message} />
+            <ChatMessage
+              key={message.id || `msg-${index}`}
+              message={message}
+              materialSources={message.metadata?.ragSources}
+            />
           ))}
         </div>
       )}

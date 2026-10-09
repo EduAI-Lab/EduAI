@@ -357,3 +357,59 @@ describe("ChatMessage — Continue affordance", () => {
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Course-material sources (#1936)
+// ---------------------------------------------------------------------------
+
+describe("ChatMessage — course-material sources", () => {
+  const citedMessage: Message = {
+    id: "3",
+    role: "assistant",
+    content: "Lab 14 is due Nov 20.\n\n*(Source: ZZ-TEST-DATA301-L15-Data-Cleaning)*",
+    createdAt: new Date(),
+  };
+
+  it("hides the model's own citation and lists the retrieved materials", () => {
+    render(
+      <ChatMessage
+        message={citedMessage}
+        materialSources={["ZZ-TEST-DATA301-L14-Data-Cleaning", "301_1_Intro"]}
+      />,
+    );
+
+    expect(screen.getByText("Lab 14 is due Nov 20.")).toBeInTheDocument();
+    expect(screen.queryByText(/L15-Data-Cleaning/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Sources: ZZ-TEST-DATA301-L14-Data-Cleaning, 301_1_Intro"),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a turn with no course retrieval untouched (PR #1946 review)", () => {
+    const adminMessage: Message = {
+      id: "4",
+      role: "assistant",
+      content: "Bug report 12\n\n- **Source:** AI_TUTOR",
+      createdAt: new Date(),
+    };
+    render(<ChatMessage message={adminMessage} />);
+
+    expect(screen.getByText(/AI_TUTOR/)).toBeInTheDocument();
+  });
+
+  it("copies the reply without the hidden citation (PR #1946 review)", async () => {
+    render(<ChatMessage message={citedMessage} materialSources={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy message" }));
+
+    await vi.waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith("Lab 14 is due Nov 20."),
+    );
+  });
+
+  it("shows no Sources line when nothing was retrieved", () => {
+    render(<ChatMessage message={citedMessage} materialSources={[]} />);
+
+    expect(screen.queryByText(/^Sources:/)).not.toBeInTheDocument();
+  });
+});

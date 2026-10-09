@@ -278,7 +278,11 @@ describe("CourseDetailManagerView — materials tab", () => {
   it("opens the delete-material confirmation, cancels without calling onDeleteMaterial", () => {
     const props = renderView();
     fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
-    expect(screen.getByText("Delete material?")).toBeInTheDocument();
+    // #1937: the title names the file, so a mis-click is caught before confirming.
+    expect(screen.getByText("Delete “Lecture 1”?")).toBeInTheDocument();
+    expect(
+      screen.getByText(/topic suggestions that came only from this file/i),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(props.onDeleteMaterial).not.toHaveBeenCalled();
   });
@@ -288,6 +292,20 @@ describe("CourseDetailManagerView — materials tab", () => {
     fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(props.onDeleteMaterial).toHaveBeenCalledWith("m1"));
+  });
+
+  it("refreshes topics and the review banner after a delete removes suggestions (#1937)", async () => {
+    const onRefreshTopics = vi.fn().mockResolvedValue(undefined);
+    renderView({ onRefreshTopics });
+    const statusReads = () =>
+      mockFetch.mock.calls.filter(([url]) => url === "/api/courses/c1/topic-analysis").length;
+    await waitFor(() => expect(statusReads()).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(onRefreshTopics).toHaveBeenCalled());
+    await waitFor(() => expect(statusReads()).toBe(2));
   });
 
   it("renames a material via the PATCH endpoint and refreshes materials", async () => {
@@ -834,6 +852,27 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
       courseScopeGuardrailEnabled: true,
       ragTopK: 6,
     });
+  });
+
+  it("says the course restriction has no effect while the platform policy is off (#1938)", () => {
+    renderView(
+      { course: { ...COURSE, courseScopeGuardrailEnabled: true } },
+      { "chat.courseScopeGuardrailEnabled": false },
+    );
+    clickTab(/settings/i);
+
+    expect(screen.getByText(/turned off for the whole platform/i)).toBeInTheDocument();
+    // Still editable, so an instructor can set it ahead of the platform switch.
+    expect(
+      screen.getByRole("switch", { name: /restrict course chat to this course/i }),
+    ).toBeEnabled();
+  });
+
+  it("shows no platform warning while the platform policy is on (#1938)", () => {
+    renderView({}, { "chat.courseScopeGuardrailEnabled": true });
+    clickTab(/settings/i);
+
+    expect(screen.queryByText(/turned off for the whole platform/i)).toBeNull();
   });
 
   it("saves RAG search-tuning settings", async () => {

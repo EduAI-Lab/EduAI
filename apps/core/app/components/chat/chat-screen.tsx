@@ -45,6 +45,7 @@ import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
   adhdAssistFromMessage,
+  ragSourcesFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 
 type LongOutputMessageMetadata = {
@@ -257,6 +258,22 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     },
   );
   const [streamingAdhdAssist, setStreamingAdhdAssist] = useState(false);
+  /**
+   * Course materials retrieved for each assistant message, keyed by message id
+   * (#1936) — the server's list, shown under the reply in place of the model's
+   * own citations. Absent for turns that ran no course retrieval.
+   */
+  const [ragSourcesByMessageId, setRagSourcesByMessageId] = useState<Record<string, string[]>>(
+    () => {
+      const hydrated: Record<string, string[]> = {};
+      for (const message of editableTranscript?.messages ?? []) {
+        const id = asPresentText(message.id);
+        const ragSources = ragSourcesFromMessage(message);
+        if (id && ragSources) hydrated[id] = ragSources;
+      }
+      return hydrated;
+    },
+  );
   /** Id of the assistant message currently being re-generated for a toggled Assist mode (#1246). */
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   /**
@@ -483,6 +500,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           (annotation) => asJsonObject(annotation)?.hitLongOutputCap === true,
         );
 
+      const ragSources =
+        message.role === "assistant"
+          ? message.annotations
+              ?.map((annotation) => ragSourcesFromMessage({ metadata: annotation }))
+              .find((sources) => sources !== undefined)
+          : undefined;
+      if (ragSources) {
+        setRagSourcesByMessageId((prev) => ({ ...prev, [message.id]: ragSources }));
+      }
+
       if (hitLongOutputCap) {
         setCappedMessageIds((current) => {
           const next = new Set(current);
@@ -602,6 +629,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               throw new Error(`Regenerate failed with ${response.status}`);
             }
             const data = await response.json();
+            // The regenerated answer ran its own retrieval; keep its Sources line
+            // in step with the new text (#1936).
+            const regeneratedSources = ragSourcesFromMessage({ metadata: data });
+            if (regeneratedSources) {
+              setRagSourcesByMessageId((prev) => ({
+                ...prev,
+                [lastMessage.id]: regeneratedSources,
+              }));
+            }
             const rawContent = asText(data.content);
             content = rawContent?.trim() ? rawContent : undefined;
             if (!content) {
@@ -979,6 +1015,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     streamingWasAutoRouted,
     adhdAssistByMessageId,
     streamingAdhdAssist,
+    ragSourcesByMessageId,
     chatError,
     onRetryChat: canRetryChat ? handleRetryChat : undefined,
   };

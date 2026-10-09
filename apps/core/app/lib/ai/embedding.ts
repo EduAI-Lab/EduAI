@@ -364,8 +364,59 @@ function reindexConcurrency(): number {
  * transient provider failure is recorded as rate-limited or provider-unavailable
  * rather than a flat `MATERIAL_EMBED_FAILED`.
  */
+const PROVIDER_UNAVAILABLE_STATUSES = new Set([500, 502, 504]);
+const NETWORK_ERROR_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "EPIPE",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+]);
+const REJECTED_INPUT_PATTERN = /context[ _-]?window|context length|input length exceeds/i;
+const PROVIDER_UNAVAILABLE_PATTERN =
+  /\b(500|502|504)\b|bad gateway|gateway time-?out|internal server error|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED/i;
+
+/**
+ * The embedding service failed or dropped the connection, rather than
+ * rejecting the input (#1876): HTTP 500/502/504 or a network error, anywhere in
+ * the cause chain (the local provider wraps the original error). Under a burst
+ * of uploads that is load on the service, not a property of the file, so it is
+ * retried like a rate limit and, if it persists, recorded as
+ * MATERIAL_EMBED_PROVIDER_UNAVAILABLE. An input the model rejected (context
+ * window, #1931) never matches, even when its message carries a status code.
+ */
+export function isEmbeddingProviderUnavailableError(cause: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = cause;
+
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const message = current instanceof Error ? current.message : String(current);
+    if (REJECTED_INPUT_PATTERN.test(message)) return false;
+    if (!(current instanceof Object)) return PROVIDER_UNAVAILABLE_PATTERN.test(message);
+
+    const candidate = current as {
+      status?: unknown;
+      statusCode?: unknown;
+      code?: unknown;
+      cause?: unknown;
+    };
+    const status = Number(candidate.status ?? candidate.statusCode);
+    if (PROVIDER_UNAVAILABLE_STATUSES.has(status)) return true;
+    if (NETWORK_ERROR_CODES.has(String(candidate.code))) return true;
+    if (PROVIDER_UNAVAILABLE_PATTERN.test(message)) return true;
+    current = candidate.cause;
+  }
+
+  return false;
+}
+
 export function isTransientEmbeddingError(cause: unknown): boolean {
   if (isEmbeddingTimeoutError(cause)) return true;
+  if (isEmbeddingProviderUnavailableError(cause)) return true;
 
   const status =
     cause instanceof Object && "status" in cause
@@ -905,17 +956,29 @@ function usesVllmEmbeddingEndpoint(): boolean {
   return Boolean(process.env.VLLM_EMBEDDING_BASE_URL?.trim());
 }
 
-/** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
+/**
+ * Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting.
+ *
+ * Upload-path semantic chunks run up to 1500 characters. A cloud model takes that
+ * comfortably, but the local model (mxbai-embed-large, 512 tokens) rejects a dense
+ * one — code-heavy slides, for example — with a context-window error on every
+ * attempt (#1931). Pass `semanticMaxChunkSize` to re-split semantic chunks above
+ * that width; leave it unset to keep them whole.
+ */
 export function resolveMaterialChunks(
   content: string,
   maxChunkSize: number = 800,
   overlap: number = 80,
+  semanticMaxChunkSize?: number,
 ): string[] {
   if (content.includes(SEMANTIC_CHUNK_SEPARATOR)) {
-    return content
+    const semantic = content
       .split(SEMANTIC_CHUNK_SEPARATOR)
       .map((chunk) => chunk.trim())
       .filter((chunk) => chunk.length > 0);
+    return semanticMaxChunkSize === undefined
+      ? semantic
+      : enforceMaxChunkSize(semantic, semanticMaxChunkSize, overlap);
   }
 
   return generateChunks(content, maxChunkSize, overlap);
@@ -1533,6 +1596,8 @@ export async function reEmbedCourseMaterials(
           );
           await processMaterialEmbeddings(material.id, content, {
             replace: true,
+            // Throttled by REINDEX_CONCURRENCY above, not the upload slots.
+            bypassEmbedSlot: true,
             transactionOptions: {
               maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
               timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
@@ -1613,6 +1678,13 @@ export type ProcessMaterialEmbeddingsOptions = {
   replace?: boolean;
   /** Override interactive transaction limits for a bounded concurrent reindex. */
   transactionOptions?: { maxWait: number; timeout: number };
+  /**
+   * Skip the shared upload slots (#1876). Course re-embed is an admin-run job
+   * throttled by its own `REINDEX_CONCURRENCY`; the slots exist for unplanned
+   * bursts of uploads, and sharing them would silently cap that setting at
+   * `MATERIAL_EMBED_MAX_CONCURRENT`.
+   */
+  bypassEmbedSlot?: boolean;
   /** Immutable settings used by a durable re-embed job. */
   embeddingSettings?: EffectiveEmbeddingSettings;
   /** DB-atomic durable job/owner fence for vector replacement writes. */
@@ -1678,6 +1750,48 @@ export async function insertMaterialEmbeddingsBatched(
 /**
  * Process and store embeddings for a course material (single transaction).
  */
+/** Default cap on materials embedding at once in this process (#1876). */
+export const MATERIAL_EMBED_DEFAULT_MAX_CONCURRENT = 4;
+const MATERIAL_EMBED_MAX_CONCURRENT_CEILING = 32;
+
+function materialEmbedMaxConcurrent(): number {
+  const n = Number(process.env.MATERIAL_EMBED_MAX_CONCURRENT);
+  return Number.isInteger(n) && n >= 1
+    ? Math.min(n, MATERIAL_EMBED_MAX_CONCURRENT_CEILING)
+    : MATERIAL_EMBED_DEFAULT_MAX_CONCURRENT;
+}
+
+let materialEmbedLimit: ReturnType<typeof pLimit> | undefined;
+
+/**
+ * Run one material's embedding requests in a shared slot (#1876).
+ *
+ * Every upload, retry, restore and sweep used to embed as soon as it was
+ * extracted, so a burst — several instructors setting up courses at once —
+ * sent that many simultaneous requests to the embedding service, which also
+ * embeds every course-chat question. Materials beyond the cap wait here, in
+ * arrival order, and run as slots free up; nothing fails for having waited.
+ * Callers hold their extraction lease with `withLeaseHeartbeat` around
+ * `processMaterialEmbeddings`, so a material waiting for a slot is not mistaken
+ * for an abandoned one. Per process: `MATERIAL_EMBED_MAX_CONCURRENT`, default 4.
+ */
+export function runWithMaterialEmbedSlot<T>(
+  run: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  materialEmbedLimit ??= pLimit(materialEmbedMaxConcurrent());
+  return materialEmbedLimit(async () => {
+    // A job abandoned while it waited gives its slot straight back.
+    if (signal?.aborted) throw abortSignalReason(signal);
+    return run();
+  });
+}
+
+/** Test-only: drop the shared limiter so the next call re-reads the cap. */
+export function resetMaterialEmbedLimitForTests(): void {
+  materialEmbedLimit = undefined;
+}
+
 export async function processMaterialEmbeddings(
   materialId: string,
   content: string,
@@ -1695,19 +1809,28 @@ export async function processMaterialEmbeddings(
   const settings =
     options?.embeddingSettings ?? (await loadEffectiveEmbeddingSettings(material.courseId));
   const { maxChunkSize, overlap } = resolveChunkParams(settings.wantsLocal);
-  const chunks = resolveMaterialChunks(content, maxChunkSize, overlap);
+  const chunks = resolveMaterialChunks(
+    content,
+    maxChunkSize,
+    overlap,
+    settings.wantsLocal ? maxChunkSize : undefined,
+  );
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
   }
 
-  const embeddings = await generateEmbeddings(chunks, material.courseId, settings, {
-    signal: options?.signal,
-    // Indexing always runs in a background job, never on a request (#1791), so
-    // it can afford to wait out a provider rate limit instead of failing the
-    // material terminally after ~1.5s.
-    retryBudget: INDEXING_RETRY_BUDGET,
-  });
+  const embed = () =>
+    generateEmbeddings(chunks, material.courseId, settings, {
+      signal: options?.signal,
+      // Indexing always runs in a background job, never on a request (#1791),
+      // so it can afford to wait out a provider rate limit instead of failing
+      // the material terminally after ~1.5s.
+      retryBudget: INDEXING_RETRY_BUDGET,
+    });
+  const embeddings = options?.bypassEmbedSlot
+    ? await embed()
+    : await runWithMaterialEmbedSlot(embed, options?.signal);
 
   await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
 

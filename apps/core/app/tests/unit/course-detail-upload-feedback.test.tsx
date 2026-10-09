@@ -222,16 +222,33 @@ describe("CourseDetailPage upload feedback (#949 outcomes)", () => {
     );
   });
 
-  it("reports a processing failure", async () => {
-    // The specific reason (#1791), when there is one, shows on the settled row
-    // in the materials list rather than in this inline alert — the reprocess-
-    // based retry (#1749/#1795) lives there, not here.
-    uploadMaterial.mockResolvedValue({ status: "failed", materialId: "mat-new" });
+  it("reports a processing failure with no recorded reason", async () => {
+    // The full explanation and the reprocess-based retry (#1749/#1795) live on
+    // the settled row in the materials list; the alert points there.
+    uploadMaterial.mockResolvedValue({
+      status: "failed",
+      materialId: "mat-new",
+      failureCode: null,
+    });
     render(<CourseDetailPage />);
     await selectFile();
 
     expect(screen.getByTestId("error").textContent).toBe(
-      "Processing failed for this file. Please try again.",
+      "Processing failed for this file. See the file in the materials list for details and what to do next.",
+    );
+  });
+
+  it("names the recorded reason for a processing failure (#1931)", async () => {
+    uploadMaterial.mockResolvedValue({
+      status: "failed",
+      materialId: "mat-new",
+      failureCode: "MATERIAL_EMBED_FAILED",
+    });
+    render(<CourseDetailPage />);
+    await selectFile();
+
+    expect(screen.getByTestId("error").textContent).toBe(
+      "Couldn't prepare this file for search. See the file in the materials list for details and what to do next.",
     );
   });
 

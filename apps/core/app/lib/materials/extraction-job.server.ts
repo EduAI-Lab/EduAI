@@ -24,6 +24,7 @@
 import type { MaterialFailureCode } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import {
+  isEmbeddingProviderUnavailableError,
   isEmbeddingTimeoutError,
   isTransientEmbeddingError,
   processMaterialEmbeddings,
@@ -83,6 +84,9 @@ export function resolveFailureCode(
   if (code === "MATERIAL_EMBED_FAILED") {
     // Checked first: a timeout is transient too, but means unreachable, not throttled.
     if (isEmbeddingTimeoutError(cause)) return "MATERIAL_EMBED_PROVIDER_UNAVAILABLE";
+    // A server error or dropped connection is transient too, but it is the
+    // service failing, not throttling (#1876).
+    if (isEmbeddingProviderUnavailableError(cause)) return "MATERIAL_EMBED_PROVIDER_UNAVAILABLE";
     if (isTransientEmbeddingError(cause)) return "MATERIAL_EMBED_RATE_LIMITED";
   }
   return code;
@@ -124,6 +128,8 @@ export async function failMaterial(
       code,
       message,
       error: cause,
+      // Lets Admin → Logs tie the failure to its material (#1931).
+      details: { materialId },
     }),
   );
 }
@@ -556,6 +562,14 @@ export async function runMaterialExtraction(
               failureCode: null,
               extractionLeaseUntil: null,
             },
+          });
+          // #1937: deleting the material removed the suggestions only it
+          // produced, so a restore re-runs its analysis to bring them back.
+          startTopicAnalysis({
+            courseId,
+            userId,
+            materialIds: [duplicate.id],
+            rerunCompleted: true,
           });
         } catch (embeddingError) {
           await failMaterial(

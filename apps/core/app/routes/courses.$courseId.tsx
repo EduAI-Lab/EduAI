@@ -36,8 +36,10 @@ import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
+import { setCoursePublished } from "~/lib/courses/set-course-published";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
+import { describeUploadFailure } from "~/lib/material-failure-notice";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -297,6 +299,15 @@ export default function CourseDetailPage() {
     [course.id, revalidator, refetchEnrollments],
   );
 
+  /** #1939: publish or unpublish from the course page; the endpoint enforces who may. */
+  const handlePublishChange = useCallback(
+    async (publish: boolean) => {
+      await setCoursePublished(course.id, publish);
+      revalidator.revalidate();
+    },
+    [course.id, revalidator],
+  );
+
   /**
    * Name the course head. Since #1840 this PATCH no longer deactivates the
    * previous instructor — it only moves `Course.instructorId` (and enrolls the
@@ -366,11 +377,12 @@ export default function CourseDetailPage() {
             : "A file with identical content already exists in this course",
         };
       }
-      // The specific reason (#1791) shows on the settled row's failure popover.
+      // The full explanation and Try again (#1791) live on the settled row's
+      // failure popover; the alert names the reason and points there (#1931).
       case "failed":
         return {
           status: "failed",
-          message: "Processing failed for this file. Please try again.",
+          message: describeUploadFailure(outcome.failureCode),
         };
       case "processing":
         return { status: "processing" };
@@ -529,6 +541,7 @@ export default function CourseDetailPage() {
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
               onReprocessMaterial={reprocessMaterial}
+              onPublishChange={handlePublishChange}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={

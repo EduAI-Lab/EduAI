@@ -50,12 +50,17 @@ vi.mock("~/lib/ai/embedding", () => ({
   // can record MATERIAL_EMBED_RATE_LIMITED instead of a flat embed failure.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
   isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
+  isEmbeddingProviderUnavailableError: vi.fn().mockReturnValue(false),
 }));
 
 // #1624: every material that reaches READY gets topic analysis, including one
 // recovered by the #1749 retry (#1795 review round 3).
 vi.mock("~/lib/topics/job.server", () => ({
   startTopicAnalysis: vi.fn(),
+}));
+
+vi.mock("~/lib/topics/orphaned-suggestions.server", () => ({
+  removeOrphanedSuggestions: vi.fn().mockResolvedValue(0),
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
@@ -91,6 +96,7 @@ import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
+import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
 import {
   extractUploadedFileContent,
   processUploadedFile,
@@ -1380,12 +1386,25 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     );
   });
 
+  it("removes the suggestions only this material produced, in the delete's transaction (#1937)", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+
+    const res = await action(makeDeleteArgs("mat-1"));
+
+    expect(res.status).toBe(204);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // The mock hands the callback the shared client, so "same transaction"
+    // shows up as the cleanup receiving that client rather than the default.
+    expect(removeOrphanedSuggestions).toHaveBeenCalledWith(COURSE_ID, prisma);
+  });
+
   it("returns 403 for an enrolled STUDENT", async () => {
     mockSession("STUDENT");
     mockAccess({ level: "student", rank: 0 });
     const res = await action(makeDeleteArgs("mat-1"));
     expect(res.status).toBe(403);
     expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(removeOrphanedSuggestions).not.toHaveBeenCalled();
   });
 
   it("lets a student clear their own duplicate receipt (#1494 review)", async () => {

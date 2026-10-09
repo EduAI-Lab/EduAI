@@ -105,7 +105,7 @@ A course page has these tabs: **Overview**, **Materials**, **Topics**, **Enrollm
 
 On the **Materials** tab you can either upload files from your device, or pull them from the linked Canvas course.
 
-Uploaded material is chunked and indexed before course-aware chat can use it. Watch the **Material status** panel on your dashboard: a file is only usable once it reaches **Ready**. A **Failed** file will not appear in AI answers.
+Uploaded material is chunked and indexed before course-aware chat can use it. Watch the **Material status** panel on your dashboard: a file is only usable once it reaches **Ready**. A **Failed** file will not appear in AI answers. Select the **?** next to a failed file for the reason and what to do; every reason is listed in [When a file fails](USER_GUIDE.md#when-a-file-fails).
 
 ### Enrollments
 

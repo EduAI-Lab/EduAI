@@ -103,6 +103,22 @@ Do not put passwords, API keys, private student information, or other secrets in
 - Uploaded material is processed and indexed before it becomes useful to course-aware chat. A processing failure means the file may not be available to retrieval.
 - If Canvas is unavailable or a sync is rate-limited, wait and retry rather than starting multiple simultaneous syncs.
 
+#### When a file fails
+
+A failed file shows **Failed** in the materials list. Select the **?** next to it to see the reason and what to do; the upload message names the same reason. A failed file is not used in AI answers until it is fixed.
+
+| Reason shown | What it means | What to do |
+|---|---|---|
+| Couldn't read this file | No text could be extracted: the file may be corrupted, password-protected, or a scan with no selectable text. The upload is not kept. | Check the file opens and its text can be selected, then upload it again (for a scan, export it with text recognition first). |
+| The server was too busy to process this file | Reading the file was retried several times while the server was busy. | Upload it again in a few minutes. |
+| Processing didn't complete | Reading the file was attempted several times and never finished. | Upload it again. If it keeps happening, contact your administrator. |
+| Couldn't prepare this file for search | The text was read and saved, but the AI service rejected it while building search data. | Use **Try again** on the file; there is no need to upload it again. If it keeps failing, contact your administrator. |
+| Rate-limited while indexing | The AI service was limiting requests while building search data. The text is saved. | Use **Try again** in a few minutes. |
+| AI service unavailable while indexing | The AI service didn't respond while building search data. The text is saved. | Use **Try again** later. If it keeps happening, contact your administrator. |
+| This file is already on the course | The same content is already uploaded to this course, so nothing was added. | Remove the extra entry; nothing else is needed. |
+
+Uploading the same file again after a failure retries the existing entry rather than adding a second copy, so it is safe to re-upload. Deleting a failed file and uploading it again also retries it.
+
 ### Instructor: connect and sync Canvas
 
 1. Open **profile menu → Settings → Canvas** and connect your Canvas account.

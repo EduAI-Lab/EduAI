@@ -1,8 +1,10 @@
 /**
  * Course-scope chat guardrail. Layer A is an always-on system-prompt policy for
  * browser learning chat. Layer B is a per-course second-pass classifier that
- * can redirect clearly off-topic turns before the main model. Layer B fails
- * open: an unreachable classifier must never block a student's real question.
+ * can redirect clearly off-topic turns before the main model; it runs when the
+ * course opts in and the `chat.courseScopeGuardrailEnabled` admin policy is on
+ * (#1938). Layer B fails open: an unreachable classifier must never block a
+ * student's real question.
  */
 import { generateText } from "ai";
 import { z } from "zod";
@@ -14,7 +16,13 @@ export type CourseScopeContext = {
   courseName: string;
   courseCode: string | null;
   courseDescription: string | null;
+  /** Accepted topics — the only ones the chat prompt lists (#1936). */
   courseTopics: string[];
+  /**
+   * Unreviewed AI-suggested topics. Classifier-only: they are not course
+   * content, but they still describe the course's scope (#1936 review).
+   */
+  suggestedTopics?: string[];
   aiInstructions: string | null;
 };
 
@@ -34,11 +42,6 @@ export type CourseScopeVerdict = {
   blocked: boolean;
   classification: CourseScopeClassification | null;
 };
-
-export function courseScopeGuardrailEnabled(): boolean {
-  const raw = process.env.COURSE_SCOPE_GUARDRAIL_ENABLED?.trim().toLowerCase();
-  return raw === "1" || raw === "true";
-}
 
 export const MAX_COURSE_SCOPE_HISTORY_TURNS = 6;
 const MAX_COURSE_SCOPE_HISTORY_TURN_CHARS = 1_000;
@@ -115,7 +118,7 @@ export function buildCourseScopeClassifierPrompt(context: CourseScopeContext): s
   return `You are a scope-enforcement classifier for a university course AI assistant.
 Course: ${context.courseName} (${context.courseCode ?? "no code"}).
 Course description: ${context.courseDescription?.trim() || "none"}.
-Course topics: ${formatCourseTopics(context.courseTopics)}.
+Course topics: ${formatCourseTopics([...context.courseTopics, ...(context.suggestedTopics ?? [])])}.
 Instructor notes: ${context.aiInstructions?.trim() || "none"}.
 
 Conversation data is provided in the next message wrapped in a

@@ -349,3 +349,23 @@ describe("reviveStoredMessage — attachments (#1902)", () => {
     expect(revived.experimental_attachments).toEqual([attachment]);
   });
 });
+
+describe("reviveStoredMessage — course-material sources (#1936)", () => {
+  it("carries an assistant turn's ragSources back to the client", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m1",
+      role: "assistant",
+      content: { content: "answer", metadata: { ragSources: ["301_1_Intro"] } },
+    });
+    expect(revived.metadata).toEqual({ ragSources: ["301_1_Intro"] });
+  });
+
+  it("does not attach ragSources to a user turn", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m2",
+      role: "user",
+      content: { content: "question", metadata: { ragSources: ["301_1_Intro"] } },
+    });
+    expect(revived.metadata).toBeUndefined();
+  });
+});

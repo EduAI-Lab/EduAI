@@ -18,6 +18,11 @@ import {
   IconCopy,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
+import { CoursePublishControl } from "~/components/courses/course-publish-control";
+import {
+  SelfEnrollmentDraftNotice,
+  selfEnrollmentStatusLabel,
+} from "~/components/courses/self-enrollment-draft-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
@@ -173,13 +178,6 @@ const selfEnrollmentCreatedSchema = z.object({
 
 type SelfEnrollmentLinkSummary = z.infer<typeof selfEnrollmentLinkSchema>;
 
-const SELF_ENROLLMENT_STATUS_LABELS = {
-  ACTIVE: "Active",
-  REVOKED: "Turned off",
-  EXPIRED: "Expired",
-  EXHAUSTED: "Limit reached",
-} satisfies Record<SelfEnrollmentLinkSummary["status"], string>;
-
 export type CourseDetailManagerCourse = CourseDetail & {
   /** Staff course loaders always include the persisted, non-null toggle. */
   courseScopeGuardrailEnabled: boolean;
@@ -203,6 +201,12 @@ interface Props {
    * affordance on the failure popover, rather than a button that cannot work.
    */
   onReprocessMaterial?: (materialId: string) => Promise<void>;
+  /**
+   * #1939: publish (true) or unpublish (false) the course; rejects when the
+   * server refuses. Optional like `onReprocessMaterial`: without it the page
+   * offers no publish control.
+   */
+  onPublishChange?: (publish: boolean) => Promise<void>;
   hasMoreMaterials?: boolean;
   materialsLoadingMore?: boolean;
   onLoadMoreMaterials?: () => void;
@@ -350,6 +354,7 @@ export function CourseDetailManagerView({
   onLoadMoreEnrollments,
   materials,
   onReprocessMaterial,
+  onPublishChange,
   hasMoreMaterials = false,
   materialsLoadingMore = false,
   onLoadMoreMaterials,
@@ -391,6 +396,7 @@ export function CourseDetailManagerView({
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    refetch: refetchTopicAnalysis,
     // `courseId` is optional on this component; without one there is nothing to
     // poll, so the hook stays idle rather than fetching `/api/courses//…`.
   } = useTopicAnalysis(courseId ?? "", Boolean(courseId), () => onRefreshTopics?.());
@@ -410,6 +416,7 @@ export function CourseDetailManagerView({
   };
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
+  const deleteMaterialTitle = materials.find((m) => m.id === deleteMaterialId)?.title;
   const [deletingMaterial, setDeletingMaterial] = useState(false);
   const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -476,8 +483,19 @@ export function CourseDetailManagerView({
     canManageStudentEnrollments,
     canManageRagSettings,
     canReviewTopicSuggestions,
+    canPublishCourse,
     canDeleteMaterial: canDeleteMaterialForUploader,
   } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
+
+  // #1939: one control, shown beside the Published badge and in the draft notice.
+  const publishControl =
+    canPublishCourse && onPublishChange ? (
+      <CoursePublishControl
+        courseLabel={`${course.code} — ${course.name}`}
+        isPublished={course.isPublished}
+        onPublishChange={onPublishChange}
+      />
+    ) : null;
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
   // Server already pages active STUDENT rows (#1042 review); keep the client
@@ -804,6 +822,10 @@ export function CourseDetailManagerView({
     try {
       await onDeleteMaterial(deleteMaterialId);
       setDeleteMaterialId(null);
+      // #1937: the delete also removes suggestions read only from this file, so
+      // the topic list and the "awaiting your review" count both catch up.
+      void onRefreshTopics?.();
+      void refetchTopicAnalysis();
     } catch (e) {
       console.error(e);
     } finally {
@@ -1035,10 +1057,13 @@ export function CourseDetailManagerView({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete material?</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">
+              {deleteMaterialTitle ? `Delete “${deleteMaterialTitle}”?` : "Delete material?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This removes the file and its search data from the course. Deletes are not propagated
-              to Canvas, and re-uploading the same file restores it.
+              to Canvas, and re-uploading the same file restores it. Topic suggestions that came
+              only from this file and have not been reviewed are removed too.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1301,11 +1326,14 @@ export function CourseDetailManagerView({
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
                       Published
                     </p>
-                    <StatusBadge
-                      active={course.isPublished}
-                      activeLabel="Published"
-                      inactiveLabel="Draft"
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge
+                        active={course.isPublished}
+                        activeLabel="Published"
+                        inactiveLabel="Draft"
+                      />
+                      {publishControl}
+                    </div>
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
@@ -1838,6 +1866,13 @@ export function CourseDetailManagerView({
                         after 30 days.
                       </p>
 
+                      {!course.isPublished && (
+                        <SelfEnrollmentDraftNotice
+                          canPublish={canPublishCourse}
+                          publishControl={publishControl}
+                        />
+                      )}
+
                       {selfEnrollError && (
                         <p className="text-sm text-destructive">{selfEnrollError}</p>
                       )}
@@ -1891,7 +1926,7 @@ export function CourseDetailManagerView({
                               <CardContent className="flex items-center justify-between py-3 text-sm">
                                 <div>
                                   <span className="font-medium">
-                                    {SELF_ENROLLMENT_STATUS_LABELS[link.status]}
+                                    {selfEnrollmentStatusLabel(link.status, course.isPublished)}
                                   </span>
                                   <span className="block text-xs text-muted-foreground">
                                     Expires {new Date(link.expiresAt).toLocaleDateString()} ·{" "}
@@ -2137,6 +2172,13 @@ export function CourseDetailManagerView({
                         When enabled, clearly off-topic student requests are redirected. This is off
                         by default.
                       </p>
+                      {/* #1938: without this the switch looks live while doing nothing. */}
+                      {!isEnabled("chat.courseScopeGuardrailEnabled") && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          Turned off for the whole platform in Admin → Settings, so this has no
+                          effect right now.
+                        </p>
+                      )}
                     </div>
                     <Switch
                       id="course-scope-guardrail"
