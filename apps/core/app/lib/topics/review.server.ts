@@ -1,5 +1,6 @@
 import type { JsonValue } from "@eduai/types";
 
+import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
@@ -207,6 +208,10 @@ export async function approveGeneratedTopic(
     data: { reviewStatus: "ACCEPTED" },
     select: { id: true, name: true },
   });
+  // #1937: course chat lists only accepted topics, so it should see this one now
+  // rather than when the cached list expires. Dismiss and merge only touch
+  // suggestions, which that list never held.
+  invalidateCourseTopicNamesCache(courseId);
   return { status: "200", topic: updated };
 }
 

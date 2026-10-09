@@ -205,11 +205,11 @@ export function invalidateCourseTopicNamesCache(courseId: string): void {
 }
 
 /**
- * Cached topic-name lookup for a course. Backed by getCourseTopics so it stays
- * consistent with the deletedAt: null filter used everywhere else. Cached in
- * memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (reuses the RAG settings TTL —
- * both are low-churn, read-heavy per-course settings) to avoid a DB
- * round-trip on every course-chat turn.
+ * Cached topic-name lookup for the course chat prompt: the learner view only
+ * (#1937), so an unreviewed suggestion never reaches a student's chat as if it
+ * were the syllabus. Cached in memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS
+ * (reuses the RAG settings TTL — both are low-churn, read-heavy per-course
+ * settings) to avoid a DB round-trip on every course-chat turn.
  */
 export async function getCourseTopicNamesCached(courseId: string): Promise<string[]> {
   pruneCourseTopicNamesCache();
@@ -220,7 +220,11 @@ export async function getCourseTopicNamesCached(courseId: string): Promise<strin
     return cached.value;
   }
 
-  const topics = await getCourseTopics(courseId);
+  const topics = await prisma.courseTopic.findMany({
+    where: { courseId, deletedAt: null, ...LEARNER_TOPIC_WHERE },
+    orderBy: { name: "asc" },
+    select: { name: true },
+  });
   const value = topics.map((topic) => topic.name);
 
   courseTopicNamesCache.set(courseId, {
@@ -1199,6 +1203,8 @@ export const TOPIC_SOURCE_PROJECTION_LIMIT = 5;
  */
 const topicSourceInclude = {
   sources: {
+    // #1937: a deleted file is not where a topic "came from" any more.
+    where: { material: { deletedAt: null } },
     take: TOPIC_SOURCE_PROJECTION_LIMIT,
     orderBy: { createdAt: "asc" },
     select: {
@@ -1206,7 +1212,7 @@ const topicSourceInclude = {
       material: { select: { title: true } },
     },
   },
-  _count: { select: { sources: true } },
+  _count: { select: { sources: { where: { material: { deletedAt: null } } } } },
 } as const;
 
 type TopicWithSourceRows = {
@@ -1228,10 +1234,31 @@ function withSourceProjection<T extends TopicWithSourceRows>(topic: T) {
 }
 
 /**
+ * Who a topic read is for (#1937). Staff (and the service-key extensions, which
+ * author against topics) see every live topic, suggestions included, because
+ * reviewing them is their job. Learners see only what describes the course.
+ */
+export type TopicAudience = "staff" | "learner";
+
+/**
+ * The learner view: topics an instructor accepted, minus the Uncategorized
+ * placeholder, which exists so Question Maker always has something to author
+ * against and says nothing about the course. Served by the
+ * `[courseId, reviewStatus]` index.
+ */
+const LEARNER_TOPIC_WHERE = {
+  reviewStatus: "ACCEPTED",
+  name: { not: FALLBACK_TOPIC_NAME },
+} satisfies Prisma.CourseTopicWhereInput;
+
+function audienceWhere(audience: TopicAudience): Prisma.CourseTopicWhereInput {
+  return audience === "learner" ? LEARNER_TOPIC_WHERE : {};
+}
+
+/**
  * Topics for a course, without provenance.
  *
- * Deliberately lean, and kept that way: the hot callers are the chat
- * course-scope prompt (behind `getCourseTopicNamesCached`) and the agent tools,
+ * Deliberately lean, and kept that way: the hot callers are the agent tools,
  * which want names and nothing else. Joining every topic's source materials
  * onto those reads would buy them a per-topic join and a count they never look
  * at — provenance is a review concern, so the review-facing reads opt into it
@@ -1245,9 +1272,17 @@ export async function getCourseTopics(courseId: string, includeDeleted = false) 
 }
 
 /** Topics for a course, each carrying the bounded source projection (#1624). */
-export async function getCourseTopicsWithSources(courseId: string, includeDeleted = false) {
+export async function getCourseTopicsWithSources(
+  courseId: string,
+  includeDeleted = false,
+  audience: TopicAudience = "staff",
+) {
   const topics = await prisma.courseTopic.findMany({
-    where: { courseId, deletedAt: includeDeleted ? undefined : null },
+    where: {
+      courseId,
+      deletedAt: includeDeleted ? undefined : null,
+      ...audienceWhere(audience),
+    },
     orderBy: { name: "asc" },
     include: topicSourceInclude,
   });
@@ -1269,12 +1304,14 @@ export async function getCourseTopicWithSources(
   courseId: string,
   topicId: string,
   includeDeleted = false,
+  audience: TopicAudience = "staff",
 ) {
   const topic = await prisma.courseTopic.findFirst({
     where: {
       id: topicId,
       courseId,
       deletedAt: includeDeleted ? undefined : null,
+      ...audienceWhere(audience),
     },
     include: topicSourceInclude,
   });
