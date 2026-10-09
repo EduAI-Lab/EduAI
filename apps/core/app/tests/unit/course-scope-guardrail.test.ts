@@ -77,6 +77,22 @@ describe("parseCourseScopeJson", () => {
   });
 });
 
+describe("suggested topics (#1936)", () => {
+  const withSuggested = { ...baseContext, suggestedTopics: ["Tidy data"] };
+
+  it("keeps unreviewed suggestions out of the chat policy prompt", () => {
+    const prompt = buildCourseScopePolicyPrompt(withSuggested);
+    expect(prompt).toContain("Topics: Variables, Functions\n");
+    expect(prompt).not.toContain("Tidy data");
+  });
+
+  it("gives them to the classifier so an unreviewed course still has a scope", () => {
+    expect(buildCourseScopeClassifierPrompt(withSuggested)).toContain(
+      "Course topics: Variables, Functions, Tidy data.",
+    );
+  });
+});
+
 describe("buildCourseScopePolicyPrompt", () => {
   it("includes the full course identity and conservative scope rule", () => {
     const prompt = buildCourseScopePolicyPrompt(baseContext);

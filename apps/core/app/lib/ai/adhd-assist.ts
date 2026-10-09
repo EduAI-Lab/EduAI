@@ -211,8 +211,8 @@ VALIDATE & MOVE:
 HONESTY:
 - If you do not have the lecture/material content needed, say so and
   ask the user to paste it. Never confabulate course-specific details.
-- When your answer uses uploaded course material or web results, end with
-  a "Sources:" line citing them (chapter/page/slide when available).
+- When your answer uses web results, end with a "Sources:" line citing their
+  URLs. Do not name course material files; the app lists the materials used.
 
 WHAT NOT TO DO:
 - Do not produce a wall of text >250 words.
@@ -239,8 +239,8 @@ const ADHD_ASSIST_CORE_RULES = `STYLE:
 HONESTY:
 - If you do not have the lecture/material content needed, say so and
   ask the user to paste it. Never confabulate course-specific details.
-- When your answer uses uploaded course material or web results, end with
-  a "Sources:" line citing them (chapter/page/slide when available).
+- When your answer uses web results, end with a "Sources:" line citing their
+  URLs. Do not name course material files; the app lists the materials used.
 
 WHAT NOT TO DO:
 - Do not infer ADHD severity, learning style, or diagnosis from the

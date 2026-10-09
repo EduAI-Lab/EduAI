@@ -106,6 +106,7 @@ import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-me
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
+import { COURSE_MATERIALS_NO_COVERAGE_REPLY } from "~/lib/ai/course-grounding";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -340,7 +341,7 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamConfig().system).toContain("Gradient descent minimizes loss.");
     });
 
-    it("injects empty-material instruction when course-intent query has no hits", async () => {
+    it("replies with fixed text, without the model, when a course-intent query has no hits (#1936)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
@@ -353,8 +354,177 @@ describe("Smart course RAG gate (#484)", () => {
         ),
       );
       expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(body.ragSources).toEqual([]);
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("replies with fixed text when the question names an item no excerpt mentions (#1936 Lab 15)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "msg-1",
+                role: "user",
+                content: "When is Lab 15 due, and what topic does it cover?",
+              },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()).content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(streamText).not.toHaveBeenCalled();
+      const persisted = vi
+        .mocked(prisma.chatMessage.createMany)
+        .mock.calls.flatMap(
+          (call) =>
+            (call[0] as { data: Array<{ role: string; content: { metadata?: JsonObject } }> }).data,
+        );
+      const assistant = persisted.find((row) => row.role === "assistant");
+      expect(assistant?.content.metadata?.ragSources).toEqual([]);
+    });
+
+    it("answers a question the excerpts cover and reports the retrieved materials (#1936)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        },
+        { content: "iClicker Questions: 5%", similarity: 0.6, materialTitle: "301_1_Intro" },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "When is Lab 14 due?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
+      expect((await res.json()).ragSources).toEqual([
+        "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        "301_1_Intro",
+      ]);
+    });
+
+    it("streams the retrieved materials as the ragSources annotation the chat UI reads (PR #1946 review)", async () => {
+      // The e2e stack has no chat LLM, so the grounded-chat spec mocks this
+      // annotation. Here the route's real StreamData is the response body, so
+      // the server's half of that contract is checked in its wire encoding.
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        },
+      ]);
+      type FinishEvent = {
+        text: string;
+        usage: { promptTokens: number; completionTokens: number };
+        finishReason: string;
+        response: { id: string; messages: [] };
+      };
+      vi.mocked(streamText).mockImplementationOnce((async (config: {
+        onFinish?: (event: FinishEvent) => Promise<void>;
+      }) => ({
+        toDataStreamResponse: (options: { data?: { stream: ReadableStream<Uint8Array> } }) => {
+          void config.onFinish?.({
+            text: "Lab 14 is due Nov 20.",
+            usage: { promptTokens: 5, completionTokens: 10 },
+            finishReason: "stop",
+            response: { id: "resp-1", messages: [] },
+          });
+          return new Response(options.data?.stream);
+        },
+      })) as never);
+
+      const res = await action(
+        makeRequest(
+          baseBody({
+            streaming: true,
+            messages: [{ id: "msg-1", role: "user", content: "When is Lab 14 due?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const annotations = (await res.text())
+        .split("\n")
+        .filter((line) => line.startsWith("8:"))
+        .flatMap((line) => JSON.parse(line.slice(2)) as Array<{ ragSources?: string[] }>);
+      expect(annotations.map((annotation) => annotation.ragSources)).toEqual([
+        ["ZZ-TEST-DATA301-L14-Data-Cleaning"],
+      ]);
+    });
+
+    it("still replies with fixed text when a student has saved a system prompt (PR #1946 review)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            systemPrompt: "Explain like I'm new to this.",
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()).content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("lets a follow-up with empty retrieval reach the model (PR #1946 review)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      // History comes from the DB, newest first: an earlier grounded exchange.
+      vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+        storedRecord("stored-1", "assistant", "Trees are hierarchical."),
+        storedRecord("stored-0", "user", "What did chapter 3 say about trees?"),
+      ] as never);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-3", role: "user", content: "Can you give an example of that?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
       expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
-      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
+    });
+
+    it("checks coverage against the excerpts that fit the prompt, not every hit (PR #1946 review)", async () => {
+      // A course ragTopK can return more hits than the 4-chunk cap lets in.
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        ...Array.from({ length: 4 }, (_, i) => ({
+          content: `Tidy data note ${i}.`,
+          similarity: 0.8 - i * 0.01,
+          materialTitle: "Notes",
+        })),
+        { content: "Lab 15 is due Dec 1.", similarity: 0.6, materialTitle: "Notes" },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({ messages: [{ id: "msg-1", role: "user", content: "When is Lab 15 due?" }] }),
+        ),
+      );
+      expect((await res.json()).content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
+      expect(streamText).not.toHaveBeenCalled();
     });
 
     it("fails closed with RAG_DIMENSION_MISMATCH when retrieval throws for a course-intent query (#225 RAG-01)", async () => {
@@ -583,6 +753,18 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Late work loses 10%");
       expect(lastStreamConfig().system).toContain("getInformation");
+    });
+
+    it("leaves an uncovered question to the tool loop, which can search again (PR #1946 review)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({ messages: [{ id: "msg-1", role: "user", content: "When is Lab 15 due?" }] }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
     });
 
     it("fails closed on the tool path too when retrieval throws for a course-intent query (#225 RAG-01)", async () => {

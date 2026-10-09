@@ -137,7 +137,7 @@ import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
 } from "~/lib/courses/course-code-candidates";
-import { getCourseTopicNamesCached } from "~/lib/courses/server";
+import { getCourseTopicNamesCached, type CourseTopicNames } from "~/lib/courses/server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
@@ -174,6 +174,7 @@ import { shouldInjectCourseRag, shouldPrefetchCourseRag } from "~/lib/ai/course-
 import {
   buildCappedRagContextText,
   buildEmptyCourseRagBlock,
+  selectCappedRagExcerpts,
   buildRagSystemBlock,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
@@ -192,7 +193,13 @@ import {
   withResolvedModelMetadata,
   withCourseScopeRedirectMetadata,
   withAdhdAssistMetadata,
+  withRagSourcesMetadata,
 } from "~/lib/chat/chat-message-metadata";
+import {
+  COURSE_MATERIALS_NO_COVERAGE_REPLY,
+  ragSourceTitles,
+  resolveNoCoverageReason,
+} from "~/lib/ai/course-grounding";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
   readBoundedChatJson,
@@ -333,6 +340,16 @@ type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 /** An id or role that survives a round-trip: present, and not just whitespace. */
 const presentTextSchema = z.string().trim().min(1);
+
+/** The part of a getInformation tool result that names the materials it retrieved (#1936). */
+const getInformationToolResultSchema = z.object({
+  toolName: z.literal("getInformation"),
+  result: z.object({
+    relevantContent: z.array(
+      z.object({ content: z.string(), similarity: z.number(), materialTitle: z.string() }),
+    ),
+  }),
+});
 
 const isPresentText = (value: string | undefined): value is string =>
   value !== undefined && presentTextSchema.safeParse(value).success;
@@ -1106,6 +1123,7 @@ export async function action({ request }: ActionFunctionArgs) {
           responseStyleTags: string[];
           aiInstructions: string | null;
           courseTopics: string[];
+          suggestedTopics: string[];
           courseScopeGuardrailEnabled: boolean;
         } | null = null;
         if (effectiveCourseId) {
@@ -1147,7 +1165,7 @@ export async function action({ request }: ActionFunctionArgs) {
           // this fetch the same way the classifier is gated below previously left
           // admin preview rendering "Topics: none listed" even though the policy
           // block was injected. See #1152 review (yta3216).
-          let courseTopics: string[] = [];
+          let courseTopics: CourseTopicNames = { accepted: [], suggested: [] };
           try {
             courseTopics = await getCourseTopicNamesCached(effectiveCourseId);
           } catch (error) {
@@ -1159,7 +1177,8 @@ export async function action({ request }: ActionFunctionArgs) {
             description: course.description ?? null,
             responseStyleTags: course.responseStyleTags ?? [],
             aiInstructions: course.aiInstructions ?? null,
-            courseTopics,
+            courseTopics: courseTopics.accepted,
+            suggestedTopics: courseTopics.suggested,
             // Defaulted off (was on) for easier testing
             courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? false,
           };
@@ -1551,6 +1570,7 @@ export async function action({ request }: ActionFunctionArgs) {
               courseCode: effectiveCourse.code,
               courseDescription: effectiveCourse.description,
               courseTopics: effectiveCourse.courseTopics,
+              suggestedTopics: effectiveCourse.suggestedTopics,
               aiInstructions: effectiveCourse.aiInstructions,
             }
           : null;
@@ -1849,6 +1869,15 @@ export async function action({ request }: ActionFunctionArgs) {
         const existingMessageIds = new Set(
           storedMessages.map((message) => message.id).filter(isPresentText),
         );
+        /**
+         * Course materials that reached the model this turn, shown under the reply
+         * from this list rather than from the model's own "(Source: …)" text
+         * (#1936). Null on turns with no course retrieval (general chat, admin and
+         * instructor modes); the tool path adds getInformation results as they land.
+         * Declared ahead of appendMessages, which reads it on every persist.
+         */
+        let turnRagSources: string[] | null = null;
+
         const appendMessages = async (messages: ChatMessage[]) => {
           // Stateless callers never persist messages (no chat row / no real user).
           // regenerateOnly is a read-only content preview (#1246) — never persists.
@@ -1866,13 +1895,18 @@ export async function action({ request }: ActionFunctionArgs) {
               continue;
             }
 
-            const messageToPersist =
+            const assistantMessage =
               message.role === "assistant"
                 ? withAdhdAssistMetadata(
                     withResolvedModelMetadata(message, resolvedModelId, wasAuto),
                     effectiveAdhdAssist,
                   )
-                : message;
+                : null;
+            const messageToPersist = assistantMessage
+              ? turnRagSources !== null
+                ? withRagSourcesMetadata(assistantMessage, turnRagSources)
+                : assistantMessage
+              : message;
 
             rows.push({
               chatId: chat!.id,
@@ -2031,59 +2065,77 @@ export async function action({ request }: ActionFunctionArgs) {
         // Course-scope guardrail: resolve the classifier promise kicked off
         // earlier (alongside the RAG prefetch) and short-circuit before touching
         // the fleet admission slot, energy sidecar, or streamText() at all.
-        const courseScopeVerdict = courseScopeCheckPromise ? await courseScopeCheckPromise : null;
-        if (courseScopeVerdict?.blocked) {
-          const redirectText = buildCourseScopeRedirectMessage(effectiveCourse?.name ?? null);
-          await appendMessages([
-            withCourseScopeRedirectMetadata({
-              id: randomUUID(),
-              role: "assistant",
-              content: redirectText,
-            }),
-          ]);
-          chatApiDebug("Course scope guardrail redirected turn", {
-            chatId: chat.id,
-            courseId: effectiveCourseId,
-            confidence: courseScopeVerdict.classification?.confidence ?? null,
-          });
+        /**
+         * Answer the turn with server-written text instead of a model call — the
+         * course-scope redirect and the no-coverage reply (#1936). Runs before the
+         * fleet admission slot, energy sidecar, or streamText() are touched.
+         */
+        const respondWithFixedAssistantText = async (
+          text: string,
+          message: ChatMessage,
+          extraJson: { courseScopeRedirect?: true; ragSources?: string[] },
+        ) => {
+          await appendMessages([message]);
           // Emit the same routing/admission headers as every other
-          // createDataStreamResponse return in this route so a redirected turn's
+          // createDataStreamResponse return in this route so a fixed turn's
           // client model badge/routing telemetry isn't blank — that read as an
           // indistinguishable-from-failure routing gap otherwise.
-          const redirectHeaders: Record<string, string> = {};
+          const fixedHeaders: Record<string, string> = {};
           Object.assign(
-            redirectHeaders,
+            fixedHeaders,
             autoRoutingHeaders(resolvedModelId, routingTier, wasAuto, resolvedRouterVersion),
           );
-          if (chat.id) {
-            redirectHeaders["X-Chat-Id"] = chat.id;
+          if (chat?.id) {
+            fixedHeaders["X-Chat-Id"] = chat.id;
           }
           if (streaming) {
             return createDataStreamResponse({
-              headers: redirectHeaders,
+              headers: fixedHeaders,
               execute: (dataStream) => {
-                dataStream.write(formatDataStreamPart("text", redirectText));
+                dataStream.write(formatDataStreamPart("text", text));
+                if (extraJson.ragSources) {
+                  dataStream.writeMessageAnnotation({ ragSources: extraJson.ragSources });
+                }
                 dataStream.write(formatDataStreamPart("finish_message", { finishReason: "stop" }));
               },
             });
           }
           return new Response(
             JSON.stringify({
-              content: redirectText,
+              content: text,
               model,
               finishReason: "stop",
               courseCode: effectiveCourseCode,
               chatId: chat?.id,
-              // Parity with the persisted message (withCourseScopeRedirectMetadata)
-              // and the history-restore path (courseScopeRedirectFromMessage): the
-              // non-streaming response previously carried no redirect marker even
-              // though no model actually ran to produce `content`.
-              courseScopeRedirect: true,
+              ...extraJson,
             }),
             {
               status: 200,
-              headers: { "Content-Type": "application/json", ...redirectHeaders },
+              headers: { "Content-Type": "application/json", ...fixedHeaders },
             },
+          );
+        };
+
+        const courseScopeVerdict = courseScopeCheckPromise ? await courseScopeCheckPromise : null;
+        if (courseScopeVerdict?.blocked) {
+          const redirectText = buildCourseScopeRedirectMessage(effectiveCourse?.name ?? null);
+          chatApiDebug("Course scope guardrail redirected turn", {
+            chatId: chat.id,
+            courseId: effectiveCourseId,
+            confidence: courseScopeVerdict.classification?.confidence ?? null,
+          });
+          return respondWithFixedAssistantText(
+            redirectText,
+            withCourseScopeRedirectMetadata({
+              id: randomUUID(),
+              role: "assistant",
+              content: redirectText,
+            }),
+            // Parity with the persisted message (withCourseScopeRedirectMetadata)
+            // and the history-restore path (courseScopeRedirectFromMessage): the
+            // non-streaming response previously carried no redirect marker even
+            // though no model actually ran to produce `content`.
+            { courseScopeRedirect: true },
           );
         }
 
@@ -2111,6 +2163,8 @@ export async function action({ request }: ActionFunctionArgs) {
         let useToolCalling: boolean;
         let toolMaxTokens: number | undefined;
         let courseRagHits: HybridRagHit[] = [];
+        /** The hits that fit the prompt (#1936) — what the model sees, after the caps. */
+        let courseRagExcerpts: HybridRagHit[] = [];
         let courseRagContextText = "";
         let courseRagInject = false;
         let effectiveForceHybridRag = forceHybridRag;
@@ -2419,10 +2473,64 @@ export async function action({ request }: ActionFunctionArgs) {
               hits: courseRagHits,
             });
             if (courseRagInject && courseRagHits.length > 0) {
+              courseRagExcerpts = selectCappedRagExcerpts(
+                courseRagHits,
+                HYBRID_RAG_MAX_CHUNKS,
+                HYBRID_RAG_MAX_CONTEXT_CHARS,
+              );
               courseRagContextText = buildCappedRagContextText(
                 courseRagHits,
                 HYBRID_RAG_MAX_CHUNKS,
                 HYBRID_RAG_MAX_CONTEXT_CHARS,
+              );
+            }
+          }
+
+          if (effectiveCourseId) {
+            turnRagSources = ragSourceTitles(courseRagExcerpts);
+
+            // #1936: when retrieval can't support a course question — nothing came
+            // back on the opening question, or the question names an item ("Lab 15")
+            // none of the excerpts the model would see mentions — reply with fixed
+            // text rather than let the model fill the gap. Skipped where something
+            // else could hold the answer: service-key callers (AI Tutor / Question
+            // Maker) keep their own handling, an attached file may answer it, and
+            // the tool loop can search again or go to the web.
+            const conversationHasAttachments = trimmedMessages.some(
+              (message) =>
+                Array.isArray(message.experimental_attachments) &&
+                message.experimental_attachments.length > 0,
+            );
+            const noCoverageReason = resolveNoCoverageReason({
+              eligible: !isServiceKeyCaller && !conversationHasAttachments && !useToolCalling,
+              courseRagNeeded,
+              isFollowUp: trimmedMessages.some((message) => message.role === "assistant"),
+              question: userQuestion,
+              excerpts: courseRagExcerpts,
+            });
+            if (noCoverageReason) {
+              // Always on (not debug-gated) so prod can count how often this fires.
+              console.info("[course-grounding] materials do not cover turn", {
+                chatId: chat.id,
+                courseId: effectiveCourseId,
+                reason: noCoverageReason,
+                ragChunkCount: courseRagHits.length,
+              });
+              // No model ran, so the turn should not spend the local daily cap.
+              if (localDailyCapCharge) {
+                await refundLocalChatDailyCap(localDailyCapCharge);
+                localDailyCapCharge = null;
+              }
+              // No material answered this turn, whatever retrieval returned.
+              turnRagSources = [];
+              return respondWithFixedAssistantText(
+                COURSE_MATERIALS_NO_COVERAGE_REPLY,
+                {
+                  id: randomUUID(),
+                  role: "assistant",
+                  content: COURSE_MATERIALS_NO_COVERAGE_REPLY,
+                },
+                { ragSources: [] },
               );
             }
           }
@@ -3011,6 +3119,16 @@ export async function action({ request }: ActionFunctionArgs) {
               if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
                 adhdToolsUsed = true;
               }
+              const sources = turnRagSources;
+              if (sources !== null) {
+                for (const toolResult of toolResults ?? []) {
+                  const found = getInformationToolResultSchema.safeParse(toolResult);
+                  if (!found.success) continue;
+                  for (const title of ragSourceTitles(found.data.result.relevantContent)) {
+                    if (!sources.includes(title)) sources.push(title);
+                  }
+                }
+              }
             },
             onFinish:
               needsOversight || structuredAssistOutput
@@ -3037,6 +3155,7 @@ export async function action({ request }: ActionFunctionArgs) {
                     });
                     streamData?.appendMessageAnnotation({
                       hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
+                      ragSources: turnRagSources,
                     });
                     void streamData?.close();
                     const assistantText = text || extractAssistantText(response?.messages);
@@ -3356,6 +3475,7 @@ export async function action({ request }: ActionFunctionArgs) {
                   dataStream.writeMessageAnnotation({
                     hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                     ragLatencyMs,
+                    ragSources: turnRagSources,
                   });
 
                   dataStream.write(
@@ -3382,6 +3502,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 finishReason,
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                 sources: sources || [],
+                ragSources: turnRagSources,
                 reasoning,
                 responseId: response?.id,
                 courseCode: effectiveCourseCode,
@@ -3514,6 +3635,7 @@ export async function action({ request }: ActionFunctionArgs) {
                   dataStream.write(formatDataStreamPart("text", normalizedText));
                   dataStream.writeMessageAnnotation({
                     hitLongOutputCap: didHitLongOutputCap(usage),
+                    ragSources: turnRagSources,
                   });
                   dataStream.write(
                     formatDataStreamPart("finish_message", {
@@ -3534,6 +3656,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 finishReason,
                 hitLongOutputCap: didHitLongOutputCap(usage),
                 sources: sources || [],
+                ragSources: turnRagSources,
                 reasoning,
                 responseId: response?.id,
                 courseCode,
@@ -3706,6 +3829,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 finishReason,
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                 sources: sources || [],
+                ragSources: turnRagSources,
                 reasoning,
                 responseId: response?.id,
                 courseCode: effectiveCourseCode,

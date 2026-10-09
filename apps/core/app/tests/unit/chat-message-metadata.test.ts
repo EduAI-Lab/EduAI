@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 
 import {
   adhdAssistFromMessage,
+  ragSourcesFromMessage,
   withAdhdAssistMetadata,
+  withRagSourcesMetadata,
   withResolvedModelMetadata,
 } from "~/lib/chat/chat-message-metadata";
 
@@ -41,5 +43,24 @@ describe("adhdAssistFromMessage / withAdhdAssistMetadata (#1671)", () => {
 
     expect(original.metadata).not.toHaveProperty("adhdAssist");
     expect(tagged.metadata.adhdAssist).toBe(true);
+  });
+});
+
+describe("ragSourcesFromMessage / withRagSourcesMetadata (#1936)", () => {
+  it("is undefined for a turn that ran no course retrieval", () => {
+    expect(ragSourcesFromMessage({})).toBeUndefined();
+  });
+
+  it("round-trips the list, keeping the other metadata fields", () => {
+    const message = withRagSourcesMetadata(
+      withResolvedModelMetadata({ id: "a", role: "assistant" }, "vllm:qwen", false),
+      ["301_1_Intro"],
+    );
+    expect(ragSourcesFromMessage(message)).toEqual(["301_1_Intro"]);
+    expect(message.metadata.resolvedModelId).toBe("vllm:qwen");
+  });
+
+  it("ignores a malformed stored value", () => {
+    expect(ragSourcesFromMessage({ metadata: { ragSources: "301_1_Intro" } })).toBeUndefined();
   });
 });
