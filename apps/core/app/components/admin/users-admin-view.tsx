@@ -1,8 +1,10 @@
 import { lazy, Suspense, useState } from "react";
+import { toast } from "sonner";
 
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
 import { UsersTable } from "~/components/admin/users-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
+import { ApiError } from "~/hooks/api/config";
 import type { CreateUserInput, PlatformUser, UpdateUserInput } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
 import type { UsersQuery, UserStats } from "~/hooks/api/use-users";
@@ -18,6 +20,21 @@ const UserChatHistoryDialog = lazy(() =>
 
 /** Upper bound on the course picker's page; matches the API's max pageSize. */
 const COURSE_PICKER_PAGE_SIZE = 200;
+
+/** Admin-readable text for the error codes `DELETE /api/users/:id` returns. */
+const DELETE_USER_ERRORS = new Map([
+  ["CANNOT_DELETE_SELF", "You can't delete your own account."],
+  ["ADMIN_FLOOR_VIOLATION", "You can't delete the last active admin."],
+  ["USER_NOT_FOUND", "That user no longer exists. Refresh the page."],
+  [
+    "CANNOT_DELETE_USER_WITH_DATA",
+    "This user still has records that block deletion. Deactivate the account instead.",
+  ],
+]);
+
+function deleteUserErrorMessage(code: string | null): string {
+  return (code && DELETE_USER_ERRORS.get(code)) ?? "Couldn't delete the user. Please try again.";
+}
 
 export type UsersAdminViewProps = {
   users: PlatformUser[];
@@ -50,7 +67,10 @@ export function UsersAdminView({
 }: UsersAdminViewProps) {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
-  const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
+  const [historyUser, setHistoryUser] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   // The user form's course picker needs a browsable set, not the whole table —
   // one bounded page rather than the unbounded list this used to request, and
   // without the filter facets the picker never consumes.
@@ -83,6 +103,9 @@ export function UsersAdminView({
       await onDeleteUser(id);
     } catch (err) {
       console.error("Failed to delete user:", err);
+      // Before #1959 this was the only trace of a failed delete, so the button
+      // looked like it did nothing.
+      toast.error(deleteUserErrorMessage(err instanceof ApiError ? err.message : null));
     }
   };
 
@@ -91,6 +114,7 @@ export function UsersAdminView({
       await onToggleUserActive(user);
     } catch (err) {
       console.error("Failed to toggle user:", err);
+      toast.error("Couldn't update the user's status. Please try again.");
     }
   };
 
