@@ -36,6 +36,7 @@ import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
+import { setCoursePublished } from "~/lib/courses/set-course-published";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { describeUploadFailure } from "~/lib/material-failure-notice";
@@ -298,6 +299,15 @@ export default function CourseDetailPage() {
     [course.id, revalidator, refetchEnrollments],
   );
 
+  /** #1939: publish or unpublish from the course page; the endpoint enforces who may. */
+  const handlePublishChange = useCallback(
+    async (publish: boolean) => {
+      await setCoursePublished(course.id, publish);
+      revalidator.revalidate();
+    },
+    [course.id, revalidator],
+  );
+
   /**
    * Name the course head. Since #1840 this PATCH no longer deactivates the
    * previous instructor — it only moves `Course.instructorId` (and enrolls the
@@ -531,6 +541,7 @@ export default function CourseDetailPage() {
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
               onReprocessMaterial={reprocessMaterial}
+              onPublishChange={handlePublishChange}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={
