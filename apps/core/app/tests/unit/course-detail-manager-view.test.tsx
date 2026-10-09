@@ -278,7 +278,11 @@ describe("CourseDetailManagerView — materials tab", () => {
   it("opens the delete-material confirmation, cancels without calling onDeleteMaterial", () => {
     const props = renderView();
     fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
-    expect(screen.getByText("Delete material?")).toBeInTheDocument();
+    // #1937: the title names the file, so a mis-click is caught before confirming.
+    expect(screen.getByText("Delete “Lecture 1”?")).toBeInTheDocument();
+    expect(
+      screen.getByText(/topic suggestions that came only from this file/i),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(props.onDeleteMaterial).not.toHaveBeenCalled();
   });
@@ -288,6 +292,20 @@ describe("CourseDetailManagerView — materials tab", () => {
     fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(props.onDeleteMaterial).toHaveBeenCalledWith("m1"));
+  });
+
+  it("refreshes topics and the review banner after a delete removes suggestions (#1937)", async () => {
+    const onRefreshTopics = vi.fn().mockResolvedValue(undefined);
+    renderView({ onRefreshTopics });
+    const statusReads = () =>
+      mockFetch.mock.calls.filter(([url]) => url === "/api/courses/c1/topic-analysis").length;
+    await waitFor(() => expect(statusReads()).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(onRefreshTopics).toHaveBeenCalled());
+    await waitFor(() => expect(statusReads()).toBe(2));
   });
 
   it("renames a material via the PATCH endpoint and refreshes materials", async () => {

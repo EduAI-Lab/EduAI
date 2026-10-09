@@ -391,6 +391,7 @@ export function CourseDetailManagerView({
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    refetch: refetchTopicAnalysis,
     // `courseId` is optional on this component; without one there is nothing to
     // poll, so the hook stays idle rather than fetching `/api/courses//…`.
   } = useTopicAnalysis(courseId ?? "", Boolean(courseId), () => onRefreshTopics?.());
@@ -410,6 +411,7 @@ export function CourseDetailManagerView({
   };
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
+  const deleteMaterialTitle = materials.find((m) => m.id === deleteMaterialId)?.title;
   const [deletingMaterial, setDeletingMaterial] = useState(false);
   const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -804,6 +806,10 @@ export function CourseDetailManagerView({
     try {
       await onDeleteMaterial(deleteMaterialId);
       setDeleteMaterialId(null);
+      // #1937: the delete also removes suggestions read only from this file, so
+      // the topic list and the "awaiting your review" count both catch up.
+      void onRefreshTopics?.();
+      void refetchTopicAnalysis();
     } catch (e) {
       console.error(e);
     } finally {
@@ -1035,10 +1041,13 @@ export function CourseDetailManagerView({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete material?</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">
+              {deleteMaterialTitle ? `Delete “${deleteMaterialTitle}”?` : "Delete material?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This removes the file and its search data from the course. Deletes are not propagated
-              to Canvas, and re-uploading the same file restores it.
+              to Canvas, and re-uploading the same file restores it. Topic suggestions that came
+              only from this file and have not been reviewed are removed too.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
