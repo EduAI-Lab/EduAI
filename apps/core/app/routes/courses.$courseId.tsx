@@ -298,6 +298,21 @@ export default function CourseDetailPage() {
     [course.id, revalidator, refetchEnrollments],
   );
 
+  /** #1939: publish or unpublish from the course page; the endpoint enforces who may. */
+  const handlePublishChange = useCallback(
+    async (publish: boolean) => {
+      const res = await fetch(`/api/courses/${course.id}/${publish ? "publish" : "unpublish"}`, {
+        method: "PATCH",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "COURSE_PUBLISH_FAILED");
+      }
+      revalidator.revalidate();
+    },
+    [course.id, revalidator],
+  );
+
   /**
    * Name the course head. Since #1840 this PATCH no longer deactivates the
    * previous instructor — it only moves `Course.instructorId` (and enrolls the
@@ -531,6 +546,7 @@ export default function CourseDetailPage() {
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
               onReprocessMaterial={reprocessMaterial}
+              onPublishChange={handlePublishChange}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={

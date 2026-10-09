@@ -39,7 +39,7 @@ import {
   CourseDetailManagerView,
   type CourseDetailManagerCourse,
 } from "~/components/courses/course-detail-manager-view";
-import { PolicyProvider } from "~/components/policy/policy-gate";
+import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 
 const COURSE: CourseDetailManagerCourse = {
   id: "c1",
@@ -133,10 +133,23 @@ function stubForbiddenLinkApi() {
   return fetchMock;
 }
 
-function renderView() {
+interface RenderOptions {
+  course?: CourseDetailManagerCourse;
+  access?: "admin" | "unit" | "instructor";
+  policies?: PolicyValues;
+  onPublishChange?: (publish: boolean) => Promise<void>;
+}
+
+function renderView({
+  course = COURSE,
+  access = "admin",
+  policies = {},
+  onPublishChange,
+}: RenderOptions = {}) {
   const view = createElement(CourseDetailManagerView, {
-    course: COURSE,
-    access: "admin" as const,
+    course,
+    access,
+    onPublishChange,
     topics: [],
     enrollments: [],
     materials: [],
@@ -158,7 +171,7 @@ function renderView() {
   });
   render(
     createElement(MemoryRouter, {
-      children: createElement(PolicyProvider, { policies: {}, children: view }),
+      children: createElement(PolicyProvider, { policies, children: view }),
     }),
   );
 }
@@ -226,5 +239,47 @@ describe("self-enrollment panel — a refused list read", () => {
       ).toBeTruthy(),
     );
     expect(screen.getByRole("button", { name: /create link/i })).toHaveProperty("disabled", true);
+  });
+});
+
+const DRAFT_COURSE: CourseDetailManagerCourse = { ...COURSE, isPublished: false };
+
+describe("self-enrollment panel — a draft course (#1939)", () => {
+  it("warns that students can't join yet, labels the link Waiting for publish, and offers Publish", async () => {
+    // On prod, a link on a Draft course read "Active" while every student who
+    // opened it hit "Can't join this course", and nothing on this page said why.
+    stubLinkApi([link("draft-link")]);
+    renderView({ course: DRAFT_COURSE, onPublishChange: vi.fn(async () => {}) });
+
+    expect(await screen.findByText("Waiting for publish")).toBeTruthy();
+    expect(screen.getByText(/students who open a self-enrollment link see/i)).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Publish course" }).length).toBeGreaterThan(0);
+  });
+
+  it("tells an instructor who may not publish to ask an administrator, with no Publish button", async () => {
+    stubLinkApi([link("draft-link")]);
+    renderView({
+      course: DRAFT_COURSE,
+      access: "instructor",
+      policies: {
+        "instructors.canManageEnrollments": true,
+        "instructors.canPublishCourses": false,
+      },
+      onPublishChange: vi.fn(async () => {}),
+    });
+
+    expect(await screen.findByText(/ask an administrator to publish it/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Publish course" })).toBeNull();
+  });
+
+  it("shows no draft warning and the plain status once the course is published", async () => {
+    stubLinkApi([link("live-link")]);
+    renderView({ onPublishChange: vi.fn(async () => {}) });
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /turn off/i })).toHaveLength(1),
+    );
+    expect(screen.queryByText("Waiting for publish")).toBeNull();
+    expect(screen.queryByText(/students who open a self-enrollment link see/i)).toBeNull();
   });
 });
