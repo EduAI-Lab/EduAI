@@ -73,6 +73,17 @@ function json(status: number, body: JsonResponseBody, headers: Record<string, st
   });
 }
 
+/** A busy provider or a spent quota is not a key problem, so only the rest point at the key. */
+function providerErrorMessage(status: number, keyHint: string): string {
+  if (status >= 500) {
+    return `The AI provider is overloaded or having trouble right now (status ${status}). Please try again in a moment.`;
+  }
+  if (status === 429) {
+    return `The AI provider is rate-limiting this key or its quota is used up (status 429). Wait a minute and try again; if it keeps happening, check ${keyHint}.`;
+  }
+  return `The AI provider refused the request (status ${status}). If this keeps happening, check ${keyHint}.`;
+}
+
 export function askOutcomeResponse(outcome: AskOutcome): Response {
   switch (outcome.kind) {
     case "answered":
@@ -102,7 +113,7 @@ export function askOutcomeResponse(outcome: AskOutcome): Response {
       });
     case "provider_error":
       return json(502, {
-        error: `The AI provider refused the request (status ${outcome.upstreamStatus}). If this keeps happening, check ${outcome.keyHint}.`,
+        error: providerErrorMessage(outcome.upstreamStatus, outcome.keyHint),
         code: "provider_error",
         upstream_status: outcome.upstreamStatus,
       });

@@ -88,6 +88,21 @@ describe("POST /api/assistant/ask — status contract", () => {
     },
   );
 
+  it.each([
+    [503, /overloaded/],
+    [429, /rate-limiting/],
+    [401, /refused/],
+  ])("a provider %i gets a message that says what to do", async (upstream, message) => {
+    askMock.answerAssistantQuestion.mockResolvedValue({
+      kind: "provider_error",
+      upstreamStatus: upstream,
+      keyHint: "the API key saved in your Penny settings",
+    });
+    const json = await (await ask({ question: "q" })).json();
+    expect(json.error).toMatch(message);
+    expect(json.error.includes("Penny settings")).toBe(upstream < 500);
+  });
+
   it("401 when signed out", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
     expect((await ask({ question: "q" })).status).toBe(401);

@@ -29,7 +29,12 @@ export type AssistantModelResult =
   /** The call never completed (DNS, connection, timeout, fleet down). */
   | { kind: "transport_failure" };
 
-const CALL_TIMEOUT_MS = 60_000;
+/**
+ * Per attempt, not per call: a retry after a slow failure still gets a full
+ * window, and the two together stay within the 60 s the call always had.
+ */
+const ATTEMPT_TIMEOUT_MS = 30_000;
+const MAX_ATTEMPTS = 2;
 
 /** The provider's HTTP status when it answered, or null when the call never completed. */
 function upstreamStatus(cause: unknown): number | null {
@@ -37,6 +42,11 @@ function upstreamStatus(cause: unknown): number | null {
   const error = RetryError.isInstance(cause) ? cause.lastError : cause;
   if (APICallError.isInstance(error) && error.statusCode !== undefined) return error.statusCode;
   return null;
+}
+
+/** Another attempt could go differently: the provider erred or never answered. A 4xx (bad key, quota) won't. */
+function isRetryable(status: number | null): boolean {
+  return status === null || status === 408 || status >= 500;
 }
 
 export async function callAssistantModel(input: {
@@ -74,25 +84,36 @@ export async function callAssistantModel(input: {
     return { kind: "invalid" };
   }
 
-  try {
-    const { text } = await generateText({
-      model: languageModel,
-      system: input.system,
-      messages: input.messages,
-      temperature: 0.2,
-      maxTokens: input.maxTokens,
-      maxRetries: 1,
-      abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
-    });
-    return { kind: "success", text: text.trim() };
-  } catch (cause) {
-    const status = upstreamStatus(cause);
-    console.warn("[assistant/model] provider call failed", {
-      provider: input.provider,
-      model: input.model,
-      upstreamStatus: status,
-      diagnostic: providerErrorDiagnostic(cause).name,
-    });
-    return status === null ? { kind: "transport_failure" } : { kind: "upstream_error", status };
+  // The status the provider last actually answered with, across attempts.
+  let answeredStatus: number | null = null;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const { text } = await generateText({
+        model: languageModel,
+        system: input.system,
+        messages: input.messages,
+        temperature: 0.2,
+        maxTokens: input.maxTokens,
+        maxRetries: 0,
+        abortSignal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+      });
+      return { kind: "success", text: text.trim() };
+    } catch (cause) {
+      const status = upstreamStatus(cause);
+      console.warn("[assistant/model] provider call failed", {
+        provider: input.provider,
+        model: input.model,
+        attempt,
+        upstreamStatus: status,
+        diagnostic: providerErrorDiagnostic(cause).name,
+      });
+      answeredStatus = status ?? answeredStatus;
+      if (attempt < MAX_ATTEMPTS && isRetryable(status)) continue;
+      // A 503 followed by a retry that times out is an overloaded provider, not
+      // an unreachable one — report what the provider actually said.
+      return answeredStatus === null
+        ? { kind: "transport_failure" }
+        : { kind: "upstream_error", status: answeredStatus };
+    }
   }
 }
