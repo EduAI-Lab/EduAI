@@ -56,13 +56,18 @@ text content, not on file name or bytes.
    checksum (deleted rows included). See *Re-upload* below when one exists.
 3. Otherwise finalize: real title, text checksum, `rawText`.
 4. Chunk and embed with `replace: true`, mark `READY`, discard the bytes, start
-   topic analysis.
+   topic analysis. At most `MATERIAL_EMBED_MAX_CONCURRENT` (default 4) materials
+   embed at once per process; the rest wait for a slot in arrival order, still
+   shown as Processing, with their lease kept alive (#1876).
 
 ### Embedding fails after the text was saved
 
 The row becomes `FAILED` with `MATERIAL_EMBED_FAILED` (or
 `MATERIAL_EMBED_RATE_LIMITED` / `MATERIAL_EMBED_PROVIDER_UNAVAILABLE` for a
-transient provider error). `rawText` stays; the bytes are discarded; the error
+transient provider error). Transient means a timeout, 429/503, or — since #1876 —
+a 500/502/504 or dropped connection; those are retried for about a minute
+(`INDEXING_RETRY_BUDGET`) before the row fails. An input the model rejects
+(for example a context-window error) is never retried. `rawText` stays; the bytes are discarded; the error
 goes to Admin → Logs with `details.materialId`. Chunks and vectors are written
 in one transaction only after every embedding succeeds, so a failed first
 attempt leaves none and the file is absent from chat until it recovers.
