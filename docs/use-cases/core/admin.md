@@ -147,22 +147,22 @@ A distinguishing piece of this actor's threat model is `enforceAdminIfApiKey` (`
 
 ---
 
-### UC-ADMIN-007: Admin attempts to delete a user who has AI chat history
+### UC-ADMIN-007: Admin deletes a user who has AI chat history
 
-- **Category:** Wrong/Malformed Usage
+- **Category:** Happy Path
 - **Actor:** `ADMIN`, valid session
-- **Preconditions:** Target `User` has at least one `AIInteraction` row (`ai_interactions` table, created whenever a chat completion is served)
+- **Preconditions:** Target `User` has `AIInteraction` rows, and may have authored `Question`s or run a Canvas roster sync (`CanvasRosterMember.syncedByUserId`)
 - **Entry point(s):** `apps/core/app/routes/admin.users.tsx`, `apps/core/app/routes/api/users.$.ts`, `apps/core/app/lib/api/users-api.server.ts`
 - **Flow:**
   1. Admin opens `/admin/users`, finds the target user, and clicks "Delete" — `useUsers().deleteUser(userId)` → `DELETE /api/users/:id` → `handleUsersApiRequest`
   2. `enforceAdminIfApiKey` is a no-op (no `x-api-key` on a normal browser request); the handler resolves the session and confirms `role === "ADMIN"`
-  3. The handler checks `userId === session.user.id` (self-delete guard, not applicable here) then calls `prisma.user.delete({ where: { id: userId } })`
-  4. In `schema.prisma`, `AIInteraction.user` is declared `User @relation(fields: [userId], references: [id])` with **no** `onDelete` clause — Prisma's default referential action for a required relation is `Restrict`, unlike `Enrollment.user` (`onDelete: Cascade`) which would *not* block the delete on its own
-  5. Postgres raises a foreign-key violation; Prisma surfaces it as `P2003`; the handler's `catch` maps that specific code to `apiError(400, "CANNOT_DELETE_USER_WITH_DATA")`
-- **Expected outcome:** `400 { error: "CANNOT_DELETE_USER_WITH_DATA" }`. The `User` row (and all its `Enrollment`/`AIInteraction`/session data) remains untouched — Postgres's constraint check runs inside the same statement, so there is no partial delete.
-- **Failure modes / what could go wrong:** The admin has no path in this handler to force a cascading delete of the dependent `AIInteraction` history — deactivation (`isActive: false`, via the same `PATCH` route) is the only reviewed way to functionally retire an account with usage history, not deletion. This is a deliberate data-retention guard rather than a gap, but the admin UI's exact error message for `CANNOT_DELETE_USER_WITH_DATA` was not traced beyond the raw API response.
+  3. The handler checks the self-delete and last-admin guards, then calls `prisma.user.delete({ where: { id: userId } })`
+  4. Postgres applies each foreign key's referential action (#1959): `AIInteraction` rows cascade with the user's `Chat`s and `Enrollment`s; `Question.createdBy` and `CanvasRosterMember.syncedByUserId` are set to `NULL`, so course content and roster rows outlive the account
+- **Expected outcome:** `204`. The user and their personal history are gone; the course's question bank and Canvas roster are intact, with no recorded author/syncer. A `null` `Question.createdBy` reads as "no owner", so only instructors and above can edit or delete those questions (TA own-only rules no longer match).
+- **Failure modes / what could go wrong:** Any future `User` relation left on the default `Restrict` would bring back the old failure — Prisma's `P2003` is still mapped to `400 CANNOT_DELETE_USER_WITH_DATA`, and the admin UI now shows a toast for that and every other delete error instead of only logging it to the console.
 - **Related code:**
   - `apps/core/app/routes/admin.users.tsx`
+  - `apps/core/app/components/admin/users-admin-view.tsx`
   - `apps/core/app/routes/api/users.$.ts`
   - `apps/core/app/lib/api/users-api.server.ts`
   - `apps/core/prisma/schema.prisma`
