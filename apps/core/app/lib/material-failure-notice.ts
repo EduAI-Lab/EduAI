@@ -70,7 +70,7 @@ const FAILURE_CODE_TEXT = {
   },
   MATERIAL_EMBED_FAILED: {
     title: "Couldn't prepare this file for search",
-    cause: "This file's search data couldn't be built.",
+    cause: "The file's text was read, but the AI service rejected it while building search data.",
     escalate: true,
   },
   MATERIAL_EMBED_RATE_LIMITED: {
@@ -86,6 +86,19 @@ const FAILURE_CODE_TEXT = {
     escalate: true,
   },
 } satisfies Record<MaterialFailureCode, FailureCodeText>;
+
+/**
+ * One-line reason for the upload alert (#1931). The full explanation and the
+ * Try again button stay on the material's row in the list; this names the
+ * reason and points there, instead of a generic "please try again" that a
+ * failure caused by the file's content can never satisfy.
+ */
+export function describeUploadFailure(failureCode: MaterialFailureCode | null): string {
+  const reason = failureCode
+    ? FAILURE_CODE_TEXT[failureCode].title
+    : "Processing failed for this file";
+  return `${reason}. See the file in the materials list for details and what to do next.`;
+}
 
 /** The recovery sentence for a bucket, timed and escalated per the code. */
 function nextStep(canRetry: boolean, text: FailureCodeText): string {

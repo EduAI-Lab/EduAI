@@ -145,6 +145,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `PDF_EXTRACTION_MAX_CONCURRENT` / `PDF_EXTRACTION_MAX_QUEUED` / `PDF_EXTRACTION_MAX_RSS_MB` | `4` / `16` / host-derived | Per-process PDF extraction concurrency, queue depth, and RSS ceiling |
 | `MATERIAL_IMAGE_MODEL` / `MATERIAL_IMAGE_TIMEOUT_MS` | `qwen3.8-27b-instruct` / `60000` | Vision model that transcribes PNG/JPEG/WebP course materials at ingest (#1903); must support images. The host is resolved through the fleet as a background job (the default 27B is served by cmps02); `VLLM_BASE_URL` is used only when fleet routing is disabled |
 | `MATERIAL_IMAGE_MAX_CONCURRENT` / `MATERIAL_IMAGE_MAX_QUEUED` | `2` / `16` | Per-process cap on concurrent image transcriptions and the queue behind it; past the queue an upload is released for a later sweep (`MATERIAL_EXTRACT_BUSY`) |
+| `MATERIAL_EMBED_MAX_CONCURRENT` | `4` | Per-process cap on materials sending embedding requests at once (#1876). Uploads beyond it wait for a slot instead of all calling the embedding service together, which also serves course-chat questions. Valid range 1–32; anything else uses the default. Course re-embed is not affected; it uses `REINDEX_CONCURRENCY` |
 | `FIRECRAWL_API_KEY` | — | Enables the `webSearch` / `fetchPage` chat tools; unset disables them |
 
 #### Auto routing, fleet, and overflow
@@ -178,8 +179,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COURSE_SCOPE_GUARDRAIL_ENABLED` | `false` | Server kill switch for the Layer B course-scope classifier — **ANDed** with each course's own `courseScopeGuardrailEnabled` column, so Layer B runs only when both are on. Layer A (system-prompt policy) is always on |
-| `COURSE_SCOPE_CLASSIFIER_MODEL` / `COURSE_SCOPE_MIN_CONFIDENCE` / `COURSE_SCOPE_CLASSIFIER_TIMEOUT_MS` | — / `75` / `2000` | Layer B classifier; fails open on timeout |
+| `COURSE_SCOPE_CLASSIFIER_MODEL` / `COURSE_SCOPE_MIN_CONFIDENCE` / `COURSE_SCOPE_CLASSIFIER_TIMEOUT_MS` | — / `75` / `2000` | Tuning for the Layer B course-scope classifier; fails open on timeout. Whether Layer B runs is not an env var: the course must opt in and the `chat.courseScopeGuardrailEnabled` policy (Admin → Settings, default on) must be on. `COURSE_SCOPE_GUARDRAIL_ENABLED` is no longer read (#1938) |
 | `ADHD_ASSIST_AUTO_MODEL` | `vllm:qwen3.8-27b-instruct` | Model Assist Auto is pinned to |
 | `ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY` | off | `true`/`1`/`on` restricts oversight to the deterministic pass (no model rewrite) |
 | `CANVAS_SYNC_RATE_LIMIT` / `CANVAS_SYNC_RATE_WINDOW_MS` | `1` / `30000` | Per-user Canvas course/material sync limiter |

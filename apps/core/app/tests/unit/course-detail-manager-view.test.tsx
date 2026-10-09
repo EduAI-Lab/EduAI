@@ -836,6 +836,27 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
     });
   });
 
+  it("says the course restriction has no effect while the platform policy is off (#1938)", () => {
+    renderView(
+      { course: { ...COURSE, courseScopeGuardrailEnabled: true } },
+      { "chat.courseScopeGuardrailEnabled": false },
+    );
+    clickTab(/settings/i);
+
+    expect(screen.getByText(/turned off for the whole platform/i)).toBeInTheDocument();
+    // Still editable, so an instructor can set it ahead of the platform switch.
+    expect(
+      screen.getByRole("switch", { name: /restrict course chat to this course/i }),
+    ).toBeEnabled();
+  });
+
+  it("shows no platform warning while the platform policy is on (#1938)", () => {
+    renderView({}, { "chat.courseScopeGuardrailEnabled": true });
+    clickTab(/settings/i);
+
+    expect(screen.queryByText(/turned off for the whole platform/i)).toBeNull();
+  });
+
   it("saves RAG search-tuning settings", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();

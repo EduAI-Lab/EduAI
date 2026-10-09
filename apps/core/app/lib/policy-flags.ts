@@ -61,6 +61,12 @@ export const POLICY_FLAGS = {
       "Global on/off for web search and fetch tools in chat. When off, web tools are never registered for anyone.",
     default: false,
   },
+  "chat.courseScopeGuardrailEnabled": {
+    label: "Course chat restriction available",
+    description:
+      'Lets each course\'s "Restrict Course Chat to this course" setting redirect clearly off-topic student questions (a second-pass classifier). When off, that setting has no effect in any course. Courses still opt in one by one.',
+    default: true,
+  },
   "unitAdmins.canDeleteCourses": {
     label: "Unit admins can delete courses",
     description:

@@ -12,7 +12,7 @@
  * reachable: the 200 it answers for a returning student is only ever issued by
  * the Join button, which an error page does not render.
  */
-import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { IconStack2 } from "@tabler/icons-react";
 
@@ -162,6 +162,10 @@ export default function SelfEnrollPage() {
           <div className="rounded-lg border p-6 text-center space-y-2">
             <h1 className="text-lg font-semibold">Can&apos;t join this course</h1>
             <p className="text-sm text-muted-foreground">{failure.message}</p>
+            {/* This page has no app shell, so without a link it is a dead end (#1939). */}
+            <Button asChild variant="outline" className="mt-2">
+              <Link to="/dashboard">Go to dashboard</Link>
+            </Button>
           </div>
         ) : (
           data.ok && (
