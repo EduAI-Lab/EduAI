@@ -29,7 +29,7 @@ vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 import prisma from "~/lib/prisma.server";
-import { processMaterialEmbeddings } from "~/lib/ai/embedding";
+import { processMaterialEmbeddings, resetMaterialEmbedLimitForTests } from "~/lib/ai/embedding";
 import { generateChecksum, joinSemanticChunks } from "~/lib/ai/file-processing";
 import { cleanupRbac, seedCourse } from "../helpers/rbac";
 
@@ -150,5 +150,55 @@ describe("processMaterialEmbeddings with the local CMPS embedding model (#1931)"
     expect(sent.length).toBeGreaterThan(2);
     for (const value of sent) expect(value.length).toBeLessThanOrEqual(480);
     expect(sent.join("\n")).toContain("class Shape29 extends Base");
+  });
+});
+
+describe("processMaterialEmbeddings shares the embedding slots (#1876)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetMaterialEmbedLimitForTests();
+    // clearAllMocks keeps implementations; restore the file's default embedder.
+    embedMany.mockImplementation(async ({ values }: { values: string[] }) => ({
+      embeddings: values.map((_, index) => makeEmbedding(index + 1)),
+    }));
+  });
+
+  it("never embeds more materials at once than MATERIAL_EMBED_MAX_CONCURRENT", async () => {
+    vi.stubEnv("MATERIAL_EMBED_MAX_CONCURRENT", "1");
+    resetMaterialEmbedLimitForTests();
+
+    let active = 0;
+    let peak = 0;
+    embedMany.mockImplementation(async ({ values }: { values: string[] }) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return { embeddings: values.map((_, index) => makeEmbedding(index + 1)) };
+    });
+
+    const materials = await Promise.all(
+      [1, 2, 3].map((n) => {
+        const content = `Material ${n} covers sorting and searching. `.repeat(10);
+        return prisma.courseMaterial.create({
+          data: {
+            courseId,
+            title: `embed-slot-${n}-${Date.now()}`,
+            mimeType: "text/plain",
+            fileSize: content.length,
+            checksum: generateChecksum(content),
+            rawText: content,
+            status: "PROCESSING",
+          },
+        });
+      }),
+    );
+
+    await Promise.all(materials.map((m) => processMaterialEmbeddings(m.id, m.rawText ?? "")));
+
+    expect(peak).toBe(1);
+    for (const m of materials) {
+      expect(await prisma.materialChunk.count({ where: { materialId: m.id } })).toBeGreaterThan(0);
+    }
   });
 });

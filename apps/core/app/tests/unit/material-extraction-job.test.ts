@@ -25,6 +25,8 @@ vi.mock("~/lib/ai/embedding", () => ({
   // MATERIAL_EMBED_RATE_LIMITED rather than a flat MATERIAL_EMBED_FAILED.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
   isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
+  // #1876: a server error or dropped connection is recorded as provider-unavailable.
+  isEmbeddingProviderUnavailableError: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("~/lib/ai/file-processing", async () => {
@@ -55,6 +57,7 @@ vi.mock("~/lib/topics/job.server", () => ({
 
 import prisma from "~/lib/prisma.server";
 import {
+  isEmbeddingProviderUnavailableError,
   isEmbeddingTimeoutError,
   isTransientEmbeddingError,
   processMaterialEmbeddings,
@@ -122,6 +125,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
   vi.mocked(isTransientEmbeddingError).mockReturnValue(false);
   vi.mocked(isEmbeddingTimeoutError).mockReturnValue(false);
+  vi.mocked(isEmbeddingProviderUnavailableError).mockReturnValue(false);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
     bytes: Buffer.from("hello"),
@@ -918,6 +922,14 @@ describe("resolveFailureCode", () => {
     vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
     expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("429"))).toBe(
       "MATERIAL_EMBED_RATE_LIMITED",
+    );
+  });
+
+  it("reports a server error or dropped connection as unavailable, not rate-limited (#1876)", () => {
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(isEmbeddingProviderUnavailableError).mockReturnValue(true);
+    expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("502 Bad Gateway"))).toBe(
+      "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
     );
   });
 
