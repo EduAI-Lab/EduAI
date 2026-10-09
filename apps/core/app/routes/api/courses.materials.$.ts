@@ -42,6 +42,7 @@ import {
 } from "~/lib/multipart.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
+import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
@@ -410,9 +411,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
           }
 
           // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
-          await prisma.courseMaterial.update({
-            where: { id: materialId },
-            data: { deletedAt: new Date(), deletedBy: user.id },
+          // #1937: suggestions read only from this file go with it, atomically.
+          await prisma.$transaction(async (tx) => {
+            await tx.courseMaterial.update({
+              where: { id: materialId },
+              data: { deletedAt: new Date(), deletedBy: user.id },
+            });
+            await removeOrphanedSuggestions(courseId, tx);
           });
 
           const { fireAndForget: fireAndForgetDelete, logAuditAction: logAuditActionDelete } =

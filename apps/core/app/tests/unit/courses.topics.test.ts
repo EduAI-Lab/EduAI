@@ -243,6 +243,36 @@ describe("courses.topics loader", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(TOPIC_JSON);
   });
+
+  // #1937: unreviewed AI suggestions are for staff to review, not for students.
+  it("reads the learner view of the topic list for a student", async () => {
+    mockUser();
+    mockAccess({ level: "student", rank: 0 });
+    await loader(makeLoaderArgs(COURSE_ID));
+    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "learner");
+  });
+
+  it("reads the learner view of a single topic for a student", async () => {
+    mockUser();
+    mockAccess({ level: "student", rank: 0 });
+    await loader(makeLoaderArgs(COURSE_ID, "topic-1"));
+    expect(getCourseTopicWithSources).toHaveBeenCalledWith(COURSE_ID, "topic-1", false, "learner");
+  });
+
+  it.each([
+    ["a TA", { level: "ta", rank: 1 }],
+    ["an instructor", { level: "instructor", rank: 2 }],
+  ])("keeps suggestions in the topic list for %s", async (_who, access) => {
+    mockUser();
+    mockAccess(access);
+    await loader(makeLoaderArgs(COURSE_ID));
+    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "staff");
+  });
+
+  it("keeps suggestions for service-key callers, which author against them", async () => {
+    await loader(makeLoaderArgs(COURSE_ID, undefined, `Bearer ${VALID_KEY}`));
+    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "staff");
+  });
 });
 
 describe("courses.topics action — POST", () => {
