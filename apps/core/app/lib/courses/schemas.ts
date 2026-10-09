@@ -70,6 +70,9 @@ export const UpdateCourseRagSettingsSchema = z.object({
   // instructor-only PATCH /api/courses/:id/rag-settings endpoint and a rename
   // would be a larger, separate change.
   courseScopeGuardrailEnabled: z.boolean().optional(),
+  // #1821: the course's opt-out for the help assistant's material half. Same
+  // instructor-or-above gate as the other per-course AI settings here.
+  aiAssistantEnabled: z.boolean().optional(),
   ragTopK: z
     .number()
     .int()

@@ -20,6 +20,9 @@ import {
 } from "@eduai/ui";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
+import { AssistantTuningCard } from "~/components/settings/assistant-settings-cards";
+import { getAssistantSettings } from "~/lib/assistant/assistant-settings.server";
+import { listActiveChatModels } from "~/lib/ai/providers.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -32,13 +35,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw notFound(session.user);
   }
 
+  const [assistantSettings, chatModels] = await Promise.all([
+    getAssistantSettings(),
+    listActiveChatModels(),
+  ]);
+
   return {
     user: session.user,
+    assistantSettings,
+    assistantModelOptions: chatModels.map((model) => model.id),
   };
 }
 
 export default function AIModelsPage() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, assistantSettings, assistantModelOptions } = useLoaderData<typeof loader>();
   const {
     providers,
     total: providersTotal,
@@ -181,6 +191,12 @@ export default function AIModelsPage() {
         fleetConfigError={fleetConfigError}
         onSaveFleetConfig={saveFleetConfig}
       />
+      <div className="px-4 pb-6 lg:px-6">
+        <AssistantTuningCard
+          initialSettings={assistantSettings}
+          modelOptions={assistantModelOptions}
+        />
+      </div>
     </CoreAppShell>
   );
 }

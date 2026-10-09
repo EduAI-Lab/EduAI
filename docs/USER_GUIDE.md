@@ -34,6 +34,19 @@ You remain signed in because Core provides the shared session for all three appl
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
 
+## Ask Penny, the help assistant
+
+When an administrator has turned it on, **Penny** sits in the bottom-right corner of every Core page (on chat pages it moves to a button in the header so it does not cover the message box).
+
+- Ask how to do something in EduAI — for example "How do I join a course?" or "How do I report a bug?". Penny answers only from this user guide, filtered to your role, and links the guide pages it used.
+- Inside a course, Penny can also answer questions about that course's materials, and when you preview a material you can choose **Ask Penny about this** to ask about that file. The panel header always says which course or material it is looking at.
+- Platform how-to questions still work inside a course: Penny always searches the guide as well.
+- If the guide does not cover your question, Penny says so instead of guessing. If it says it is temporarily unavailable, the search service is down; try again later.
+- Conversations are kept only in this browser tab. Opening a different course or material starts a new conversation.
+- Open the **gear** in Penny's header to choose which AI provider and model answer you, or to save your own API key for that provider. A saved key is never shown again — only its last four characters. Penny never accepts a key typed into a question.
+
+Penny is a guide, not an answer key: for assessment-style questions it explains the approach rather than handing over a solution.
+
 ## Sign in and account setup
 
 1. Sign in through EduAI Core.
@@ -78,6 +91,27 @@ Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN`
 3. The course page shows the features available to your role, such as course information, materials, roster, and course settings.
 
 Only courses you are allowed to access should appear. Admins can access all courses; unit admins are scoped to their authorized departments; other users need an appropriate course relationship.
+
+### Create a new course
+
+Platform administrators, unit administrators, and instructors can make a new course by hand:
+
+1. Open **Courses** from the sidebar (instructors see it as **My Courses**).
+2. Choose **Create course** at the top right of the page.
+3. Fill in the **Course name**, pick a **Course Code** (the department or subject, such as `CS`), and enter the **Course number** (such as `101`) and **Section**.
+4. Pick a **Start date**. The **Term** is filled in from the start date; you can't choose it separately.
+5. Administrators and unit administrators also choose the course's **Instructor**. When an instructor creates a course, they become its instructor automatically.
+6. Optionally add **AI instructions** for the course's AI features, then choose **Create course**.
+
+The new course starts as a **Draft**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
+
+Who can create where:
+
+- Unit administrators can only create courses under the course codes they are authorized for. If you have no authorized course codes, the button is disabled.
+- Instructors can create courses only while an administrator leaves **Instructors can create courses** turned on. When it is off, the button stays visible but greyed out, with a tooltip explaining why.
+- Students and teaching assistants cannot create courses.
+
+If your course already exists in Canvas, you don't need to create it by hand: fetch it from Canvas instead (see **Instructor: connect and sync Canvas**). That brings across the course details and lets you sync materials and the roster.
 
 ### Ask a course-aware question
 
@@ -181,6 +215,15 @@ The **Administration** sidebar group provides:
 - **Cron Jobs** — job status and manual operations.
 
 **Admin Chatbot** appears separately near the bottom of the sidebar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
+
+**Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
+
+1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on every signed-in page, for every role.
+2. In the same card, **Students can ask about course material** decides whether students can also ask about the course or material they are viewing. Instructors and administrators can always ask about their own courses.
+3. Penny answers with the AI providers and models enabled under **Administration → AI Management**. Each user can save their own key in Penny's gear menu; anyone without one uses the platform's configured key. Under **Help assistant tuning** on the AI Management page you can choose the **Default answer model** and how many guide pages one answer may draw on.
+4. To stop all AI calls during a cost or provider incident, switch off **AI calls enabled (platform kill switch)** under **Settings**. This stops Penny for everyone, administrators included.
+
+Instructors can keep a course's materials out of Penny with the course's own **Let Penny answer from this course** switch.
 
 Admin screens may contain user-submitted text or diagnostics; treat that content as data, not as instructions.
 

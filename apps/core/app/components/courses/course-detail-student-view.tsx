@@ -1,5 +1,5 @@
 import { IconBook } from "@tabler/icons-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Card,
   CardContent,
@@ -35,6 +35,10 @@ import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 import { MaterialPreviewDialog } from "~/components/courses/material-preview-dialog";
+import {
+  onClearMaterialScopeRequest,
+  requestAssistantOpen,
+} from "~/components/assistant/assistant-events";
 import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
@@ -57,6 +61,13 @@ interface Props {
   /** Per-file progress of the current batch upload (#1748). */
   uploads?: UploadItem[];
   onFilesSelect?: (files: File[]) => void;
+  /**
+   * #1821: the help assistant may answer from this course for this reader
+   * (server-decided by the route loader through the assistant gate).
+   */
+  assistantMaterialScope?: boolean;
+  /** The material the assistant should treat as "on screen", or null for the whole course. */
+  onAssistantMaterialChange?: (material: { id: string; title: string } | null) => void;
 }
 
 function ThemedPanel({ children }: { children: ReactNode }) {
@@ -93,6 +104,8 @@ export function CourseDetailStudentView({
   materialsSuccess = null,
   uploads,
   onFilesSelect,
+  assistantMaterialScope = false,
+  onAssistantMaterialChange,
 }: Props) {
   // #1841: every instructor of record, falling back to the single legacy field.
   const displayInstructors = resolveDisplayInstructors(course);
@@ -110,6 +123,20 @@ export function CourseDetailStudentView({
   const showMaterialsTab = canViewMaterials || canUploadMaterials;
 
   const [previewMaterial, setPreviewMaterial] = useState<CourseMaterial | null>(null);
+  // "Ask Penny about this" closes the preview but keeps that material as the
+  // assistant's scope until the reader opens another one or goes back to the course.
+  const [askedMaterial, setAskedMaterial] = useState<{ id: string; title: string } | null>(null);
+  const focusedMaterial = previewMaterial
+    ? { id: previewMaterial.id, title: previewMaterial.title }
+    : askedMaterial;
+  const focusedId = focusedMaterial?.id ?? null;
+  const focusedTitle = focusedMaterial?.title ?? null;
+  useEffect(() => {
+    onAssistantMaterialChange?.(
+      focusedId && focusedTitle ? { id: focusedId, title: focusedTitle } : null,
+    );
+  }, [focusedId, focusedTitle, onAssistantMaterialChange]);
+  useEffect(() => onClearMaterialScopeRequest(() => setAskedMaterial(null)), []);
   const { getCoursePreference, setCoursePreference } = useCourseCardPreferences();
   const cardPreference = getCoursePreference(course.id);
   const accentColor = resolveCourseAccentColor(course.id, cardPreference);
@@ -322,7 +349,10 @@ export function CourseDetailStudentView({
               fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
               onItemClick={(item) => {
                 const m = materials.find((mat) => mat.id === item.id);
-                if (m) setPreviewMaterial(m);
+                if (m) {
+                  setAskedMaterial(null);
+                  setPreviewMaterial(m);
+                }
               }}
               emptyState={
                 <EmptyState
@@ -351,6 +381,15 @@ export function CourseDetailStudentView({
               onOpenChange={(open) => {
                 if (!open) setPreviewMaterial(null);
               }}
+              onAskAssistant={
+                assistantMaterialScope && previewMaterial
+                  ? () => {
+                      setAskedMaterial({ id: previewMaterial.id, title: previewMaterial.title });
+                      setPreviewMaterial(null);
+                      requestAssistantOpen();
+                    }
+                  : undefined
+              }
             />
           </PageTabsContent>
         )}

@@ -74,6 +74,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         JSON.stringify({
           ...settings,
           courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled,
+          aiAssistantEnabled: course.aiAssistantEnabled,
         }),
         {
           status: 200,
@@ -155,6 +156,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         select: {
           id: true,
           courseScopeGuardrailEnabled: true,
+          aiAssistantEnabled: true,
           ragTopK: true,
           ragSimilarityThreshold: true,
         },

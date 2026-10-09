@@ -23,6 +23,9 @@ COPY packages/types packages/types
 COPY packages/ui packages/ui
 COPY scripts/prisma-generate.mjs scripts/prisma-generate.mjs
 COPY apps/core apps/core
+# The help assistant's documentation corpus (#1819) is bundled from these guides
+# at build time (`?raw` imports in app/lib/assistant/help-docs/sources.server.ts).
+COPY docs/USER_GUIDE.md docs/INSTRUCTOR_ONBOARDING.md docs/
 
 RUN npm run build -w @eduai/types \
     && npm run build -w edu-ai

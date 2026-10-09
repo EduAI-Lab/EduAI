@@ -53,6 +53,9 @@ COPY apps/core/package.json      ./apps/core/
 # Read by the cleanup-invitations integration test, which verifies the
 # script's own DELETE statement rather than a reimplementation of it.
 COPY infra/cron                  ./infra/cron/
+# The help assistant's docs corpus (#1819) imports these guides with `?raw`;
+# help-docs.manifest.test.ts reads them too.
+COPY docs/USER_GUIDE.md docs/INSTRUCTOR_ONBOARDING.md ./docs/
 COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
@@ -73,6 +76,8 @@ COPY --from=deps /app/packages/types    ./packages/types
 COPY packages/ui                        ./packages/ui/
 COPY scripts/prisma-generate.mjs        ./scripts/prisma-generate.mjs
 COPY apps/core                          ./apps/core
+# Bundled into the build by the help assistant's `?raw` imports (#1819).
+COPY docs/USER_GUIDE.md docs/INSTRUCTOR_ONBOARDING.md ./docs/
 COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
 
 ENV PATH="/app/node_modules/.bin:${PATH}"

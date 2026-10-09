@@ -46,6 +46,11 @@ import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.ser
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
+import {
+  materialGateFor,
+  previewExcerpt,
+  readMaterialForViewer,
+} from "~/lib/materials/viewable-material.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -76,34 +81,6 @@ type MaterialEditAuditDetails = {
  */
 function isStaffAccess(access: AccessLevel): boolean {
   return access.level !== "student";
-}
-
-/**
- * Prisma `where` fragment that hides materials students shouldn't see yet:
- * Canvas-unpublished (`unpublishedAt`), selectively excluded Canvas files,
- * explicitly hidden (`visibleToStudents: false`), or scheduled for a future
- * reveal (`availableAt` in the future). Staff callers must NOT apply this.
- *
- * When `excludedCanvasFileIds` is empty the availableAt clause stays a top-level
- * `OR` so scheduling tests remain readable; with exclusions an `AND` wraps both
- * OR groups so Prisma doesn't overwrite one with the other.
- */
-function studentVisibilityWhere(now: Date, excludedCanvasFileIds: string[] = []) {
-  const availableAtGate = {
-    OR: [{ availableAt: null }, { availableAt: { lte: now } }],
-  };
-  const exclusionGate =
-    excludedCanvasFileIds.length > 0
-      ? {
-          OR: [{ externalId: null }, { externalId: { notIn: excludedCanvasFileIds } }],
-        }
-      : null;
-
-  return {
-    unpublishedAt: null,
-    visibleToStudents: true,
-    ...(exclusionGate ? { AND: [availableAtGate, exclusionGate] } : availableAtGate),
-  };
 }
 
 /**
@@ -792,14 +769,12 @@ async function uploadMaterial(
   });
 }
 
-const PREVIEW_EXCERPT_MAX = 4000;
-
 /**
  * Column set for every materials LIST response (#948). Deliberately an explicit
  * `select` rather than `include`, so `rawText` — the full extracted document
  * text, which can be megabytes per row — never reaches the JSON payload. The
  * single-material preview path selects `rawText` on its own and truncates it to
- * `PREVIEW_EXCERPT_MAX`; lists have no use for it at all.
+ * `PREVIEW_EXCERPT_MAX` (see `viewable-material.server.ts`); lists have no use for it at all.
  *
  * MAINTENANCE: this is an allow-list. A new column on `CourseMaterial` will NOT
  * appear in list responses until it is added here explicitly — add it (unless
@@ -1002,66 +977,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         });
       }
 
-      const excludedCanvasFileIds =
-        access.level === "student"
-          ? (
-              await prisma.canvasMaterialExclusion.findMany({
-                where: { courseId },
-                select: { canvasFileId: true },
-              })
-            ).map((row) => row.canvasFileId)
-          : [];
-
-      const studentGate =
-        access.level === "student" ? studentVisibilityWhere(new Date(), excludedCanvasFileIds) : {};
+      // #1821: the student gate and the single-material read are shared with the
+      // help assistant's material context, so both ask the identical question.
+      const studentGate = await materialGateFor(courseId, access);
 
       if (materialId) {
-        const material = await prisma.courseMaterial.findFirst({
-          where: { id: materialId, courseId, deletedAt: null, ...studentGate },
-          select: {
-            id: true,
-            title: true,
-            mimeType: true,
-            fileSize: true,
-            status: true,
-            createdAt: true,
-            rawText: true,
-          },
-        });
-
-        if (!material) {
-          // A student-gated miss is ambiguous: either the material doesn't exist
-          // (or is soft-deleted) or it exists but studentGate excluded it. Only
-          // students can hit the latter case (studentGate is `{}` for staff, so
-          // this findFirst is otherwise identical to the existence check below).
-          // Distinguish them with one extra query so hidden-but-real material
-          // reports 403, matching #1180's spec, instead of the indistinguishable
-          // 404 a folded WHERE clause would otherwise produce.
-          if (access.level === "student") {
-            const exists = await prisma.courseMaterial.findFirst({
-              where: { id: materialId, courseId, deletedAt: null },
-              select: { id: true },
-            });
-            if (exists) {
-              return json(403, { error: "Forbidden" });
-            }
-          }
+        const read = await readMaterialForViewer({ courseId, materialId, access });
+        if (read.status === "hidden") {
+          // Hidden-but-real material reports 403, matching #1180's spec, instead
+          // of the indistinguishable 404 a folded WHERE clause would produce.
+          return json(403, { error: "Forbidden" });
+        }
+        if (read.status === "missing") {
           return json(404, { error: "Material not found" });
         }
+        const { material } = read;
 
         if (material.status !== "READY") {
           return json(409, { error: "Material is not ready for preview" });
         }
 
-        const rawText = material.rawText ?? "";
-        const truncated = rawText.length > PREVIEW_EXCERPT_MAX;
-        const { rawText: _rawText, ...meta } = material;
-
-        return json(200, {
-          material: meta,
-          excerpt: truncated ? rawText.slice(0, PREVIEW_EXCERPT_MAX) : rawText,
-          truncated,
-        });
+        const { rawText, ...meta } = material;
+        return json(200, { material: meta, ...previewExcerpt(rawText) });
       }
 
       // Staff receive the scheduling fields so the management UI can render and edit

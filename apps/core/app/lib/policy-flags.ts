@@ -108,6 +108,12 @@ export const POLICY_FLAGS = {
       "Allow users with the UNIT_ADMIN role to invite instructors and students to the platform. ADMIN is always allowed.",
     default: false,
   },
+  "ai.platformEnabled": {
+    label: "AI calls enabled (platform kill switch)",
+    description:
+      "Off freezes AI calls platform-wide, for every role including administrators — use it during a cost or provider incident. Enforced today by the help assistant (Penny), its model-list fetch, and any future caller of the shared assistant gate.",
+    default: true,
+  },
   "auth.allowPublicRegistration": {
     label: "Allow public registration",
     description:

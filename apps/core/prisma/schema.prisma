@@ -153,6 +153,9 @@ model Course {
   /// Enables the strict second-pass course-scope classifier. Layer A prompt scoping is always on.
   // Defaulted off (was on) for easier testing
   courseScopeGuardrailEnabled Boolean                   @default(false)
+  /// #1821: course-level opt-out for the help assistant's material half. Off means
+  /// this course's content is never sent to a model by the assistant.
+  aiAssistantEnabled          Boolean                   @default(true)
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                     Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
@@ -444,6 +447,16 @@ model UserProviderSettings {
   apiKeyExpiresAt DateTime?
   baseUrl         String?
   isEnabled       Boolean    @default(false)
+  /// #1818: the model this user wants the help assistant to run on this provider.
+  /// A row may carry only this (no `apiKey`) — "run model X on the platform key".
+  model           String?
+  /// #1818: at most one row per user is preferred. Enforced by the single writer
+  /// in `lib/assistant/user-ai-keys.server.ts` inside a transaction, not by an
+  /// index ("at most one true, any number of false" is not a plain unique).
+  preferred       Boolean    @default(false)
+  /// #1823: per-user model curation for this provider. Null = never curated
+  /// (fall back to the admin catalogue); `[]` = curated nothing.
+  enabledModels   Json?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   provider        AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
@@ -767,6 +780,27 @@ model MaterialChunk {
   @@unique([materialId, index])
   @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_idx")
   @@map("material_chunks")
+}
+
+/// #1819: the help assistant's documentation corpus — role-scoped user-guide
+/// pages, embedded on the same pipeline as course materials but kept in their own
+/// table so a docs question can never be answered out of a course upload (and
+/// vice versa). Rebuilt wholesale by `lib/assistant/help-docs/index.server.ts`
+/// whenever the corpus hash changes; `pageId` is only ever a lookup key into the
+/// manifest allowlist, never a path.
+model HelpDocChunk {
+  id         String                       @id @default(cuid())
+  pageId     String
+  slice      String
+  chunkIndex Int
+  content    String
+  embedding  Unsupported("vector(1024)")?
+  corpusHash String
+  createdAt  DateTime                     @default(now())
+
+  @@unique([pageId, chunkIndex])
+  @@index([slice])
+  @@map("help_doc_chunks")
 }
 
 model MaterialEmbedding {
