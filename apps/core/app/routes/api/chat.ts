@@ -90,7 +90,6 @@ import { capTokensForLongOutputIntent, didHitAppliedLongOutputCap } from "~/lib/
 import {
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
-  courseScopeGuardrailEnabled,
   resolveCourseScopeVerdict,
   MAX_COURSE_SCOPE_HISTORY_TURNS,
   type CourseScopeConversationTurn,
@@ -1583,17 +1582,23 @@ export async function action({ request }: ActionFunctionArgs) {
         // service-key callers — AI Tutor/Question Maker — per design; QM's
         // generation-style prompts would false-positive against an "off-topic"
         // gate, and instructor mode is course ops, not student tutoring).
-        const courseScopeCheckPromise: Promise<CourseScopeVerdict> | null =
-          courseScopeGuardrailEnabled() &&
+        // #1938: the platform switch is the `chat.courseScopeGuardrailEnabled`
+        // admin policy (a cached read), checked inside the promise so it still
+        // overlaps the prefetch; off resolves to no verdict, i.e. Layer A only.
+        const courseScopeCheckPromise: Promise<CourseScopeVerdict | null> | null =
           effectiveCourse?.courseScopeGuardrailEnabled &&
           courseScopeContext &&
           !isServiceKeyCaller &&
           !isPrivilegedChatMode(chatMode)
-            ? resolveCourseScopeVerdict({
-                message: lastUserMessageTextForRouting,
-                context: courseScopeContext,
-                recentConversation: recentCourseScopeConversation,
-              })
+            ? getPolicy("chat.courseScopeGuardrailEnabled").then((platformOn) =>
+                platformOn
+                  ? resolveCourseScopeVerdict({
+                      message: lastUserMessageTextForRouting,
+                      context: courseScopeContext,
+                      recentConversation: recentCourseScopeConversation,
+                    })
+                  : null,
+              )
             : null;
 
         // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —

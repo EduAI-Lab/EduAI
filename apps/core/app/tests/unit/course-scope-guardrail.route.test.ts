@@ -121,7 +121,6 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 
 vi.mock("~/lib/ai/course-scope-guardrail", () => ({
   MAX_COURSE_SCOPE_HISTORY_TURNS: 6,
-  courseScopeGuardrailEnabled: vi.fn().mockReturnValue(true),
   buildCourseScopePolicyPrompt: vi.fn(
     (context: { courseName: string }) => `SCOPE:${context.courseName}`,
   ),
@@ -145,6 +144,7 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseScopeVerdict } from "~/lib/ai/course-scope-guardrail";
+import { getPolicy } from "~/lib/policy.server";
 import { encodeTextDataUrl } from "~/lib/chat/chat-attachments";
 import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 
@@ -226,6 +226,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
   vi.mocked(isActiveAdminUser).mockResolvedValue(true);
+  // #1938: the platform switch is an admin policy, on by default; every other
+  // policy (e.g. web tools) stays off as before.
+  vi.mocked(getPolicy).mockImplementation(
+    async (key: string) => key === "chat.courseScopeGuardrailEnabled",
+  );
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   // getCourseTopicNamesCached (lib/courses/server.ts) is a module-level cache
   // shared across tests in this file — clear it so each test's
@@ -423,6 +428,21 @@ describe("POST /api/chat — course-scope guardrail", () => {
       },
       access: { level: "student", rank: 0 },
     } as never);
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(vi.mocked(streamText).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("SCOPE:Intro to Programming"),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("skips the classifier when an admin turned the platform policy off, but keeps Layer A (#1938)", async () => {
+    // The course toggle is on (the default fixture); only the platform switch is off.
+    vi.mocked(getPolicy).mockImplementation(async () => false);
 
     const res = await action(makeRequest(baseBody()));
 
