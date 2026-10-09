@@ -11,8 +11,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CoursePublishControl } from "~/components/courses/course-publish-control";
-import { selfEnrollmentStatusLabel } from "~/components/courses/self-enrollment-draft-notice";
+import {
+  SelfEnrollmentDraftNotice,
+  selfEnrollmentStatusLabel,
+} from "~/components/courses/self-enrollment-draft-notice";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
+import { CoursePublishError } from "~/lib/courses/set-course-published";
 import type { PolicyKey } from "~/lib/policy-flags";
 import type { CourseAccess } from "~/lib/rbac/types";
 
@@ -52,6 +56,20 @@ describe("selfEnrollmentStatusLabel", () => {
   it("does not relabel links that are already unusable for another reason", () => {
     expect(selfEnrollmentStatusLabel("REVOKED", false)).toBe("Turned off");
     expect(selfEnrollmentStatusLabel("EXPIRED", false)).toBe("Expired");
+  });
+});
+
+describe("SelfEnrollmentDraftNotice", () => {
+  it("asks an administrator only when the viewer may not publish", () => {
+    render(<SelfEnrollmentDraftNotice canPublish={false} publishControl={null} />);
+    expect(screen.getByText(/ask an administrator to publish it/i)).toBeInTheDocument();
+  });
+
+  it("never tells someone who may publish to ask an administrator", () => {
+    // A caller with no publish handler renders no control; the viewer's
+    // permission, not the missing button, decides the sentence.
+    render(<SelfEnrollmentDraftNotice canPublish publishControl={null} />);
+    expect(screen.queryByText(/ask an administrator/i)).toBeNull();
   });
 });
 
@@ -113,6 +131,27 @@ describe("CoursePublishControl", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not update the course. Please try again.",
+    );
+  });
+
+  it("says the viewer lacks permission on a 403 instead of inviting a retry", async () => {
+    // e.g. instructors.canPublishCourses switched off while the page was open.
+    const onPublishChange = vi.fn(async () => {
+      throw new CoursePublishError("POLICY_DENIED", 403);
+    });
+    render(
+      <CoursePublishControl
+        courseLabel="DATA 301 — Intro to Data Analytics"
+        isPublished={false}
+        onPublishChange={onPublishChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish course" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "You don't have permission to publish or unpublish this course.",
     );
   });
 });

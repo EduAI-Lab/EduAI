@@ -1858,7 +1858,10 @@ export function CourseDetailManagerView({
                       </p>
 
                       {!course.isPublished && (
-                        <SelfEnrollmentDraftNotice publishControl={publishControl} />
+                        <SelfEnrollmentDraftNotice
+                          canPublish={canPublishCourse}
+                          publishControl={publishControl}
+                        />
                       )}
 
                       {selfEnrollError && (

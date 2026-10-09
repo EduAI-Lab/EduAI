@@ -36,6 +36,7 @@ import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
+import { setCoursePublished } from "~/lib/courses/set-course-published";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { describeUploadFailure } from "~/lib/material-failure-notice";
@@ -301,13 +302,7 @@ export default function CourseDetailPage() {
   /** #1939: publish or unpublish from the course page; the endpoint enforces who may. */
   const handlePublishChange = useCallback(
     async (publish: boolean) => {
-      const res = await fetch(`/api/courses/${course.id}/${publish ? "publish" : "unpublish"}`, {
-        method: "PATCH",
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "COURSE_PUBLISH_FAILED");
-      }
+      await setCoursePublished(course.id, publish);
       revalidator.revalidate();
     },
     [course.id, revalidator],

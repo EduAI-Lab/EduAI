@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, ConfirmDialog } from "@eduai/ui";
+import { CoursePublishError } from "~/lib/courses/set-course-published";
 
 interface CoursePublishControlProps {
   /** "CODE — Name", as the Courses-list confirm dialog titles it. */
@@ -30,9 +31,14 @@ export function CoursePublishControl({
     try {
       await onPublishChange(publish);
       setConfirmOpen(false);
-    } catch {
+    } catch (err) {
       setConfirmOpen(false);
-      setError("Could not update the course. Please try again.");
+      // A 403 will not clear on retry (e.g. the instructor policy was switched off).
+      setError(
+        err instanceof CoursePublishError && err.status === 403
+          ? "You don't have permission to publish or unpublish this course."
+          : "Could not update the course. Please try again.",
+      );
     } finally {
       setBusy(false);
     }
