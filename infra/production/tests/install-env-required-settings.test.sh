@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Contract test for `install-env` in admin-helper.sh (#1935, #1904): it must
-# refuse a Core environment that is missing a setting whose absence breaks
-# prod silently, and install one that has them all. Run from the repo root:
+# refuse a Core environment where a setting whose absence breaks prod silently
+# is missing, empty or duplicated, or COOKIE_DOMAIN is not .eduai.ok.ubc.ca,
+# and install a complete one. Run from the repo root:
 #   bash infra/production/tests/install-env-required-settings.test.sh
 #
 # Runs a copy of the helper with /etc/eduai pointed at a temp dir and `install`
@@ -47,21 +48,38 @@ rm -f "$LIVE"
 bash "$TEST_DIR/helper.sh" install-env >/dev/null || fail "complete environment was refused"
 cmp -s "$TEMPLATE" "$LIVE" || fail "complete environment was not installed"
 
-# Each required setting, missing or empty, is refused and the live file is untouched.
+expect_refused() {
+  local label=$1 expected=$2
+  echo "LIVE-BEFORE" >"$LIVE"
+  if output=$(bash "$TEST_DIR/helper.sh" install-env 2>&1); then
+    fail "install-env accepted an environment with $label"
+  fi
+  [[ "$output" == *"$expected"* ]] || fail "unexpected error for $label: $output"
+  [[ "$(cat "$LIVE")" == "LIVE-BEFORE" ]] || fail "live file was overwritten with $label"
+}
+
+# Each required setting, missing, empty or empty-quoted, is refused and the live
+# file is untouched. systemd strips the quotes, so KEY="" starts Core empty.
 for key in BETTER_AUTH_URL COOKIE_DOMAIN EDUAI_API_KEY; do
-  for variant in missing empty; do
-    echo "LIVE-BEFORE" >"$LIVE"
-    if [[ "$variant" == missing ]]; then
-      complete_env | grep -v "^${key}=" >"$TEMPLATE"
-    else
-      complete_env | sed "s|^${key}=.*|${key}=|" >"$TEMPLATE"
-    fi
-    if output=$(bash "$TEST_DIR/helper.sh" install-env 2>&1); then
-      fail "install-env accepted an environment with $key $variant"
-    fi
-    [[ "$output" == *"missing $key"* ]] || fail "unexpected error for $key $variant: $output"
-    [[ "$(cat "$LIVE")" == "LIVE-BEFORE" ]] || fail "live file was overwritten with $key $variant"
-  done
+  complete_env | grep -v "^${key}=" >"$TEMPLATE"
+  expect_refused "$key missing" "missing or has an empty $key"
+  complete_env | sed "s|^${key}=.*|${key}=|" >"$TEMPLATE"
+  expect_refused "$key empty" "missing or has an empty $key"
+  complete_env | sed "s|^${key}=.*|${key}=\"\"|" >"$TEMPLATE"
+  expect_refused "$key empty-quoted" "missing or has an empty $key"
+  { complete_env; echo "${key}="; } >"$TEMPLATE"
+  expect_refused "$key duplicated" "sets $key more than once"
 done
+
+# COOKIE_DOMAIN values that start Core without a shared session cookie.
+for bad in localhost .ok.ubc.ca eduai.ok.ubc.ca; do
+  complete_env | sed "s|^COOKIE_DOMAIN=.*|COOKIE_DOMAIN=${bad}|" >"$TEMPLATE"
+  expect_refused "COOKIE_DOMAIN=${bad}" "must set COOKIE_DOMAIN=.eduai.ok.ubc.ca"
+done
+
+# The right value, quoted, is accepted (read the way systemd reads it).
+complete_env | sed 's|^COOKIE_DOMAIN=.*|COOKIE_DOMAIN=".eduai.ok.ubc.ca"|' >"$TEMPLATE"
+rm -f "$LIVE"
+bash "$TEST_DIR/helper.sh" install-env >/dev/null || fail "quoted COOKIE_DOMAIN was refused"
 
 echo "install-env required settings contract: PASS"

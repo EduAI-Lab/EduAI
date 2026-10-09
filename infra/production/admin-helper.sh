@@ -174,9 +174,20 @@ case "${1:-}" in
     # COOKIE_DOMAIN sends users back to sign in on every app switch (#1935), and
     # an empty EDUAI_API_KEY makes Core reject every AI Tutor / Question Maker
     # session check (#1904). This install overwrites the live file, so refuse it.
+    # Values are read as systemd will see them: quotes stripped, so KEY="" is
+    # empty. systemd keeps the *last* duplicate while read_env_value reads the
+    # first, so a duplicated key is refused rather than checked half-way.
     for required_key in BETTER_AUTH_URL COOKIE_DOMAIN EDUAI_API_KEY; do
-      grep -Eq "^${required_key}=.+$" "$ENV_SOURCE" || die "environment is missing $required_key"
+      [ "$(grep -c "^${required_key}=" "$ENV_SOURCE" || true)" -le 1 ] \
+        || die "environment sets $required_key more than once"
+      [ -n "$(read_env_value "$ENV_SOURCE" "$required_key")" ] \
+        || die "environment is missing or has an empty $required_key"
     done
+    # Only one value works for this deployment: localhost is ignored by Core
+    # (no shared cookie, #1935) and .ok.ubc.ca leaks the session to every
+    # ok.ubc.ca site. provision-aitutor writes the same value.
+    [ "$(read_env_value "$ENV_SOURCE" COOKIE_DOMAIN)" = ".eduai.ok.ubc.ca" ] \
+      || die "environment must set COOKIE_DOMAIN=.eduai.ok.ubc.ca"
     install -o root -g eduai -m 0640 "$ENV_SOURCE" "$CORE_ENV"
     echo "Installed $CORE_ENV"
     ;;
