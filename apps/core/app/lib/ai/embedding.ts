@@ -1596,6 +1596,8 @@ export async function reEmbedCourseMaterials(
           );
           await processMaterialEmbeddings(material.id, content, {
             replace: true,
+            // Throttled by REINDEX_CONCURRENCY above, not the upload slots.
+            bypassEmbedSlot: true,
             transactionOptions: {
               maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
               timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
@@ -1676,6 +1678,13 @@ export type ProcessMaterialEmbeddingsOptions = {
   replace?: boolean;
   /** Override interactive transaction limits for a bounded concurrent reindex. */
   transactionOptions?: { maxWait: number; timeout: number };
+  /**
+   * Skip the shared upload slots (#1876). Course re-embed is an admin-run job
+   * throttled by its own `REINDEX_CONCURRENCY`; the slots exist for unplanned
+   * bursts of uploads, and sharing them would silently cap that setting at
+   * `MATERIAL_EMBED_MAX_CONCURRENT`.
+   */
+  bypassEmbedSlot?: boolean;
   /** Immutable settings used by a durable re-embed job. */
   embeddingSettings?: EffectiveEmbeddingSettings;
   /** DB-atomic durable job/owner fence for vector replacement writes. */
@@ -1811,17 +1820,17 @@ export async function processMaterialEmbeddings(
     throw new Error("No content chunks generated");
   }
 
-  const embeddings = await runWithMaterialEmbedSlot(
-    () =>
-      generateEmbeddings(chunks, material.courseId, settings, {
-        signal: options?.signal,
-        // Indexing always runs in a background job, never on a request (#1791),
-        // so it can afford to wait out a provider rate limit instead of failing
-        // the material terminally after ~1.5s.
-        retryBudget: INDEXING_RETRY_BUDGET,
-      }),
-    options?.signal,
-  );
+  const embed = () =>
+    generateEmbeddings(chunks, material.courseId, settings, {
+      signal: options?.signal,
+      // Indexing always runs in a background job, never on a request (#1791),
+      // so it can afford to wait out a provider rate limit instead of failing
+      // the material terminally after ~1.5s.
+      retryBudget: INDEXING_RETRY_BUDGET,
+    });
+  const embeddings = options?.bypassEmbedSlot
+    ? await embed()
+    : await runWithMaterialEmbedSlot(embed, options?.signal);
 
   await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
 
