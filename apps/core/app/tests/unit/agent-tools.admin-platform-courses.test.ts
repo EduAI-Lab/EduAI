@@ -40,6 +40,10 @@ vi.mock("~/lib/canvas/materials.server", () => ({
   syncSelectedCanvasMaterials: vi.fn(),
 }));
 
+vi.mock("~/lib/topics/orphaned-suggestions.server", () => ({
+  removeOrphanedSuggestions: vi.fn().mockResolvedValue(0),
+}));
+
 import { resolveAdminCourseId } from "~/lib/agent-tools/admin-context.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
@@ -49,6 +53,7 @@ import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
+import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
 import {
   createAdminCourse,
   updateAdminCourse,
@@ -309,9 +314,27 @@ describe("deleteAdminCourseMaterial", () => {
 
   it("soft-deletes the material for admin", async () => {
     mockResolvedCourseId();
+    prismaMock.$transaction.mockImplementationOnce(
+      async (fn: (client: typeof prismaMock) => Promise<void>) => fn(prismaMock),
+    );
     prismaMock.courseMaterial.update.mockResolvedValue({ id: "m1", deletedAt: new Date() });
     const result = await deleteAdminCourseMaterial(ADMIN, DELETE_OPTS);
     expect(result).toEqual({ ok: true, materialId: "m1" });
+  });
+
+  it("removes the suggestions only this material produced, in the same transaction (#1937)", async () => {
+    mockResolvedCourseId();
+    const tx = { courseMaterial: { update: vi.fn().mockResolvedValue({ id: "m1" }) } };
+    prismaMock.$transaction.mockImplementationOnce(
+      async (fn: (client: typeof tx) => Promise<void>) => fn(tx),
+    );
+
+    await deleteAdminCourseMaterial(ADMIN, DELETE_OPTS);
+
+    expect(tx.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "m1", courseId: "c1" } }),
+    );
+    expect(removeOrphanedSuggestions).toHaveBeenCalledWith("c1", tx);
   });
 });
 

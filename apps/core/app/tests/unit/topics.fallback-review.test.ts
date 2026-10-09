@@ -24,8 +24,10 @@ const prismaMock = vi.hoisted(() => ({
 const recordTopicAnalysisJobs = vi.hoisted(() => vi.fn());
 const runTopicAnalysisJob = vi.hoisted(() => vi.fn());
 const resumeStaleTopicAnalysisJobs = vi.hoisted(() => vi.fn());
+const invalidateCourseTopicNamesCache = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
+vi.mock("~/lib/courses/server", () => ({ invalidateCourseTopicNamesCache }));
 vi.mock("~/lib/topics/job.server", () => ({
   recordTopicAnalysisJobs,
   runTopicAnalysisJob,
@@ -127,6 +129,15 @@ describe("review actions only touch unreviewed suggestions", () => {
     expect(prismaMock.courseTopic.update.mock.calls[0][0].data).toEqual({
       reviewStatus: "ACCEPTED",
     });
+  });
+
+  it("approve refreshes the course chat's cached topic list (#1937)", async () => {
+    prismaMock.courseTopic.findFirst.mockResolvedValue(SUGGESTION);
+    prismaMock.courseTopic.update.mockResolvedValue(SUGGESTION);
+
+    await approveGeneratedTopic("course-1", "topic-1");
+
+    expect(invalidateCourseTopicNamesCache).toHaveBeenCalledWith("course-1");
   });
 
   it("refuses to act on a topic that is not a live suggestion", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
 import type { CourseDetailManagerCourse } from "~/components/courses/course-detail-manager-view";
@@ -333,6 +333,30 @@ describe("CourseDetailTaView", () => {
     );
     // Topic name appears in both the hero quick-chips and the Topics tab
     expect(screen.getAllByText("Variables").length).toBeGreaterThan(0);
+  });
+
+  it("names the file in the delete confirmation (#1937)", () => {
+    wrapWithPolicies(
+      <CourseDetailTaView
+        course={COURSE}
+        topics={[]}
+        materials={[{ ...MATERIAL, uploadedBy: "user-ta" }]}
+        onFilesSelect={onFilesSelect}
+        onDeleteMaterial={NOOP}
+        courseId="c1"
+        currentUserId="user-ta"
+        {...TA_PROPS}
+      />,
+      { "tas.canManageMaterials": true },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
+    expect(screen.getByText("Delete “Lecture 1”?")).toBeInTheDocument();
+    // Deletes are soft: a re-upload restores the file, so "cannot be undone" was wrong.
+    expect(screen.getByText(/re-uploading the same file restores it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be undone/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/topic suggestions that came only from this file/i),
+    ).toBeInTheDocument();
   });
 });
 

@@ -14,6 +14,7 @@ import {
   deleteCourseTopic,
   getCourseTopicsWithSources,
   getCourseTopicWithSources,
+  type TopicAudience,
 } from "~/lib/courses/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -21,9 +22,14 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 import { asText } from "~/lib/json-value";
 import { withErrorResponse } from "~/lib/errors.server";
 
-async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
+async function topicsGetResponse(
+  courseId: string,
+  topicId?: string,
+  includeDeleted = false,
+  audience: TopicAudience = "staff",
+) {
   if (topicId) {
-    const topic = await getCourseTopicWithSources(courseId, topicId, includeDeleted);
+    const topic = await getCourseTopicWithSources(courseId, topicId, includeDeleted, audience);
     if (!topic) {
       return new Response(JSON.stringify({ error: "TOPIC_NOT_FOUND" }), {
         status: 404,
@@ -36,7 +42,7 @@ async function topicsGetResponse(courseId: string, topicId?: string, includeDele
     });
   }
 
-  const topics = await getCourseTopicsWithSources(courseId, includeDeleted);
+  const topics = await getCourseTopicsWithSources(courseId, includeDeleted, audience);
   return new Response(JSON.stringify({ topics }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
@@ -138,7 +144,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         });
       }
 
-      return topicsGetResponse(courseId, topicId);
+      // #1937: AI suggestions are staff-only until an instructor approves them.
+      return topicsGetResponse(
+        courseId,
+        topicId,
+        false,
+        access.level === "student" ? "learner" : "staff",
+      );
     },
     { request },
   );

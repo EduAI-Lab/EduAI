@@ -48,6 +48,7 @@ import {
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
 import prisma from "~/lib/prisma.server";
+import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
 import { resolveAdminCourseId } from "./admin-context.server";
 import type { ToolInput } from "./tool-input";
 
@@ -333,9 +334,13 @@ export async function deleteAdminCourseMaterial(
   if ("error" in resolved) return resolved;
   const { courseId } = resolved;
 
-  await prisma.courseMaterial.update({
-    where: { id: opts.materialId, courseId },
-    data: { deletedAt: new Date() },
+  // #1937: same as the materials route — suggestions read only from this file go too.
+  await prisma.$transaction(async (tx) => {
+    await tx.courseMaterial.update({
+      where: { id: opts.materialId, courseId },
+      data: { deletedAt: new Date() },
+    });
+    await removeOrphanedSuggestions(courseId, tx);
   });
   return { ok: true, materialId: opts.materialId };
 }
