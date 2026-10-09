@@ -844,6 +844,44 @@ describe("unreviewed suggestions stay with staff and their materials (#1937)", (
       expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
     });
 
+    it("re-suggests a restored file's topics, but never one the instructor dismissed", async () => {
+      const material = await seedMaterial({
+        checksum: "sum-restored",
+        rawText: "Chapter 1 — Limits\nChapter 2 — Derivatives\n",
+      });
+      const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
+      await runTopicAnalysisJob(first!.jobId, noAi);
+      const limits = await prisma.courseTopic.findFirstOrThrow({
+        where: { courseId, name: "Chapter 1 — Limits" },
+      });
+      await dismissGeneratedTopic(courseId, limits.id, userId);
+
+      // Delete: the undismissed suggestion goes with the file.
+      await softDeleteMaterial(material.id);
+      await removeOrphanedSuggestions(courseId);
+      expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+
+      // Re-upload of the same file: the row is restored, same checksum, so the
+      // earlier analysis is COMPLETED under the same key and must be re-run.
+      await prisma.courseMaterial.update({
+        where: { id: material.id },
+        data: { deletedAt: null },
+      });
+      const [again] = await recordTopicAnalysisJobs({
+        courseId,
+        userId,
+        materialIds: [material.id],
+        rerunCompleted: true,
+      });
+      expect(again).toMatchObject({ jobId: first!.jobId, resumable: true });
+      await runTopicAnalysisJob(again.jobId, noAi);
+
+      expect((await liveTopics()).map((topic) => topic.name)).toEqual([
+        "Chapter 2 — Derivatives",
+        FALLBACK_TOPIC_NAME,
+      ]);
+    });
+
     it("runs on the transaction it is handed, alongside the material delete", async () => {
       const material = await seedMaterial({ checksum: "sum-tx", rawText: "Chapter 8" });
       const orphan = await seedSuggestion("Chapter 8 — Sets", [material.id]);

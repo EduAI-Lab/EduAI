@@ -559,6 +559,14 @@ export async function runMaterialExtraction(
               extractionLeaseUntil: null,
             },
           });
+          // #1937: deleting the material removed the suggestions only it
+          // produced, so a restore re-runs its analysis to bring them back.
+          startTopicAnalysis({
+            courseId,
+            userId,
+            materialIds: [duplicate.id],
+            rerunCompleted: true,
+          });
         } catch (embeddingError) {
           await failMaterial(
             duplicate.id,

@@ -95,6 +95,13 @@ export type StartTopicAnalysisArgs = {
   userId: string;
   materialIds: string[];
   canvasCourseId?: string | null;
+  /**
+   * Run the batch again even if it already COMPLETED (#1937). A restored
+   * material keeps its checksum, so its earlier analysis matches by key, but
+   * the delete removed the suggestions that analysis made. Safe because
+   * provisioning only creates names the course does not already hold.
+   */
+  rerunCompleted?: boolean;
 };
 
 /**
@@ -202,8 +209,12 @@ async function recordChunk(
     // nor resumable — so startTopicAnalysis would skip it, the status reader
     // would group only the new batchKey, and a sibling chunk completing would
     // hide the failure. Recycle the row into this batch and make it PENDING so
-    // it is run again and counted with its siblings.
-    if (existing.status === "FAILED") {
+    // it is run again and counted with its siblings. A restore recycles a
+    // COMPLETED row the same way (see `rerunCompleted`).
+    if (
+      existing.status === "FAILED" ||
+      (args.rerunCompleted === true && existing.status === "COMPLETED")
+    ) {
       await prisma.aiJob.update({
         where: { id: existing.id },
         data: {

@@ -1109,6 +1109,35 @@ describe("runMaterialExtraction duplicate resolution (#1791)", () => {
     );
   });
 
+  it("re-runs topic analysis for a restored material (#1937)", async () => {
+    // Deleting the material removed the suggestions only it produced, and its
+    // earlier analysis is COMPLETED under the same content key — so the restore
+    // has to ask for that run again or the file's topics never come back.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY", deletedAt: new Date() }) as never,
+    );
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(startTopicAnalysis).toHaveBeenCalledWith({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["winner-1"],
+      rerunCompleted: true,
+    });
+  });
+
+  it("does not start topic analysis when the restore's embedding fails (#1937)", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY", deletedAt: new Date() }) as never,
+    );
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(startTopicAnalysis).not.toHaveBeenCalled();
+  });
+
   it("marks an untouched winner EXISTING - nothing was added", async () => {
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
       duplicateRow({ status: "READY" }) as never,
