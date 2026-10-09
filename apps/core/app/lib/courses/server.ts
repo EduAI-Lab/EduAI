@@ -185,8 +185,11 @@ export function invalidateCourseRagSettingsCache(courseId: string): void {
 // settings cache above to avoid a DB round-trip on that critical path.
 // ---------------------------------------------------------------------------
 
+/** Live topic names split by review state, both minus the "Uncategorized" fallback. */
+export type CourseTopicNames = { accepted: string[]; suggested: string[] };
+
 type CourseTopicNamesCacheEntry = {
-  value: string[];
+  value: CourseTopicNames;
   expiresAt: number;
 };
 
@@ -205,13 +208,19 @@ export function invalidateCourseTopicNamesCache(courseId: string): void {
 }
 
 /**
- * Cached topic-name lookup for the course chat prompt: the learner view only
- * (#1937), so an unreviewed suggestion never reaches a student's chat as if it
- * were the syllabus. Cached in memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS
- * (reuses the RAG settings TTL — both are low-churn, read-heavy per-course
- * settings) to avoid a DB round-trip on every course-chat turn.
+ * Cached topic-name lookup for a course. Backed by getCourseTopics so it stays
+ * consistent with the deletedAt: null filter used everywhere else. Cached in
+ * memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (reuses the RAG settings TTL —
+ * both are low-churn, read-heavy per-course settings) to avoid a DB
+ * round-trip on every course-chat turn.
+ *
+ * Split by review state (#1936): the chat prompt lists only accepted topics,
+ * since a small chat model reads that list as course content, while the scope
+ * classifier also gets unreviewed suggestions so a course nobody has reviewed
+ * yet still has a scope. The "Uncategorized" fallback is in neither.
+ * `accepted` is the learner view (#1937), the same set as LEARNER_TOPIC_WHERE.
  */
-export async function getCourseTopicNamesCached(courseId: string): Promise<string[]> {
+export async function getCourseTopicNamesCached(courseId: string): Promise<CourseTopicNames> {
   pruneCourseTopicNamesCache();
 
   const now = Date.now();
@@ -220,12 +229,12 @@ export async function getCourseTopicNamesCached(courseId: string): Promise<strin
     return cached.value;
   }
 
-  const topics = await prisma.courseTopic.findMany({
-    where: { courseId, deletedAt: null, ...LEARNER_TOPIC_WHERE },
-    orderBy: { name: "asc" },
-    select: { name: true },
-  });
-  const value = topics.map((topic) => topic.name);
+  const topics = await getCourseTopics(courseId);
+  const value: CourseTopicNames = { accepted: [], suggested: [] };
+  for (const topic of topics) {
+    if (topic.name === FALLBACK_TOPIC_NAME) continue;
+    (topic.reviewStatus === "ACCEPTED" ? value.accepted : value.suggested).push(topic.name);
+  }
 
   courseTopicNamesCache.set(courseId, {
     value,

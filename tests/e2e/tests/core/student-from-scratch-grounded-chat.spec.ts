@@ -74,9 +74,19 @@ function coursePayload(instrId: string, code: string) {
   };
 }
 
-/** AI SDK data-stream body (same shape as `formatDataStreamPart` from `ai`). */
-function buildMockStreamBody(text: string): string {
-  return `0:${JSON.stringify(text)}\nd:${JSON.stringify({ finishReason: "stop" })}\n`;
+/**
+ * AI SDK data-stream body (same shape as `formatDataStreamPart` from `ai`): text
+ * part, then a `ragSources` message annotation (#1936), then finish. The
+ * annotation is mocked like the reply; chat-always-on-rag.route.test.ts checks
+ * that the server streams it.
+ */
+function buildMockStreamBody(text: string, ragSources: string[]): string {
+  return [
+    `0:${JSON.stringify(text)}`,
+    `8:${JSON.stringify([{ ragSources }])}`,
+    `d:${JSON.stringify({ finishReason: "stop" })}`,
+    "",
+  ].join("\n");
 }
 
 async function injectSession(page: Page, requestCtx: APIRequestContext): Promise<void> {
@@ -237,7 +247,7 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
             "Content-Type": "text/plain; charset=utf-8",
             "X-Web-Tools-Enabled": "0",
           },
-          body: buildMockStreamBody(mockedReply),
+          body: buildMockStreamBody(mockedReply, [MATERIAL_TITLE]),
         });
       });
 
@@ -247,12 +257,15 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
       await input.fill(STUDENT_QUESTION);
       await page.getByRole("button", { name: "Send message" }).click();
 
-      // Anchor on the citation line, not a bare "Source": the privacy banner says
-      // "official UBC sources", and getByText is a case-insensitive substring match.
-      await expect(page.getByText(new RegExp(`Source\\W+${MATERIAL_TITLE}`))).toBeVisible({
+      // #1936: the UI lists the ragSources annotation under the reply and hides the
+      // model's own "**Source**:" line. The annotation is mocked here (no chat LLM
+      // on this stack); the route test covers the server sending it. Exact match
+      // keeps the privacy banner's "official UBC sources" out of it.
+      await expect(page.getByText(`Sources: ${MATERIAL_TITLE}`, { exact: true })).toBeVisible({
         timeout: 20_000,
       });
       await expect(page.getByText(PLANTED_PHRASE)).toBeVisible();
+      await expect(page.getByText(`Source: ${MATERIAL_TITLE}`, { exact: true })).toHaveCount(0);
 
       // The mock proves nothing about scoping unless the request really carried this course.
       expect(chatBodies.length).toBeGreaterThan(0);

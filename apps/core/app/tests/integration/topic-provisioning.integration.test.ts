@@ -761,17 +761,22 @@ describe("unreviewed suggestions stay with staff and their materials (#1937)", (
     await seedMixedTopics();
     invalidateCourseTopicNamesCache(courseId);
 
-    expect(await getCourseTopicNamesCached(courseId)).toEqual(["Limits"]);
+    // The chat prompt lists `accepted`; the scope classifier also gets
+    // `suggested` (#1936). The "Uncategorized" fallback is in neither.
+    expect(await getCourseTopicNamesCached(courseId)).toEqual({
+      accepted: ["Limits"],
+      suggested: ["Chapter 2 — Derivatives"],
+    });
   });
 
   it("puts a suggestion into course chat as soon as it is approved", async () => {
     const { suggestion } = await seedMixedTopics();
     invalidateCourseTopicNamesCache(courseId);
-    expect(await getCourseTopicNamesCached(courseId)).toEqual(["Limits"]);
+    expect((await getCourseTopicNamesCached(courseId)).accepted).toEqual(["Limits"]);
 
     await approveGeneratedTopic(courseId, suggestion.id);
 
-    expect(await getCourseTopicNamesCached(courseId)).toEqual([
+    expect((await getCourseTopicNamesCached(courseId)).accepted).toEqual([
       "Chapter 2 — Derivatives",
       "Limits",
     ]);

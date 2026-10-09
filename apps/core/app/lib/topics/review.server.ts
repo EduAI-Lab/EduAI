@@ -208,9 +208,8 @@ export async function approveGeneratedTopic(
     data: { reviewStatus: "ACCEPTED" },
     select: { id: true, name: true },
   });
-  // #1937: course chat lists only accepted topics, so it should see this one now
-  // rather than when the cached list expires. Dismiss and merge only touch
-  // suggestions, which that list never held.
+  // Course chat only lists accepted topics (#1936), so an approval changes what
+  // the next turn's prompt should carry.
   invalidateCourseTopicNamesCache(courseId);
   return { status: "200", topic: updated };
 }
