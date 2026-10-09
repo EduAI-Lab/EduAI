@@ -2172,6 +2172,13 @@ export function CourseDetailManagerView({
                         When enabled, clearly off-topic student requests are redirected. This is off
                         by default.
                       </p>
+                      {/* #1938: without this the switch looks live while doing nothing. */}
+                      {!isEnabled("chat.courseScopeGuardrailEnabled") && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          Turned off for the whole platform in Admin → Settings, so this has no
+                          effect right now.
+                        </p>
+                      )}
                     </div>
                     <Switch
                       id="course-scope-guardrail"

@@ -179,8 +179,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COURSE_SCOPE_GUARDRAIL_ENABLED` | `false` | Server kill switch for the Layer B course-scope classifier — **ANDed** with each course's own `courseScopeGuardrailEnabled` column, so Layer B runs only when both are on. Layer A (system-prompt policy) is always on |
-| `COURSE_SCOPE_CLASSIFIER_MODEL` / `COURSE_SCOPE_MIN_CONFIDENCE` / `COURSE_SCOPE_CLASSIFIER_TIMEOUT_MS` | — / `75` / `2000` | Layer B classifier; fails open on timeout |
+| `COURSE_SCOPE_CLASSIFIER_MODEL` / `COURSE_SCOPE_MIN_CONFIDENCE` / `COURSE_SCOPE_CLASSIFIER_TIMEOUT_MS` | — / `75` / `2000` | Tuning for the Layer B course-scope classifier; fails open on timeout. Whether Layer B runs is not an env var: the course must opt in and the `chat.courseScopeGuardrailEnabled` policy (Admin → Settings, default on) must be on. `COURSE_SCOPE_GUARDRAIL_ENABLED` is no longer read (#1938) |
 | `ADHD_ASSIST_AUTO_MODEL` | `vllm:qwen3.8-27b-instruct` | Model Assist Auto is pinned to |
 | `ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY` | off | `true`/`1`/`on` restricts oversight to the deterministic pass (no model rewrite) |
 | `CANVAS_SYNC_RATE_LIMIT` / `CANVAS_SYNC_RATE_WINDOW_MS` | `1` / `30000` | Per-user Canvas course/material sync limiter |
