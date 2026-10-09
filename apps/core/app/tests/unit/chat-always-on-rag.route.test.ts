@@ -420,6 +420,55 @@ describe("Smart course RAG gate (#484)", () => {
       ]);
     });
 
+    it("streams the retrieved materials as the ragSources annotation the chat UI reads (PR #1946 review)", async () => {
+      // The e2e stack has no chat LLM, so the grounded-chat spec mocks this
+      // annotation. Here the route's real StreamData is the response body, so
+      // the server's half of that contract is checked in its wire encoding.
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+        },
+      ]);
+      type FinishEvent = {
+        text: string;
+        usage: { promptTokens: number; completionTokens: number };
+        finishReason: string;
+        response: { id: string; messages: [] };
+      };
+      vi.mocked(streamText).mockImplementationOnce((async (config: {
+        onFinish?: (event: FinishEvent) => Promise<void>;
+      }) => ({
+        toDataStreamResponse: (options: { data?: { stream: ReadableStream<Uint8Array> } }) => {
+          void config.onFinish?.({
+            text: "Lab 14 is due Nov 20.",
+            usage: { promptTokens: 5, completionTokens: 10 },
+            finishReason: "stop",
+            response: { id: "resp-1", messages: [] },
+          });
+          return new Response(options.data?.stream);
+        },
+      })) as never);
+
+      const res = await action(
+        makeRequest(
+          baseBody({
+            streaming: true,
+            messages: [{ id: "msg-1", role: "user", content: "When is Lab 14 due?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const annotations = (await res.text())
+        .split("\n")
+        .filter((line) => line.startsWith("8:"))
+        .flatMap((line) => JSON.parse(line.slice(2)) as Array<{ ragSources?: string[] }>);
+      expect(annotations.map((annotation) => annotation.ragSources)).toEqual([
+        ["ZZ-TEST-DATA301-L14-Data-Cleaning"],
+      ]);
+    });
+
     it("still replies with fixed text when a student has saved a system prompt (PR #1946 review)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();

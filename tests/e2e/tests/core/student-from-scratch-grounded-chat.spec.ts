@@ -76,7 +76,9 @@ function coursePayload(instrId: string, code: string) {
 
 /**
  * AI SDK data-stream body (same shape as `formatDataStreamPart` from `ai`): text
- * part, then the server's `ragSources` message annotation (#1936), then finish.
+ * part, then a `ragSources` message annotation (#1936), then finish. The
+ * annotation is mocked like the reply; chat-always-on-rag.route.test.ts checks
+ * that the server streams it.
  */
 function buildMockStreamBody(text: string, ragSources: string[]): string {
   return [
@@ -255,9 +257,10 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
       await input.fill(STUDENT_QUESTION);
       await page.getByRole("button", { name: "Send message" }).click();
 
-      // #1936: sources come from the server's ragSources annotation, listed under
-      // the reply; the model's own "**Source**:" line is hidden. Exact match keeps
-      // the privacy banner's "official UBC sources" out of it.
+      // #1936: the UI lists the ragSources annotation under the reply and hides the
+      // model's own "**Source**:" line. The annotation is mocked here (no chat LLM
+      // on this stack); the route test covers the server sending it. Exact match
+      // keeps the privacy banner's "official UBC sources" out of it.
       await expect(page.getByText(`Sources: ${MATERIAL_TITLE}`, { exact: true })).toBeVisible({
         timeout: 20_000,
       });
