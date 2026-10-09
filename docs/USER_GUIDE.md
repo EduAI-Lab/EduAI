@@ -92,6 +92,27 @@ Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN`
 
 Only courses you are allowed to access should appear. Admins can access all courses; unit admins are scoped to their authorized departments; other users need an appropriate course relationship.
 
+### Create a new course
+
+Platform administrators, unit administrators, and instructors can make a new course by hand:
+
+1. Open **Courses** from the sidebar (instructors see it as **My Courses**).
+2. Choose **Create course** at the top right of the page.
+3. Fill in the **Course name**, pick a **Course Code** (the department or subject, such as `CS`), and enter the **Course number** (such as `101`) and **Section**.
+4. Pick a **Start date**. The **Term** is filled in from the start date; you can't choose it separately.
+5. Administrators and unit administrators also choose the course's **Instructor**. When an instructor creates a course, they become its instructor automatically.
+6. Optionally add **AI instructions** for the course's AI features, then choose **Create course**.
+
+The new course starts as a **Draft**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
+
+Who can create where:
+
+- Unit administrators can only create courses under the course codes they are authorized for. If you have no authorized course codes, the button is disabled.
+- Instructors can create courses only while an administrator leaves **Instructors can create courses** turned on. When it is off, the button stays visible but greyed out, with a tooltip explaining why.
+- Students and teaching assistants cannot create courses.
+
+If your course already exists in Canvas, you don't need to create it by hand: fetch it from Canvas instead (see **Instructor: connect and sync Canvas**). That brings across the course details and lets you sync materials and the roster.
+
 ### Ask a course-aware question
 
 1. Open **Course Chat**.
