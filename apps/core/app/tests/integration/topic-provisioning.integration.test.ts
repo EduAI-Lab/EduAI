@@ -10,8 +10,15 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 
 import prisma from "~/lib/prisma.server";
-import { deleteCourseTopic } from "~/lib/courses/server";
+import {
+  deleteCourseTopic,
+  getCourseTopicNamesCached,
+  getCourseTopicsWithSources,
+  getCourseTopicWithSources,
+  invalidateCourseTopicNamesCache,
+} from "~/lib/courses/server";
 import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
+import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
 import {
   recordTopicAnalysisJobs,
   resumeStaleTopicAnalysisJobs,
@@ -58,6 +65,13 @@ async function seedMaterial(overrides: { id?: string; checksum: string; rawText:
       status: "READY",
       uploadedBy: userId,
     },
+  });
+}
+
+async function softDeleteMaterial(materialId: string) {
+  await prisma.courseMaterial.update({
+    where: { id: materialId },
+    data: { deletedAt: new Date() },
   });
 }
 
@@ -700,5 +714,149 @@ describe("provisionCourseTopics reads only processed material", () => {
     });
 
     expect(result).toMatchObject({ created: 0, usedSource: "none" });
+  });
+});
+
+// #1937: a suggestion is the instructor's to review, so students and course chat
+// never see one, and it does not outlive the material it was derived from.
+describe("unreviewed suggestions stay with staff and their materials (#1937)", () => {
+  async function seedSuggestion(name: string, materialIds: string[]) {
+    return prisma.courseTopic.create({
+      data: {
+        courseId,
+        name,
+        origin: "MATERIAL_HEADING",
+        reviewStatus: "SUGGESTED",
+        confidence: 0.8,
+        sources: { create: materialIds.map((materialId) => ({ materialId })) },
+      },
+    });
+  }
+
+  /** Fallback first: it is only created for a course with no live topics. */
+  async function seedMixedTopics() {
+    const material = await seedMaterial({ checksum: "sum-mixed", rawText: "Chapter 2" });
+    await ensureCourseHasTopic(courseId);
+    await prisma.courseTopic.create({ data: { courseId, name: "Limits", createdBy: userId } });
+    const suggestion = await seedSuggestion("Chapter 2 — Derivatives", [material.id]);
+    return { suggestion };
+  }
+
+  it("lists only accepted topics for learners, while staff still see everything", async () => {
+    const { suggestion } = await seedMixedTopics();
+
+    const learner = await getCourseTopicsWithSources(courseId, false, "learner");
+    expect(learner.map((topic) => topic.name)).toEqual(["Limits"]);
+    expect(await getCourseTopicWithSources(courseId, suggestion.id, false, "learner")).toBeNull();
+
+    const staff = await getCourseTopicsWithSources(courseId);
+    expect(staff.map((topic) => topic.name)).toEqual([
+      "Chapter 2 — Derivatives",
+      "Limits",
+      FALLBACK_TOPIC_NAME,
+    ]);
+  });
+
+  it("gives course chat only accepted topic names", async () => {
+    await seedMixedTopics();
+    invalidateCourseTopicNamesCache(courseId);
+
+    expect(await getCourseTopicNamesCached(courseId)).toEqual(["Limits"]);
+  });
+
+  it("puts a suggestion into course chat as soon as it is approved", async () => {
+    const { suggestion } = await seedMixedTopics();
+    invalidateCourseTopicNamesCache(courseId);
+    expect(await getCourseTopicNamesCached(courseId)).toEqual(["Limits"]);
+
+    await approveGeneratedTopic(courseId, suggestion.id);
+
+    expect(await getCourseTopicNamesCached(courseId)).toEqual([
+      "Chapter 2 — Derivatives",
+      "Limits",
+    ]);
+  });
+
+  it("stops naming a deleted material as a topic's source", async () => {
+    const kept = await seedMaterial({ checksum: "sum-kept", rawText: "Chapter 3" });
+    const gone = await seedMaterial({ checksum: "sum-gone", rawText: "Chapter 3" });
+    await seedSuggestion("Chapter 3 — Integrals", [kept.id, gone.id]);
+    await softDeleteMaterial(gone.id);
+
+    const [topic] = await getCourseTopicsWithSources(courseId);
+    expect(topic.sources).toEqual([{ materialId: kept.id, title: kept.title }]);
+    expect(topic.sourceCount).toBe(1);
+  });
+
+  describe("removeOrphanedSuggestions", () => {
+    it("hard-deletes a suggestion once every material it came from is deleted", async () => {
+      const only = await seedMaterial({ checksum: "sum-only", rawText: "Chapter 4" });
+      const other = await seedMaterial({ checksum: "sum-other", rawText: "Chapter 4" });
+      const orphan = await seedSuggestion("Chapter 4 — Series", [only.id]);
+      const shared = await seedSuggestion("Chapter 5 — Vectors", [only.id, other.id]);
+      await softDeleteMaterial(only.id);
+
+      expect(await removeOrphanedSuggestions(courseId)).toBe(1);
+
+      // Gone, not soft-deleted, so a revised upload can suggest the name again.
+      expect(await prisma.courseTopic.findUnique({ where: { id: orphan.id } })).toBeNull();
+      expect(await prisma.courseTopic.findUnique({ where: { id: shared.id } })).not.toBeNull();
+    });
+
+    it("leaves accepted topics, dismissals, used suggestions and source-less ones alone", async () => {
+      const material = await seedMaterial({ checksum: "sum-guarded", rawText: "Chapter 6" });
+      const accepted = await prisma.courseTopic.create({
+        data: {
+          courseId,
+          name: "Approved from the deleted file",
+          reviewStatus: "ACCEPTED",
+          sources: { create: [{ materialId: material.id }] },
+        },
+      });
+      const dismissed = await seedSuggestion("Dismissed by the instructor", [material.id]);
+      await prisma.courseTopic.update({
+        where: { id: dismissed.id },
+        data: { deletedAt: new Date(), deletedBy: userId },
+      });
+      const used = await seedSuggestion("Has a question on it", [material.id]);
+      await prisma.question.create({
+        data: { courseId, topicId: used.id, createdBy: userId, content: "Q?", type: "SA" },
+      });
+      // A Canvas module with no files yields a suggestion with no sources at all.
+      const sourceless = await seedSuggestion("Module with no files", []);
+      await softDeleteMaterial(material.id);
+
+      expect(await removeOrphanedSuggestions(courseId)).toBe(0);
+
+      const ids = [accepted.id, dismissed.id, used.id, sourceless.id];
+      expect(await prisma.courseTopic.count({ where: { id: { in: ids } } })).toBe(4);
+
+      await prisma.question.deleteMany({ where: { courseId } });
+    });
+
+    it("restores the Uncategorized fallback when the removal empties the course", async () => {
+      const material = await seedMaterial({ checksum: "sum-last", rawText: "Chapter 7" });
+      await seedSuggestion("Chapter 7 — Proofs", [material.id]);
+      await softDeleteMaterial(material.id);
+
+      await removeOrphanedSuggestions(courseId);
+
+      expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+    });
+
+    it("runs on the transaction it is handed, alongside the material delete", async () => {
+      const material = await seedMaterial({ checksum: "sum-tx", rawText: "Chapter 8" });
+      const orphan = await seedSuggestion("Chapter 8 — Sets", [material.id]);
+
+      await prisma.$transaction(async (tx) => {
+        await tx.courseMaterial.update({
+          where: { id: material.id },
+          data: { deletedAt: new Date() },
+        });
+        await removeOrphanedSuggestions(courseId, tx);
+      });
+
+      expect(await prisma.courseTopic.findUnique({ where: { id: orphan.id } })).toBeNull();
+    });
   });
 });
