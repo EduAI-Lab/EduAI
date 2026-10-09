@@ -25,16 +25,33 @@ export function invitableRolesFor(actorRole: string | null | undefined): readonl
 }
 
 /**
- * Least-privilege default for the Invite User role dropdown (#1940).
- * Capability order in `invitableRolesFor` is not UI order — ADMIN is listed
- * first there, which previously pre-selected Administrator.
+ * Privilege rank of each invitable role, lowest first. Checked against
+ * `Record<InvitableRole, number>` so a new role in `INVITABLE_ROLES` fails to
+ * compile until it is ranked here.
+ */
+const INVITE_ROLE_PRIVILEGE = {
+  STUDENT: 0,
+  INSTRUCTOR: 1,
+  UNIT_ADMIN: 2,
+  ADMIN: 3,
+} as const satisfies Record<InvitableRole, number>;
+
+/**
+ * Least-privilege default for the Invite User role dropdown (#1940): the
+ * lowest-ranked role the actor may invite. Capability order in
+ * `invitableRolesFor` is not UI order — ADMIN is listed first there, which
+ * previously pre-selected Administrator — so the default never depends on it.
  */
 export function defaultInviteRoleFor(
   actorRole: string | null | undefined,
 ): InvitableRole | undefined {
-  const roles = invitableRolesFor(actorRole);
-  if (roles.includes("STUDENT")) return "STUDENT";
-  return roles[0];
+  return invitableRolesFor(actorRole).reduce<InvitableRole | undefined>(
+    (lowest, role) =>
+      lowest === undefined || INVITE_ROLE_PRIVILEGE[role] < INVITE_ROLE_PRIVILEGE[lowest]
+        ? role
+        : lowest,
+    undefined,
+  );
 }
 
 export const createInvitationSchema = z

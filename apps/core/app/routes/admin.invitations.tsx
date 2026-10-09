@@ -144,11 +144,10 @@ export default function InvitationsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   // Invite form
+  const defaultRole: InviteRole = defaultInviteRoleFor(user.role) ?? "STUDENT";
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<InviteRole>(
-    (defaultInviteRoleFor(user.role) as InviteRole | undefined) ?? "STUDENT",
-  );
+  const [role, setRole] = useState<InviteRole>(defaultRole);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -172,7 +171,7 @@ export default function InvitationsPage() {
   const resetForm = () => {
     setEmail("");
     setName("");
-    setRole((defaultInviteRoleFor(user.role) as InviteRole | undefined) ?? "STUDENT");
+    setRole(defaultRole);
     setSelectedUnits([]);
     setFormError(null);
   };
