@@ -351,6 +351,9 @@ describe("CourseDetailTaView", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /delete material/i }));
     expect(screen.getByText("Delete “Lecture 1”?")).toBeInTheDocument();
+    // Deletes are soft: a re-upload restores the file, so "cannot be undone" was wrong.
+    expect(screen.getByText(/re-uploading the same file restores it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be undone/i)).not.toBeInTheDocument();
     expect(
       screen.getByText(/topic suggestions that came only from this file/i),
     ).toBeInTheDocument();

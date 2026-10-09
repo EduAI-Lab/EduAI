@@ -235,9 +235,9 @@ export function CourseDetailTaView({
               {deleteMaterialTitle ? `Delete “${deleteMaterialTitle}”?` : "Delete material?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the file and its search data. This action cannot be undone.
-              Topic suggestions that came only from this file and have not been reviewed are removed
-              too.
+              This removes the file and its search data from the course, and re-uploading the same
+              file restores it. Topic suggestions that came only from this file and have not been
+              reviewed are removed too.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
