@@ -14,6 +14,11 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 const {
   generateChunks,
   resolveMaterialChunks,
+  isEmbeddingProviderUnavailableError,
+  isTransientEmbeddingError,
+  runWithMaterialEmbedSlot,
+  resetMaterialEmbedLimitForTests,
+  MATERIAL_EMBED_DEFAULT_MAX_CONCURRENT,
   getExpectedEmbeddingDimension,
   wantsLocalEmbeddingProvider,
   resolveIvfflatProbes,
@@ -442,6 +447,132 @@ describe("resolveMaterialChunks", () => {
 
   it("uses the shared separator constant from file-processing", () => {
     expect(SEMANTIC_CHUNK_SEPARATOR).toBe("--- CHUNK SEPARATOR ---");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1876: provider-unavailable errors and the material embedding slot
+// ---------------------------------------------------------------------------
+
+describe("isEmbeddingProviderUnavailableError (#1876)", () => {
+  it("matches 500/502/504 by status, statusCode or message", () => {
+    expect(
+      isEmbeddingProviderUnavailableError(Object.assign(new Error("x"), { status: 502 })),
+    ).toBe(true);
+    expect(
+      isEmbeddingProviderUnavailableError(Object.assign(new Error("x"), { statusCode: 500 })),
+    ).toBe(true);
+    expect(isEmbeddingProviderUnavailableError(new Error("504 Gateway Timeout"))).toBe(true);
+    expect(isEmbeddingProviderUnavailableError(new Error("Internal Server Error"))).toBe(true);
+  });
+
+  it("matches a dropped connection by code or message", () => {
+    expect(
+      isEmbeddingProviderUnavailableError(Object.assign(new Error("x"), { code: "ECONNRESET" })),
+    ).toBe(true);
+    expect(isEmbeddingProviderUnavailableError(new TypeError("fetch failed"))).toBe(true);
+  });
+
+  it("finds the original error through the local provider's wrapper", () => {
+    const original = Object.assign(new Error("upstream"), { statusCode: 502 });
+    const wrapped = new Error("Local embedding provider failed (mxbai-embed-large).", {
+      cause: original,
+    });
+    expect(isEmbeddingProviderUnavailableError(wrapped)).toBe(true);
+  });
+
+  it("never matches an input the model rejected, even with a status code in it (#1931)", () => {
+    expect(
+      isEmbeddingProviderUnavailableError(
+        new Error("Local embedding provider failed. litellm.ContextWindowExceededError: 500 ..."),
+      ),
+    ).toBe(false);
+    expect(
+      isEmbeddingProviderUnavailableError(
+        Object.assign(new Error("input length exceeds the context length"), { status: 500 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not match a bad request or an unrelated error", () => {
+    expect(
+      isEmbeddingProviderUnavailableError(Object.assign(new Error("x"), { status: 400 })),
+    ).toBe(false);
+    expect(isEmbeddingProviderUnavailableError(new Error("boom"))).toBe(false);
+  });
+
+  it("makes the error transient, so indexing retries it", () => {
+    expect(isTransientEmbeddingError(new Error("502 Bad Gateway"))).toBe(true);
+    expect(isTransientEmbeddingError(new Error("ContextWindowExceededError"))).toBe(false);
+  });
+});
+
+describe("runWithMaterialEmbedSlot (#1876)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetMaterialEmbedLimitForTests();
+  });
+
+  async function peakConcurrency(tasks: number): Promise<number> {
+    let active = 0;
+    let peak = 0;
+    await Promise.all(
+      Array.from({ length: tasks }, () =>
+        runWithMaterialEmbedSlot(async () => {
+          active += 1;
+          peak = Math.max(peak, active);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          active -= 1;
+        }),
+      ),
+    );
+    return peak;
+  }
+
+  it("runs at most the default number of materials at once and finishes them all", async () => {
+    resetMaterialEmbedLimitForTests();
+    expect(await peakConcurrency(10)).toBe(MATERIAL_EMBED_DEFAULT_MAX_CONCURRENT);
+  });
+
+  it("honours MATERIAL_EMBED_MAX_CONCURRENT", async () => {
+    vi.stubEnv("MATERIAL_EMBED_MAX_CONCURRENT", "2");
+    resetMaterialEmbedLimitForTests();
+    expect(await peakConcurrency(6)).toBe(2);
+  });
+
+  it("falls back to the default for an invalid value", async () => {
+    vi.stubEnv("MATERIAL_EMBED_MAX_CONCURRENT", "0");
+    resetMaterialEmbedLimitForTests();
+    expect(await peakConcurrency(8)).toBe(MATERIAL_EMBED_DEFAULT_MAX_CONCURRENT);
+  });
+
+  it("returns each task's result", async () => {
+    resetMaterialEmbedLimitForTests();
+    await expect(runWithMaterialEmbedSlot(async () => 42)).resolves.toBe(42);
+  });
+
+  it("skips a task abandoned while it waited", async () => {
+    vi.stubEnv("MATERIAL_EMBED_MAX_CONCURRENT", "1");
+    resetMaterialEmbedLimitForTests();
+    let release!: () => void;
+    let started!: () => void;
+    const blockerStarted = new Promise<void>((r) => (started = r));
+    const blocker = runWithMaterialEmbedSlot(
+      () =>
+        new Promise<void>((r) => {
+          release = r;
+          started();
+        }),
+    );
+    await blockerStarted;
+    const controller = new AbortController();
+    const run = vi.fn(async () => "ran");
+    const waiting = runWithMaterialEmbedSlot(run, controller.signal);
+    controller.abort(new Error("lease lost"));
+    release();
+    await blocker;
+    await expect(waiting).rejects.toThrow();
+    expect(run).not.toHaveBeenCalled();
   });
 });
 

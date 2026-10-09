@@ -74,8 +74,8 @@ type Invitation = {
 };
 
 const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
-  { value: "INSTRUCTOR", label: "Professor (Instructor)" },
   { value: "STUDENT", label: "Student" },
+  { value: "INSTRUCTOR", label: "Professor (Instructor)" },
 ];
 
 const ROLE_LABEL = {
@@ -135,7 +135,7 @@ export default function UnitAdminInvitationsPage() {
   // Invite form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<InviteRole>("INSTRUCTOR");
+  const [role, setRole] = useState<InviteRole>("STUDENT");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -171,7 +171,7 @@ export default function UnitAdminInvitationsPage() {
   const resetForm = () => {
     setEmail("");
     setName("");
-    setRole("INSTRUCTOR");
+    setRole("STUDENT");
     setFormError(null);
   };
 
