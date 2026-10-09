@@ -372,7 +372,7 @@ model AIInteraction {
   chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
-  user             User                     @relation(fields: [userId], references: [id])
+  user             User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([serverId])
   @@index([chatId])
@@ -648,7 +648,8 @@ model Question {
   id              String                   @id @default(cuid())
   courseId        String
   topicId         String
-  createdBy       String
+  /** Null once the author's account is deleted; the question stays in the course bank (#1959). */
+  createdBy       String?
   content         String
   type            QuestionType
   difficulty      QuestionDifficulty       @default(MEDIUM)
@@ -663,7 +664,7 @@ model Question {
   updatedAt       DateTime                 @updatedAt
   course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   topic           CourseTopic              @relation(fields: [topicId], references: [id])
-  creator         User                     @relation(fields: [createdBy], references: [id])
+  creator         User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
   secondaryTopics QuestionSecondaryTopic[]
 
   @@index([courseId, topicId, testable])
@@ -899,19 +900,20 @@ model CanvasRosterMember {
   email           String?
   displayName     String?
   role            EnrollmentRole
-  syncedByUserId  String
+  /** Null once the syncing user's account is deleted; the roster row stays (#1959). */
+  syncedByUserId  String?
   isActive        Boolean        @default(true)
   lastSeenAt      DateTime
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  syncedBy        User           @relation(fields: [syncedByUserId], references: [id])
+  syncedBy        User?          @relation(fields: [syncedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([courseId, canvasUserId, role])
   @@index([email])
   @@index([sisUserIdLookup])
   @@index([canvasUserId])
-  // #1369 deferred: `syncedByUserId` has the default `Restrict`, so a user delete
+  // #1369 deferred: `syncedByUserId` is `SetNull` (#1959), so a user delete
   // seq-scans here. This table grows with every roster sync, making it the likeliest
   // of the deferred candidates to need an index later.
   @@map("canvas_roster_members")
