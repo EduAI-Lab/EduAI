@@ -104,8 +104,11 @@ test.describe("Penny help assistant (#1816)", () => {
       await page.getByRole("button", { name: BUBBLE_NAME }).click();
       await expect(page.getByRole("dialog", { name: "Penny" }).getByText(ANSWER)).toBeVisible();
 
-      // On a chat screen the only trigger is the labelled header button.
-      await page.goto(`${CORE_URL}/instructor/chat`);
+      // On a chat screen the only trigger is the labelled header button. Use
+      // `/chat`: this instructor teaches no course, so `/instructor/chat` would
+      // redirect back to the dashboard and its floating bubble.
+      await page.goto(`${CORE_URL}/chat`);
+      await expect(page).toHaveURL(`${CORE_URL}/chat`);
       const triggers = page.getByRole("button", { name: BUBBLE_NAME });
       await expect(triggers).toHaveCount(1, { timeout: 15_000 });
       await expect(triggers).toContainText("Ask Penny");
