@@ -26,22 +26,6 @@ vi.mock("../hooks/useQmPermissions", () => ({
   }),
 }));
 
-vi.mock("../contexts/GuidedTourContext", () => ({
-  useGuidedTour: () => ({
-    startTour: vi.fn(),
-    registerOnTourEnd: vi.fn(),
-    registerStepAction: vi.fn(),
-    isActive: false,
-    activeTourId: null,
-  }),
-}));
-
-vi.mock("../components/layout/QmLayoutContext", () => ({
-  useQmLayout: () => ({
-    setGuidedTourHandler: vi.fn(),
-  }),
-}));
-
 vi.mock("../services/questionService", () => ({
   questionService: {
     getQuestionsPage: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),

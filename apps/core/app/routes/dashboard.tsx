@@ -1,16 +1,22 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, PageHeading } from "@eduai/ui";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  PageHeading,
+  useAutoStartTour,
+} from "@eduai/ui";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { useTourQueryParam } from "~/components/tour/use-tour-query-param";
 import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
 import {
   DASHBOARD_CONFIG,
   DashboardBody,
   type EffectiveRole,
 } from "~/components/dashboard/dashboard-view-config";
-import { ProductTour } from "~/components/tour/product-tour";
-import { DASHBOARD_TOUR_STEPS, DASHBOARD_TOUR_STORAGE_KEY } from "~/components/tour/tour-steps";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { getDashboardCanvasIntegration } from "~/lib/canvas/integration.server";
 import type { CanvasIntegrationPublic } from "~/lib/canvas/schemas";
@@ -140,6 +146,8 @@ function DashboardContent({
 
 export default function Page() {
   const { user, isTA, dashboard, canvasIntegration } = useLoaderData<typeof loader>();
+  useAutoStartTour("dashboard");
+  useTourQueryParam("dashboard");
 
   return (
     <CoreAppShell
@@ -153,7 +161,6 @@ export default function Page() {
           </BreadcrumbList>
         </Breadcrumb>
       }
-      tour={<ProductTour steps={DASHBOARD_TOUR_STEPS} storageKey={DASHBOARD_TOUR_STORAGE_KEY} />}
     >
       <DashboardContent
         user={user}

@@ -621,7 +621,7 @@ test.describe("/help — role-based section filtering", () => {
     }
   });
 
-  test("Student: same two gated sections hidden; general nav (tour link, courses/chat links) works", async ({
+  test("Student: same two gated sections hidden; general nav (tour button, courses/chat links) works", async ({
     page,
     playwright,
   }) => {
@@ -634,8 +634,12 @@ test.describe("/help — role-based section filtering", () => {
       await expect(page.locator("#materials")).toHaveCount(0);
       await expect(page.locator("#administration")).toHaveCount(0);
 
-      const tourLink = page.getByRole("link", { name: /replay guided tour/i });
-      await expect(tourLink).toHaveAttribute("href", "/dashboard?tour=1");
+      // The tour is started in-app by the shared engine (#1754), not via `?tour=1`.
+      await page.getByRole("button", { name: /replay guided tour/i }).click();
+      await expect(page).toHaveURL(/\/dashboard$/);
+      const tour = page.getByTestId("tour-overlay");
+      await expect(tour).toBeVisible({ timeout: 15_000 });
+      await expect(tour).toContainText("Welcome to EduAI");
     } finally {
       await ctx.dispose();
     }

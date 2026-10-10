@@ -15,7 +15,7 @@ import { Toaster, ThemeProvider, ThemeSyncInitializer, NotFoundState } from "@ed
 import { AuthProvider } from "./contexts/AuthContext";
 import { QmAppGate } from "./components/auth/QmAppGate";
 import { QmAppLayout } from "./components/layout/QmAppLayout";
-import { GuidedTourProvider } from "./contexts/GuidedTourContext";
+import { QmTourProvider } from "./tour/QmTourProvider";
 import { BugReportProvider } from "./contexts/BugReportContext";
 
 // Pages are lazy so each route becomes its own chunk. Importing them statically
@@ -149,7 +149,7 @@ function App() {
       <ThemeSyncInitializer />
       <AuthProvider>
         <Router>
-          <GuidedTourProvider>
+          <QmTourProvider>
             <QmAppGate>
               <BugReportProvider>
                 <div className="min-h-screen bg-background">
@@ -215,7 +215,7 @@ function App() {
                 </div>
               </BugReportProvider>
             </QmAppGate>
-          </GuidedTourProvider>
+          </QmTourProvider>
         </Router>
       </AuthProvider>
     </ThemeProvider>

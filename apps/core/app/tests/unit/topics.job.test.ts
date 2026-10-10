@@ -276,6 +276,54 @@ describe("recordTopicAnalysisJobs", () => {
     );
   });
 
+  it("recycles a COMPLETED chunk when asked to re-run it, as a restore does (#1937)", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-a" }]);
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-done-a",
+      status: "COMPLETED",
+      startedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    prismaMock.aiJob.update.mockResolvedValue({ id: "job-done-a" });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["m1"],
+      rerunCompleted: true,
+    });
+
+    expect(result).toEqual([{ jobId: "job-done-a", created: false, resumable: true }]);
+    expect(prismaMock.aiJob.update.mock.calls[0][0].data).toMatchObject({
+      status: "PENDING",
+      completedAt: null,
+      startedAt: null,
+    });
+  });
+
+  it("leaves a COMPLETED chunk alone on an ordinary resync (#1937)", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-a" }]);
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-done-a",
+      status: "COMPLETED",
+      startedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["m1"],
+    });
+
+    expect(result).toEqual([{ jobId: "job-done-a", created: false, resumable: false }]);
+    expect(prismaMock.aiJob.update).not.toHaveBeenCalled();
+  });
+
   it("re-runs a recycled FAILED chunk when the wider corpus changed", async () => {
     // Two chunks: unchanged A (prior FAILED) and new B (fresh PENDING).
     const materials = Array.from({ length: MAX_MATERIALS_PER_JOB + 1 }, (_, index) => ({

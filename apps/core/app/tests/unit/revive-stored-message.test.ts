@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { messageToText, reviveStoredMessage } from "~/lib/chat/revive-message.server";
+import { encodeTextDataUrl } from "~/lib/chat/chat-attachments";
 
 /**
  * Regression tests for chat-history restore rendering. The DB has accumulated
@@ -277,5 +278,94 @@ describe("reviveStoredMessage", () => {
       wasAutoRouted: false,
       courseScopeRedirect: true,
     });
+  });
+});
+
+describe("reviveStoredMessage — attachments (#1902)", () => {
+  const attachment = {
+    name: "notes.md",
+    contentType: "text/plain",
+    url: encodeTextDataUrl("body"),
+  };
+
+  it("keeps a user message's text attachments", () => {
+    const revived = reviveStoredMessage({
+      messageId: "u1",
+      role: "user",
+      content: {
+        id: "u1",
+        role: "user",
+        content: "see file",
+        experimental_attachments: [attachment],
+      },
+    });
+    expect(revived.experimental_attachments).toEqual([attachment]);
+  });
+
+  it("drops malformed or image attachments", () => {
+    const revived = reviveStoredMessage({
+      messageId: "u1",
+      role: "user",
+      content: {
+        id: "u1",
+        role: "user",
+        content: "x",
+        experimental_attachments: [
+          { name: "p.png", contentType: "image/png", url: "data:image/png;base64,AA" },
+        ],
+      },
+    });
+    expect(revived).not.toHaveProperty("experimental_attachments");
+  });
+
+  it("never adds attachments to an assistant message", () => {
+    const revived = reviveStoredMessage({
+      messageId: "a1",
+      role: "assistant",
+      content: {
+        id: "a1",
+        role: "assistant",
+        content: "ok",
+        experimental_attachments: [attachment],
+      },
+    });
+    expect(revived).not.toHaveProperty("experimental_attachments");
+  });
+
+  it("keeps only valid text attachments, dropping ones with invalid decodable URLs", () => {
+    const revived = reviveStoredMessage({
+      messageId: "u2",
+      role: "user",
+      content: {
+        id: "u2",
+        role: "user",
+        content: "mixed attachments",
+        experimental_attachments: [
+          attachment,
+          { name: "bad.txt", contentType: "text/plain", url: "https://x" },
+        ],
+      },
+    });
+    expect(revived.experimental_attachments).toEqual([attachment]);
+  });
+});
+
+describe("reviveStoredMessage — course-material sources (#1936)", () => {
+  it("carries an assistant turn's ragSources back to the client", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m1",
+      role: "assistant",
+      content: { content: "answer", metadata: { ragSources: ["301_1_Intro"] } },
+    });
+    expect(revived.metadata).toEqual({ ragSources: ["301_1_Intro"] });
+  });
+
+  it("does not attach ragSources to a user turn", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m2",
+      role: "user",
+      content: { content: "question", metadata: { ragSources: ["301_1_Intro"] } },
+    });
+    expect(revived.metadata).toBeUndefined();
   });
 });

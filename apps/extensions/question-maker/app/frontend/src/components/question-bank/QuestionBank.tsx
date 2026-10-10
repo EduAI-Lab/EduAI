@@ -146,14 +146,14 @@ export const QuestionBank = ({
               variant="outline"
               onClick={onUploadQuestions}
               className="gap-1.5"
-              data-tour-id="upload-questions-btn"
+              data-tour="upload-questions-btn"
             >
               <IconUpload className="size-4" />
               <span className="hidden sm:inline">Upload</span>
             </Button>
           )}
           {!disableAdd && (
-            <Button onClick={onAddQuestion} className="gap-1.5" data-tour-id="add-question-btn">
+            <Button onClick={onAddQuestion} className="gap-1.5" data-tour="add-question-btn">
               <IconPlus className="size-4" />
               Add question
             </Button>
@@ -269,7 +269,7 @@ export const QuestionBank = ({
               ? "grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3"
               : "flex flex-col gap-3",
           )}
-          data-tour-id="question-list"
+          data-tour="question-list"
         >
           {visibleVariants.map((entry, index) => (
             <QuestionCard

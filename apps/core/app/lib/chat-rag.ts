@@ -5,6 +5,7 @@ import {
   TOOL_RAG_MAX_CHARS_PER_CHUNK,
 } from "~/lib/ai/tool-output-limits";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { isImageAttachment } from "~/lib/chat/chat-attachments";
 
 // Re-export the shared tool-output limits so existing importers (and tests) that
 // reach for them via `~/lib/chat-rag` keep working after the extraction (#260).
@@ -35,7 +36,7 @@ export const RAG_ANSWER_RULES = `Course grounding rules (follow strictly):
 4. If the excerpts are insufficient, say what they cover and what is missing; do not guess.
 5. If excerpts conflict, say they conflict; do not pick one version silently.
 6. Prefer the excerpts below over earlier assistant messages in the chat if they disagree.
-7. Cite the **Source** header when stating a fact from the materials.`;
+7. Do not write source names, file names, or a Sources line; the app lists the materials used under your answer.`;
 
 export type BuildRagAnswerInstructionsOptions = {
   /** Tool-calling path may fall back to getInformation when excerpts are thin. */
@@ -183,6 +184,7 @@ export type ChatSessionMessage = {
   role?: string;
   content?: unknown;
   parts?: unknown;
+  experimental_attachments?: unknown;
 };
 
 function safeJsonLength<T>(value: T): number {
@@ -283,7 +285,12 @@ const imagePartSchema = z
       (part.image_url !== undefined && part.image_url !== null),
   );
 
-/** True when the message includes image parts (AI SDK content/parts arrays). */
+const attachmentLikeSchema = z.object({
+  contentType: z.string().optional().catch(undefined),
+  url: z.string().optional().catch(undefined),
+});
+
+/** True when the message includes image parts or image attachments (AI SDK content/parts/attachments). */
 export function messageHasImageParts(message?: ChatSessionMessage): boolean {
   if (!message) return false;
   for (const value of [message.content, message.parts]) {
@@ -291,7 +298,8 @@ export function messageHasImageParts(message?: ChatSessionMessage): boolean {
       return true;
     }
   }
-  return false;
+  const attachments = z.array(attachmentLikeSchema).safeParse(message.experimental_attachments);
+  return attachments.success && attachments.data.some((a) => isImageAttachment(a));
 }
 
 function totalMessageChars<T extends ChatSessionMessage>(
@@ -782,37 +790,56 @@ export function capToolResultsInMessages<T extends ChatSessionMessage>(
   });
 }
 
-/** Top-similarity first; stops at chunk count and char budget for local LLM prefill. */
-export function buildCappedRagContextText(
+const RAG_EXCERPT_SEPARATOR = "\n\n---\n\n";
+
+function ragExcerptHeader(hit: HybridRagHit): string {
+  return `**Source**: ${hit.materialTitle || "Course Material"}\n`;
+}
+
+/**
+ * The excerpts that fit the prompt: top-similarity first, stopping at the
+ * chunk count and char budget, the last one possibly truncated. Exported so the
+ * coverage check and the turn's source list (#1936) see exactly what the model
+ * sees — a course's `ragTopK` can return more hits than make it in.
+ */
+export function selectCappedRagExcerpts(
   hits: HybridRagHit[],
   maxChunks: number,
   maxChars: number,
-): string {
-  const slice = hits.slice(0, maxChunks);
-  const sep = "\n\n---\n\n";
-  const parts: string[] = [];
+): HybridRagHit[] {
+  const excerpts: HybridRagHit[] = [];
   let total = 0;
 
-  for (const item of slice) {
-    const header = `**Source**: ${item.materialTitle || "Course Material"}\n`;
-    const body = item.content;
-    const overhead = parts.length === 0 ? 0 : sep.length;
-    const fullLen = header.length + body.length;
+  for (const item of hits.slice(0, maxChunks)) {
+    const header = ragExcerptHeader(item);
+    const overhead = excerpts.length === 0 ? 0 : RAG_EXCERPT_SEPARATOR.length;
+    const fullLen = header.length + item.content.length;
 
     if (total + overhead + fullLen <= maxChars) {
-      parts.push(header + body);
+      excerpts.push(item);
       total += overhead + fullLen;
       continue;
     }
 
     const room = maxChars - total - overhead - header.length;
     if (room > HYBRID_RAG_MIN_TRUNCATE_CHARS) {
-      parts.push(`${header}${body.slice(0, room)}…`);
+      excerpts.push({ ...item, content: `${item.content.slice(0, room)}…` });
     }
     break;
   }
 
-  const joined = parts.join(sep);
+  return excerpts;
+}
+
+/** Top-similarity first; stops at chunk count and char budget for local LLM prefill. */
+export function buildCappedRagContextText(
+  hits: HybridRagHit[],
+  maxChunks: number,
+  maxChars: number,
+): string {
+  const joined = selectCappedRagExcerpts(hits, maxChunks, maxChars)
+    .map((excerpt) => ragExcerptHeader(excerpt) + excerpt.content)
+    .join(RAG_EXCERPT_SEPARATOR);
   return joined ? wrapUntrustedReferenceContent(joined) : joined;
 }
 

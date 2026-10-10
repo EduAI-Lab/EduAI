@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const scheduleMock = vi.hoisted(() => vi.fn());
 const reapExpiredCronRunsMock = vi.hoisted(() => vi.fn());
@@ -139,5 +139,54 @@ describe("cron scheduler initialization", () => {
     rescheduleJob("core-handler-job", "*/30 * * * *");
 
     expect(scheduleMock).not.toHaveBeenCalled();
+  });
+
+  describe("with CRON_WEB_SCHEDULER=false (production: the worker owns scheduling)", () => {
+    beforeEach(() => {
+      vi.stubEnv("CRON_WEB_SCHEDULER", "false");
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("does not schedule SCRIPT jobs or touch the database from the web server", async () => {
+      const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      try {
+        await ensureCronSchedulerRunning();
+        await ensureCronSchedulerRunning();
+      } finally {
+        consoleLog.mockRestore();
+      }
+
+      expect(scheduleMock).not.toHaveBeenCalled();
+      expect(reapExpiredCronRunsMock).not.toHaveBeenCalled();
+      expect(overrideFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("rescheduleJob does not register a timer for a SCRIPT job", () => {
+      rescheduleJob("backup-nightly", "0 4 * * *");
+
+      expect(scheduleMock).not.toHaveBeenCalled();
+    });
+
+    it("accepts the value case-insensitively", async () => {
+      vi.stubEnv("CRON_WEB_SCHEDULER", " FALSE ");
+      const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      try {
+        await ensureCronSchedulerRunning();
+      } finally {
+        consoleLog.mockRestore();
+      }
+
+      expect(scheduleMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("rescheduleJob still schedules a SCRIPT job when CRON_WEB_SCHEDULER is unset", () => {
+    scheduleMock.mockReturnValue({ stop: vi.fn() });
+
+    rescheduleJob("backup-nightly", "0 4 * * *");
+
+    expect(scheduleMock).toHaveBeenCalledWith("0 4 * * *", expect.any(Function), expect.anything());
   });
 });

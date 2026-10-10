@@ -17,7 +17,13 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { commandPalette, sidebarHrefs, sidebarLink, userMenuButton } from "../helpers/at-ui";
+import {
+  commandPalette,
+  openHelpTourEntry,
+  sidebarHrefs,
+  sidebarLink,
+  userMenuButton,
+} from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 
@@ -113,23 +119,28 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   });
 
-  test("the guided tour is offered on both screens the unit admin works from", async ({ page }) => {
+  test("the help modal offers the unit tour, and says when it starts elsewhere", async ({
+    page,
+  }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    // `canAccessUnitAdminTour` admits UNIT_ADMIN on /dashboard and the
-    // instructor shell — the two routes `unit-admin-orientation` actually
-    // visits. The learner-voiced student tours stay out of scope for this role.
-    await expect(page.getByRole("button", { name: "Take Tour" })).toBeVisible();
+    // `resolveHelpTourId` gives UNIT_ADMIN the staff-voiced unit tour; the
+    // learner-voiced student tours stay out of scope for this role. On the two
+    // routes `unit-admin-orientation` visits it starts in place…
+    await expect(await openHelpTourEntry(page)).toBeVisible();
+    await expect(page.getByTestId("page-help-dialog")).not.toContainText("starts on another page");
+    await page.keyboard.press("Escape");
 
     await page.goto(`${AI_TUTOR_URL}/instructor`, { waitUntil: "domcontentloaded" });
     await expect(page.getByText("Browse your courses and manage their content.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Take Tour" })).toBeVisible();
+    await expect(await openHelpTourEntry(page)).toBeVisible();
+    await page.keyboard.press("Escape");
 
-    // …and not on routes the tour never navigates to, where starting it would
-    // immediately yank the reader off the page they are on.
+    // …and elsewhere the modal says up front that it starts on another page.
     await page.goto(`${AI_TUTOR_URL}/settings`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Take Tour|Stop Tour/ })).toHaveCount(0);
+    await expect(await openHelpTourEntry(page)).toBeVisible();
+    await expect(page.getByTestId("page-help-dialog")).toContainText("starts on another page");
   });
 
   test("the guided tour runs, and its copy is written for a unit admin", async ({ page }) => {
@@ -138,27 +149,19 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
 
     // Driven, not merely offered: the point of this row is that the tour a unit
     // admin gets is the staff one, not a learner tour retitled.
-    await page.getByRole("button", { name: "Take Tour" }).click();
+    await (await openHelpTourEntry(page)).click();
 
-    const popover = page.locator(".driver-popover");
-    await expect(popover).toBeVisible({ timeout: 15_000 });
-    await expect(popover).toContainText("A quick tour of your unit");
-    await expect(page.getByRole("button", { name: "Stop Tour" })).toBeVisible();
+    const tour = page.getByTestId("tour-overlay");
+    await expect(tour).toBeVisible({ timeout: 15_000 });
+    await expect(tour).toContainText("A quick tour of your unit");
 
     // Step 2 lands on the unit rollup — proof the tour advances through its own
     // anchors rather than sitting on the button that started it.
-    await popover.getByRole("button", { name: "Continue" }).click();
-    await expect(popover).toContainText("Your unit at a glance");
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expect(tour).toContainText("Your unit at a glance");
 
-    // Closed from the popover, not from the sidebar's "Stop Tour" button: while
-    // a tour is running driver.js lays a full-viewport overlay `<svg>` over the
-    // page, and it intercepts pointer events — so a click on the sidebar button
-    // underneath never lands and Playwright retries until the test times out.
-    // The popover's own close control sits above that overlay and is wired to
-    // the same `stopTour()` (`TourProvider.tsx`), so this exercises the same
-    // exit path a reader actually has while a step is open.
-    await popover.getByRole("button", { name: "Close tour" }).click();
-    await expect(popover).toHaveCount(0);
+    await tour.getByRole("button", { name: "Close tour" }).click();
+    await expect(tour).toHaveCount(0);
   });
 
   test("the header reports AI service availability", async ({ page }) => {

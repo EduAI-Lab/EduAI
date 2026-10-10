@@ -75,7 +75,7 @@ export function QuestionAIControls({
   return (
     <div
       className="relative overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card p-5 space-y-4 shadow-[var(--shadow-2xs)]"
-      data-tour-id="aq-eduai-panel"
+      data-tour="aq-eduai-panel"
     >
       {/* Colourful top-accent strip — signals the AI surface */}
       <div
@@ -107,7 +107,7 @@ export function QuestionAIControls({
       </div>
 
       {/* AI Model selector — folded in from Advanced Options */}
-      <div className="space-y-1.5" data-tour-id="aq-model-picker">
+      <div className="space-y-1.5" data-tour="aq-model-picker">
         <Label
           htmlFor="ai-model"
           className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
@@ -175,7 +175,7 @@ export function QuestionAIControls({
         </div>
       )}
 
-      <div className="space-y-1.5" data-tour-id="aq-ai-prompt">
+      <div className="space-y-1.5" data-tour="aq-ai-prompt">
         <Label
           htmlFor="ai-prompt"
           className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
@@ -271,7 +271,7 @@ export function QuestionAIControls({
         onClick={onGenerate}
         disabled={disabled || isGenerating || !value.generationPrompt.trim()}
         className="w-full gap-2 border-0 bg-gradient-to-r from-secondary to-accent text-white shadow-[var(--shadow-sm)] transition-opacity hover:opacity-95 disabled:opacity-50"
-        data-tour-id="aq-ai-generate"
+        data-tour="aq-ai-generate"
       >
         <IconSparkles className="size-4" aria-hidden />
         {isGenerating

@@ -31,6 +31,7 @@ import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
+import { CoreTourProvider } from "~/components/tour/core-tour-provider";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
 import { hasValidServiceKey } from "~/lib/auth/guards.server";
@@ -333,7 +334,9 @@ export default function App({ loaderData }: Route.ComponentProps) {
         <PolicyProvider policies={loaderData?.policies ?? {}}>
           <ThemeSyncInitializer />
           <BugReportCaptureProvider>
-            <Outlet />
+            <CoreTourProvider>
+              <Outlet />
+            </CoreTourProvider>
           </BugReportCaptureProvider>
         </PolicyProvider>
       </AssistiveUiProvider>

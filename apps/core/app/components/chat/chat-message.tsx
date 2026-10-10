@@ -22,6 +22,8 @@ import { shouldApplyAssistiveDisplayTransform } from "~/components/chat/chat-pro
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
+import { stripModelSourceCitations } from "~/lib/chat/material-citations";
+import { ChatAttachmentChips } from "./chat-attachment-chips";
 // Streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
 // Every Core surface that renders markdown reaches ChatMessage, so importing here
 // keeps the stylesheet off routes that render no markdown. KaTeX's sheet is not
@@ -39,6 +41,11 @@ export interface ChatMessageProps {
   showContinue?: boolean;
   onContinue?: () => void;
   continueDisabled?: boolean;
+  /**
+   * Course materials retrieved for this turn, from server metadata (#1936).
+   * Listed under the reply; undefined when the turn ran no course retrieval.
+   */
+  materialSources?: string[];
 }
 
 /**
@@ -104,8 +111,12 @@ function ChatMessageBody({
   showContinue = false,
   onContinue,
   continueDisabled = false,
+  materialSources,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
+  // Only turns the server tagged with retrieved sources (course retrieval ran)
+  // lose model-written citations; admin and general chat keep their text as-is.
+  const stripsCitations = message.role === "assistant" && materialSources !== undefined;
 
   const handleCopy = async () => {
     // Extract text content from all text parts
@@ -117,7 +128,10 @@ function ChatMessageBody({
       coerceMessageContent(message.content) ||
       "";
 
-    await navigator.clipboard.writeText(textContent);
+    // Copy what the student sees: no invented citation on a course turn (#1936).
+    await navigator.clipboard.writeText(
+      stripsCitations ? stripModelSourceCitations(textContent) : textContent,
+    );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -179,7 +193,13 @@ function ChatMessageBody({
   // If no parts, fallback to message content — coerce to string regardless of DB shape
   const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
   const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
-  const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+  // #1936: a model's own "(Source: …)" can name a file that doesn't exist; the
+  // retrieved materials are listed below the reply from metadata instead.
+  const normalizedContent = isUser
+    ? rawTextContent
+    : normalizeMathMarkdown(
+        stripsCitations ? stripModelSourceCitations(rawTextContent) : rawTextContent,
+      );
   // #699: relabel Assistive policy headings at display time only (non-user).
   // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
   // defer full reorder + diagram widgets until structure is safe (idle stream,
@@ -209,6 +229,16 @@ function ChatMessageBody({
     return (
       <div className={cn("flex justify-end mb-4", highlightClass)}>
         <div className="rounded-2xl bg-muted/60 px-4 py-3 max-w-[80%] min-w-0">
+          <ChatAttachmentChips
+            className="mb-2"
+            items={(message.experimental_attachments ?? [])
+              .filter((attachment) => attachment.contentType === "text/plain")
+              .map((attachment, index) => ({
+                id: `${message.id}-attachment-${index}`,
+                name: attachment.name ?? "attachment",
+                status: "ready" as const,
+              }))}
+          />
           <div
             className={cn(
               "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
@@ -301,6 +331,12 @@ function ChatMessageBody({
                 </Button>
               </div>
             )}
+
+            {materialSources && materialSources.length > 0 ? (
+              <p className="text-xs text-muted-foreground px-1">
+                Sources: {materialSources.join(", ")}
+              </p>
+            ) : null}
 
             {answeredByLabel ? (
               <p className="text-xs text-muted-foreground px-1">Answered by {answeredByLabel}</p>

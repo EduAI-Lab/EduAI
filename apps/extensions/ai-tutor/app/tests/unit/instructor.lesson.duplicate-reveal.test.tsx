@@ -78,11 +78,6 @@ vi.mock("~/components/AddCourseTopicsButton", () => ({ default: () => null }));
 vi.mock("~/components/bug-report/useBugReport", () => ({
   useBugReport: () => ({ setBugContext: vi.fn() }),
 }));
-vi.mock("~/components/TourButton", () => ({ default: () => null }));
-vi.mock("~/components/TourProvider", () => ({
-  TourProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useAppTour: () => ({}),
-}));
 
 import InstructorLessonBuilder from "~/routes/instructor.lesson";
 

@@ -82,6 +82,44 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
     expect(count).toBe(1);
   });
 
+  it("returns the row, not an error, when a duplicate request claims it before its creator", async () => {
+    // Forces the CI race behind the test above: the creator commits PENDING,
+    // a same-key duplicate claims it first, and the creator's claim matches
+    // nothing. The creator must report the running row, not "failed to claim".
+    const realUpdateMany = prisma.courseReEmbedJob.updateMany.bind(prisma.courseReEmbedJob);
+    const spy = vi.spyOn(prisma.courseReEmbedJob, "updateMany").mockImplementation((async (
+      args: any,
+    ) => {
+      if (args?.data?.status === "RUNNING") {
+        await prisma.courseReEmbedJob.update({
+          where: { id: args.where.id },
+          data: {
+            status: "RUNNING",
+            leaseOwner: "duplicate-request",
+            leaseHeartbeatAt: new Date(),
+            leaseExpiresAt: new Date(Date.now() + 60_000),
+          },
+        });
+      }
+      return realUpdateMany(args);
+    }) as typeof prisma.courseReEmbedJob.updateMany);
+
+    try {
+      const result = await startReEmbedJob(courseAId, { idempotencyKey: "lost-claim" });
+      expect(result.created).toBe(true);
+      expect(result.job.status).toBe("RUNNING");
+      const row = await prisma.courseReEmbedJob.findUniqueOrThrow({ where: { id: result.job.id } });
+      expect(row.leaseOwner).toBe("duplicate-request");
+      await expect(
+        prisma.courseReEmbedJob.count({
+          where: { courseId: courseAId, idempotencyKey: "lost-claim" },
+        }),
+      ).resolves.toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("compensates (no orphan PENDING) when the claim boundary fails after create", async () => {
     const realUpdateMany = prisma.courseReEmbedJob.updateMany.bind(prisma.courseReEmbedJob);
     const spy = vi.spyOn(prisma.courseReEmbedJob, "updateMany").mockImplementation(((args: any) => {

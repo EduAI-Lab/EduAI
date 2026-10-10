@@ -132,6 +132,7 @@ export function CourseDetailTaView({
     setUploadOpen(true);
   };
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
+  const deleteMaterialTitle = materials.find((m) => m.id === deleteMaterialId)?.title;
   const [deletingMaterial, setDeletingMaterial] = useState(false);
   const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -230,9 +231,13 @@ export function CourseDetailTaView({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete material?</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">
+              {deleteMaterialTitle ? `Delete “${deleteMaterialTitle}”?` : "Delete material?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the file and its search data. This action cannot be undone.
+              This removes the file and its search data from the course, and re-uploading the same
+              file restores it. Topic suggestions that came only from this file and have not been
+              reviewed are removed too.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

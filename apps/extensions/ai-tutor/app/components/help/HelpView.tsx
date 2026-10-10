@@ -89,7 +89,7 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
         "The app-grid button in the sidebar switches you to another EduAI app you have access to, without logging in again.",
         "The sun/moon toggle in the header switches between light and dark themes.",
         '"Report a bug" in the header captures a screenshot and your console/network logs alongside a description, so issues are easy to triage.',
-        'Look for the sparkle "Take Tour" button in the header while browsing your courses for a guided walkthrough — open it any time you want a refresher.',
+        'Click the (?) button in the top-right corner of any page for help with that page. Learners can start a guided walkthrough from there, or from the sparkle "Take Tour" button in the sidebar.',
       ],
     },
     {

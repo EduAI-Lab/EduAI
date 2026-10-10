@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 
 import prisma from "~/lib/prisma.server";
 
-type DbClient = typeof prisma | Prisma.TransactionClient;
+export type DbClient = typeof prisma | Prisma.TransactionClient;
 
 /**
  * The reserved name of the zero-topic fallback (#1624). Question Maker requires

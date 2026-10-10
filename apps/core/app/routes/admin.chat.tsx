@@ -249,9 +249,9 @@ export default function AdminChatPage() {
   // Dismiss a stale error banner as soon as the admin tries again, rather
   // than leaving the previous turn's failure on screen next to a new reply.
   const handleChatSubmit = useCallback<typeof handleSubmit>(
-    (event) => {
+    (event, options) => {
       setChatError(null);
-      handleSubmit(event);
+      handleSubmit(event, options);
     },
     [handleSubmit],
   );

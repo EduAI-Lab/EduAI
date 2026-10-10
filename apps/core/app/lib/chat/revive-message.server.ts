@@ -1,11 +1,14 @@
 import type { Prisma } from "@prisma/client";
 import type { Message } from "ai";
+import { z } from "zod";
 import {
   adhdAssistFromMessage,
   courseScopeRedirectFromMessage,
+  ragSourcesFromMessage,
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
+import { decodeTextDataUrl } from "~/lib/chat/chat-attachments";
 import { asPresentText, asText, jsonObjectSchema, parseJsonText } from "~/lib/json-value";
 import type { JsonObject, JsonValue } from "~/lib/json-value";
 
@@ -16,7 +19,15 @@ export type StoredChatMessageMetadata = {
   hitLongOutputCap?: boolean;
   courseScopeRedirect?: boolean;
   adhdAssist?: boolean;
+  ragSources?: string[];
 };
+
+/** The only attachment shape a restored message carries back to the client (#1902). */
+const storedTextAttachmentSchema = z.object({
+  name: z.string(),
+  contentType: z.literal("text/plain"),
+  url: z.string(),
+});
 
 /**
  * A stored message revived for the client.
@@ -128,6 +139,7 @@ export function reviveStoredMessage(record: {
   // that case — a stored `false` must survive revive as `false`, not be
   // dropped like the other flags below (#1671).
   const adhdAssist = role === "assistant" ? adhdAssistFromMessage(parsed) : undefined;
+  const ragSources = role === "assistant" ? ragSourcesFromMessage(parsed) : undefined;
   // `hitLongOutputCap` is owned by this module rather than chat-message-metadata:
   // it is only ever read back out of a stored row, never written to a live turn.
   const hitLongOutputCap =
@@ -142,6 +154,7 @@ export function reviveStoredMessage(record: {
   if (hitLongOutputCap) metadata.hitLongOutputCap = true;
   if (courseScopeRedirect) metadata.courseScopeRedirect = true;
   if (adhdAssist !== undefined) metadata.adhdAssist = adhdAssist;
+  if (ragSources !== undefined) metadata.ragSources = ragSources;
 
   const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
@@ -156,5 +169,25 @@ export function reviveStoredMessage(record: {
   // A turn with nothing worth recording carries no `metadata` key at all, so a
   // restored transcript matches the shape a fresh turn produces.
   if (Object.keys(metadata).length > 0) revived.metadata = metadata;
+
+  // #1902: restore the chips a student saw when they sent the message. Only
+  // text attachments that still pass the wire contract come back; anything
+  // else would be rejected by /api/chat if the client ever resent it.
+  const storedAttachments = parsed.experimental_attachments;
+  if (role === "user" && Array.isArray(storedAttachments)) {
+    const kept = storedAttachments.flatMap((item) => {
+      const attachment = storedTextAttachmentSchema.safeParse(item);
+      if (!attachment.success) return [];
+      const data = attachment.data;
+      // Validate name length (1-255 after trimming)
+      const trimmedName = data.name.trim();
+      if (trimmedName.length === 0 || trimmedName.length > 255) return [];
+      // Validate URL can be decoded
+      if (decodeTextDataUrl(data.url) === null) return [];
+      return [data];
+    });
+    if (kept.length > 0) revived.experimental_attachments = kept;
+  }
+
   return revived;
 }

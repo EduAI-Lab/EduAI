@@ -25,19 +25,25 @@ vi.mock("~/lib/ai/embedding", () => ({
   // MATERIAL_EMBED_RATE_LIMITED rather than a flat MATERIAL_EMBED_FAILED.
   isTransientEmbeddingError: vi.fn().mockReturnValue(false),
   isEmbeddingTimeoutError: vi.fn().mockReturnValue(false),
+  // #1876: a server error or dropped connection is recorded as provider-unavailable.
+  isEmbeddingProviderUnavailableError: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock("~/lib/ai/file-processing", () => ({
-  extractUploadedFileContent: vi.fn(),
-  // A real class, not a stub: the job distinguishes capacity failures with
-  // `instanceof` so it can release the row for a retry instead of failing it.
-  PdfExtractionBusyError: class PdfExtractionBusyError extends Error {
-    constructor(message = "PDF extraction busy") {
-      super(message);
-      this.name = "PdfExtractionBusyError";
-    }
-  },
-}));
+vi.mock("~/lib/ai/file-processing", async () => {
+  // A real subclass of the real base, not a stub: the job distinguishes capacity
+  // failures with `instanceof ExtractionBusyError` so it can release the row for a
+  // retry instead of failing it.
+  const { ExtractionBusyError } = await import("~/lib/ai/extraction-busy-error");
+  return {
+    extractUploadedFileContent: vi.fn(),
+    PdfExtractionBusyError: class PdfExtractionBusyError extends ExtractionBusyError {
+      constructor(message = "PDF extraction busy") {
+        super(message);
+        this.name = "PdfExtractionBusyError";
+      }
+    },
+  };
+});
 
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
@@ -51,12 +57,15 @@ vi.mock("~/lib/topics/job.server", () => ({
 
 import prisma from "~/lib/prisma.server";
 import {
+  isEmbeddingProviderUnavailableError,
   isEmbeddingTimeoutError,
   isTransientEmbeddingError,
   processMaterialEmbeddings,
 } from "~/lib/ai/embedding";
 import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import { startTopicAnalysis } from "~/lib/topics/job.server";
+import { logSystemError } from "~/lib/logging.server";
 import {
   EXTRACTION_LEASE_MS,
   MAX_EXTRACTION_ATTEMPTS,
@@ -116,6 +125,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
   vi.mocked(isTransientEmbeddingError).mockReturnValue(false);
   vi.mocked(isEmbeddingTimeoutError).mockReturnValue(false);
+  vi.mocked(isEmbeddingProviderUnavailableError).mockReturnValue(false);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
     bytes: Buffer.from("hello"),
@@ -344,6 +354,20 @@ describe("sweepStrandedMaterialExtractions", () => {
     await sweepStrandedMaterialExtractions(CTX);
 
     expect(startTopicAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("records which material failed in the system log (#1931)", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    expect(logSystemError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "MATERIAL_EMBED_FAILED",
+        details: { materialId: "mat-1" },
+      }),
+    );
   });
 
   it("keeps going after one row fails so a single bad upload cannot stall the sweep", async () => {
@@ -886,6 +910,9 @@ describe("claimRestoreTarget", () => {
 
 describe("resolveFailureCode", () => {
   it("names a capacity failure rather than blaming the file", () => {
+    expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new ExtractionBusyError())).toBe(
+      "MATERIAL_EXTRACT_BUSY",
+    );
     expect(resolveFailureCode("MATERIAL_EXTRACT_FAILED", new PdfExtractionBusyError())).toBe(
       "MATERIAL_EXTRACT_BUSY",
     );
@@ -895,6 +922,14 @@ describe("resolveFailureCode", () => {
     vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
     expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("429"))).toBe(
       "MATERIAL_EMBED_RATE_LIMITED",
+    );
+  });
+
+  it("reports a server error or dropped connection as unavailable, not rate-limited (#1876)", () => {
+    vi.mocked(isTransientEmbeddingError).mockReturnValue(true);
+    vi.mocked(isEmbeddingProviderUnavailableError).mockReturnValue(true);
+    expect(resolveFailureCode("MATERIAL_EMBED_FAILED", new Error("502 Bad Gateway"))).toBe(
+      "MATERIAL_EMBED_PROVIDER_UNAVAILABLE",
     );
   });
 
@@ -976,6 +1011,34 @@ describe("runMaterialExtraction failure recording (#1791)", () => {
     expect((data.extractionLeaseUntil as Date).getTime()).toBeLessThan(Date.now());
     expect(updatesFor("mat-1")).not.toContainEqual(expect.objectContaining({ status: "FAILED" }));
   });
+
+  it("releases an image whose vision host was unreachable, like a busy PDF worker (#1903 review)", async () => {
+    // Not a PdfExtractionBusyError: the base class is what the job tests for.
+    vi.mocked(extractUploadedFileContent).mockRejectedValue(
+      new ExtractionBusyError("Vision host unavailable: connect ECONNREFUSED"),
+    );
+
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    const [data] = updatesFor("mat-1");
+    expect(data.status).toBe("PROCESSING");
+    expect(data.failureCode).toBe("MATERIAL_EXTRACT_BUSY");
+    expect(updatesFor("mat-1")).not.toContainEqual(expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("still fails an image whose content yielded nothing, since a retry cannot help", async () => {
+    vi.mocked(extractUploadedFileContent).mockRejectedValue(
+      new Error(
+        "Failed to process file a.png: No readable text or description could be extracted from this image",
+      ),
+    );
+
+    await runMaterialExtraction("mat-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(updatesFor("mat-1")).toContainEqual(
+      expect.objectContaining({ status: "FAILED", failureCode: "MATERIAL_EXTRACT_FAILED" }),
+    );
+  });
 });
 
 describe("runMaterialExtraction lease heartbeat (#1796 review)", () => {
@@ -1056,6 +1119,35 @@ describe("runMaterialExtraction duplicate resolution (#1791)", () => {
         duplicateResolution: "RESTORED",
       }),
     );
+  });
+
+  it("re-runs topic analysis for a restored material (#1937)", async () => {
+    // Deleting the material removed the suggestions only it produced, and its
+    // earlier analysis is COMPLETED under the same content key — so the restore
+    // has to ask for that run again or the file's topics never come back.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY", deletedAt: new Date() }) as never,
+    );
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(startTopicAnalysis).toHaveBeenCalledWith({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["winner-1"],
+      rerunCompleted: true,
+    });
+  });
+
+  it("does not start topic analysis when the restore's embedding fails (#1937)", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(
+      duplicateRow({ status: "READY", deletedAt: new Date() }) as never,
+    );
+    vi.mocked(processMaterialEmbeddings).mockRejectedValueOnce(new Error("embed failed"));
+
+    await runMaterialExtraction("receipt-1", uploadFile(), "course-1", "user-1", CTX);
+
+    expect(startTopicAnalysis).not.toHaveBeenCalled();
   });
 
   it("marks an untouched winner EXISTING - nothing was added", async () => {

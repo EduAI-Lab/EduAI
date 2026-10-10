@@ -104,7 +104,7 @@ question/variant/assessment authoring data and reaches everything else through C
     `/courses/:courseId/assessments/:assessmentId/variants`, `/library`, `/settings`, `/help`,
     `/admin/bug-reports` (ADMIN only). No `/login` route exists — `QmAppGate` blocks the whole app tree
     until Core's `/auth/me` resolves.
-- State/providers: `contexts/AuthContext.tsx`, `GuidedTourContext.tsx`, `BugReportContext.tsx`.
+- State/providers: `contexts/AuthContext.tsx`, `BugReportContext.tsx`, `tour/QmTourProvider.tsx`.
 - API client: `services/api.ts` (axios, `withCredentials: true`, redirects to Core login on a
   session-expired `401`).
 - Domain services: `services/authService.ts`, `questionService.ts`, `assessmentService.ts`,
@@ -155,9 +155,11 @@ question/variant/assessment authoring data and reaches everything else through C
   - `routes/eduai.js` for the EduAI-facing course/topic proxy endpoints.
 
 ### 3) Guided tour
-- UI: triggered from the top nav and Help page; `contexts/GuidedTourContext.tsx` + `tour/`.
-- Behavior: can auto-start; navigates between `/courses` and a course's `?tab=` as part of tour step
-  actions.
+- UI: launched from the header (?) help button and the Help page; steps live in `tour/qmTours.ts`
+  and run on the shared `@eduai/ui` tour engine (the same one Core and AI Tutor use).
+- Behavior: auto-starts once for a new user; follows the first course card (`data-tour-route`) from
+  `/courses` into that course's `?tab=questions` and `?tab=assessments`. Started inside a course, it
+  tours that course.
 
 ### 4) Questions and variants (manual + AI)
 - UI: `pages/QuestionComposerPage.tsx` (modes `create` / `variant` / `edit`, driven by the route).

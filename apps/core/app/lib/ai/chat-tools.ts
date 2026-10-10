@@ -64,7 +64,11 @@ export function buildToolCallingSystemPrompt(options: {
 When the user asks for reviews, opinions, recent updates, or external information, call webSearch after checking course materials. After webSearch, call fetchPage on promising sources before answering.`
     : "";
 
-  const webCitation = options.webToolsEnabled ? " Always cite URLs for web results." : "";
+  // #1936: course material titles are listed under the answer from retrieval
+  // metadata, so the model is told not to name them; web URLs it still cites.
+  const citationLine = options.webToolsEnabled
+    ? "Do not cite course material titles; the app lists the materials used. Always cite URLs for web results."
+    : "Do not cite course material titles; the app lists the materials used.";
 
   return `${options.basePrompt}
 
@@ -73,7 +77,7 @@ ${webLines ? `\n${webLines}` : ""}
 
 When answering questions:
 1. ${ragLine}
-${options.webToolsEnabled ? "2. Use web tools only when the question clearly needs external or up-to-date information.\n3. You may call tools multiple times in sequence if needed.\n4. Cite course material titles for RAG results.${webCitation}" : "2. You may call getInformation multiple times if needed.\n3. Cite course material titles for RAG results."}
+${options.webToolsEnabled ? `2. Use web tools only when the question clearly needs external or up-to-date information.\n3. You may call tools multiple times in sequence if needed.\n4. ${citationLine}` : `2. You may call getInformation multiple times if needed.\n3. ${citationLine}`}
 
 ${courseLine}
 

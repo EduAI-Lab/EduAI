@@ -16,6 +16,7 @@ const chatMessageMetadataSchema = z.object({
   wasAutoRouted: z.boolean().optional().catch(undefined),
   courseScopeRedirect: z.boolean().optional().catch(undefined),
   adhdAssist: z.boolean().optional().catch(undefined),
+  ragSources: z.array(z.string()).optional().catch(undefined),
 });
 
 export type ChatMessageMetadata = z.infer<typeof chatMessageMetadataSchema>;
@@ -36,7 +37,7 @@ function readMetadata(message: MessageWithMetadata): ChatMessageMetadata {
 /**
  * The metadata already on a message, preserved verbatim.
  *
- * The writers below own three fields but must not drop whatever else a message
+ * The writers below own their fields but must not drop whatever else a message
  * carries, so the existing slot is kept as an open JSON object rather than
  * narrowed to {@link ChatMessageMetadata}.
  *
@@ -93,6 +94,15 @@ export function adhdAssistFromMessage(message: MessageWithMetadata): boolean | u
   return readMetadata(message).adhdAssist;
 }
 
+/**
+ * Read the course materials retrieved for this assistant turn (#1936): the
+ * titles shown under the message, taken from retrieval rather than from the
+ * model's own text. Absent for turns that ran no course retrieval.
+ */
+export function ragSourcesFromMessage(message: MessageWithMetadata): string[] | undefined {
+  return readMetadata(message).ragSources;
+}
+
 /** A message whose metadata slot now holds this module's fields alongside whatever it already carried. */
 type WithChatMessageMetadata<T> = T & { metadata: JsonObject & ChatMessageMetadata };
 
@@ -135,6 +145,20 @@ export function withCourseScopeRedirectMetadata<T extends object>(
     metadata: {
       ...existingMetadata(message),
       courseScopeRedirect: true,
+    },
+  };
+}
+
+/** Attach the course materials retrieved for this assistant turn (#1936). */
+export function withRagSourcesMetadata<T extends object>(
+  message: T,
+  ragSources: string[],
+): WithChatMessageMetadata<T> {
+  return {
+    ...message,
+    metadata: {
+      ...existingMetadata(message),
+      ragSources,
     },
   };
 }

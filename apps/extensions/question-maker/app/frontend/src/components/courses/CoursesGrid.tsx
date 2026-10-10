@@ -32,8 +32,6 @@ export type CoursesGridProps = {
   onSelectCourse: (course: Course) => void;
   emptyHint?: string;
   showDepartment?: boolean;
-  /** Course card to highlight for guided tour step 1 */
-  tourHighlightCourseId?: number | null;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
   filters?: ReactNode;
   /** Optional role-specific predicate applied before the search box. */
@@ -51,12 +49,9 @@ export function CoursesGrid({
   onSelectCourse,
   emptyHint,
   showDepartment = false,
-  tourHighlightCourseId = null,
   filters,
   matchesFilter,
 }: CoursesGridProps) {
-  const highlightId = tourHighlightCourseId ?? (courses.length > 0 ? courses[0].id : null);
-
   const filterGroups: CourseFilterGroup<Course>[] = [
     buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
     ...(showDepartment
@@ -93,7 +88,11 @@ export function CoursesGrid({
         }}
         role="button"
         tabIndex={0}
-        data-tour-id={course.id === highlightId ? "course-select" : undefined}
+        // Every card is a tour target: the guided tour (#1754) spotlights the
+        // first one on screen and follows it into its workspace, so it matches
+        // CourseListView's ordering (current term first) and any active filter.
+        data-tour="course-select"
+        data-tour-route={`/courses/${course.id}`}
         data-course-id={course.id}
         className="cursor-pointer rounded-[var(--radius-xl)] focus:outline-none focus:ring-2 focus:ring-primary"
       >
@@ -130,12 +129,14 @@ export function CoursesGrid({
       filters={filters}
       gridClassName="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
       emptyState={
-        <EmptyState
-          bare={false}
-          icon={<IconBooks className="size-6" />}
-          title="No courses yet"
-          description={emptyHint || "Courses you can access from EduAI Core will appear here."}
-        />
+        <div data-tour="qm-courses-empty">
+          <EmptyState
+            bare={false}
+            icon={<IconBooks className="size-6" />}
+            title="No courses yet"
+            description={emptyHint || "Courses you can access from EduAI Core will appear here."}
+          />
+        </div>
       }
       noResultsState={
         <EmptyState

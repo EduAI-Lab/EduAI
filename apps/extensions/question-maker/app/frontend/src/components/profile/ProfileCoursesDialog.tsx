@@ -259,7 +259,7 @@ export const ProfileCoursesDialog = ({
           ) : (
             <div
               className="max-h-80 space-y-3 overflow-y-auto pr-1"
-              data-tour-id="profile-course-list"
+              data-tour="profile-course-list"
             >
               {courseOptions.map((option) => {
                 const isAdded = existingCoreCourseIdSet.has(option.id);
@@ -320,7 +320,7 @@ export const ProfileCoursesDialog = ({
                             <span className="text-sm font-semibold text-foreground">
                               {option.code} · {option.name}
                             </span>
-                            <Badge variant="outline" data-tour-id="profile-added-badge">
+                            <Badge variant="outline" data-tour="profile-added-badge">
                               Already added
                             </Badge>
                           </div>
@@ -377,7 +377,7 @@ export const ProfileCoursesDialog = ({
             <Button
               onClick={handleSave}
               disabled={isSaving || isLoading || !!resyncingCoreId}
-              data-tour-id="profile-add-button"
+              data-tour="profile-add-button"
             >
               {isSaving ? "Linking…" : "Add selected courses"}
             </Button>

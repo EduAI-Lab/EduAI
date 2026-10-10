@@ -1,6 +1,6 @@
 /**
  * Unit tests for `QmLayoutProvider` / `useQmLayout` (#1546): the layout-scoped
- * context for the profile dialog's open state and the guided-tour handler slot.
+ * context for the profile dialog's open state.
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
@@ -15,13 +15,12 @@ describe("QmLayoutContext", () => {
     spy.mockRestore();
   });
 
-  it("starts with the profile dialog closed and no guided tour handler", () => {
+  it("starts with the profile dialog closed", () => {
     const { result } = renderHook(() => useQmLayout(), {
       wrapper: ({ children }) => <QmLayoutProvider>{children}</QmLayoutProvider>,
     });
 
     expect(result.current.profileOpen).toBe(false);
-    expect(result.current.guidedTourHandler).toBeNull();
   });
 
   it("openProfile / closeProfile toggle profileOpen", () => {
@@ -34,18 +33,5 @@ describe("QmLayoutContext", () => {
 
     act(() => result.current.closeProfile());
     expect(result.current.profileOpen).toBe(false);
-  });
-
-  it("setGuidedTourHandler stores and can clear the handler", () => {
-    const { result } = renderHook(() => useQmLayout(), {
-      wrapper: ({ children }) => <QmLayoutProvider>{children}</QmLayoutProvider>,
-    });
-
-    const handler = vi.fn();
-    act(() => result.current.setGuidedTourHandler(handler));
-    expect(result.current.guidedTourHandler).toBe(handler);
-
-    act(() => result.current.setGuidedTourHandler(null));
-    expect(result.current.guidedTourHandler).toBeNull();
   });
 });

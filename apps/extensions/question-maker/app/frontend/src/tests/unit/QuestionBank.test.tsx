@@ -191,7 +191,7 @@ describe("QuestionBank", () => {
     fireEvent.click(screen.getByText("Oldest first"));
 
     expect(onSortChange).toHaveBeenCalledWith("oldest");
-    const list = document.querySelector('[data-tour-id="question-list"]') as HTMLElement;
+    const list = document.querySelector('[data-tour="question-list"]') as HTMLElement;
     const cards = within(list).getAllByText(/^(First|Second)$/);
     expect(cards[0]).toHaveTextContent("First");
   });

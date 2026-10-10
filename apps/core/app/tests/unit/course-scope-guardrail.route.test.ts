@@ -121,7 +121,6 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 
 vi.mock("~/lib/ai/course-scope-guardrail", () => ({
   MAX_COURSE_SCOPE_HISTORY_TURNS: 6,
-  courseScopeGuardrailEnabled: vi.fn().mockReturnValue(true),
   buildCourseScopePolicyPrompt: vi.fn(
     (context: { courseName: string }) => `SCOPE:${context.courseName}`,
   ),
@@ -130,6 +129,7 @@ vi.mock("~/lib/ai/course-scope-guardrail", () => ({
 }));
 
 import { streamText } from "ai";
+import { findRelevantContent } from "~/lib/ai/embedding";
 vi.mock("~/lib/api-keys/access.server", () => ({
   // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
   // admin active so this suite's admin-mode paths stay admitted.
@@ -144,6 +144,8 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseScopeVerdict } from "~/lib/ai/course-scope-guardrail";
+import { getPolicy } from "~/lib/policy.server";
+import { encodeTextDataUrl } from "~/lib/chat/chat-attachments";
 import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -224,6 +226,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
   vi.mocked(isActiveAdminUser).mockResolvedValue(true);
+  // #1938: the platform switch is an admin policy, on by default; every other
+  // policy (e.g. web tools) stays off as before.
+  vi.mocked(getPolicy).mockImplementation(
+    async (key: string) => key === "chat.courseScopeGuardrailEnabled",
+  );
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   // getCourseTopicNamesCached (lib/courses/server.ts) is a module-level cache
   // shared across tests in this file — clear it so each test's
@@ -256,9 +263,14 @@ beforeEach(() => {
     code: "COSC101",
   } as never);
   vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
-    { name: "Functions" },
-    { name: "Variables" },
+    { name: "Functions", reviewStatus: "ACCEPTED" },
+    { name: "Variables", reviewStatus: "ACCEPTED" },
   ] as never);
+  // Retrieval covers the base question, so turns that pass the guardrail reach
+  // the model instead of the #1936 no-coverage reply.
+  vi.mocked(findRelevantContent).mockResolvedValue([
+    { content: "Assignment 2 is due Friday.", similarity: 0.7, materialTitle: "Syllabus" },
+  ]);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
   vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
@@ -433,6 +445,39 @@ describe("POST /api/chat — course-scope guardrail", () => {
     expect(res.status).toBe(200);
   });
 
+  it("skips the classifier when an admin turned the platform policy off, but keeps Layer A (#1938)", async () => {
+    // The course toggle is on (the default fixture); only the platform switch is off.
+    vi.mocked(getPolicy).mockImplementation(async () => false);
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(vi.mocked(streamText).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("SCOPE:Intro to Programming"),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("fails open with Layer A when the platform policy read fails (#1938 review)", async () => {
+    // e.g. the system_config read throws while the policy cache is expired.
+    vi.mocked(getPolicy).mockImplementation(async (key: string) => {
+      if (key === "chat.courseScopeGuardrailEnabled") throw new Error("db unavailable");
+      return false;
+    });
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(vi.mocked(streamText).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("SCOPE:Intro to Programming"),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("redirects an off-topic turn instead of calling streamText, and persists the redirect", async () => {
     vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
       blocked: true,
@@ -555,8 +600,8 @@ describe("POST /api/chat — course-scope guardrail", () => {
       name: null,
     } as never);
     vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
-      { name: "Functions" },
-      { name: "Variables" },
+      { name: "Functions", reviewStatus: "ACCEPTED" },
+      { name: "Variables", reviewStatus: "ACCEPTED" },
     ] as never);
 
     const res = await action(
@@ -571,5 +616,268 @@ describe("POST /api/chat — course-scope guardrail", () => {
     expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
     expect(prisma.courseTopic.findMany).toHaveBeenCalled();
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/chat — file attachments (#1902)", () => {
+  const textAttachment = (name: string, text: string) => ({
+    name,
+    contentType: "text/plain",
+    url: encodeTextDataUrl(text),
+  });
+
+  it("sends fenced attachment text to the model and persists the original message", async () => {
+    mockStream();
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "with-file",
+              role: "user",
+              content: "Summarise my notes",
+              parts: [{ type: "text", text: "Summarise my notes" }],
+              experimental_attachments: [textAttachment("notes.md", "Functions return values.")],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    const sent = JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0]?.messages);
+    expect(sent).toContain('<student_attachment name=\\"notes.md\\">');
+    expect(sent).toContain("Functions return values.");
+    expect(sent).not.toContain("experimental_attachments");
+    const persisted = JSON.stringify(vi.mocked(prisma.chatMessage.createMany).mock.calls[0]?.[0]);
+    expect(persisted).toContain("experimental_attachments");
+  });
+
+  it("classifies course scope on the typed text only", async () => {
+    mockStream();
+    await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "with-file",
+              role: "user",
+              content: "Summarise my notes",
+              experimental_attachments: [textAttachment("notes.md", "UNRELATED BANANA TEXT")],
+            },
+          ],
+        }),
+      ),
+    );
+    expect(resolveCourseScopeVerdict).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Summarise my notes" }),
+    );
+  });
+
+  it("rejects an image attachment with the existing image error before persisting", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "img",
+              role: "user",
+              content: "what is this",
+              experimental_attachments: [
+                { name: "p.png", contentType: "image/png", url: "data:image/png;base64,AAAA" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "IMAGE_MESSAGE_UNSUPPORTED",
+      message: "Course Chat does not support image messages.",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects an image attachment on a non-last incoming turn before persisting", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "a",
+              role: "user",
+              content: "x",
+              experimental_attachments: [
+                { name: "p.png", contentType: "image/png", url: "data:image/png;base64,AAAA" },
+              ],
+            },
+            { id: "b", role: "user", content: "hi" },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "IMAGE_MESSAGE_UNSUPPORTED" });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects four attachments with ATTACHMENT_TOO_MANY before persisting", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "many",
+              role: "user",
+              content: "q",
+              experimental_attachments: ["1", "2", "3", "4"].map((n) =>
+                textAttachment(`${n}.txt`, n),
+              ),
+            },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: "ATTACHMENT_TOO_MANY" });
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects attachments over the char budget with 413", async () => {
+    process.env.CHAT_MAX_ATTACHMENT_CHARS = "10";
+    try {
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "big",
+                role: "user",
+                content: "q",
+                experimental_attachments: [textAttachment("a.txt", "x".repeat(11))],
+              },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(413);
+      expect(await res.json()).toMatchObject({ code: "ATTACHMENT_BUDGET_EXCEEDED" });
+    } finally {
+      delete process.env.CHAT_MAX_ATTACHMENT_CHARS;
+    }
+  });
+
+  it("still includes a stored earlier attachment on a follow-up turn", async () => {
+    mockStream();
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValueOnce([
+      {
+        messageId: "earlier",
+        role: "user",
+        content: {
+          id: "earlier",
+          role: "user",
+          content: "Here are my notes",
+          experimental_attachments: [textAttachment("notes.md", "Stored attachment body")],
+        },
+      },
+    ] as never);
+    await action(
+      makeRequest(
+        baseBody({ messages: [{ id: "follow", role: "user", content: "Explain section 2" }] }),
+      ),
+    );
+    const sent = JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0]?.messages);
+    expect(sent).toContain("Stored attachment body");
+    expect(sent).toContain('<student_attachment name=\\"notes.md\\">');
+    expect(sent).not.toContain("experimental_attachments");
+    expect(sent).not.toContain("data:text/plain");
+  });
+
+  it("collapses an attachment-bearing message to string content with no parts", async () => {
+    mockStream();
+    const big = "z".repeat(50_000);
+    process.env.CHAT_MAX_ATTACHMENT_CHARS = "100000";
+    try {
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "with-file",
+                role: "user",
+                content: "Summarise my notes",
+                parts: [{ type: "text", text: "Summarise my notes" }],
+                experimental_attachments: [textAttachment("big.txt", big)],
+              },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const messages = vi.mocked(streamText).mock.calls[0]?.[0]?.messages ?? [];
+      const user = messages.find((m) => m.role === "user");
+      expect(user).toBeDefined();
+      expect(user).not.toHaveProperty("parts");
+      expect(user?.content).toEqual(expect.any(String));
+      expect(user?.content).toContain("Summarise my notes");
+      expect(user?.content).toContain("<student_attachment");
+    } finally {
+      delete process.env.CHAT_MAX_ATTACHMENT_CHARS;
+    }
+  });
+
+  it("budget-truncates the collapsed content when it overflows the context window", async () => {
+    mockStream();
+    const big = "z".repeat(400_000);
+    process.env.CHAT_MAX_ATTACHMENT_CHARS = "500000";
+    try {
+      await action(
+        makeRequest(
+          baseBody({
+            messages: [
+              {
+                id: "with-file",
+                role: "user",
+                content: "Summarise my notes",
+                parts: [{ type: "text", text: "Summarise my notes" }],
+                experimental_attachments: [textAttachment("big.txt", big)],
+              },
+            ],
+          }),
+        ),
+      );
+      const messages = vi.mocked(streamText).mock.calls[0]?.[0]?.messages ?? [];
+      const user = messages.find((m) => m.role === "user");
+      expect(user).not.toHaveProperty("parts");
+      expect(String(user?.content).length).toBeLessThan(big.length);
+    } finally {
+      delete process.env.CHAT_MAX_ATTACHMENT_CHARS;
+    }
+  });
+
+  it("retrieves course context with the typed text only, not the attachment", async () => {
+    mockStream();
+    await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "with-file",
+              role: "user",
+              content: "Explain functions in Python please",
+              experimental_attachments: [textAttachment("notes.md", "UNRELATED BANANA TEXT")],
+            },
+          ],
+        }),
+      ),
+    );
+    const queries = vi.mocked(findRelevantContent).mock.calls.map(([query]) => query);
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      expect(query).not.toContain("BANANA");
+    }
   });
 });

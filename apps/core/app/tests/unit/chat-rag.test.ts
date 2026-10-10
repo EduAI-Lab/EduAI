@@ -31,6 +31,30 @@ function hit(content: string, title = "Lecture 1"): HybridRagHit {
 }
 
 describe("messageHasImageParts", () => {
+  it("detects an image smuggled in via experimental_attachments", () => {
+    expect(
+      messageHasImageParts({
+        role: "user",
+        content: "look",
+        experimental_attachments: [
+          { name: "p.png", contentType: "image/png", url: "https://x/p.png" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not treat text attachments as images", () => {
+    expect(
+      messageHasImageParts({
+        role: "user",
+        content: "look",
+        experimental_attachments: [
+          { name: "a.txt", contentType: "text/plain", url: "data:text/plain;base64,eA==" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it("detects image parts in content and parts arrays", () => {
     expect(messageHasImageParts({ role: "user", content: "hello" })).toBe(false);
     expect(
@@ -56,7 +80,7 @@ describe("buildRagAnswerInstructions", () => {
     const text = buildRagAnswerInstructions();
     expect(text).toContain(RAG_COURSE_GROUNDING_INSTRUCTION);
     expect(text).toContain("do not support that premise");
-    expect(text).toContain("Cite the **Source** header");
+    expect(text).toContain("Do not write source names, file names, or a Sources line");
     expect(text).not.toMatch(/Morocco|FIFA/i);
   });
 

@@ -63,7 +63,7 @@ settles.
 | Database | PostgreSQL with Prisma ORM |
 | Authentication | Delegated to EduAI Core (`POST /api/sessions/validate`, cookie-forwarded) — no local login, JWT, or OAuth client of its own |
 | AI Integration | EduAI Core's `/completion` endpoint (non-streaming), supporting Google Gemini, OpenAI, OpenCode, and UBC-hosted models |
-| UI Components | Radix UI primitives via `@eduai/ui`, Tabler icons, `driver.js` (product tours) |
+| UI Components | Radix UI primitives via `@eduai/ui`, Tabler icons, the shared `@eduai/ui` tour engine (product tours) |
 | Deployment | See [`DEPLOYMENT.md`](DEPLOYMENT.md) — the repo currently holds two production mechanisms: a newer systemd + Apache release-based flow (current), and an older PM2 + Apache single-host script (legacy) |
 
 ---
@@ -332,9 +332,10 @@ Analytics tab.
 
 ### 4.8 Interactive Guided Tours
 
-Three `driver.js`-powered tours: a full student onboarding walk (`student-journey`), contextual
-in-lesson help (`student-lesson-help`), and a unit-admin orientation covering the dashboard and course
-list. Tour progress persists locally so a completed tour isn't repeated.
+Three tours on the shared `@eduai/ui` tour engine (the same one Core and Question Maker use): a full
+student onboarding walk (`student-journey`), contextual in-lesson help (`student-lesson-help`), and a
+unit-admin orientation covering the dashboard and course list. They are launched from the header (?)
+help button; finishing or skipping one is remembered locally.
 
 ### 4.9 Bug Reporting
 

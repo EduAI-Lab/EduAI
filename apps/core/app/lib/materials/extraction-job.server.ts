@@ -24,11 +24,13 @@
 import type { MaterialFailureCode } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import {
+  isEmbeddingProviderUnavailableError,
   isEmbeddingTimeoutError,
   isTransientEmbeddingError,
   processMaterialEmbeddings,
 } from "~/lib/ai/embedding";
-import { PdfExtractionBusyError, extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import { hasIndexableText } from "~/lib/materials/indexable-text.server";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import type { getRequestContext } from "~/lib/request-context.server";
@@ -76,12 +78,15 @@ export function resolveFailureCode(
 ): MaterialFailureCode {
   // ABANDONED too: a row whose last attempt was released as busy (#1796 review)
   // ran out of attempts on capacity, not on its content.
-  if (code !== "MATERIAL_EMBED_FAILED" && cause instanceof PdfExtractionBusyError) {
+  if (code !== "MATERIAL_EMBED_FAILED" && cause instanceof ExtractionBusyError) {
     return "MATERIAL_EXTRACT_BUSY";
   }
   if (code === "MATERIAL_EMBED_FAILED") {
     // Checked first: a timeout is transient too, but means unreachable, not throttled.
     if (isEmbeddingTimeoutError(cause)) return "MATERIAL_EMBED_PROVIDER_UNAVAILABLE";
+    // A server error or dropped connection is transient too, but it is the
+    // service failing, not throttling (#1876).
+    if (isEmbeddingProviderUnavailableError(cause)) return "MATERIAL_EMBED_PROVIDER_UNAVAILABLE";
     if (isTransientEmbeddingError(cause)) return "MATERIAL_EMBED_RATE_LIMITED";
   }
   return code;
@@ -123,6 +128,8 @@ export async function failMaterial(
       code,
       message,
       error: cause,
+      // Lets Admin → Logs tie the failure to its material (#1931).
+      details: { materialId },
     }),
   );
 }
@@ -195,7 +202,7 @@ async function releaseForRetry(
       ...requestContext,
       source: "AI",
       code: "MATERIAL_EXTRACT_BUSY",
-      message: "PDF extraction capacity exhausted; material released for a later sweep",
+      message: "Extraction capacity or model host unavailable; material released for a later sweep",
       error: cause,
     }),
   );
@@ -479,14 +486,15 @@ export async function runMaterialExtraction(
   try {
     fileInfo = await extractUploadedFileContent(file);
   } catch (extractError) {
-    // Capacity, not content (#1791). `PdfExtractionBusyError` means this process
-    // had no extraction slot free — it says nothing about the file, and failing
+    // Capacity, not content (#1791). An `ExtractionBusyError` means this process
+    // had no extraction slot free or the image model host was unreachable or
+    // overloaded (#1903) — it says nothing about the file, and failing
     // the material for it turned a burst of uploads into a set of permanently
     // broken materials. Hand the row back to the sweeper instead by expiring its
     // lease; `extractionAttempts` still bounds the loop, so a row that is only
     // ever unlucky ends at MATERIAL_EXTRACT_ABANDONED rather than retrying
     // forever.
-    if (extractError instanceof PdfExtractionBusyError) {
+    if (extractError instanceof ExtractionBusyError) {
       await releaseForRetry(materialId, extractError, requestContext);
       return;
     }
@@ -554,6 +562,14 @@ export async function runMaterialExtraction(
               failureCode: null,
               extractionLeaseUntil: null,
             },
+          });
+          // #1937: deleting the material removed the suggestions only it
+          // produced, so a restore re-runs its analysis to bring them back.
+          startTopicAnalysis({
+            courseId,
+            userId,
+            materialIds: [duplicate.id],
+            rerunCompleted: true,
           });
         } catch (embeddingError) {
           await failMaterial(
@@ -897,7 +913,7 @@ export async function sweepStrandedMaterialExtractions(
         "MATERIAL_EXTRACT_ABANDONED",
         `Material extraction abandoned after ${row.extractionAttempts} attempts`,
         row.failureCode === "MATERIAL_EXTRACT_BUSY"
-          ? new PdfExtractionBusyError()
+          ? new ExtractionBusyError()
           : new Error("extraction attempts exhausted"),
         requestContext,
       );
