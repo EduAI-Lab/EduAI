@@ -13,7 +13,13 @@ const prismaMock = vi.hoisted(() => ({
     findFirst: vi.fn(),
     count: vi.fn(),
   },
+  aIInteraction: { updateMany: vi.fn() },
   enrollment: { findFirst: vi.fn() },
+}));
+
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: vi.fn(),
+  logAuditAction: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -88,6 +94,7 @@ import {
   deactivateEnrollment,
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
+import { logAuditAction } from "~/lib/logging.server";
 import { updateBugReportStatus } from "~/lib/bug-reports/server";
 import {
   resolveAdminCourseId,
@@ -249,6 +256,13 @@ describe("deleteAdminUser", () => {
     const result = await deleteAdminUser(ADMIN, "u2");
     expect(result).toMatchObject({ ok: true, deletedUserId: "u2" });
     expect(prismaMock.user.count).not.toHaveBeenCalled();
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "USER_DELETED",
+        entityId: "u2",
+        actorUserId: ADMIN.id,
+      }),
+    );
   });
 
   it("blocks deleting the last other active ADMIN (AUTH-04)", async () => {

@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import type { RbacUser } from "~/lib/auth/course-access.server";
-import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
+import { deleteUserAccount } from "~/lib/auth/delete-user.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import {
   addEnrollment,
@@ -442,46 +442,16 @@ export async function updateAdminUser(
   }
 }
 
-/** ADMIN — delete platform user (same guards as DELETE /api/users). */
+/** ADMIN — delete platform user (shares deleteUserAccount with DELETE /api/users). */
 export async function deleteAdminUser(actor: RbacUser, userId: string): Promise<MutationResult> {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  if (userId === actor.id) {
-    return { error: "CANNOT_DELETE_SELF" };
+  const result = await deleteUserAccount(actor, userId);
+  if ("error" in result) {
+    return { error: result.error };
   }
-
-  try {
-    const transactionResult = await prisma.$transaction(async (tx) => {
-      const target = await tx.user.findUnique({
-        where: { id: userId },
-        select: { role: true, isActive: true },
-      });
-      if (!target) {
-        return { error: "USER_NOT_FOUND" } as const;
-      }
-      // AUTH-04: hard-delete of an active ADMIN must leave >= 1 active ADMIN.
-      if (target.role === "ADMIN" && target.isActive) {
-        const violation = await adminFloorViolation(tx, userId);
-        if (violation) return violation;
-      }
-      await tx.user.delete({ where: { id: userId } });
-      return { ok: true as const };
-    });
-
-    if ("error" in transactionResult) {
-      return { error: transactionResult.error };
-    }
-    return mutationPayload({ ok: true, deletedUserId: userId });
-  } catch (error: unknown) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-      return { error: "USER_NOT_FOUND" };
-    }
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
-      return { error: "CANNOT_DELETE_USER_WITH_DATA" };
-    }
-    throw error;
-  }
+  return mutationPayload({ ok: true, deletedUserId: result.deleted.id });
 }
 
 /** ADMIN — enroll a user in a course. */

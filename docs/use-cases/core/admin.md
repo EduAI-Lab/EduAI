@@ -152,17 +152,18 @@ A distinguishing piece of this actor's threat model is `enforceAdminIfApiKey` (`
 - **Category:** Happy Path
 - **Actor:** `ADMIN`, valid session
 - **Preconditions:** Target `User` has `AIInteraction` rows, and may have authored `Question`s or run a Canvas roster sync (`CanvasRosterMember.syncedByUserId`)
-- **Entry point(s):** `apps/core/app/routes/admin.users.tsx`, `apps/core/app/routes/api/users.$.ts`, `apps/core/app/lib/api/users-api.server.ts`
+- **Entry point(s):** `apps/core/app/routes/admin.users.tsx`, `apps/core/app/routes/api/users.$.ts`, `apps/core/app/lib/api/users-api.server.ts`; the admin-chat `deleteUser` tool reaches the same helper via `deleteAdminUser`
 - **Flow:**
   1. Admin opens `/admin/users`, finds the target user, and clicks "Delete" — `useUsers().deleteUser(userId)` → `DELETE /api/users/:id` → `handleUsersApiRequest`
   2. `enforceAdminIfApiKey` is a no-op (no `x-api-key` on a normal browser request); the handler resolves the session and confirms `role === "ADMIN"`
-  3. The handler checks the self-delete and last-admin guards, then calls `prisma.user.delete({ where: { id: userId } })`
-  4. Postgres applies each foreign key's referential action (#1959): `AIInteraction` rows cascade with the user's `Chat`s and `Enrollment`s; `Question.createdBy` and `CanvasRosterMember.syncedByUserId` are set to `NULL`, so course content and roster rows outlive the account
-- **Expected outcome:** `204`. The user and their personal history are gone; the course's question bank and Canvas roster are intact, with no recorded author/syncer. A `null` `Question.createdBy` reads as "no owner", so only instructors and above can edit or delete those questions (TA own-only rules no longer match).
+  3. The handler calls `deleteUserAccount` (`apps/core/app/lib/auth/delete-user.server.ts`), which checks the self-delete and last-admin guards, blanks `query`/`response` on the user's `AIInteraction` rows, then calls `prisma.user.delete({ where: { id: userId } })` and writes a `USER_DELETED` audit entry
+  4. Postgres applies each foreign key's referential action (#1959): `Chat`s, `ChatMessage`s and `Enrollment`s cascade; `AIInteraction.userId`, `Question.createdBy` and `CanvasRosterMember.syncedByUserId` are set to `NULL`, so fleet/cost/energy metrics, course content and roster rows outlive the account
+- **Expected outcome:** `204`. The user, their chats and the text of their AI interactions are gone, while the interactions' token/cost/energy metrics stay for the Servers tab and research backfills; the course's question bank and Canvas roster are intact, with no recorded author/syncer. A `null` `Question.createdBy` reads as "no owner", so only instructors and above can edit or delete those questions (TA own-only rules no longer match).
 - **Failure modes / what could go wrong:** Any future `User` relation left on the default `Restrict` would bring back the old failure — Prisma's `P2003` is still mapped to `400 CANNOT_DELETE_USER_WITH_DATA`, and the admin UI now shows a toast for that and every other delete error instead of only logging it to the console.
 - **Related code:**
   - `apps/core/app/routes/admin.users.tsx`
   - `apps/core/app/components/admin/users-admin-view.tsx`
+  - `apps/core/app/lib/auth/delete-user.server.ts`
   - `apps/core/app/routes/api/users.$.ts`
   - `apps/core/app/lib/api/users-api.server.ts`
   - `apps/core/prisma/schema.prisma`
