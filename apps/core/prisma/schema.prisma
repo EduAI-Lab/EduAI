@@ -338,7 +338,8 @@ model SelfEnrollmentLink {
 
 model AIInteraction {
   id               String                   @id @default(cuid())
-  userId           String
+  /** Null once the user is deleted; metrics stay, query/response are blanked (#1959). */
+  userId           String?
   courseId         String?
   query            String
   response         String
@@ -372,7 +373,7 @@ model AIInteraction {
   chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
-  user             User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([serverId])
   @@index([chatId])

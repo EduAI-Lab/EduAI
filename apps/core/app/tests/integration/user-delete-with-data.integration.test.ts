@@ -3,8 +3,8 @@
  * #1959: DELETE /api/users/:id against the real test database for a user with
  * history. Their AI interactions, questions and Canvas roster syncs used to hold
  * RESTRICT foreign keys, so the delete failed with CANNOT_DELETE_USER_WITH_DATA.
- * The user's own history must go with them; course-owned rows must survive with
- * the reference nulled.
+ * All three now survive with the reference nulled; interactions keep their
+ * metrics but lose their query/response text.
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
@@ -53,13 +53,14 @@ async function signInAsNewAdmin(): Promise<string> {
 }
 
 afterAll(async () => {
+  await prisma.aIInteraction.deleteMany({ where: { courseId: { in: cleanupCourseIds } } });
   await prisma.course.deleteMany({ where: { id: { in: cleanupCourseIds } } });
   await prisma.user.deleteMany({ where: { id: { in: cleanupUserIds } } });
   await prisma.$disconnect();
 });
 
 describe("DELETE /api/users/:id for a user with history (#1959)", () => {
-  it("deletes the user, cascades their AI interactions, and keeps course-owned rows", async () => {
+  it("deletes the user, detaches their AI interactions, and keeps course-owned rows", async () => {
     const cookie = await signInAsNewAdmin();
     const suffix = randomUUID().slice(0, 8);
 
@@ -82,8 +83,15 @@ describe("DELETE /api/users/:id for a user with history (#1959)", () => {
       data: { name: "Target", email: `user-delete-target-${suffix}@ubc.ca`, role: "INSTRUCTOR" },
     });
     cleanupUserIds.push(target.id);
-    await prisma.aIInteraction.create({
-      data: { userId: target.id, courseId: course.id, query: "q", response: "r", modelUsed: "m" },
+    const interaction = await prisma.aIInteraction.create({
+      data: {
+        userId: target.id,
+        courseId: course.id,
+        query: "q",
+        response: "r",
+        modelUsed: "m",
+        totalTokens: 42,
+      },
     });
     const question = await prisma.question.create({
       data: {
@@ -113,7 +121,18 @@ describe("DELETE /api/users/:id for a user with history (#1959)", () => {
 
     expect(response.status).toBe(204);
     expect(await prisma.user.findUnique({ where: { id: target.id } })).toBeNull();
-    expect(await prisma.aIInteraction.count({ where: { userId: target.id } })).toBe(0);
+    await expect(
+      prisma.aIInteraction.findUnique({
+        where: { id: interaction.id },
+        select: { userId: true, query: true, response: true, totalTokens: true },
+      }),
+    ).resolves.toEqual({ userId: null, query: "", response: "", totalTokens: 42 });
+    // The audit write is fire-and-forget.
+    await expect
+      .poll(() =>
+        prisma.auditLog.count({ where: { actionCode: "USER_DELETED", entityId: target.id } }),
+      )
+      .toBe(1);
     await expect(
       prisma.question.findUnique({ where: { id: question.id }, select: { createdBy: true } }),
     ).resolves.toEqual({ createdBy: null });
