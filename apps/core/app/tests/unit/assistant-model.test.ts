@@ -6,7 +6,7 @@
  * then timed out.
  */
 import { APICallError } from "ai";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => ({
   ...(await importOriginal<typeof import("ai")>()),
@@ -14,6 +14,11 @@ vi.mock("ai", async (importOriginal) => ({
 }));
 
 import { generateText } from "ai";
+import {
+  acquireAiAdmission,
+  getAiAdmissionStats,
+  resetAiAdmission,
+} from "~/lib/ai/admission.server";
 import { callAssistantModel } from "~/lib/assistant/assistant-model.server";
 
 const generate = vi.mocked(generateText);
@@ -77,5 +82,44 @@ describe("callAssistantModel", () => {
     generate.mockRejectedValue(upstream(status));
     expect(await call()).toEqual({ kind: "upstream_error", status });
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+function localCall() {
+  return callAssistantModel({
+    provider: "ollama",
+    model: "llama3.2",
+    key: { tier: "PLATFORM", apiKey: "" },
+    messages: [{ role: "user", content: "q" }],
+    maxTokens: 100,
+  });
+}
+
+describe("callAssistantModel — local inference admission", () => {
+  beforeEach(() => {
+    generate.mockReset();
+    resetAiAdmission();
+    vi.stubEnv("AI_MAX_INFLIGHT", "1");
+    vi.stubEnv("AI_ADMISSION_WAIT_MS", "1");
+  });
+
+  afterEach(() => {
+    resetAiAdmission();
+    vi.unstubAllEnvs();
+  });
+
+  it("holds a slot for the call and releases it afterwards", async () => {
+    generate.mockImplementation(async () => {
+      expect(getAiAdmissionStats().inflight).toBe(1);
+      return { text: "ok" } as Awaited<ReturnType<typeof generateText>>;
+    });
+    expect(await localCall()).toEqual({ kind: "success", text: "ok" });
+    expect(getAiAdmissionStats().inflight).toBe(0);
+  });
+
+  it("is busy, without calling the model, when no slot frees up in time", async () => {
+    await acquireAiAdmission();
+    expect(await localCall()).toEqual({ kind: "busy" });
+    expect(generate).not.toHaveBeenCalled();
   });
 });

@@ -33,7 +33,7 @@ import type {
 } from "~/components/course-materials-upload";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
-import type { RbacUser } from "~/lib/rbac";
+import type { CourseAccess, RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { setCoursePublished } from "~/lib/courses/set-course-published";
@@ -44,23 +44,25 @@ import {
   loadAssistantAvailability,
   materialSourceAvailable,
 } from "~/lib/assistant/assistant-gate.server";
-import { resolvePageContext } from "~/lib/assistant/material-context.server";
+import { resolveCourseContext } from "~/lib/assistant/material-context.server";
+import { accessLevelFor } from "~/lib/auth/course-access.server";
 import { usePublishAssistantContext } from "~/components/assistant/assistant-events";
 
 /**
  * #1821/#1822: whether the help assistant may ground answers in THIS course for
  * this reader — the same gate `POST /api/assistant/ask` re-checks per question.
  * The page publishes it so the bubble's visibility and the endpoint can't drift.
+ * Built from the course and access the loader already resolved, not re-queried.
  * A failure here only hides the course half; it never fails the page.
  */
 async function resolveAssistantMaterialScope(
-  user: { id: string; role?: string | null },
-  courseId: string,
+  course: Parameters<typeof resolveCourseContext>[0]["course"],
+  access: CourseAccess,
 ): Promise<boolean> {
   try {
     const [availability, resolution] = await Promise.all([
       loadAssistantAvailability(),
-      resolvePageContext(user, { courseId, materialId: null }),
+      resolveCourseContext({ course, access: access ? accessLevelFor(access) : null }),
     ]);
     return materialSourceAvailable(availability, resolution);
   } catch {
@@ -151,7 +153,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // three. The serializer redacts their emails for the student audience.
   const [instructorSummaries, assistantMaterialScope] = await Promise.all([
     getCourseInstructors([course.id]).then((byCourse) => byCourse.get(course.id) ?? []),
-    resolveAssistantMaterialScope(user, course.id),
+    resolveAssistantMaterialScope(course, access),
   ]);
 
   return {

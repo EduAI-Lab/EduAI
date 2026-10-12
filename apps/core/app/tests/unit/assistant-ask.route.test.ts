@@ -56,6 +56,7 @@ describe("POST /api/assistant/ask — status contract", () => {
       sources: [{ id: "find-a-course", title: "Find a course", url: "/help/guide/find-a-course" }],
       scope: { docs: true, material: null },
     });
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it.each([
@@ -65,6 +66,8 @@ describe("POST /api/assistant/ask — status contract", () => {
     [{ kind: "provider_invalid" }, 422, { code: "provider_invalid" }],
     [{ kind: "retrieval_unavailable" }, 503, { code: "retrieval_unavailable" }],
     [{ kind: "provider_unreachable" }, 502, { code: "provider_unreachable" }],
+    [{ kind: "provider_busy" }, 503, { code: "provider_busy" }],
+    [{ kind: "daily_limited", retryAfter: 900 }, 429, { code: "daily_limit", retryAfter: 900 }],
   ])("%j → %i", async (outcome, status, body) => {
     askMock.answerAssistantQuestion.mockResolvedValue(outcome);
     const res = await ask({ question: "q" });
@@ -72,6 +75,7 @@ describe("POST /api/assistant/ask — status contract", () => {
     const json = await res.json();
     expect(json).toMatchObject(body);
     expect(json.error).toEqual(expect.any(String));
+    if ("retryAfter" in json) expect(res.headers.get("Retry-After")).toBe(String(json.retryAfter));
   });
 
   it.each([401, 403, 429])(

@@ -42,6 +42,7 @@ import {
   ensureHelpDocsIndex,
   helpDocsEmbeddingSpace,
   reindexHelpDocsIfStale,
+  resetHelpDocsRebuildState,
   retrieveHelpDocs,
 } from "~/lib/assistant/help-docs/index.server";
 import { helpCorpusHash, resolvedHelpPage } from "~/lib/assistant/help-docs/sources.server";
@@ -52,8 +53,19 @@ function indexIsFresh() {
   });
 }
 
+function embedAll() {
+  embeddingMock.generateEmbeddings.mockImplementation(async (chunks: string[]) =>
+    chunks.map((content) => ({ content, embedding: [0.1, 0.2, 0.3] })),
+  );
+  prismaMock.$transaction.mockImplementation(
+    async (run: (tx: typeof prismaMock) => Promise<boolean>) => run(prismaMock),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
+  resetHelpDocsRebuildState();
   embeddingMock.generateEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
 });
 
@@ -163,12 +175,7 @@ describe("index lifecycle", () => {
 
   it("the cron job rebuilds when a guide or the embedding space changed", async () => {
     prismaMock.systemConfig.findUnique.mockResolvedValue({ value: "an-older-hash" });
-    embeddingMock.generateEmbeddings.mockImplementation(async (chunks: string[]) =>
-      chunks.map((content) => ({ content, embedding: [0.1, 0.2, 0.3] })),
-    );
-    prismaMock.$transaction.mockImplementation(
-      async (run: (tx: typeof prismaMock) => Promise<void>) => run(prismaMock),
-    );
+    embedAll();
     const result = await reindexHelpDocsIfStale();
     expect(result.rebuilt).toBe(true);
     expect(result.chunks).toBeGreaterThan(0);
@@ -177,6 +184,44 @@ describe("index lifecycle", () => {
         update: expect.objectContaining({ value: helpCorpusHash(helpDocsEmbeddingSpace()) }),
       }),
     );
+  });
+
+  it("serialises rebuilds in the database and skips one another writer already finished", async () => {
+    // Stale before the lock, fresh once it is held: a concurrent writer got there first.
+    prismaMock.systemConfig.findUnique
+      .mockResolvedValueOnce({ value: "an-older-hash" })
+      .mockResolvedValueOnce({ value: helpCorpusHash(helpDocsEmbeddingSpace()) });
+    embedAll();
+    const result = await reindexHelpDocsIfStale();
+    expect(result.rebuilt).toBe(false);
+    expect(prismaMock.$executeRaw.mock.calls[0][0].join("")).toContain("pg_advisory_xact_lock");
+    expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(prismaMock.systemConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("after a failed rebuild, questions stop re-embedding the corpus until the backoff ends", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    prismaMock.systemConfig.findUnique.mockResolvedValue(null);
+    embeddingMock.generateEmbeddings.mockRejectedValue(new Error("provider down"));
+    await expect(ensureHelpDocsIndex()).rejects.toThrow("provider down");
+    await expect(ensureHelpDocsIndex()).rejects.toThrow(/last rebuild failed/);
+    prismaMock.systemConfig.findUnique.mockResolvedValue({ value: "an-older-hash" });
+    await expect(ensureHelpDocsIndex()).resolves.toBe("stale");
+    expect(embeddingMock.generateEmbeddings).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(5 * 60_000);
+    embedAll();
+    await expect(ensureHelpDocsIndex()).resolves.toBe("stale");
+    await vi.waitFor(() => expect(prismaMock.systemConfig.upsert).toHaveBeenCalled());
+    expect(embeddingMock.generateEmbeddings).toHaveBeenCalledTimes(2);
+  });
+
+  it("the cron job retries even while the request path is backing off", async () => {
+    prismaMock.systemConfig.findUnique.mockResolvedValue({ value: "an-older-hash" });
+    embeddingMock.generateEmbeddings.mockRejectedValueOnce(new Error("provider down"));
+    await expect(reindexHelpDocsIfStale()).rejects.toThrow("provider down");
+    embedAll();
+    await expect(reindexHelpDocsIfStale()).resolves.toMatchObject({ rebuilt: true });
   });
 
   it("chunks carry their page title so a deep chunk still says what the page is about", () => {

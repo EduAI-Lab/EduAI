@@ -105,6 +105,17 @@ describe("assistant key rows", () => {
     expect((await loadUserAiRows(userId))[0].enabledModels).toBeNull();
   });
 
+  it("saves the preference and its curation in one write", async () => {
+    await saveAssistantPreference(userId, {
+      provider: "openai",
+      model: "gpt-4.1",
+      enabledModels: ["gpt-4.1", "gpt-4.1"],
+    });
+    const [row] = await loadUserAiRows(userId);
+    expect(row.model).toBe("gpt-4.1");
+    expect(row.enabledModels).toEqual(["gpt-4.1"]);
+  });
+
   it("deleting the account deletes its AI key rows outright", async () => {
     await saveAssistantPreference(userId, {
       provider: "openai",

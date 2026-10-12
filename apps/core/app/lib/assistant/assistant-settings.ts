@@ -29,7 +29,7 @@ export function isSafeModelId(value: string): boolean {
 }
 
 export type AssistantSettings = {
-  /** The docs/how-to half. Off by default: it spends the platform key. */
+  /** Master switch for both halves. Off by default: it spends the platform key. */
   enableHelpAssistant: boolean;
   /** Students may ask about the course material they are viewing. Staff bypass it. */
   enableStudentMaterialQuestions: boolean;
@@ -56,12 +56,12 @@ export const ASSISTANT_SETTING_DEFINITIONS = {
   enableHelpAssistant: {
     label: `Enable ${ASSISTANT_DISPLAY_NAME}, the help assistant`,
     description:
-      "Answer platform how-to questions from the role-scoped user guide, on every signed-in page. Each question is a billed model call when the asker has no key of their own.",
+      "Answer platform how-to questions from the role-scoped user guide, and course-material questions on course pages. Turning this off stops both. Each question is a billed model call when the asker has no key of their own.",
   },
   enableStudentMaterialQuestions: {
     label: "Students can ask about course material",
     description:
-      "Let students ask the assistant about the course or material they are viewing. Instructors and administrators keep this for their own courses even when it is off.",
+      "While the assistant is on, let students ask it about the course or material they are viewing. Instructors and administrators keep this for their own courses even when it is off.",
   },
   maxDocs: {
     label: "Documentation pages per answer",

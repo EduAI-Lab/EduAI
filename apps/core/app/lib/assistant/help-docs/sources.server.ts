@@ -1,15 +1,13 @@
 /**
  * @file Load the indexed guides and resolve each manifest page to its text (#1819).
  *
- * The guides are bundled at build time (`?raw`), so a deployment never depends on
- * the repository's `docs/` folder being present at runtime, and an edit to a guide
- * ships with the next build — the corpus hash then changes and the index rebuilds
- * itself. The Dockerfile copies these two files into the build stage for this.
+ * The guides come from a generated module (`generated/guides.ts`), so neither the
+ * web build nor the tsx cron worker needs `docs/` at runtime. An edited guide
+ * changes the corpus hash and the index rebuilds itself.
  */
 import { createHash } from "node:crypto";
 
-import userGuide from "../../../../../../docs/USER_GUIDE.md?raw";
-import instructorOnboarding from "../../../../../../docs/INSTRUCTOR_ONBOARDING.md?raw";
+import { HELP_GUIDE_SOURCES } from "~/lib/assistant/help-docs/generated/guides";
 
 import {
   HELP_DOC_PAGES,
@@ -21,10 +19,7 @@ import {
 import { sectionsWithBody } from "~/lib/assistant/help-docs/sections";
 import type { HelpSlice } from "~/lib/help/role-slices";
 
-const RAW_SOURCES = {
-  "user-guide": userGuide,
-  "instructor-onboarding": instructorOnboarding,
-} satisfies Record<HelpDocSourceId, string>;
+const RAW_SOURCES: Record<HelpDocSourceId, string> = HELP_GUIDE_SOURCES;
 
 export function rawHelpSource(source: HelpDocSourceId): string {
   return RAW_SOURCES[source];

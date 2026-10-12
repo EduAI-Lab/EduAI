@@ -2,7 +2,7 @@
 /**
  * #1817: the assistant gate — the full scope truth table from §3 of
  * docs/implementations/ai-help-assistant-brief.md, the staff bypass, the "no
- * enabled provider" row, and the platform kill switch binding admins too.
+ * enabled provider" row, and the Penny switch binding admins too.
  */
 import { describe, expect, it } from "vitest";
 
@@ -28,8 +28,8 @@ function availability(
   settings.enableHelpAssistant = overrides.help ?? true;
   settings.enableStudentMaterialQuestions = overrides.studentMaterial ?? true;
   return {
-    platformEnabled: overrides.platformEnabled ?? true,
     hasEnabledProvider: overrides.hasEnabledProvider ?? true,
+    catalogue: [],
     settings,
   };
 }
@@ -65,11 +65,14 @@ describe("scopeFor — the §3 truth table", () => {
     });
   });
 
-  it("in a course, help off, material eligible → material only", () => {
+  it("in a course, help off, material eligible → nothing (the switch gates both halves)", () => {
     expect(scopeFor(availability({ help: false }), resolved())).toEqual({
       docs: false,
-      material: true,
+      material: false,
     });
+    expect(
+      scopeFor(availability({ help: false }), resolved({ access: accessLevelFor("instructor") })),
+    ).toEqual({ docs: false, material: false });
   });
 
   it("anywhere, help off, material not eligible → nothing", () => {
@@ -126,24 +129,15 @@ describe("never advertise a source whose request could only be refused", () => {
   });
 });
 
-describe("the platform AI kill switch", () => {
-  it("stops every source for every role, administrators included", () => {
-    const frozen = availability({ platformEnabled: false });
-    for (const role of ["STUDENT", "INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]) {
-      expect(gateSnapshot(frozen, role)).toEqual({ mounted: false, docs: false });
-    }
-    expect(scopeFor(frozen, resolved({ access: accessLevelFor("admin") }))).toEqual({
-      docs: false,
-      material: false,
-    });
-  });
-});
-
 describe("gateSnapshot — the root loader's render condition", () => {
   it("mounts for docs, or for possible material grounding, and reports docs separately", () => {
     expect(gateSnapshot(availability(), "STUDENT")).toEqual({ mounted: true, docs: true });
     expect(gateSnapshot(availability({ help: false }), "STUDENT")).toEqual({
-      mounted: true,
+      mounted: false,
+      docs: false,
+    });
+    expect(gateSnapshot(availability({ help: false }), "ADMIN")).toEqual({
+      mounted: false,
       docs: false,
     });
     expect(gateSnapshot(availability({ help: false, studentMaterial: false }), "STUDENT")).toEqual({

@@ -63,7 +63,7 @@ export function parsePageContextHint(
 
 export type PageContextResolution =
   | { kind: "none" }
-  /** The hint names a course or material that does not exist — fail closed (404). */
+  /** The hint names a course or material that does not exist — no material context. */
   | { kind: "missing" }
   | {
       kind: "resolved";
@@ -77,6 +77,38 @@ export type PageContextResolution =
       /** Set when the hint named a material this reader may see. */
       material: { id: string; title: string; status: string; rawText: string | null } | null;
     };
+
+type ResolvedPageContext = Extract<PageContextResolution, { kind: "resolved" }>;
+
+/**
+ * The course-level resolution from a course and access the caller already
+ * resolved for this reader — the course page loader has both in hand.
+ */
+export async function resolveCourseContext(input: {
+  course: {
+    id: string;
+    code: string;
+    name: string;
+    isPublished: boolean;
+    aiAssistantEnabled: boolean;
+  };
+  access: AccessLevel | null;
+}): Promise<ResolvedPageContext> {
+  const { course, access } = input;
+  let canView = access !== null;
+  if (canView && access?.level === "student") {
+    canView = course.isPublished && (await getPolicy("students.canViewMaterials"));
+  }
+  return {
+    kind: "resolved",
+    courseId: course.id,
+    courseLabel: `${course.code} — ${course.name}`,
+    courseAllowsAi: course.aiAssistantEnabled,
+    access,
+    canView,
+    material: null,
+  };
+}
 
 /** Re-derive what the hint points at, for this reader. */
 export async function resolvePageContext(
@@ -94,12 +126,9 @@ export async function resolvePageContext(
   });
   if (!details) return { kind: "missing" };
 
-  let canView = access !== null;
-  if (canView && access?.level === "student") {
-    canView = course.isPublished && (await getPolicy("students.canViewMaterials"));
-  }
-
-  let material: Extract<PageContextResolution, { kind: "resolved" }>["material"] = null;
+  const resolved = await resolveCourseContext({ course: { ...course, ...details }, access });
+  let { canView } = resolved;
+  let material: ResolvedPageContext["material"] = null;
   if (hint.materialId && canView && access) {
     const read = await readMaterialForViewer({
       courseId: course.id,
@@ -121,15 +150,7 @@ export async function resolvePageContext(
     }
   }
 
-  return {
-    kind: "resolved",
-    courseId: course.id,
-    courseLabel: `${details.code} — ${details.name}`,
-    courseAllowsAi: details.aiAssistantEnabled,
-    access,
-    canView,
-    material,
-  };
+  return { ...resolved, canView, material };
 }
 
 export type MaterialSource = { id: string; title: string; url: string };

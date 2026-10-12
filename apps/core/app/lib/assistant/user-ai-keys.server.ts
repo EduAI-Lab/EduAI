@@ -214,7 +214,14 @@ export class UnknownProviderError extends Error {
  */
 export async function saveAssistantPreference(
   userId: string,
-  input: { provider: string; model: string; apiKey?: string; removeKey?: boolean },
+  input: {
+    provider: string;
+    model: string;
+    apiKey?: string;
+    removeKey?: boolean;
+    /** Written in the same transaction, so the model is never stored without its curation. */
+    enabledModels?: string[] | null;
+  },
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const providerId = await providerIdFor(tx, input.provider);
@@ -230,6 +237,9 @@ export async function saveAssistantPreference(
     const newKey = input.apiKey?.trim();
     const apiKey = newKey ? encrypt(newKey) : input.removeKey ? null : undefined;
 
+    const enabledModels =
+      input.enabledModels === undefined ? undefined : curatedModelsValue(input.enabledModels);
+
     await tx.userProviderSettings.upsert({
       where: { userId_providerId: { userId, providerId } },
       create: {
@@ -238,8 +248,9 @@ export async function saveAssistantPreference(
         model: input.model,
         preferred: true,
         apiKey: apiKey ?? null,
+        enabledModels,
       },
-      update: { model: input.model, preferred: true, apiKey },
+      update: { model: input.model, preferred: true, apiKey, enabledModels },
     });
   });
 }
@@ -303,6 +314,10 @@ export async function removeKey(userId: string, provider: string): Promise<void>
 }
 
 /** Store (or, with `null`, forget) the user's own model curation for one provider. */
+function curatedModelsValue(models: string[] | null) {
+  return models === null ? Prisma.DbNull : [...new Set(models)];
+}
+
 export async function setUserEnabledModels(
   userId: string,
   provider: string,
@@ -311,11 +326,11 @@ export async function setUserEnabledModels(
   await prisma.$transaction(async (tx) => {
     const providerId = await providerIdFor(tx, provider);
     if (!providerId) throw new UnknownProviderError(provider);
-    const value = models === null ? null : [...new Set(models)];
+    const enabledModels = curatedModelsValue(models);
     await tx.userProviderSettings.upsert({
       where: { userId_providerId: { userId, providerId } },
-      create: { userId, providerId, enabledModels: value ?? Prisma.DbNull },
-      update: { enabledModels: value ?? Prisma.DbNull },
+      create: { userId, providerId, enabledModels },
+      update: { enabledModels },
     });
   });
 }

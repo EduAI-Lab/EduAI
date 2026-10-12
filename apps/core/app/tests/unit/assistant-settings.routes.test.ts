@@ -147,6 +147,7 @@ describe("POST /api/assistant/settings", () => {
       model: "gpt-4o-mini",
       apiKey: "sk-brand-new-key-9876",
       removeKey: false,
+      enabledModels: undefined,
     });
     // The second loadUserAiRows call is the re-read after the write.
     expect(keysMock.loadUserAiRows).toHaveBeenCalledTimes(2);
@@ -193,7 +194,12 @@ describe("POST /api/assistant/settings", () => {
       }),
     )) as Response;
     expect(res.status).toBe(200);
-    expect(keysMock.setUserEnabledModels).toHaveBeenCalledWith("u1", "openai", ["gpt-4.1"]);
+    // One write, so the model is never stored without the curation that allowed it.
+    expect(keysMock.saveAssistantPreference).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ model: "gpt-4.1", enabledModels: ["gpt-4.1"] }),
+    );
+    expect(keysMock.setUserEnabledModels).not.toHaveBeenCalled();
   });
 
   it("refuses a provider the administrator has not enabled", async () => {
@@ -240,14 +246,6 @@ describe("POST /api/assistant/settings/models", () => {
       10,
       60_000,
     );
-  });
-
-  it("is stopped by the platform kill switch", async () => {
-    policyMock.getPolicy.mockResolvedValue(false);
-    const res = (await modelsAction(
-      req("/api/assistant/settings/models", "POST", { provider: "openai" }),
-    )) as Response;
-    expect(res.status).toBe(403);
   });
 });
 

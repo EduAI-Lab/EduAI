@@ -22,7 +22,6 @@ import {
   platformKeyFor,
   removeKey,
   saveAssistantPreference,
-  setUserEnabledModels,
   type UserAiRow,
 } from "~/lib/assistant/user-ai-keys.server";
 import { PROVIDER_CONFIGS } from "~/lib/ai/provider-types";
@@ -154,10 +153,8 @@ export async function saveAssistantUserSettings(
     model: input.model,
     apiKey: newKey ?? undefined,
     removeKey: Boolean(input.removeKey) && !newKey,
+    enabledModels: input.enabledModels,
   });
-  if (input.enabledModels !== undefined) {
-    await setUserEnabledModels(userId, provider.name, input.enabledModels);
-  }
   return { ok: true, settings: await readAssistantUserSettings(userId) };
 }
 

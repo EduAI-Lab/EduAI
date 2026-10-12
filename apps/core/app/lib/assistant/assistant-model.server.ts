@@ -8,6 +8,7 @@
  */
 import { APICallError, RetryError, generateText } from "ai";
 
+import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
 import {
   createAIProviderRegistry,
   mergeLocalInferenceFromEnv,
@@ -27,7 +28,9 @@ export type AssistantModelResult =
   /** The provider answered with a non-2xx status. */
   | { kind: "upstream_error"; status: number }
   /** The call never completed (DNS, connection, timeout, fleet down). */
-  | { kind: "transport_failure" };
+  | { kind: "transport_failure" }
+  /** No local-inference slot freed up in time (`AI_MAX_INFLIGHT`), so nothing was sent. */
+  | { kind: "busy" };
 
 /**
  * Per attempt, not per call: a retry after a slow failure still gets a full
@@ -49,14 +52,18 @@ function isRetryable(status: number | null): boolean {
   return status === null || status === 408 || status >= 500;
 }
 
-export async function callAssistantModel(input: {
+export type AssistantModelInput = {
   provider: SupportedProvider;
   model: string;
   key: ResolvedProviderKey;
   system?: string;
   messages: AssistantTurn[];
   maxTokens: number;
-}): Promise<AssistantModelResult> {
+};
+
+export async function callAssistantModel(
+  input: AssistantModelInput,
+): Promise<AssistantModelResult> {
   if (!isSafeModelId(input.model)) return { kind: "invalid" };
   const modelIdentifier: `${string}:${string}` = `${input.provider}:${input.model}`;
 
@@ -84,6 +91,27 @@ export async function callAssistantModel(input: {
     return { kind: "invalid" };
   }
 
+  // Local models share the GPU fleet with course chat, so they queue for the same slots.
+  let release: (() => void) | null = null;
+  if (input.provider === "vllm" || input.provider === "ollama") {
+    try {
+      release = (await acquireAiAdmission()).release;
+    } catch (cause) {
+      if (cause instanceof AdmissionTimeoutError) return { kind: "busy" };
+      throw cause;
+    }
+  }
+  try {
+    return await generateWithRetry(input, languageModel);
+  } finally {
+    release?.();
+  }
+}
+
+async function generateWithRetry(
+  input: AssistantModelInput,
+  languageModel: Parameters<typeof generateText>[0]["model"],
+): Promise<AssistantModelResult> {
   // The status the provider last actually answered with, across attempts.
   let answeredStatus: number | null = null;
   for (let attempt = 1; ; attempt++) {

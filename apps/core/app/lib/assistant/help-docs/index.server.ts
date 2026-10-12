@@ -90,10 +90,27 @@ export function chunkHelpPage(page: Pick<ResolvedHelpPage, "title" | "content">)
   return chunks.map((chunk) => `${page.title}\n\n${chunk}`);
 }
 
-/** Re-embed the whole corpus and swap it in atomically. */
+/** After a failed rebuild, the request path stops starting new ones for this long; the cron job still retries. */
+const REBUILD_BACKOFF_MS = 5 * 60_000;
+
+async function storedHelpDocsHash(
+  client: Pick<typeof prisma, "systemConfig"> = prisma,
+): Promise<string | null> {
+  const stored = await client.systemConfig.findUnique({
+    where: { key: HELP_DOCS_INDEX_HASH_KEY },
+    select: { value: true },
+  });
+  return stored?.value ?? null;
+}
+
+/**
+ * Re-embed the whole corpus and swap it in atomically. Writers are serialised in
+ * the database, not per process, so the cron job and a request on another
+ * replica can't collide on chunk ids; one that waited finds the work done.
+ */
 export async function rebuildHelpDocsIndex(
   signal?: AbortSignal,
-): Promise<{ pages: number; chunks: number; hash: string }> {
+): Promise<{ pages: number; chunks: number; hash: string; written: boolean }> {
   const hash = helpCorpusHash(helpDocsEmbeddingSpace());
   const pages = [...resolvedHelpPages().values()];
   const rows = pages.flatMap((page) =>
@@ -110,8 +127,11 @@ export async function rebuildHelpDocsIndex(
     throw new Error(`Help docs embedding count mismatch: ${embedded.length} for ${rows.length}`);
   }
 
-  await prisma.$transaction(
+  const written = await prisma.$transaction(
     async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"help-docs-index"}))`;
+      if ((await storedHelpDocsHash(tx)) === hash) return false;
+
       await tx.$executeRaw`DELETE FROM help_doc_chunks`;
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -132,24 +152,52 @@ export async function rebuildHelpDocsIndex(
         },
         update: { value: hash, updatedBy: "system" },
       });
+      return true;
     },
     { timeout: 60_000 },
   );
 
-  console.info("[assistant/help-docs] index rebuilt", { pages: pages.length, chunks: rows.length });
-  return { pages: pages.length, chunks: rows.length, hash };
+  if (written) {
+    console.info("[assistant/help-docs] index rebuilt", {
+      pages: pages.length,
+      chunks: rows.length,
+    });
+  }
+  return { pages: pages.length, chunks: rows.length, hash, written };
 }
 
 type RebuildResult = Awaited<ReturnType<typeof rebuildHelpDocsIndex>>;
 
 let rebuildInFlight: Promise<RebuildResult> | null = null;
+let lastRebuildFailureAt: number | null = null;
 
-/** One rebuild per process at a time; concurrent callers share it. */
-function singleFlightRebuild(): Promise<RebuildResult> {
+/** Test hook: forget a previous failure and any in-flight rebuild. */
+export function resetHelpDocsRebuildState(): void {
+  rebuildInFlight = null;
+  lastRebuildFailureAt = null;
+}
+
+function inRebuildBackoff(): boolean {
+  return lastRebuildFailureAt !== null && Date.now() - lastRebuildFailureAt < REBUILD_BACKOFF_MS;
+}
+
+/** One rebuild per process at a time; concurrent callers (cron included) share it. */
+function singleFlightRebuild(signal?: AbortSignal): Promise<RebuildResult> {
   if (!rebuildInFlight) {
-    rebuildInFlight = rebuildHelpDocsIndex().finally(() => {
-      rebuildInFlight = null;
-    });
+    rebuildInFlight = rebuildHelpDocsIndex(signal)
+      .then(
+        (result) => {
+          lastRebuildFailureAt = null;
+          return result;
+        },
+        (cause: unknown) => {
+          lastRebuildFailureAt = Date.now();
+          throw cause;
+        },
+      )
+      .finally(() => {
+        rebuildInFlight = null;
+      });
   }
   return rebuildInFlight;
 }
@@ -161,16 +209,18 @@ export type HelpDocsIndexState = "fresh" | "rebuilt" | "stale";
  * answering (the first question after deploy pays for it); a stale one is
  * rebuilt in the background while the previous index keeps serving — its chunks
  * only nominate page ids, and content always comes from the current guide.
+ *
+ * After a failed rebuild, questions stop triggering new ones for
+ * {@link REBUILD_BACKOFF_MS}, so a provider incident is not a full-corpus embed per question.
  */
 export async function ensureHelpDocsIndex(): Promise<HelpDocsIndexState> {
   const expected = helpCorpusHash(helpDocsEmbeddingSpace());
-  const stored = await prisma.systemConfig.findUnique({
-    where: { key: HELP_DOCS_INDEX_HASH_KEY },
-    select: { value: true },
-  });
-  if (stored?.value === expected) return "fresh";
+  const stored = await storedHelpDocsHash();
+  if (stored === expected) return "fresh";
 
-  if (stored) {
+  const backingOff = inRebuildBackoff();
+  if (stored !== null) {
+    if (backingOff) return "stale";
     void singleFlightRebuild().catch((cause: unknown) => {
       console.error("[assistant/help-docs] background rebuild failed", {
         error: cause instanceof Error ? cause.message : String(cause),
@@ -179,6 +229,7 @@ export async function ensureHelpDocsIndex(): Promise<HelpDocsIndexState> {
     return "stale";
   }
 
+  if (backingOff) throw new Error("Help docs index is missing and the last rebuild failed");
   await singleFlightRebuild();
   return "rebuilt";
 }
@@ -255,13 +306,10 @@ export async function reindexHelpDocsIfStale(
   signal?: AbortSignal,
 ): Promise<{ rebuilt: boolean; pages: number; chunks: number }> {
   const expected = helpCorpusHash(helpDocsEmbeddingSpace());
-  const stored = await prisma.systemConfig.findUnique({
-    where: { key: HELP_DOCS_INDEX_HASH_KEY },
-    select: { value: true },
-  });
-  if (stored?.value === expected) {
+  if ((await storedHelpDocsHash()) === expected) {
     return { rebuilt: false, pages: resolvedHelpPages().size, chunks: 0 };
   }
-  const result = await rebuildHelpDocsIndex(signal);
-  return { rebuilt: true, pages: result.pages, chunks: result.chunks };
+  // Ignores the request path's backoff: retrying is this job's purpose.
+  const result = await singleFlightRebuild(signal);
+  return { rebuilt: result.written, pages: result.pages, chunks: result.chunks };
 }

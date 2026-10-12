@@ -979,8 +979,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
       // #1821: the student gate and the single-material read are shared with the
       // help assistant's material context, so both ask the identical question.
-      const studentGate = await materialGateFor(courseId, access);
-
       if (materialId) {
         const read = await readMaterialForViewer({ courseId, materialId, access });
         if (read.status === "hidden") {
@@ -1000,6 +998,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         const { rawText, ...meta } = material;
         return json(200, { material: meta, ...previewExcerpt(rawText) });
       }
+
+      // After the single-material branch, which applies the same gate itself.
+      const studentGate = await materialGateFor(courseId, access);
 
       // Staff receive the scheduling fields so the management UI can render and edit
       // them; students never do (they only ever see already-visible materials).

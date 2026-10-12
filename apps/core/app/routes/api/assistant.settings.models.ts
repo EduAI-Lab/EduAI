@@ -16,7 +16,6 @@ import { jsonResponse, requireSessionUser, throttle } from "~/lib/assistant/rout
 import { loadUserAiRows } from "~/lib/assistant/user-ai-keys.server";
 import { readBoundedJson } from "~/lib/chat-input.server";
 import { withErrorResponse } from "~/lib/errors.server";
-import { getPolicy } from "~/lib/policy.server";
 
 const schema = z.object({ provider: z.string().min(1).max(64) }).strict();
 
@@ -33,14 +32,6 @@ export async function action({ request }: ActionFunctionArgs) {
       if (!body.ok) return jsonResponse(body.status, { error: body.error });
       const parsed = schema.safeParse(body.body);
       if (!parsed.success) return jsonResponse(422, { error: "VALIDATION_ERROR" });
-
-      // The platform kill switch stops this outbound call too.
-      if (!(await getPolicy("ai.platformEnabled"))) {
-        return jsonResponse(403, {
-          error: "AI calls are paused on this platform.",
-          code: "ai_disabled",
-        });
-      }
 
       const provider = parseModelIdentifier(`${parsed.data.provider}:x`)?.providerId;
       const own = (await loadUserAiRows(user.id)).find(

@@ -78,7 +78,7 @@ function setCourse(access: ReturnType<typeof accessLevelFor> | null, overrides =
 }
 
 const settings = defaultAssistantSettings();
-const availability = { platformEnabled: true, hasEnabledProvider: true, settings };
+const availability = { hasEnabledProvider: true, catalogue: [], settings };
 
 beforeEach(() => {
   vi.clearAllMocks();

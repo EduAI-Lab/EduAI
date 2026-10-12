@@ -145,6 +145,14 @@ export function saveAssistantSettings(input: SaveAssistantSettingsRequest) {
   });
 }
 
+/** Delete the saved key for one provider; the provider/model choice is kept. */
+export function removeAssistantKey(provider: string) {
+  return settingsCall("/api/assistant/settings", userSettings, {
+    method: "DELETE",
+    body: JSON.stringify({ provider }),
+  });
+}
+
 export function resetAssistantSettings() {
   return settingsCall("/api/assistant/settings/reset", userSettings, { method: "POST" });
 }

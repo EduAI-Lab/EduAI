@@ -193,8 +193,13 @@ export function resolveRouterModel(input: {
     : input.choice.model;
 }
 
-/** Load everything the choice needs and make it. */
-export async function resolveAssistantProvider(userId: string, defaultModel: string) {
-  const [catalogue, rows] = await Promise.all([loadAssistantCatalogue(), loadUserAiRows(userId)]);
+/** Make the choice from the catalogue the gate already read, so one question sees one snapshot. */
+export async function resolveAssistantProvider(input: {
+  userId: string;
+  defaultModel: string;
+  catalogue: CatalogueProvider[];
+}) {
+  const { catalogue, defaultModel } = input;
+  const rows = await loadUserAiRows(input.userId);
   return { catalogue, rows, choice: chooseProviderAndModel({ catalogue, rows, defaultModel }) };
 }

@@ -20,6 +20,7 @@ import {
   type AssistantModelResult,
 } from "~/lib/assistant/assistant-model.server";
 import {
+  docsSourceAvailable,
   loadAssistantAvailability,
   scopeFor,
   type AssistantScope,
@@ -44,8 +45,6 @@ import {
 } from "~/lib/assistant/material-context.server";
 import {
   HELP_GUIDE_SOURCE,
-  MATERIAL_NOT_COVERED_ANSWER,
-  MATERIAL_UNAVAILABLE_ANSWER,
   NOT_DOCUMENTED_ANSWER,
   buildRewritePrompt,
   buildSystemPrompt,
@@ -57,6 +56,7 @@ import {
   type ProviderChoice,
 } from "~/lib/assistant/provider-choice.server";
 import { describeKeyTier } from "~/lib/assistant/user-ai-keys.server";
+import { consumeLocalChatDailyCap } from "~/lib/chat-daily-limits.server";
 
 export type AssistantSource = { id: string; title: string; url: string };
 
@@ -71,7 +71,9 @@ export type AskOutcome =
   | { kind: "provider_invalid" }
   | { kind: "retrieval_unavailable" }
   | { kind: "provider_error"; upstreamStatus: number; keyHint: string }
-  | { kind: "provider_unreachable" };
+  | { kind: "provider_unreachable" }
+  | { kind: "provider_busy" }
+  | { kind: "daily_limited"; retryAfter: number };
 
 export type AskInput = {
   user: { id: string; role?: string | null };
@@ -90,6 +92,7 @@ export type AssistantAuditLine = {
   retrievalModel: string | null;
   docChunks: number;
   materialContext: boolean;
+  rewriteFailed: boolean;
   outcome: AskOutcome["kind"] | "answered_fixed";
 };
 
@@ -106,6 +109,7 @@ export function buildAuditLine(input: AssistantAuditLine): AssistantAuditLine {
     retrievalModel: input.retrievalModel,
     docChunks: input.docChunks,
     materialContext: input.materialContext,
+    rewriteFailed: input.rewriteFailed,
     outcome: input.outcome,
   };
 }
@@ -117,6 +121,7 @@ export type AskDependencies = {
   retrieveDocs: typeof retrieveHelpDocs;
   buildMaterial: typeof buildMaterialContext;
   callModel: typeof callAssistantModel;
+  consumeDailyCap: typeof consumeLocalChatDailyCap;
   log: (line: AssistantAuditLine) => void;
 };
 
@@ -127,6 +132,7 @@ const defaultDependencies: AskDependencies = {
   retrieveDocs: retrieveHelpDocs,
   buildMaterial: buildMaterialContext,
   callModel: callAssistantModel,
+  consumeDailyCap: consumeLocalChatDailyCap,
   log: (line) => console.info("[assistant] ask", line),
 };
 
@@ -145,6 +151,8 @@ function modelFailure(
       };
     case "transport_failure":
       return { kind: "provider_unreachable" };
+    case "busy":
+      return { kind: "provider_busy" };
   }
 }
 
@@ -161,6 +169,7 @@ export async function answerAssistantQuestion(
     retrievalModel: null,
     docChunks: 0,
     materialContext: false,
+    rewriteFailed: false,
     outcome: "unavailable",
   };
   const finish = (outcome: AskOutcome, fixed = false): AskOutcome => {
@@ -170,23 +179,38 @@ export async function answerAssistantQuestion(
   };
 
   // 1. Scope.
-  const [availability, resolution] = await Promise.all([
+  const [availability, pageResolution] = await Promise.all([
     deps.loadAvailability(),
     deps.resolvePageContext(input.user, input.hint),
   ]);
-  if (resolution.kind === "missing") return finish({ kind: "not_found" });
+  let resolution = pageResolution;
+  if (resolution.kind === "missing") {
+    // A stale hint (e.g. a material deleted while its page was open) drops the
+    // material half only; it 404s just when the docs half can't answer either.
+    if (!docsSourceAvailable(availability)) return finish({ kind: "not_found" });
+    resolution = { kind: "none" };
+  }
   const scope: AssistantScope = scopeFor(availability, resolution);
   if (!scope.docs && !scope.material) return finish({ kind: "unavailable" });
 
   // 2. Provider, key and model.
   const { settings } = availability;
-  const { catalogue, rows, choice } = await deps.resolveProvider(
-    input.user.id,
-    settings.defaultModel,
-  );
+  const { catalogue, rows, choice } = await deps.resolveProvider({
+    userId: input.user.id,
+    defaultModel: settings.defaultModel,
+    catalogue: availability.catalogue,
+  });
   if (!choice) return finish({ kind: "no_key" });
   audit.provider = choice.provider;
   audit.answerModel = choice.model;
+
+  // A local model draws on the same GPU fleet as course chat, so it shares chat's daily cap.
+  const dailyCap = await deps.consumeDailyCap({
+    userId: input.user.id,
+    role: input.user.role ?? undefined,
+    model: `${choice.provider}:${choice.model}`,
+  });
+  if (dailyCap?.limited) return finish({ kind: "daily_limited", retryAfter: dailyCap.retryAfter });
 
   // The retrieval query: a follow-up is rewritten into a standalone query so
   // retrieval sees the conversation (invariant 2 of #1819).
@@ -207,9 +231,10 @@ export async function answerAssistantQuestion(
       messages: [{ role: "user", content: buildRewritePrompt(retrievalHistory, input.question) }],
       maxTokens: 120,
     });
-    if (rewritten.kind !== "success") return finish(modelFailure(rewritten, choice));
+    // The rewrite only sharpens retrieval; a failed one falls back instead of failing the question.
+    audit.rewriteFailed = rewritten.kind !== "success";
     retrievalQuery =
-      rewritten.text.split("\n")[0]?.trim() ||
+      (rewritten.kind === "success" && rewritten.text.split("\n")[0]?.trim()) ||
       fallbackRetrievalQuery(retrievalHistory, input.question);
   }
 
@@ -243,22 +268,18 @@ export async function answerAssistantQuestion(
     material: scope.material && resolved ? scopeLabel(resolved) : null,
   };
 
-  // 5. Nothing to ground in: a fixed sentence, no model call. Which one depends on why.
+  // 5. Nothing to ground in: a fixed sentence, no model call. The material half
+  // only applies alongside the docs half, so the guide is always the pointer.
   if (docs.length === 0 && !materialBlock) {
-    if (scope.docs) {
-      return finish(
-        {
-          kind: "answered",
-          answer: NOT_DOCUMENTED_ANSWER,
-          sources: [HELP_GUIDE_SOURCE],
-          scope: answeredScope,
-        },
-        true,
-      );
-    }
-    const answer =
-      material?.status === "failed" ? MATERIAL_UNAVAILABLE_ANSWER : MATERIAL_NOT_COVERED_ANSWER;
-    return finish({ kind: "answered", answer, sources: [], scope: answeredScope }, true);
+    return finish(
+      {
+        kind: "answered",
+        answer: NOT_DOCUMENTED_ANSWER,
+        sources: [HELP_GUIDE_SOURCE],
+        scope: answeredScope,
+      },
+      true,
+    );
   }
 
   // 6. The grounded answer.

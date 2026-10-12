@@ -6,10 +6,8 @@
  * course page (that page's loader) and `POST /api/assistant/ask` all read these
  * functions, so the icon can never promise an answer the endpoint refuses.
  *
- * A plain service, deliberately NOT an RBAC ability with an admin bypass: the
- * kill switch must bind administrators too. That is also why the platform switch
- * `ai.platformEnabled` is checked first — an admin freezing AI during a cost or
- * provider incident expects every assistant call to stop, including their own.
+ * A plain service, deliberately NOT an RBAC ability with an admin bypass: turning
+ * Penny off must stop every assistant call, administrators' own included.
  */
 import type { AssistantSettings } from "~/lib/assistant/assistant-settings";
 import { getAssistantSettings } from "~/lib/assistant/assistant-settings.server";
@@ -20,14 +18,12 @@ import {
   loadAssistantCatalogue,
   type CatalogueProvider,
 } from "~/lib/assistant/provider-choice.server";
-import { getPolicy } from "~/lib/policy.server";
 
 export type AssistantAvailability = {
-  /** The platform AI kill switch (`ai.platformEnabled`). */
-  platformEnabled: boolean;
   settings: AssistantSettings;
   /** At least one active provider with an admin-allowed chat model. */
   hasEnabledProvider: boolean;
+  catalogue: CatalogueProvider[];
 };
 
 export type AssistantScope = { docs: boolean; material: boolean };
@@ -35,14 +31,15 @@ export type AssistantScope = { docs: boolean; material: boolean };
 /** Platform roles that keep material grounding with the student toggle off. */
 const STAFF_ROLES = new Set(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"]);
 
-function aiCallsAllowed(availability: AssistantAvailability): boolean {
+/** Penny switched on and something to answer with — gates BOTH halves. */
+function assistantEnabled(availability: AssistantAvailability): boolean {
   // Never advertise a source whose request could only be refused.
-  return availability.platformEnabled && availability.hasEnabledProvider;
+  return availability.settings.enableHelpAssistant && availability.hasEnabledProvider;
 }
 
-/** The documentation half: switch on, AI not frozen, and something to answer with. */
+/** The documentation half. */
 export function docsSourceAvailable(availability: AssistantAvailability): boolean {
-  return aiCallsAllowed(availability) && availability.settings.enableHelpAssistant;
+  return assistantEnabled(availability);
 }
 
 /**
@@ -54,7 +51,7 @@ export function materialSourcePossible(
   availability: AssistantAvailability,
   role: string | null | undefined,
 ): boolean {
-  if (!aiCallsAllowed(availability)) return false;
+  if (!assistantEnabled(availability)) return false;
   return availability.settings.enableStudentMaterialQuestions || STAFF_ROLES.has(role ?? "");
 }
 
@@ -67,7 +64,7 @@ export function materialSourceAvailable(
   availability: AssistantAvailability,
   resolution: PageContextResolution,
 ): boolean {
-  if (!aiCallsAllowed(availability)) return false;
+  if (!assistantEnabled(availability)) return false;
   if (resolution.kind !== "resolved") return false;
   if (!resolution.courseAllowsAi || !resolution.canView || !resolution.access) return false;
   const staffOfCourse = resolution.access.rank >= 2;
@@ -109,15 +106,14 @@ export function invalidateAssistantCatalogueCache(): void {
 }
 
 export async function loadAssistantAvailability(): Promise<AssistantAvailability> {
-  const [platformEnabled, settings, catalogue] = await Promise.all([
-    getPolicy("ai.platformEnabled"),
+  const [settings, catalogue] = await Promise.all([
     getAssistantSettings(),
     cachedAssistantCatalogue(),
   ]);
   return {
-    platformEnabled,
     settings,
     hasEnabledProvider: catalogueHasEnabledProvider(catalogue),
+    catalogue,
   };
 }
 

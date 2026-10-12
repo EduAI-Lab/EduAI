@@ -24,6 +24,7 @@ import {
 import {
   fetchAssistantSettings,
   fetchProviderModels,
+  removeAssistantKey,
   resetAssistantSettings,
   saveAssistantSettings,
   type AssistantUserSettings,
@@ -116,12 +117,8 @@ export function AssistantSettingsPane({ onBack }: { onBack: () => void }) {
     return run("save", () => saveAssistantSettings(request), "Saved.");
   };
 
-  const removeKey = () =>
-    run(
-      "remove",
-      () => saveAssistantSettings({ provider, model, removeKey: true }),
-      "Key removed.",
-    );
+  // Not the save path: that re-validates the model, and a self-curated one fails once the key is gone.
+  const removeKey = () => run("remove", () => removeAssistantKey(provider), "Key removed.");
 
   const reset = () =>
     run("reset", resetAssistantSettings, "Back to the default. Your saved keys were kept.");

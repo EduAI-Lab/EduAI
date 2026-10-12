@@ -98,8 +98,8 @@ export function AssistantToggleCard({
         <CardTitle>Help assistant ({ASSISTANT_DISPLAY_NAME})</CardTitle>
         <CardDescription>
           A floating assistant on every signed-in page that answers only from the role-scoped user
-          guide and, where allowed, the course material being viewed. The platform kill switch under
-          General stops it for everyone, administrators included.
+          guide and, where allowed, the course material being viewed. Turning it off stops it for
+          everyone, administrators included.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">

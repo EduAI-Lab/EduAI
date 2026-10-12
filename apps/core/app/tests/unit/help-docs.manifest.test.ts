@@ -22,6 +22,7 @@ import {
   helpDocUrl,
   helpPagesForSlices,
 } from "~/lib/assistant/help-docs/manifest";
+import { HELP_GUIDE_SOURCES } from "~/lib/assistant/help-docs/generated/guides";
 import { sectionsWithBody } from "~/lib/assistant/help-docs/sections";
 import { resolvedHelpPages } from "~/lib/assistant/help-docs/sources.server";
 import { canReadHelpSlice, visibleHelpSlices } from "~/lib/help/role-slices";
@@ -38,6 +39,13 @@ function readSource(file: string) {
 }
 
 describe("help docs manifest guardrail", () => {
+  it("the generated guides module matches docs/ (run `npm run help-docs:generate -w edu-ai`)", () => {
+    for (const [source, { file }] of Object.entries(HELP_DOC_SOURCES)) {
+      const onDisk = readSource(file).replace(/\r\n/g, "\n");
+      expect(HELP_GUIDE_SOURCES[source as keyof typeof HELP_GUIDE_SOURCES]).toBe(onDisk);
+    }
+  });
+
   it("indexes (or explicitly excludes) every section that exists on disk", () => {
     const unindexed: string[] = [];
     for (const [source, { file }] of Object.entries(HELP_DOC_SOURCES)) {

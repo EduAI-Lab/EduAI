@@ -11,21 +11,25 @@ import { historyAsText, type AssistantTurn } from "~/lib/assistant/history";
 
 /** Documentation ran and found nothing relevant. Never sent when retrieval FAILED. */
 export const NOT_DOCUMENTED_ANSWER = "I couldn't find this in the documentation.";
-/** Material was the only source and could not be loaded — transient, not "not covered". */
-export const MATERIAL_UNAVAILABLE_ANSWER =
-  "I couldn't load this material right now. Please try again in a moment.";
-/** Material was the only source, loaded fine, and had nothing relevant. */
-export const MATERIAL_NOT_COVERED_ANSWER = "I couldn't find this in the course material.";
 
 /** Where "not documented" points the reader. */
 export const HELP_GUIDE_SOURCE = { id: "help", title: "Help & guide", url: "/help" } as const;
 
 export type PromptDocPage = { title: string; url: string; content: string };
 
+/** Neutralise reference tags in a body so it cannot close (or reopen) its own block. */
+export function escapeReferenceBody(body: string): string {
+  return body.replace(/<(\/?reference\b)/gi, "&lt;$1");
+}
+
+function referenceTitle(title: string): string {
+  return title.replace(/[<>\r\n]+/g, " ").replace(/"/g, "'");
+}
+
 function referenceBlock(kind: string, title: string, body: string): string {
   return [
-    `<reference kind="${kind}" title="${title.replace(/"/g, "'")}">`,
-    body,
+    `<reference kind="${kind}" title="${referenceTitle(title)}">`,
+    escapeReferenceBody(body),
     "</reference>",
   ].join("\n");
 }

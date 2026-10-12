@@ -13,14 +13,16 @@
  * Status contract (each row has a test in assistant-ask.route.test.ts):
  *   200 {answer, sources, scope}              answered, grounded or a fixed sentence
  *   403 {error, code: "unavailable"}          neither source applies here
- *   404 {error}                               the context hint names nothing real
+ *   404 {error}                               the hint names nothing real and docs are off
  *   422 {error, code: "no_key"}               a source applies, no key resolves
  *   422 {error, code: "provider_invalid"}     refused locally before any HTTP call
  *   422 {error: "VALIDATION_ERROR", errors}   request shape failed
  *   429 {error, code: "rate_limited"}         this endpoint's own throttle
+ *   429 {error, code: "daily_limit"}          a local model's shared daily cap (chat's)
  *   502 {error, code: "provider_error", upstream_status}  provider answered, refused
  *   502 {error, code: "provider_unreachable"} transport failure
  *   503 {error, code: "retrieval_unavailable"} the documentation search is down
+ *   503 {error, code: "provider_busy"}        no local-inference slot freed up in time
  *
  * A provider's own status is never passed through: a provider 401/403/429 would be
  * indistinguishable from this endpoint's own, so it is always 502 with the real
@@ -29,12 +31,16 @@
 import { z } from "zod";
 import type { ActionFunctionArgs } from "react-router";
 
-import type { JsonResponseBody } from "~/lib/api/json-response.server";
+import { admissionRetryAfterSeconds } from "~/lib/ai/admission.server";
 import { answerAssistantQuestion, type AskOutcome } from "~/lib/assistant/ask.server";
 import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
 import { parsePageContextHint } from "~/lib/assistant/material-context.server";
-import { checkRateLimit, parseEnvInt } from "~/lib/auth/rate-limit.server";
-import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  jsonResponse as json,
+  requireSessionUser,
+  throttle,
+} from "~/lib/assistant/route-helpers.server";
+import { parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { readBoundedJson } from "~/lib/chat-input.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
@@ -44,7 +50,6 @@ export const ASK_TURN_MAX_CHARS = 4_000;
 export const ASK_CONTEXT_MAX_ENTRIES = 3;
 export const ASK_CONTEXT_VALUE_MAX_CHARS = 100;
 const ASK_MAX_BODY_BYTES = 160 * 1024;
-const ASK_RATE_WINDOW_MS = 60_000;
 
 const turnSchema = z
   .object({
@@ -66,13 +71,6 @@ export const askRequestSchema = z
   })
   .strict();
 
-function json(status: number, body: JsonResponseBody, headers: Record<string, string> = {}) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", ...headers },
-  });
-}
-
 /** A busy provider or a spent quota is not a key problem, so only the rest point at the key. */
 function providerErrorMessage(status: number, keyHint: string): string {
   if (status >= 500) {
@@ -84,7 +82,7 @@ function providerErrorMessage(status: number, keyHint: string): string {
   return `The AI provider refused the request (status ${status}). If this keeps happening, check ${keyHint}.`;
 }
 
-export function askOutcomeResponse(outcome: AskOutcome): Response {
+function askOutcomeResponse(outcome: AskOutcome): Response {
   switch (outcome.kind) {
     case "answered":
       return json(200, { answer: outcome.answer, sources: outcome.sources, scope: outcome.scope });
@@ -122,6 +120,28 @@ export function askOutcomeResponse(outcome: AskOutcome): Response {
         error: "The AI provider couldn't be reached. Please try again in a moment.",
         code: "provider_unreachable",
       });
+    case "provider_busy": {
+      const retryAfter = admissionRetryAfterSeconds();
+      return json(
+        503,
+        {
+          error: "The AI service is busy with other requests. Please try again shortly.",
+          code: "provider_busy",
+          retryAfter,
+        },
+        { "Retry-After": String(retryAfter) },
+      );
+    }
+    case "daily_limited":
+      return json(
+        429,
+        {
+          error: "You've reached today's limit for questions to the local AI model.",
+          code: "daily_limit",
+          retryAfter: outcome.retryAfter,
+        },
+        { "Retry-After": String(outcome.retryAfter) },
+      );
   }
 }
 
@@ -130,24 +150,12 @@ export async function action({ request }: ActionFunctionArgs) {
     async () => {
       if (request.method !== "POST") return json(405, { error: "Method not allowed" });
 
-      const session = await getRequestSession(request);
-      if (!session?.user) return json(401, { error: "Unauthorized" });
-      const user = session.user;
+      const user = await requireSessionUser(request);
+      if (!user) return json(401, { error: "Unauthorized" });
 
       const limit = parseEnvInt(process.env.ASSISTANT_ASK_RATE_LIMIT, 10);
-      const rate = await checkRateLimit(`assistant-ask:${user.id}`, limit, ASK_RATE_WINDOW_MS);
-      if (rate.limited) {
-        return json(
-          429,
-          {
-            error:
-              "You're asking questions faster than the assistant allows. Please wait a moment.",
-            code: "rate_limited",
-            retryAfter: rate.retryAfter,
-          },
-          { "Retry-After": String(rate.retryAfter) },
-        );
-      }
+      const limited = await throttle("assistant-ask", user.id, limit);
+      if (limited) return limited;
 
       const body = await readBoundedJson(
         request,
