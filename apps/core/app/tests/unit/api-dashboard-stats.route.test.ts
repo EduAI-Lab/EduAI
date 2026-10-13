@@ -14,6 +14,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chat: { count: vi.fn().mockResolvedValue(0) },
     enrollment: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
     course: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
+    courseTopic: { count: vi.fn().mockResolvedValue(0) },
   },
 }));
 
@@ -45,6 +46,7 @@ beforeEach(() => {
   vi.mocked(prisma.user.count).mockResolvedValue(0);
   vi.mocked(prisma.course.count).mockResolvedValue(0);
   vi.mocked(prisma.course.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.courseTopic.count).mockResolvedValue(0);
 });
 
 describe("GET /api/dashboard/stats", () => {
@@ -147,19 +149,51 @@ describe("GET /api/dashboard/stats", () => {
     });
   });
 
-  it("scopes stats to the caller's own chats/enrollments for a STUDENT", async () => {
+  it("scopes stats to the caller's own chats for a STUDENT and sends no material count (#1962)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "student-1", role: "STUDENT" },
     } as never);
-    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([{ courseId: "course-1" }] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
+      { courseId: "course-1", role: "STUDENT" },
+    ] as never);
     vi.mocked(prisma.chat.count).mockResolvedValueOnce(3).mockResolvedValueOnce(1);
     vi.mocked(prisma.courseMaterial.count).mockResolvedValue(6);
+    vi.mocked(prisma.courseTopic.count).mockResolvedValue(4);
 
     const res = await loader(makeArgs());
     const body = await res.json();
     expect(prisma.chat.count).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: "student-1" } }),
     );
-    expect(body).toMatchObject({ chatCount: 3, chatCountWeek: 1, materialCount: 6 });
+    expect(body).toMatchObject({ chatCount: 3, chatCountWeek: 1, materialCount: 0, topicCount: 4 });
+    expect(prisma.courseMaterial.count).not.toHaveBeenCalled();
+    // The learner view (#1937) in the student's published courses only.
+    expect(prisma.courseTopic.count).toHaveBeenCalledWith({
+      where: {
+        courseId: { in: ["course-1"] },
+        deletedAt: null,
+        course: { isPublished: true, deletedAt: null },
+        reviewStatus: "ACCEPTED",
+        name: { not: "Uncategorized" },
+      },
+    });
+  });
+
+  it("keeps a TA's material count, scoped to their enrollments", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "ta-1", role: "STUDENT" },
+    } as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
+      { courseId: "course-1", role: "TA" },
+      { courseId: "course-2", role: "STUDENT" },
+    ] as never);
+    vi.mocked(prisma.courseMaterial.count).mockResolvedValue(6);
+
+    const body = await (await loader(makeArgs())).json();
+
+    expect(body.materialCount).toBe(6);
+    expect(prisma.courseMaterial.count).toHaveBeenCalledWith({
+      where: { courseId: { in: ["course-1", "course-2"] }, status: "READY", deletedAt: null },
+    });
   });
 });

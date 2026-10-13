@@ -100,6 +100,22 @@ describe("DASHBOARD_CONFIG statBuilders", () => {
   it("INSTRUCTOR shows an em dash for the course count while loading", () => {
     expect(statsFor("INSTRUCTOR", { coursesLoading: true })["Courses teaching"]).toBe("—");
   });
+
+  it("STUDENT shows topics to explore and no material count (#1962)", () => {
+    const stats = statsFor("STUDENT", {
+      courseTotal: 3,
+      stats: { chatCount: 9, chatCountWeek: 2, materialCount: 41, topicCount: 7 } as never,
+    });
+
+    expect(stats["Topics to explore"]).toBe("7");
+    expect(Object.keys(stats).some((label) => /material/i.test(label))).toBe(false);
+  });
+
+  it("TA keeps its Materials tile", () => {
+    const stats = statsFor("TA", { stats: { materialCount: 41 } as never });
+
+    expect(stats["Materials"]).toBe("41");
+  });
 });
 
 /** The shared DashboardView renders <Link>s, so a router context is required. */
