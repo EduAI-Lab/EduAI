@@ -807,15 +807,37 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
     return baseVariantOptions.find((option) => option.value === form.baseSelection)?.entry;
   }, [form.baseSelection, baseVariantOptions]);
 
+  // #1974: the topic the new variant's question will have; a topic-limited assessment
+  // rejects a variant whose question is outside its topics.
+  const targetTopicId =
+    createMode === "variant"
+      ? (createProps?.presetVariant?.primaryTopicId ?? "")
+      : form.primaryTopicId;
+  const assessmentCoversTopic = (assessment: Assessment) => {
+    const limited = assessment.blueprintConfig?.primaryTopicIds;
+    if (!Array.isArray(limited) || limited.length === 0 || !targetTopicId) return true;
+    return limited.includes(targetTopicId);
+  };
+
   const assessmentOptions = useMemo(
     () =>
-      assessments.filter((assessment) =>
-        createProps?.courseId
-          ? assessment.courseId === undefined || assessment.courseId === createProps.courseId
-          : true,
+      assessments.filter(
+        (assessment) =>
+          (createProps?.courseId
+            ? assessment.courseId === undefined || assessment.courseId === createProps.courseId
+            : true) && assessmentCoversTopic(assessment),
       ),
-    [assessments, createProps?.courseId],
+    [assessments, createProps?.courseId, targetTopicId],
   );
+
+  // Drop a chosen assessment once a topic change puts it out of scope.
+  useEffect(() => {
+    if (form.variantAssessmentId === "none") return;
+    const chosen = assessments.find((a) => a.id.toString() === form.variantAssessmentId);
+    if (chosen && !assessmentCoversTopic(chosen)) {
+      setForm((prev) => ({ ...prev, variantAssessmentId: "none" }));
+    }
+  }, [targetTopicId, assessments, form.variantAssessmentId]);
 
   const handleFieldChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     if (field === "primaryTopicId" && isString(value)) {
@@ -1264,6 +1286,15 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         form.questionDescription.trim() || createDescriptionFromText(form.variantText) || null;
       const primaryTopicId = form.primaryTopicId.trim();
       if (!primaryTopicId) throw new Error("Valid primary topic is required.");
+      // #1974: check before createQuestion so a rejected variant can't strand a question.
+      const chosenAssessment = assessments.find(
+        (a) => a.id.toString() === form.variantAssessmentId,
+      );
+      if (chosenAssessment && !assessmentCoversTopic(chosenAssessment)) {
+        throw new Error(
+          `"${chosenAssessment.name}" is limited to other topics. Pick a different assessment or a topic it covers.`,
+        );
+      }
       let questionOrder: Record<string, number> | undefined;
       if (form.questionOrder) {
         try {
