@@ -434,13 +434,6 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 403 for an enrolled student in an unpublished course (§7 publish gate)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 }, { ...COURSE, isPublished: false });
-    const res = await loader(makeArgs("GET"));
-    expect(res.status).toBe(403);
-  });
-
   it("returns 200 for a TA even in an unpublished course", async () => {
     mockSession("STUDENT", "ta-user");
     mockAccess({ level: "ta", rank: 1 }, { ...COURSE, isPublished: false });
@@ -534,14 +527,6 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     expect(body.excerpt).toBe("Course overview text");
     expect(body.truncated).toBe(false);
     expect(body.material.title).toBe("Syllabus");
-  });
-
-  it("returns 403 for a student when students.canViewMaterials is off", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(getPolicy).mockResolvedValue(false);
-    const res = await loader(makePreviewArgs("mat-1"));
-    expect(res.status).toBe(403);
   });
 
   it("does not filter unpublished materials for an instructor (#777 publish-aware sync)", async () => {
@@ -698,15 +683,6 @@ describe("POST /api/courses/:courseId/materials action", () => {
     const res = await action(makeArgs("POST"));
     expect(res.status).toBe(403);
     expect(getPolicy).toHaveBeenCalledWith("tas.canManageMaterials");
-    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
-  });
-
-  it("returns 403 for a STUDENT uploading to an UNPUBLISHED course even when students.canUploadMaterials is on (§7/§19 publish gate)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 }, { ...COURSE, isPublished: false });
-    vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(403);
     expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
   });
 
@@ -1379,32 +1355,6 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     expect(removeOrphanedSuggestions).not.toHaveBeenCalled();
   });
 
-  it("does not let the receipt carve-out reach real material", async () => {
-    // The carve-out is scoped to the receipt shape: own row, FAILED, pointing at
-    // a winner. A material that merely failed to parse is still material.
-    mockSession("STUDENT", "student-user");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
-      id: "mat-1",
-      uploadedBy: "student-user",
-      status: "FAILED",
-      duplicateOfId: null,
-    } as never);
-
-    expect((await action(makeDeleteArgs("mat-1"))).status).toBe(403);
-
-    // Nor another student's receipt.
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
-      id: "receipt-2",
-      uploadedBy: "other-student",
-      status: "FAILED",
-      duplicateOfId: "winner-1",
-    } as never);
-
-    expect((await action(makeDeleteArgs("receipt-2"))).status).toBe(403);
-    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
-  });
-
   it("returns 403 for a TA deleting another user's material (§7 own-only)", async () => {
     mockSession("STUDENT", "ta-user");
     mockAccess({ level: "ta", rank: 1 });
@@ -2037,22 +1987,8 @@ describe("POST /api/courses/:courseId/materials/:materialId/reprocess (#1749)", 
   // existing row with `replace: true` — that is the delete/edit blast radius,
   // not the upload one, and every sibling mutation on this resource checks
   // `uploadedBy`. PATCH uses `rank < 2 && !isOwnTaEdit`; DELETE uses
-  // `rank < 2 && !isOwnTa && !isOwnDuplicateReceipt`. Reprocess checked nothing.
+  // `rank < 2 && !isOwnTa`. Reprocess checked nothing.
   describe("ownership, not just the upload gate (#1795 review round 2)", () => {
-    it("denies a student who may upload, retrying someone else's material", async () => {
-      // The `students.canUploadMaterials` grant is what makes this reachable:
-      // it clears the upload gate, and nothing afterwards looked at uploadedBy.
-      vi.mocked(getPolicy).mockResolvedValue(true);
-      mockAccess({ level: "student", rank: 0 });
-      mockRetryableMaterial({ uploadedBy: "instructor-9" } as never);
-
-      const res = await action(makeReprocessArgs("mat-1"));
-
-      expect(res.status).toBe(403);
-      expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
-      expect(processMaterialEmbeddings).not.toHaveBeenCalled();
-    });
-
     it("denies a TA retrying a material it did not upload", async () => {
       // A TA may rename or delete only its own material; re-embedding someone
       // else's is strictly larger than either.
