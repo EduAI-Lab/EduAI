@@ -93,7 +93,7 @@ decision, not an oversight.
 | `courses.instructorId` | Matched 223/238 rows | Instructor count grows past ~20 |
 | `ai_interactions.modelId` | Low cardinality (a handful of models); an index can't be selective | Probably never |
 | `invitations.invitedById` / `acceptedUserId` | Both `onDelete: SetNull` from User, so a user delete seq-scans; table is tiny | `invitations` exceeds ~10k rows |
-| `canvas_roster_members.syncedByUserId` | Default `Restrict` from User, so a user delete seq-scans. Grows with every roster sync — the likeliest of this list to need an index | Table exceeds ~10k rows |
+| `canvas_roster_members.syncedByUserId` | `onDelete: SetNull` from User (#1959), so a user delete seq-scans. Grows with every roster sync — the likeliest of this list to need an index | Table exceeds ~10k rows |
 | `user_provider_settings.providerId` | `@@unique([userId, providerId])` leads with `userId`, so the `onDelete: Cascade` from AIProvider seq-scans. One row per user per provider keeps it small | Provider deletes become routine |
 
 The same reasoning is mirrored as comments in `prisma/schema.prisma` so it's visible at the
