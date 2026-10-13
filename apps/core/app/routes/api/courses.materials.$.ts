@@ -109,6 +109,11 @@ function studentVisibilityWhere(now: Date, excludedCanvasFileIds: string[] = [])
 /**
  * Shared auth resolution for all material routes: session + §7 course access.
  * Returns a Response on failure, or the session user + access on success.
+ *
+ * #1962: students never see a course's files — course chat is their way into a
+ * course — so a student is refused here, before any read or write, on every
+ * path this module serves: list, `?ids=` re-read, preview, upload, rename,
+ * delete and reprocess.
  */
 async function resolveMaterialsAccess(
   request: Request,
@@ -126,7 +131,7 @@ async function resolveMaterialsAccess(
   if (!course) {
     return { response: json(404, { error: "COURSE_NOT_FOUND" }) };
   }
-  if (!access) {
+  if (!access || access.level === "student") {
     return { response: json(403, { error: "Forbidden" }) };
   }
 

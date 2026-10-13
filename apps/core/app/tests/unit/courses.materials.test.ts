@@ -298,6 +298,108 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
+// #1962: students never see a course's files. One gate in the shared access
+// step refuses them on every materials path, before any read or write.
+// ---------------------------------------------------------------------------
+
+describe("students are refused on every materials path (#1962)", () => {
+  const STUDENT = { level: "student", rank: 0 } as const;
+
+  function makeIdsArgs() {
+    return {
+      request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials?ids=mat-1`, {
+        method: "GET",
+      }),
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any;
+  }
+
+  function makeReprocessArgs() {
+    return {
+      request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/mat-1/reprocess`, {
+        method: "POST",
+      }),
+      params: { courseId: COURSE_ID, materialId: "mat-1" },
+      context: {} as never,
+    } as any;
+  }
+
+  const paths: Array<[string, () => Promise<Response>]> = [
+    ["GET list", () => loader(makeArgs("GET"))],
+    ["GET ?ids= re-read", () => loader(makeIdsArgs())],
+    ["GET preview", () => loader(makePreviewArgs("mat-1"))],
+    ["POST upload", () => action(stubUploadArgs())],
+    ["PATCH rename", () => action(makeRenameArgs("mat-1", { title: "New name" }))],
+    ["PATCH visibility", () => action(makeRenameArgs("mat-1", { visibleToStudents: false }))],
+    ["DELETE", () => action(makeDeleteArgs("mat-1"))],
+    ["POST reprocess", () => action(makeReprocessArgs())],
+  ];
+
+  it.each(paths)("%s → 403 Forbidden, touching no material row", async (_path, call) => {
+    mockSession("STUDENT", "student-user");
+    mockAccess(STUDENT);
+    // The student's own FAILED duplicate receipt — the shape the old carve-outs
+    // let through. The gate must refuse before ever reading it.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "student-user",
+      status: "FAILED",
+      duplicateOfId: "winner-1",
+      rawText: "extracted text",
+    } as never);
+
+    const res = await call();
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden" });
+    expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.findFirst).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a student in an unpublished course the same way", async () => {
+    mockSession("STUDENT");
+    mockAccess(STUDENT, { ...COURSE, isPublished: false });
+
+    const res = await loader(makeArgs("GET"));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden" });
+  });
+
+  it("refuses by role alone, consulting no policy flag", async () => {
+    mockSession("STUDENT");
+    mockAccess(STUDENT);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+
+    expect((await loader(makeArgs("GET"))).status).toBe(403);
+    expect((await action(stubUploadArgs())).status).toBe(403);
+    expect(getPolicy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ta", 1, "STUDENT"],
+    ["instructor", 2, "INSTRUCTOR"],
+    ["unit", 3, "UNIT_ADMIN"],
+    ["admin", 4, "ADMIN"],
+  ] as const)("still lists materials for %s", async (level, rank, role) => {
+    mockSession(role);
+    mockAccess({ level, rank });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-1", status: "READY", _count: { chunks: 1 } },
+    ] as never);
+
+    const res = await loader(makeArgs("GET"));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).materials).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // loader
 // ---------------------------------------------------------------------------
 
@@ -339,56 +441,12 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 200 for an enrolled student in a published course", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([{ id: "mat-1" }] as never);
-    const res = await loader(makeArgs("GET"));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.materials).toHaveLength(1);
-  });
-
   it("returns 200 for a TA even in an unpublished course", async () => {
     mockSession("STUDENT", "ta-user");
     mockAccess({ level: "ta", rank: 1 }, { ...COURSE, isPublished: false });
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
     const res = await loader(makeArgs("GET"));
     expect(res.status).toBe(200);
-  });
-
-  it("returns 403 for a student when students.canViewMaterials is off", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(getPolicy).mockResolvedValue(false);
-    const res = await loader(makeArgs("GET"));
-    expect(res.status).toBe(403);
-    expect(getPolicy).toHaveBeenCalledWith("students.canViewMaterials");
-  });
-
-  it("returns 200 for a student when students.canViewMaterials is on (default)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
-    const res = await loader(makeArgs("GET"));
-    expect(res.status).toBe(200);
-  });
-
-  it("filters out unpublished materials for a student (#777 publish-aware sync)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
-    const res = await loader(makeArgs("GET"));
-    expect(res.status).toBe(200);
-    expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          courseId: COURSE_ID,
-          deletedAt: null,
-          unpublishedAt: null,
-        }),
-      }),
-    );
   });
 
   it("does not filter unpublished materials for an instructor (#777 publish-aware sync)", async () => {
@@ -402,29 +460,6 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     };
     expect(call.where).toEqual({ courseId: COURSE_ID, deletedAt: null });
     expect("unpublishedAt" in call.where).toBe(false);
-  });
-
-  it("excludes materials whose externalId is in CanvasMaterialExclusion for a student (retroactive exclusion)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
-      { canvasFileId: "1001" },
-    ] as never);
-    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
-    const res = await loader(makeArgs("GET"));
-    expect(res.status).toBe(200);
-    expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          unpublishedAt: null,
-          visibleToStudents: true,
-          AND: [
-            { OR: [{ availableAt: null }, { availableAt: { lte: expect.any(Date) } }] },
-            { OR: [{ externalId: null }, { externalId: { notIn: ["1001"] } }] },
-          ],
-        }),
-      }),
-    );
   });
 
   it("does not apply the exclusion filter for an instructor read", async () => {
@@ -458,16 +493,16 @@ describe("GET /api/courses/:courseId/materials loader", () => {
 
 describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", () => {
   it("returns 404 when material not found", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     const res = await loader(makePreviewArgs("mat-missing"));
     expect(res.status).toBe(404);
   });
 
   it("returns 409 when material is not READY", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "mat-1",
       title: "Slides",
@@ -482,8 +517,8 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
   });
 
   it("returns excerpt for READY material", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "mat-1",
       title: "Syllabus",
@@ -509,34 +544,6 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     expect(res.status).toBe(403);
   });
 
-  it("filters out unpublished materials for a student (#777 publish-aware sync)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    const res = await loader(makePreviewArgs("mat-1"));
-    expect(res.status).toBe(404);
-    expect(prisma.courseMaterial.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          id: "mat-1",
-          courseId: COURSE_ID,
-          deletedAt: null,
-          unpublishedAt: null,
-        }),
-      }),
-    );
-  });
-
-  it("returns 403 (not 404) when a student-hidden material actually exists (#1180)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findFirst)
-      .mockResolvedValueOnce(null) // studentGate-filtered read: excluded
-      .mockResolvedValueOnce({ id: "mat-1" } as never); // existence check: it's really there
-    const res = await loader(makePreviewArgs("mat-1"));
-    expect(res.status).toBe(403);
-  });
-
   it("does not filter unpublished materials for an instructor (#777 publish-aware sync)", async () => {
     mockSession("INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
@@ -556,29 +563,6 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     };
     expect(call.where).toEqual({ id: "mat-1", courseId: COURSE_ID, deletedAt: null });
     expect("unpublishedAt" in call.where).toBe(false);
-  });
-
-  it("excludes a previewed material whose externalId is in CanvasMaterialExclusion for a student (retroactive exclusion)", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
-      { canvasFileId: "1001" },
-    ] as never);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    const res = await loader(makePreviewArgs("mat-1"));
-    expect(res.status).toBe(404);
-    expect(prisma.courseMaterial.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          unpublishedAt: null,
-          visibleToStudents: true,
-          AND: [
-            { OR: [{ availableAt: null }, { availableAt: { lte: expect.any(Date) } }] },
-            { OR: [{ externalId: null }, { externalId: { notIn: ["1001"] } }] },
-          ],
-        }),
-      }),
-    );
   });
 
   it("does not apply the exclusion filter for an instructor preview read", async () => {
@@ -715,18 +699,6 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(403);
     expect(getPolicy).toHaveBeenCalledWith("tas.canManageMaterials");
     expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
-  });
-
-  it("admits a STUDENT upload when students.canUploadMaterials is on", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(getPolicy).mockResolvedValue(true);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-2" } as never);
-    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-2" } as never);
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(202);
-    await flushBackgroundWork();
   });
 
   it("returns 403 for a STUDENT uploading to an UNPUBLISHED course even when students.canUploadMaterials is on (§7/§19 publish gate)", async () => {
@@ -1407,28 +1379,6 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     expect(removeOrphanedSuggestions).not.toHaveBeenCalled();
   });
 
-  it("lets a student clear their own duplicate receipt (#1494 review)", async () => {
-    // Students may upload when `students.canUploadMaterials` is on, and a late
-    // content-duplicate leaves them a FAILED receipt the client is expected to
-    // delete. Rank 0 could not, so every student duplicate left a dead row in
-    // the course's material list, one per retry.
-    mockSession("STUDENT", "student-user");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
-      id: "receipt-1",
-      uploadedBy: "student-user",
-      status: "FAILED",
-      duplicateOfId: "winner-1",
-    } as never);
-
-    const res = await action(makeDeleteArgs("receipt-1"));
-
-    expect(res.status).toBe(204);
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "receipt-1" } }),
-    );
-  });
-
   it("does not let the receipt carve-out reach real material", async () => {
     // The carve-out is scoped to the receipt shape: own row, FAILED, pointing at
     // a winner. A material that merely failed to parse is still material.
@@ -1619,27 +1569,10 @@ describe("PATCH /api/courses/:courseId/materials/:materialId action", () => {
 });
 
 // ---------------------------------------------------------------------------
-// loader — per-material student visibility gate (#839)
+// loader — staff read every material, unfiltered (#839)
 // ---------------------------------------------------------------------------
 
-describe("GET materials — student visibility gate (#839)", () => {
-  it("applies the visibility filter to the list query for students", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
-    await loader(makeArgs("GET"));
-    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any).where;
-    expect(where).toEqual(
-      expect.objectContaining({
-        courseId: COURSE_ID,
-        deletedAt: null,
-        unpublishedAt: null,
-        visibleToStudents: true,
-        OR: [{ availableAt: null }, { availableAt: { lte: expect.any(Date) } }],
-      }),
-    );
-  });
-
+describe("GET materials — staff see every material (#839)", () => {
   it("does NOT apply the visibility filter for staff (instructor sees everything)", async () => {
     mockSession("INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
@@ -1650,7 +1583,7 @@ describe("GET materials — student visibility gate (#839)", () => {
     expect(where.OR).toBeUndefined();
   });
 
-  it("exposes scheduling fields to staff but strips them for students", async () => {
+  it("exposes scheduling fields to staff", async () => {
     const row = {
       id: "mat-1",
       title: "Week 5 slides",
@@ -1658,34 +1591,12 @@ describe("GET materials — student visibility gate (#839)", () => {
       availableAt: new Date("2099-01-01"),
       _count: { chunks: 3 },
     };
-    // Staff response
     mockSession("INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([row] as never);
     const staffBody = await (await loader(makeArgs("GET"))).json();
     expect(staffBody.materials[0]).toHaveProperty("visibleToStudents", false);
     expect(staffBody.materials[0]).toHaveProperty("availableAt");
-
-    // Student response — fields omitted
-    vi.clearAllMocks();
-    vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
-      { id: "mat-1", title: "Week 5 slides", _count: { chunks: 3 } },
-    ] as never);
-    const studentBody = await (await loader(makeArgs("GET"))).json();
-    expect(studentBody.materials[0]).not.toHaveProperty("visibleToStudents");
-    expect(studentBody.materials[0]).not.toHaveProperty("availableAt");
-  });
-
-  it("applies the visibility filter to a single-material preview for students", async () => {
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    await loader(makePreviewArgs("mat-1"));
-    const where = (vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as any).where;
-    expect(where).toEqual(expect.objectContaining({ visibleToStudents: true }));
   });
 });
 
@@ -2425,19 +2336,5 @@ describe("GET materials — ?ids= re-read (#1795 review round 3)", () => {
 
     expect(body).toEqual({ materials: [], nextCursor: null });
     expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
-  });
-
-  it("still applies the student visibility gate to a re-read", async () => {
-    // Asking by id must not become a way around #839 scheduling.
-    mockSession("STUDENT");
-    mockAccess({ level: "student", rank: 0 });
-
-    await loader(makeIdsArgs("mat-hidden"));
-
-    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
-    expect(args.where).toEqual(
-      expect.objectContaining({ id: { in: ["mat-hidden"] }, deletedAt: null }),
-    );
-    expect(Object.keys(args.where).length).toBeGreaterThan(3);
   });
 });
