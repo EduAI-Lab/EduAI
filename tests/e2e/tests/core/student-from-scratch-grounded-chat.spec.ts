@@ -3,6 +3,10 @@
  * after an instructor uploads a material for this course — nothing is
  * pre-seeded for THIS student.
  *
+ * #1962: the course page shows a student no files. The spec checks there is no
+ * Materials tab and that the API refuses the list, then reaches chat through the
+ * page's "Chat about this course" action rather than a hand-typed /chat URL.
+ *
  * Setup mirrors `chat-code-block.spec.ts` (createAdmin / createInstructor /
  * registerUser / enroll / publish / injectSession).
  *
@@ -148,7 +152,7 @@ async function waitUntilMaterialReady(
 }
 
 test.describe("Student from scratch → grounded course chat (#1786)", () => {
-  test("new student enrolls, sees a READY material, and can send a course-chat question", async ({
+  test("new student enrolls, opens course chat from the course page, and can send a question", async ({
     page,
     playwright,
   }) => {
@@ -214,17 +218,17 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
         window.localStorage.setItem("eduai:tour:dashboard:v1", "1");
       }, studentId);
 
+      // #1962: no files on a student's course page; course chat is its one action.
       await page.goto(`${CORE_URL}/courses/${courseId}`);
       await expect(page).not.toHaveURL(/\/auth\/login/);
-      await expect(page.getByRole("tab", { name: "Materials" })).toBeVisible({ timeout: 15_000 });
-      await page.getByRole("tab", { name: "Materials" }).click();
+      const openChat = page.getByRole("link", { name: "Chat about this course" });
+      await expect(openChat).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("tab", { name: "Materials" })).toHaveCount(0);
+      await expect(page.getByText(MATERIAL_TITLE, { exact: true })).toHaveCount(0);
 
-      // Student empty state (documented, not redesigned): title "No materials yet",
-      // description "Course materials will appear here once your instructor uploads them."
-      await expect(page.getByText("No materials yet")).toHaveCount(0);
-      await expect(page.getByText(MATERIAL_TITLE, { exact: true })).toBeVisible({
-        timeout: 15_000,
-      });
+      // Refused by the API too, not only hidden in the UI.
+      const studentList = await studentCtx.get(`${CORE_URL}/api/courses/${courseId}/materials`);
+      expect(studentList.status(), await studentList.text()).toBe(403);
 
       const mockedReply = [
         `**Source**: ${MATERIAL_TITLE}`,
@@ -251,7 +255,8 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
         });
       });
 
-      await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent(courseCode)}`);
+      await openChat.click();
+      await expect(page).toHaveURL(/\/chat/);
       const input = page.locator("#chat-message-input");
       await expect(input).toBeEnabled({ timeout: 15_000 });
       await input.fill(STUDENT_QUESTION);
