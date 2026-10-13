@@ -31,6 +31,7 @@ vi.mock("~/lib/prisma.server", () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    aIInteraction: { updateMany: vi.fn() },
     course: { findMany: vi.fn() },
     enrollment: {
       count: vi.fn(),
@@ -460,6 +461,13 @@ describe("DELETE /api/users/:id — admin-floor invariant (AUTH-04)", () => {
 
     expect(res.status).toBe(204);
     expect(prisma.user.count).not.toHaveBeenCalled();
+    expect(prisma.aIInteraction.updateMany).toHaveBeenCalledWith({
+      where: { userId: "student-1" },
+      data: { query: "", response: "" },
+    });
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "USER_DELETED", entityId: "student-1" }),
+    );
   });
 });
 
