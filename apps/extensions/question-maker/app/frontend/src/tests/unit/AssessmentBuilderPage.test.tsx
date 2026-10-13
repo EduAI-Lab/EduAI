@@ -544,5 +544,19 @@ describe("AssessmentBuilderPage", () => {
       const row = screen.getByText("Topics covered:").parentElement as HTMLElement;
       expect(within(row).getByText("All topics")).toBeInTheDocument();
     });
+
+    it("does not say all topics when the chosen topics no longer exist", async () => {
+      assessmentService.getAssessment.mockResolvedValue({
+        ...baseAssessment,
+        blueprintConfig: { primaryTopicIds: ["gone"] },
+      });
+      courseService.getCourseTopics.mockResolvedValue(topicsFixture);
+      questionService.getQuestions.mockResolvedValue(questionsFixture);
+      renderPage();
+      await waitFor(() => expect(lastBuilderProps?.questionBank).toHaveLength(0));
+      const row = screen.getByText("Topics covered:").parentElement as HTMLElement;
+      expect(within(row).queryByText("All topics")).not.toBeInTheDocument();
+      expect(within(row).getByText("Selected topics are no longer available")).toBeInTheDocument();
+    });
   });
 });

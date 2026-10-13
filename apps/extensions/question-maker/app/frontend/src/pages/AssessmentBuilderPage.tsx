@@ -780,14 +780,16 @@ const AssessmentBuilderPage = () => {
 
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Topics covered:</span>
-          {scopedTopics.length > 0 && assessmentTopicIds.length > 0 ? (
+          {assessmentTopicIds.length === 0 ? (
+            <span>All topics</span>
+          ) : scopedTopics.length > 0 ? (
             scopedTopics.map((topic) => (
               <Badge key={topic.id} variant="secondary">
                 {topic.name}
               </Badge>
             ))
           ) : (
-            <span>All topics</span>
+            <span>Selected topics are no longer available</span>
           )}
         </div>
 
