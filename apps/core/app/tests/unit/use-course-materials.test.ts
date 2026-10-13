@@ -36,6 +36,24 @@ describe("useCourseMaterials.fetchMaterials", () => {
     expect(result.current.loading).toBe(true);
   });
 
+  it("never fetches when disabled, and is not left loading (#1962)", async () => {
+    const { result } = renderHook(() => useCourseMaterials("course-1", false));
+
+    await Promise.resolve();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.materials).toEqual([]);
+  });
+
+  it("keeps refetch a no-op while disabled (#1962)", async () => {
+    const { result } = renderHook(() => useCourseMaterials("course-1", false));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("loads the first page on mount and exposes hasMore from nextCursor", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(materialsResponse([material], "cursor-2"));
 

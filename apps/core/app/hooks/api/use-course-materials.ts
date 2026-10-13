@@ -111,10 +111,15 @@ function pickNewer(
   return row;
 }
 
-/** Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch. */
-export function useCourseMaterials(courseId: string) {
+/**
+ * Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch.
+ *
+ * `enabled = false` never asks the server (#1962): a student's course page has
+ * no materials to show, and the API refuses students on every materials path.
+ */
+export function useCourseMaterials(courseId: string, enabled = true) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -159,7 +164,7 @@ export function useCourseMaterials(courseId: string) {
   );
 
   const fetchMaterials = useCallback(async () => {
-    if (!courseId) return;
+    if (!courseId || !enabled) return;
     const seq = ++readSeqRef.current;
     lastFullReadRef.current = seq;
     // A newer full read, or a different course, owns the list now.
@@ -180,7 +185,7 @@ export function useCourseMaterials(courseId: string) {
     } finally {
       if (!superseded()) setLoading(false);
     }
-  }, [courseId, fetchPage]);
+  }, [courseId, enabled, fetchPage]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
