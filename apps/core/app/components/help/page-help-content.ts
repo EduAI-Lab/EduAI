@@ -51,7 +51,7 @@ function routes(isStaff: boolean): PageHelpRoute[] {
         title: "Courses",
         summary: isStaff
           ? "Every course you teach or manage. Open one to manage its materials, topics and people."
-          : "Every course you're enrolled in. Open one to see its materials and start a course chat.",
+          : "Every course you're enrolled in. Open one to see who teaches it and start a course chat.",
         tips: [
           "Search or filter the list to find a course quickly.",
           "Inside a course, the course name in the breadcrumb switches between courses.",
@@ -75,10 +75,12 @@ function routes(isStaff: boolean): PageHelpRoute[] {
           }
         : {
             title: "Your course",
-            summary: "See what this course covers and the materials your instructor has released.",
+            // #1962: course chat is a student's way into a course; there are no files to browse.
+            summary:
+              "See what this course covers and who teaches it, then ask about it in course chat.",
             tips: [
-              "The Overview tab shows the course's instructors and details.",
-              "Use the course chat to ask questions about these materials.",
+              "Chat about this course opens course chat with this course already selected.",
+              "The topics on the banner are the concepts your instructor has set for the course.",
             ],
             helpHref: "/help#courses",
           },

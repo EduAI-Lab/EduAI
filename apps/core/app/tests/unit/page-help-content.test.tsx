@@ -43,6 +43,16 @@ describe("getCorePageHelp", () => {
     expect(getCorePageHelp("/courses/abc", null).title).toBe("Your course");
   });
 
+  it("does not promise students course files or tabs on the course pages (#1962)", () => {
+    for (const pathname of ["/courses", "/courses/abc"]) {
+      const help = getCorePageHelp(pathname, "STUDENT");
+      const text = [help.summary, ...(help.tips ?? []).map(String)].join(" ");
+      expect(text).not.toMatch(/material|\btabs?\b/i);
+    }
+    const tips = (getCorePageHelp("/courses/abc", "STUDENT").tips ?? []).map(String).join(" ");
+    expect(tips).toContain("Chat about this course");
+  });
+
   it("does not mistake /courses/self-enroll-style nested paths for the workspace", () => {
     expect(getCorePageHelp("/courses/abc/extra", "ADMIN").title).toBe(FALLBACK_TITLE);
   });
