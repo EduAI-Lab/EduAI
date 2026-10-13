@@ -832,6 +832,8 @@ const AssessmentBuilderPage = () => {
             assessment={assessment}
             questionBank={scopedQuestionBank}
             topics={scopedTopics}
+            allTopics={topics}
+            topicLimited={assessmentTopicIds.length > 0}
             onAddSection={async () => {
               if (!assessment) return;
               const existing = assessment.sections ?? [];
