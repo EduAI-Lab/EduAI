@@ -199,6 +199,20 @@ const AssessmentBuilderPage = () => {
     return map;
   }, [topics]);
 
+  // #1974: a topic-limited assessment only offers questions from its topics.
+  const assessmentTopicIds = useMemo(() => {
+    const raw = assessment?.blueprintConfig?.primaryTopicIds;
+    return Array.isArray(raw) ? raw : [];
+  }, [assessment?.blueprintConfig?.primaryTopicIds]);
+
+  const scopedTopics = useMemo(
+    () =>
+      assessmentTopicIds.length > 0
+        ? topics.filter((topic) => assessmentTopicIds.includes(topic.id))
+        : topics,
+    [topics, assessmentTopicIds],
+  );
+
   const questionVariantEntries = useMemo<QuestionVariantEntry[]>(() => {
     const resolveTopicName = (topicId: string) => topicById[topicId]?.name ?? `Topic ${topicId}`;
     return questions.flatMap((question) =>
@@ -227,6 +241,16 @@ const AssessmentBuilderPage = () => {
       }),
     );
   }, [questions, topicById]);
+
+  const scopedQuestionBank = useMemo(
+    () =>
+      assessmentTopicIds.length > 0
+        ? questionVariantEntries.filter((entry) =>
+            assessmentTopicIds.includes(String(entry.primaryTopicId)),
+          )
+        : questionVariantEntries,
+    [questionVariantEntries, assessmentTopicIds],
+  );
 
   const hasDraftQuestions = useMemo(() => {
     if (!assessment?.sections) return false;
@@ -754,6 +778,19 @@ const AssessmentBuilderPage = () => {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Topics covered:</span>
+          {scopedTopics.length > 0 && assessmentTopicIds.length > 0 ? (
+            scopedTopics.map((topic) => (
+              <Badge key={topic.id} variant="secondary">
+                {topic.name}
+              </Badge>
+            ))
+          ) : (
+            <span>All topics</span>
+          )}
+        </div>
+
         {/* Summary — at-a-glance stats + difficulty mix */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
@@ -791,8 +828,8 @@ const AssessmentBuilderPage = () => {
         <div className="rounded-[var(--radius-xl)] border border-border bg-card p-5 shadow-[var(--shadow-2xs)]">
           <AssessmentBuilder
             assessment={assessment}
-            questionBank={questionVariantEntries}
-            topics={topics}
+            questionBank={scopedQuestionBank}
+            topics={scopedTopics}
             onAddSection={async () => {
               if (!assessment) return;
               const existing = assessment.sections ?? [];
