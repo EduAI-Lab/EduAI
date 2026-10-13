@@ -60,13 +60,17 @@ export const GenerateAssessmentModal = ({
     questions: { id: number; description: string | null }[];
   } | null>(null);
 
+  // Keyed by value, not array identity: the parent passes a fresh [] each render
+  // when there is no saved blueprint, which must not reset in-progress edits.
+  const initialTopicKey = JSON.stringify(initialValues?.primaryTopicIds ?? []);
+
   React.useEffect(() => {
     if (!open) return;
     setAssessmentName(initialValues?.name ?? "");
     setAssessmentType(initialValues?.type ?? "Assignment");
-    setSelectedTopicIds(initialValues?.primaryTopicIds ?? []);
+    setSelectedTopicIds(JSON.parse(initialTopicKey) as string[]);
     setSaveError(null);
-  }, [open, initialValues?.name, initialValues?.type, initialValues?.primaryTopicIds]);
+  }, [open, initialValues?.name, initialValues?.type, initialTopicKey]);
 
   React.useEffect(() => {
     if (!open || courseId <= 0) return;
@@ -124,7 +128,11 @@ export const GenerateAssessmentModal = ({
       name: assessmentName.trim(),
       type: assessmentType,
       description: "",
-      primaryTopicIds: selectedTopicIds,
+      // A reset after the topics loaded can restore ids the course no longer has.
+      primaryTopicIds:
+        topics.length > 0
+          ? selectedTopicIds.filter((id) => topics.some((topic) => topic.id === id))
+          : selectedTopicIds,
       secondaryTopicIds: initialValues?.secondaryTopicIds ?? [],
       excludedTopicIds: initialValues?.excludedTopicIds ?? [],
       difficultyDistribution,

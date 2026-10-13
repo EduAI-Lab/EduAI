@@ -166,4 +166,29 @@ describe("GenerateAssessmentModal", () => {
       expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ primaryTopicIds: [] })),
     );
   });
+
+  it("keeps the selection and save error when the parent re-renders with new-identity props", async () => {
+    const onUpdate = vi.fn().mockRejectedValue({ response: { data: { error: "refused" } } });
+    const ui = () => (
+      <GenerateAssessmentModal
+        open
+        onClose={vi.fn()}
+        onUpdate={onUpdate}
+        mode="edit"
+        courseId={7}
+        initialValues={{ name: "Midterm", type: "Quiz", primaryTopicIds: [] }}
+      />
+    );
+    const { rerender } = render(ui());
+    await waitFor(() => expect(getCourseTopics).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("combobox", { name: /Topics covered/i }));
+    fireEvent.click(await screen.findByText("Beta"));
+    fireEvent.click(screen.getByText("Save Changes"));
+    expect(await screen.findByText("refused")).toBeInTheDocument();
+    rerender(ui());
+    expect(screen.getByText("refused")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Save Changes"));
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
+    expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ primaryTopicIds: ["t2"] }));
+  });
 });
