@@ -333,6 +333,22 @@ describe("AssessmentBuilderPage", () => {
     expect(assessmentService.updateAssessment).toHaveBeenCalledWith(1, { name: "Renamed" });
   });
 
+  it("rethrows an update failure so the modal can show it", async () => {
+    assessmentService.getAssessment.mockResolvedValue(baseAssessment);
+    assessmentService.updateAssessment.mockRejectedValue({
+      response: { data: { error: "conflict" } },
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Midterm")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Manage"));
+    fireEvent.click(screen.getByText("Edit details"));
+    await waitFor(() => expect(lastGenerateModalProps.open).toBe(true));
+    await expect(lastGenerateModalProps.onUpdate({ name: "X" })).rejects.toEqual({
+      response: { data: { error: "conflict" } },
+    });
+    expect(toastFn.error).not.toHaveBeenCalled();
+  });
+
   it("disables the export button with a tooltip when there are no questions", async () => {
     assessmentService.getAssessment.mockResolvedValue(baseAssessment);
     renderPage();

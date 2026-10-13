@@ -361,18 +361,11 @@ const AssessmentBuilderPage = () => {
 
   const handleUpdateAssessmentBlueprint = async (params: AssessmentGenerationParams) => {
     if (!assessment) return;
-    try {
-      const updated = await assessmentService.updateAssessment(assessment.id, params);
-      setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
-      toast("Assessment updated", { description: "Blueprint details have been saved." });
-      setIsEditAssessmentOpen(false);
-    } catch (err: unknown) {
-      toast.error("Failed to update assessment", {
-        description:
-          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-          "Please try again.",
-      });
-    }
+    // Failures propagate: the edit modal stays open and shows the server's reason (#1974).
+    const updated = await assessmentService.updateAssessment(assessment.id, params);
+    setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
+    toast("Assessment updated", { description: "Blueprint details have been saved." });
+    setIsEditAssessmentOpen(false);
   };
 
   const handleDeleteAssessment = () => {

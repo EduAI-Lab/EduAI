@@ -1,5 +1,5 @@
 /**
- * Modal for creating or editing an assessment blueprint (name, type). The
+ * Modal for creating or editing an assessment blueprint (name, type, and the course topics it covers, #1974). The
  * assessment's semester/term is derived read-only from its linked Core course
  * (#1072 §4 step 8 / #1077) — not editable here.
  * Returns collected params to parent callbacks.
@@ -8,6 +8,7 @@ import {
   Button,
   Input,
   Label,
+  MultiSelect,
   Select,
   SelectContent,
   SelectItem,
@@ -21,13 +22,15 @@ import {
 } from "@eduai/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import * as React from "react";
+import { courseService } from "@/services/courseService";
+import type { Topic } from "@/types/topic";
 import { assessmentTypes, AssessmentGenerationParams, AssessmentType } from "../../types/question";
 
 interface GenerateAssessmentModalProps {
   open: boolean;
   onClose: () => void;
-  onGenerate?: (params: AssessmentGenerationParams) => void;
-  onUpdate?: (params: AssessmentGenerationParams) => void;
+  onGenerate?: (params: AssessmentGenerationParams) => void | Promise<void>;
+  onUpdate?: (params: AssessmentGenerationParams) => void | Promise<void>;
   initialValues?: Partial<AssessmentGenerationParams>;
   mode?: "create" | "edit";
   courseId: number;
@@ -47,12 +50,49 @@ export const GenerateAssessmentModal = ({
   const [assessmentType, setAssessmentType] = React.useState<AssessmentType>(
     initialValues?.type ?? "Assignment",
   );
+  const [topics, setTopics] = React.useState<Topic[]>([]);
+  const [selectedTopicIds, setSelectedTopicIds] = React.useState<string[]>(
+    initialValues?.primaryTopicIds ?? [],
+  );
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<{
+    message: string;
+    questions: { id: number; description: string | null }[];
+  } | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
     setAssessmentName(initialValues?.name ?? "");
     setAssessmentType(initialValues?.type ?? "Assignment");
-  }, [open, initialValues?.name, initialValues?.type]);
+    setSelectedTopicIds(initialValues?.primaryTopicIds ?? []);
+    setSaveError(null);
+  }, [open, initialValues?.name, initialValues?.type, initialValues?.primaryTopicIds]);
+
+  React.useEffect(() => {
+    if (!open || courseId <= 0) return;
+    let cancelled = false;
+    courseService
+      .getCourseTopics(courseId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setTopics(loaded);
+        // A saved selection can outlive a topic removed in Core; keep only
+        // topics this course still has.
+        const known = new Set(loaded.map((topic) => topic.id));
+        setSelectedTopicIds((prev) => prev.filter((id) => known.has(id)));
+      })
+      .catch(() => {
+        if (!cancelled) setTopics([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, courseId]);
+
+  const topicOptions = React.useMemo(
+    () => topics.map((t) => ({ value: t.id, label: t.name })),
+    [topics],
+  );
 
   const canGenerate = courseId > 0 && assessmentName.trim().length > 0;
 
@@ -70,7 +110,7 @@ export const GenerateAssessmentModal = ({
 
   const disabledReason = getDisabledReason();
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     const difficultyDistribution = { easy: 0, medium: 0, hard: 0 };
     const reasoningDistribution = { factual: 0, analytical: 0, application: 0 };
     const reasoningData = {
@@ -84,7 +124,7 @@ export const GenerateAssessmentModal = ({
       name: assessmentName.trim(),
       type: assessmentType,
       description: "",
-      primaryTopicIds: initialValues?.primaryTopicIds ?? [],
+      primaryTopicIds: selectedTopicIds,
       secondaryTopicIds: initialValues?.secondaryTopicIds ?? [],
       excludedTopicIds: initialValues?.excludedTopicIds ?? [],
       difficultyDistribution,
@@ -92,12 +132,30 @@ export const GenerateAssessmentModal = ({
       reasoningData,
     };
 
-    if (isEdit && onUpdate) {
-      onUpdate(payload);
-    } else {
-      onGenerate?.(payload);
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      if (isEdit && onUpdate) await onUpdate(payload);
+      else await onGenerate?.(payload);
+      onClose();
+    } catch (error: unknown) {
+      const data = (
+        error as {
+          response?: {
+            data?: {
+              error?: string;
+              details?: { questions?: { id: number; description: string | null }[] };
+            };
+          };
+        }
+      )?.response?.data;
+      setSaveError({
+        message: data?.error || "Failed to save assessment.",
+        questions: data?.details?.questions ?? [],
+      });
+    } finally {
+      setIsSaving(false);
     }
-    onClose();
   };
 
   return (
@@ -147,6 +205,36 @@ export const GenerateAssessmentModal = ({
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="assessmentTopics">Topics covered</Label>
+            <MultiSelect
+              id="assessmentTopics"
+              aria-label="Topics covered"
+              options={topicOptions}
+              value={selectedTopicIds}
+              onValueChange={setSelectedTopicIds}
+              placeholder="All topics"
+              searchPlaceholder="Search topics…"
+              emptyText="No topics"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave empty to allow all topics. Only questions from the chosen topics can be added.
+            </p>
+          </div>
+
+          {saveError && (
+            <div role="alert" className="space-y-1 text-sm text-destructive">
+              <p>{saveError.message}</p>
+              {saveError.questions.length > 0 && (
+                <ul className="list-disc pl-5">
+                  {saveError.questions.map((q) => (
+                    <li key={q.id}>{q.description || `Question ${q.id}`}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter className="gap-2">
@@ -156,13 +244,13 @@ export const GenerateAssessmentModal = ({
           {disabledReason ? (
             <Tooltip content={disabledReason} multiline>
               <span className="inline-block">
-                <Button onClick={handleGenerate} disabled={!canGenerate}>
+                <Button onClick={handleGenerate} disabled={!canGenerate || isSaving}>
                   {isEdit ? "Save changes" : "Create assessment"}
                 </Button>
               </span>
             </Tooltip>
           ) : (
-            <Button onClick={handleGenerate} disabled={!canGenerate}>
+            <Button onClick={handleGenerate} disabled={!canGenerate || isSaving}>
               {isEdit ? "Save Changes" : "Create Blueprint"}
             </Button>
           )}
