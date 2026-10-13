@@ -15,7 +15,7 @@ const describeDb = hasTestDb ? describe : describe.skip;
 describeDb("assessment topic scope (integration)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let createAssessment, updateAssessment;
-  let sections;
+  let sections, questions;
 
   const USER = { id: "cuid-topic-user", email: "topic@test.com", name: "Topic User" };
 
@@ -26,6 +26,7 @@ describeDb("assessment topic scope (integration)", () => {
     ({ createAssessment, updateAssessment } =
       await import("../../src/services/assessmentService.js"));
     sections = await import("../../src/services/assessmentSectionService.js");
+    questions = await import("../../src/services/questionService.js");
   });
 
   afterAll(async () => {
@@ -168,6 +169,87 @@ describeDb("assessment topic scope (integration)", () => {
       await updateAssessment(a.id, { blueprintConfig: { primaryTopicIds: [] } }, USER.id);
       const row = await prisma.assessments.findUnique({ where: { id: a.id } });
       expect(row.blueprintConfig.primaryTopicIds).toEqual([]);
+    });
+  });
+
+  describe("questions joining a limited assessment", () => {
+    it("acceptance: an assessment limited to two topics only contains those topics", async () => {
+      const a = await create([topicA, topicB]);
+      const section = await sections.createAssessmentSection(a.id, USER.id, { name: "S" });
+      const inA = await makeVariant(topicA, "A");
+      const inB = await makeVariant(topicB, "B");
+      const inC = await makeVariant(topicC, "C");
+
+      await sections.addVariantToSection(section.id, USER.id, inA.variant.id);
+      await sections.addVariantToSection(section.id, USER.id, inB.variant.id);
+      await expect(
+        sections.addVariantToSection(section.id, USER.id, inC.variant.id),
+      ).rejects.toMatchObject({ status: 400, code: "QM_VARIANT_OUTSIDE_ASSESSMENT_TOPICS" });
+
+      const links = await prisma.sectionVariants.findMany({
+        where: { section: { assessmentId: a.id } },
+        include: { variant: { include: { questionMetadata: true } } },
+      });
+      const topicsInAssessment = new Set(
+        links.map((l) => l.variant.questionMetadata.primaryTopicId),
+      );
+      expect(topicsInAssessment).toEqual(new Set([topicA, topicB]));
+      const cRow = await prisma.variants.findUnique({ where: { id: inC.variant.id } });
+      expect(cRow.assessmentId).toBeNull();
+    });
+
+    it("an unrestricted assessment still accepts any course question", async () => {
+      const a = await create([]);
+      const section = await sections.createAssessmentSection(a.id, USER.id, { name: "S" });
+      const inC = await makeVariant(topicC);
+      await expect(
+        sections.addVariantToSection(section.id, USER.id, inC.variant.id),
+      ).resolves.toBeTruthy();
+    });
+
+    it("rejects creating a variant with assessmentId of a limited assessment", async () => {
+      const a = await create([topicA]);
+      const { question } = await makeVariant(topicC);
+      await expect(
+        questions.createVariant(
+          question.id,
+          { questionText: "new", difficulty: "easy", assessmentId: a.id },
+          USER.id,
+        ),
+      ).rejects.toMatchObject({ status: 400, code: "QM_VARIANT_OUTSIDE_ASSESSMENT_TOPICS" });
+    });
+
+    it("rejects moving an existing variant into a limited assessment via update", async () => {
+      const a = await create([topicA]);
+      const { variant } = await makeVariant(topicC);
+      await expect(
+        questions.updateVariant(variant.id, { assessmentId: a.id }, USER.id),
+      ).rejects.toMatchObject({ status: 400, code: "QM_VARIANT_OUTSIDE_ASSESSMENT_TOPICS" });
+    });
+
+    it("refuses a primary-topic change that leaves a limited assessment", async () => {
+      const a = await create([topicA]);
+      const section = await sections.createAssessmentSection(a.id, USER.id, { name: "S" });
+      const { question, variant } = await makeVariant(topicA);
+      await sections.addVariantToSection(section.id, USER.id, variant.id);
+
+      const err = await questions
+        .updateQuestion(question.id, USER.id, { primaryTopicId: topicC })
+        .catch((e) => e);
+      expect(err).toMatchObject({ status: 409, code: "QM_ASSESSMENT_TOPIC_CONFLICT" });
+      expect(err.details.assessments).toEqual([{ id: a.id, name: "Topic Quiz" }]);
+      const row = await prisma.questionMetadata.findUnique({ where: { id: question.id } });
+      expect(row.primaryTopicId).toBe(topicA);
+    });
+
+    it("allows a primary-topic change that stays inside the assessment's topics", async () => {
+      const a = await create([topicA, topicB]);
+      const section = await sections.createAssessmentSection(a.id, USER.id, { name: "S" });
+      const { question, variant } = await makeVariant(topicA);
+      await sections.addVariantToSection(section.id, USER.id, variant.id);
+      await questions.updateQuestion(question.id, USER.id, { primaryTopicId: topicB });
+      const row = await prisma.questionMetadata.findUnique({ where: { id: question.id } });
+      expect(row.primaryTopicId).toBe(topicB);
     });
   });
 });

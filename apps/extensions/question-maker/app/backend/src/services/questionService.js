@@ -15,6 +15,11 @@ import {
 import { buildQuestionListQuery } from "../utils/questionListQuery.js";
 import { attachQuestionToBanks, listExternalQuestionIdsForBank } from "./questionBankService.js";
 import { logger } from "../utils/logger.js";
+import {
+  assertQuestionInAssessmentTopics,
+  assessmentTopicScope,
+  topicConflictError,
+} from "./assessmentTopicScope.js";
 import { normalizeQuestionOrder, requirePositiveSafeInteger } from "../utils/questionOrder.js";
 
 /**
@@ -137,6 +142,7 @@ async function assertVariantRelationsInCourse({
   assessmentId,
   secondaryTopicsId,
   referenceId,
+  primaryTopicId,
   db = prisma,
 }) {
   if (assessmentId !== undefined && assessmentId !== null) {
@@ -146,10 +152,13 @@ async function assertVariantRelationsInCourse({
     }
     const assessment = await db.assessments.findFirst({
       where: { id: parsedAssessmentId, courseId },
-      select: { id: true },
+      select: { id: true, blueprintConfig: true },
     });
     if (!assessment) {
       throw relationNotFound("Assessment not found for this course");
+    }
+    if (primaryTopicId !== undefined) {
+      assertQuestionInAssessmentTopics(assessment, primaryTopicId);
     }
   }
 
@@ -638,6 +647,42 @@ export const updateQuestion = async (questionId, userId, updateData) => {
           "SIBLING_REVIEWED",
           "Another version of this question is already reviewed, so its type and topic are locked. Move the reviewed versions back to draft first.",
         );
+      }
+    }
+
+    // #1974: a question already in a topic-limited assessment can't move to
+    // a topic that assessment doesn't cover.
+    if (
+      updates.primaryTopicId !== undefined &&
+      updates.primaryTopicId !== question.primaryTopicId
+    ) {
+      const containing = await db.assessments.findMany({
+        where: {
+          OR: [
+            { variants: { some: { questionMetadataId: question.id } } },
+            {
+              sections: {
+                some: {
+                  sectionVariants: { some: { variant: { questionMetadataId: question.id } } },
+                },
+              },
+            },
+          ],
+        },
+        select: { id: true, name: true, blueprintConfig: true },
+        orderBy: { id: "asc" },
+      });
+      const blocking = containing.filter((assessment) => {
+        const scope = assessmentTopicScope(assessment);
+        return scope && !scope.has(updates.primaryTopicId);
+      });
+      if (blocking.length > 0) {
+        const error = topicConflictError(
+          "This question is in an assessment that doesn't cover the new topic. Remove it from that assessment or add the topic to it first.",
+          [],
+        );
+        error.details = { assessments: blocking.map(({ id, name }) => ({ id, name })) };
+        throw error;
       }
     }
 
@@ -1192,6 +1237,7 @@ export const createVariant = async (questionId, variantData, userId) => {
     assessmentId: variantData.assessmentId,
     secondaryTopicsId: secondaryTopics,
     referenceId: variantData.referenceId,
+    primaryTopicId: question.primaryTopicId,
   });
   const validReasoningLevels = ["factual", "analytical", "application"];
   const reasoningLevel =
@@ -1465,6 +1511,7 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
       assessmentId: variantData.assessmentId,
       secondaryTopicsId: variantData.secondaryTopicsId,
       referenceId: variantData.referenceId,
+      primaryTopicId: variant.questionMetadata.primaryTopicId,
       db,
     });
 
