@@ -11,6 +11,12 @@ import {
 } from "./courseListService.js";
 import { normalizeQuestionOrder, requirePositiveSafeInteger } from "../utils/questionOrder.js";
 import { assertAssessmentType } from "../utils/assessmentType.js";
+import {
+  assertAssessmentTopicsInCourse,
+  findOffTopicAssessmentQuestions,
+  normalizeTopicIdList,
+  topicConflictError,
+} from "./assessmentTopicScope.js";
 
 /** Keep foreign child-resource writes on the same typed 404 contract as other relation guards. */
 const relationNotFound = (message) => Object.assign(new Error(message), { status: 404 });
@@ -58,6 +64,14 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
     throw new Error("Course not found");
   }
 
+  // #1974: the chosen topics must be this course's topics.
+  let storedBlueprintConfig = blueprintConfig || null;
+  if (blueprintConfig && blueprintConfig.primaryTopicIds !== undefined) {
+    const primaryTopicIds = normalizeTopicIdList(blueprintConfig.primaryTopicIds);
+    await assertAssessmentTopicsInCourse(primaryTopicIds, parsedCourseId);
+    storedBlueprintConfig = { ...blueprintConfig, primaryTopicIds };
+  }
+
   const semesterDisplay = await deriveSemesterDisplayForCourseId(parsedCourseId, { cookie });
 
   const assessment = await prisma.assessments.create({
@@ -66,7 +80,7 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
       name,
       courseId: parsedCourseId,
       description: description?.trim() || null,
-      blueprintConfig: blueprintConfig || null,
+      blueprintConfig: storedBlueprintConfig,
     },
   });
 
@@ -286,6 +300,28 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     }
 
     updateData = { ...updateData, courseId: parsedCourseId };
+  }
+
+  // #1974: merge rather than replace, so keys written by other flows (for
+  // example `studyRole`) survive an edit-modal save, then validate the topic
+  // selection and refuse a narrowing that would strand existing questions.
+  if (updateData.blueprintConfig !== undefined && updateData.blueprintConfig !== null) {
+    const merged = { ...assessment.blueprintConfig, ...updateData.blueprintConfig };
+    if (updateData.blueprintConfig.primaryTopicIds !== undefined) {
+      const primaryTopicIds = normalizeTopicIdList(updateData.blueprintConfig.primaryTopicIds);
+      await assertAssessmentTopicsInCourse(primaryTopicIds, assessment.courseId);
+      if (primaryTopicIds.length > 0) {
+        const offTopic = await findOffTopicAssessmentQuestions(assessment.id, primaryTopicIds);
+        if (offTopic.length > 0) {
+          throw topicConflictError(
+            "Some questions in this assessment are outside the selected topics. Remove them or keep their topics selected.",
+            offTopic,
+          );
+        }
+      }
+      merged.primaryTopicIds = primaryTopicIds;
+    }
+    updateData = { ...updateData, blueprintConfig: merged };
   }
 
   // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
