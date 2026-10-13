@@ -204,6 +204,8 @@ export default function CourseDetailPage() {
     course.id,
     access === "admin" || access === "unit" || access === "instructor",
   );
+  // #1962: a student's page never shows the course's files, and the API
+  // refuses students on every materials path, so it never asks for them.
   const {
     materials,
     uploadMaterial,
@@ -213,7 +215,7 @@ export default function CourseDetailPage() {
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
     refetch: refetchMaterials,
-  } = useCourseMaterials(course.id);
+  } = useCourseMaterials(course.id, access !== "student");
   const { tas, addTA, removeTA } = useCourseTAs(course.id);
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);
@@ -578,20 +580,7 @@ export default function CourseDetailPage() {
               }}
             />
           ) : (
-            <CourseDetailStudentView
-              course={course}
-              materials={uploadMaterials}
-              hasMoreMaterials={hasMoreMaterials}
-              materialsLoadingMore={materialsLoadingMore}
-              onLoadMoreMaterials={loadMoreMaterials}
-              topics={topics}
-              tas={tas}
-              isUploading={isUploading}
-              materialsError={materialsError}
-              materialsSuccess={materialsSuccess}
-              uploads={uploads}
-              onFilesSelect={handleFilesSelect}
-            />
+            <CourseDetailStudentView course={course} topics={topics} tas={tas} />
           )}
         </div>
       </div>
