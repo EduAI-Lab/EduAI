@@ -13,8 +13,10 @@ import { normalizeQuestionOrder, requirePositiveSafeInteger } from "../utils/que
 import { assertAssessmentType } from "../utils/assessmentType.js";
 import {
   assertAssessmentTopicsInCourse,
+  assertBlueprintConfigIsObject,
   findOffTopicAssessmentQuestions,
   normalizeTopicIdList,
+  storedBlueprintObject,
   topicConflictError,
 } from "./assessmentTopicScope.js";
 
@@ -65,6 +67,7 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
   }
 
   // #1974: the chosen topics must be this course's topics.
+  assertBlueprintConfigIsObject(blueprintConfig);
   let storedBlueprintConfig = blueprintConfig || null;
   if (blueprintConfig && blueprintConfig.primaryTopicIds !== undefined) {
     const primaryTopicIds = normalizeTopicIdList(blueprintConfig.primaryTopicIds);
@@ -305,8 +308,12 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
   // #1974: merge rather than replace, so keys written by other flows (for
   // example `studyRole`) survive an edit-modal save, then validate the topic
   // selection and refuse a narrowing that would strand existing questions.
+  assertBlueprintConfigIsObject(updateData.blueprintConfig);
   if (updateData.blueprintConfig !== undefined && updateData.blueprintConfig !== null) {
-    const merged = { ...assessment.blueprintConfig, ...updateData.blueprintConfig };
+    const merged = {
+      ...storedBlueprintObject(assessment.blueprintConfig),
+      ...updateData.blueprintConfig,
+    };
     if (updateData.blueprintConfig.primaryTopicIds !== undefined) {
       const primaryTopicIds = normalizeTopicIdList(updateData.blueprintConfig.primaryTopicIds);
       await assertAssessmentTopicsInCourse(primaryTopicIds, assessment.courseId);

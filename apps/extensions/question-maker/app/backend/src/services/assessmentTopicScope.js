@@ -24,6 +24,19 @@ export function assessmentTopicScope(assessment) {
   return ids.length > 0 ? new Set(ids) : null;
 }
 
+/** Reject a client-supplied blueprintConfig that is not a plain object (#1974). */
+export function assertBlueprintConfigIsObject(value) {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw publicError(400, "QM_ASSESSMENT_BLUEPRINT_INVALID", "blueprintConfig must be an object");
+  }
+}
+
+/** A stored blueprintConfig as a mergeable object; anything non-object counts as empty. */
+export function storedBlueprintObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 /** Validate and normalize a client-supplied topic id list. */
 export function normalizeTopicIdList(value) {
   if (value === undefined || value === null) return [];

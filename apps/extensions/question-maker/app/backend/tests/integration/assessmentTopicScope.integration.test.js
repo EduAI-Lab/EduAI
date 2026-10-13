@@ -87,6 +87,14 @@ describeDb("assessment topic scope (integration)", () => {
       });
     });
 
+    it("rejects a blueprintConfig that is not a plain object", async () => {
+      for (const bad of ["abc", ["x"], 5]) {
+        await expect(
+          createAssessment(USER.id, { type: "Quiz", name: "Bad", courseId, blueprintConfig: bad }),
+        ).rejects.toMatchObject({ status: 400, code: "QM_ASSESSMENT_BLUEPRINT_INVALID" });
+      }
+    });
+
     it("still creates an unrestricted assessment without blueprintConfig", async () => {
       const a = await createAssessment(USER.id, { type: "Quiz", name: "Plain", courseId });
       expect(a.blueprintConfig).toBeNull();
@@ -113,6 +121,17 @@ describeDb("assessment topic scope (integration)", () => {
       const row = await prisma.assessments.findUnique({ where: { id: a.id } });
       expect(row.name).toBe("Renamed");
       expect(row.blueprintConfig.primaryTopicIds).toEqual([topicA]);
+    });
+
+    it("rejects a non-object blueprintConfig and treats a stored one as empty", async () => {
+      const a = await create([]);
+      await expect(
+        updateAssessment(a.id, { blueprintConfig: "abc" }, USER.id),
+      ).rejects.toMatchObject({ status: 400, code: "QM_ASSESSMENT_BLUEPRINT_INVALID" });
+      await prisma.assessments.update({ where: { id: a.id }, data: { blueprintConfig: "xyz" } });
+      await updateAssessment(a.id, { blueprintConfig: { primaryTopicIds: [topicA] } }, USER.id);
+      const row = await prisma.assessments.findUnique({ where: { id: a.id } });
+      expect(row.blueprintConfig).toEqual({ primaryTopicIds: [topicA] });
     });
 
     it("rejects a foreign topic id", async () => {
@@ -238,6 +257,7 @@ describeDb("assessment topic scope (integration)", () => {
         .catch((e) => e);
       expect(err).toMatchObject({ status: 409, code: "QM_ASSESSMENT_TOPIC_CONFLICT" });
       expect(err.details.assessments).toEqual([{ id: a.id, name: "Topic Quiz" }]);
+      expect(err.message).toContain('"Topic Quiz"');
       const row = await prisma.questionMetadata.findUnique({ where: { id: question.id } });
       expect(row.primaryTopicId).toBe(topicA);
     });

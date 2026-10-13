@@ -677,8 +677,9 @@ export const updateQuestion = async (questionId, userId, updateData) => {
         return scope && !scope.has(updates.primaryTopicId);
       });
       if (blocking.length > 0) {
+        const names = blocking.map(({ name }) => `"${name}"`).join(", ");
         const error = topicConflictError(
-          "This question is in an assessment that doesn't cover the new topic. Remove it from that assessment or add the topic to it first.",
+          `This question is in an assessment that doesn't cover the new topic (${names}). Remove it from that assessment or add the topic to it first.`,
           [],
         );
         error.details = { assessments: blocking.map(({ id, name }) => ({ id, name })) };
