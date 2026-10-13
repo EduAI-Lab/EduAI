@@ -37,7 +37,7 @@ function actualAllowed(row: RbacCapabilitiesRow): boolean {
 
   switch (row.Capability) {
     case "view-material":
-      return canViewMaterial(access, published);
+      return canViewMaterial(access);
     case "view-topics":
       return canViewTopics(access, published);
     case "delete-material":
