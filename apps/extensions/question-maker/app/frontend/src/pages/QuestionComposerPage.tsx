@@ -11,7 +11,6 @@
  * @eduai/ui design system: two-column grid, sticky action bar, live QuestionCard preview,
  * AI assist panel. Tabler icons only.
  */
-import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, Card, CardContent, CardHeader, CardTitle, Label, Separator } from "@eduai/ui";
@@ -50,6 +49,12 @@ import {
 import type { Topic } from "@/types/topic";
 
 import { QuestionAIControls } from "@/components/questions/QuestionAIControls";
+import {
+  DEFAULT_CHOICES,
+  applyGeneratedQuestion,
+  createDescriptionFromText,
+  inferGeneratedType,
+} from "@/lib/generatedQuestionDraft";
 import { isString } from "@eduai/ui/primitive-union";
 import { QuestionOutputPanel } from "@/components/questions/QuestionOutputPanel";
 import { QuestionTypeSelector } from "@/components/composer/QuestionTypeSelector";
@@ -59,13 +64,6 @@ import {
 } from "@/components/composer/ComposerMetadataFields";
 
 type ComposerMode = "create" | "variant" | "edit";
-
-const DEFAULT_CHOICES: MCQChoice[] = [
-  { letter: "A", text: "" },
-  { letter: "B", text: "" },
-  { letter: "C", text: "" },
-  { letter: "D", text: "" },
-];
 
 import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../utils/aiModels";
 import { toast } from "sonner";
@@ -104,16 +102,6 @@ const createInitialForm = (): FormState => ({
   generationPrompt: "",
   generationModel: DEFAULT_MODEL,
 });
-
-const createDescriptionFromText = (text: string) => {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
-  const sentenceMatch = normalized.match(/[^.!?]+[.!?]?/);
-  const base = (sentenceMatch ? sentenceMatch[0] : normalized).trim();
-  const words = base.split(" ");
-  if (words.length <= 12) return base;
-  return `${words.slice(0, 12).join(" ")}…`;
-};
 
 /** Pads MCQ choices copied from a source up to 4 rows (matches AddQuestionDialog prefill). */
 const padChoices = (choices: MCQChoice[] | null | undefined): MCQChoice[] => {
@@ -547,18 +535,7 @@ export function QuestionComposerPage() {
       if (!generated)
         throw new Error("AI service did not return a question. Try a different prompt.");
 
-      const inferredType: QuestionType =
-        generated.type === "SA" || generated.type === "MCQ" || generated.type === "LA"
-          ? generated.type
-          : "MCQ";
-      const inferredDifficulty: QuestionDifficulty =
-        generated.difficulty === "easy" || generated.difficulty === "hard"
-          ? generated.difficulty
-          : "medium";
-      const inferredReasoningLevel: ReasoningLevel =
-        generated.reasoning_level === "analytical" || generated.reasoning_level === "application"
-          ? generated.reasoning_level
-          : "factual";
+      const inferredType = inferGeneratedType(generated);
 
       if (
         variantMcqRequiredCount != null &&
@@ -571,76 +548,14 @@ export function QuestionComposerPage() {
         );
       }
 
-      setForm((prev) => {
-        const topicIdSet = new Set(topics.map((t) => String(t.id)));
-        const primaryCandidate =
-          generated.primary_topic_id != null ? String(generated.primary_topic_id).trim() : "";
-        const primaryTopicId =
-          primaryCandidate && topicIdSet.has(primaryCandidate) ? primaryCandidate : null;
-        const resolvedSecondary = Array.isArray(generated.secondary_topic_ids)
-          ? Array.from(
-              new Set(
-                generated.secondary_topic_ids
-                  .map((v: JsonValue) => String(v).trim())
-                  .filter((v) => v !== "" && topicIdSet.has(v) && v !== primaryTopicId),
-              ),
-            )
-          : [];
-        const resolvedAnswer =
-          isString(generated.answer) && generated.answer.trim().length > 0
-            ? generated.answer.trim()
-            : "";
-
-        let resolvedChoices: MCQChoice[] = prev.choices;
-        if (
-          inferredType === "MCQ" &&
-          Array.isArray(generated.choices) &&
-          generated.choices.length > 0
-        ) {
-          resolvedChoices = generated.choices
-            .map((c: { letter?: string; text?: string }) => ({
-              letter: isString(c.letter) ? c.letter.toUpperCase() : String(c.letter ?? ""),
-              text: isString(c.text) ? c.text.trim() : String(c.text ?? ""),
-            }))
-            .filter((c: MCQChoice) => c.text.length > 0);
-          if (resolvedChoices.length < 2) resolvedChoices = prev.choices;
-        } else if (inferredType !== "MCQ") {
-          resolvedChoices = DEFAULT_CHOICES.map((c) => ({ ...c }));
-        }
-
-        if (mode === "variant") {
-          return {
-            ...prev,
-            questionText: generated.content ?? prev.questionText,
-            difficulty: inferredDifficulty,
-            reasoningLevel: inferredReasoningLevel,
-            answer: resolvedAnswer || prev.answer,
-            choices: resolvedChoices,
-            secondaryTopicIds:
-              resolvedSecondary.length > 0 ? resolvedSecondary : prev.secondaryTopicIds,
-          };
-        }
-
-        const resolvedPrimary = primaryTopicId !== null ? primaryTopicId : prev.primaryTopicId;
-        const resolvedDescription =
-          isString(generated.description) && generated.description.trim().length > 0
-            ? generated.description.trim()
-            : prev.description.trim() || createDescriptionFromText(generated.content ?? "");
-
-        return {
-          ...prev,
-          questionType: inferredType,
-          questionText: generated.content ?? prev.questionText,
-          difficulty: inferredDifficulty,
-          reasoningLevel: inferredReasoningLevel,
-          description: resolvedDescription,
-          answer: resolvedAnswer,
-          choices: resolvedChoices,
-          primaryTopicId: resolvedPrimary,
-          secondaryTopicIds:
-            resolvedSecondary.length > 0 ? resolvedSecondary : prev.secondaryTopicIds,
-        };
-      });
+      setForm((prev) =>
+        applyGeneratedQuestion(
+          prev,
+          generated,
+          topics.map((t) => String(t.id)),
+          mode === "variant" ? "variant" : "create",
+        ),
+      );
 
       setIsAiGenerated(true);
       if (mountedRef.current) setQuestionGenerationPhase("review");
