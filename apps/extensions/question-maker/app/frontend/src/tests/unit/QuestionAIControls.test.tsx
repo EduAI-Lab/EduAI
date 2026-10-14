@@ -166,4 +166,42 @@ describe("QuestionAIControls", () => {
     render(<QuestionAIControls {...baseProps({ availableModels: [] })} />);
     expect(screen.getByRole("combobox")).toBeDisabled();
   });
+
+  it("hides the question count unless a count handler is given in new mode", () => {
+    const { rerender } = render(<QuestionAIControls {...baseProps()} />);
+    expect(screen.queryByLabelText("Number of questions")).toBeNull();
+    rerender(
+      <QuestionAIControls {...baseProps({ mode: "variant", onQuestionCountChange: vi.fn() })} />,
+    );
+    expect(screen.queryByLabelText("Number of questions")).toBeNull();
+  });
+
+  it("clamps the question count to 1–10", () => {
+    const onQuestionCountChange = vi.fn();
+    render(<QuestionAIControls {...baseProps({ questionCount: 3, onQuestionCountChange })} />);
+    const input = screen.getByLabelText("Number of questions");
+    for (const [raw, expected] of [
+      ["25", 10],
+      ["0", 1],
+      ["", 1],
+      ["abc", 1],
+      ["4", 4],
+    ] as const) {
+      fireEvent.change(input, { target: { value: raw } });
+      expect(onQuestionCountChange).toHaveBeenLastCalledWith(expected);
+    }
+  });
+
+  it("names the count on the Generate button when it is above one", () => {
+    render(
+      <QuestionAIControls
+        {...baseProps({
+          questionCount: 4,
+          onQuestionCountChange: vi.fn(),
+          value: { generationPrompt: "x", generationModel: "vllm:qwen2.5-32b-instruct" },
+        })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /generate 4 questions/i })).toBeEnabled();
+  });
 });

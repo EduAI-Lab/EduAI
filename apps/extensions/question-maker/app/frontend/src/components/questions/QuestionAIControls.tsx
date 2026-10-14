@@ -12,6 +12,14 @@ import type { EduAIModelOption } from "../../services/eduaiService";
 import type { QuestionGenerationPhase } from "../../hooks/useEduAIStatus";
 import { isCampusModel } from "../../utils/aiModels";
 
+/** Most questions one composer generation may request (#1973). */
+export const MAX_BATCH_QUESTIONS = 10;
+
+const clampQuestionCount = (raw: string) => {
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.min(MAX_BATCH_QUESTIONS, Math.max(1, n)) : 1;
+};
+
 export interface QuestionAIControlsValue {
   generationPrompt: string;
   generationModel: string;
@@ -43,6 +51,9 @@ interface QuestionAIControlsProps {
   courseWarningMessage: string | null;
   mode: "new" | "variant";
   disabled?: boolean;
+  /** Questions to generate in one request; the count control only shows when a handler is given. */
+  questionCount?: number;
+  onQuestionCountChange?: (count: number) => void;
 }
 
 export function QuestionAIControls({
@@ -65,6 +76,8 @@ export function QuestionAIControls({
   courseWarningMessage,
   mode,
   disabled = false,
+  questionCount = 1,
+  onQuestionCountChange,
 }: QuestionAIControlsProps) {
   const isUbcModel =
     value.generationModel.startsWith("ollama") || value.generationModel.startsWith("vllm");
@@ -266,6 +279,27 @@ export function QuestionAIControls({
         </div>
       )}
 
+      {mode === "new" && onQuestionCountChange && (
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="ai-question-count"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Number of questions
+          </Label>
+          <Input
+            id="ai-question-count"
+            type="number"
+            min={1}
+            max={MAX_BATCH_QUESTIONS}
+            value={questionCount}
+            disabled={disabled || isGenerating}
+            className="h-9 w-24 text-xs"
+            onChange={(e) => onQuestionCountChange(clampQuestionCount(e.target.value))}
+          />
+        </div>
+      )}
+
       <Button
         type="button"
         onClick={onGenerate}
@@ -278,7 +312,9 @@ export function QuestionAIControls({
           ? "Generating…"
           : mode === "variant"
             ? "Generate variant"
-            : "Generate question"}
+            : questionCount > 1
+              ? `Generate ${questionCount} questions`
+              : "Generate question"}
       </Button>
     </div>
   );
