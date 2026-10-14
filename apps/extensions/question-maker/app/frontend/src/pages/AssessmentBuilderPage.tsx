@@ -10,14 +10,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  HelpHint,
   StackedBar,
   cn,
 } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 import { PermissionGate } from "@eduai/ui";
 import { ConfirmDialog } from "@eduai/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import {
   IconArrowLeft,
   IconAlertTriangle,
@@ -724,6 +726,12 @@ const AssessmentBuilderPage = () => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
+              <HelpHint
+                {...QUESTION_MAKER_HELP.exportReadiness}
+                LinkComponent={Link}
+                side="bottom"
+                align="end"
+              />
             </PermissionGate>
 
             <PermissionGate allow={canManageAssessment}>

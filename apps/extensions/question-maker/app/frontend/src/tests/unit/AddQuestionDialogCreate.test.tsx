@@ -34,7 +34,10 @@ const apiKeyStorage = {
   requiresApiKey: vi.fn().mockReturnValue(false),
 };
 
-vi.mock("react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("react-router", () => ({
+  Link: ({ children, to }: any) => <a href={to}>{children}</a>,
+  useNavigate: () => vi.fn(),
+}));
 vi.mock("@/services/questionService", () => ({ questionService }));
 vi.mock("@/services/courseService", () => ({ courseService }));
 vi.mock("@/services/assessmentService", () => ({ default: assessmentServiceDefault }));
