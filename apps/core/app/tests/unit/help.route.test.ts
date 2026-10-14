@@ -8,7 +8,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    enrollment: { count: vi.fn().mockResolvedValue(0) },
+    enrollment: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -24,9 +24,13 @@ function makeArgs() {
   } as never;
 }
 
+function signInAs(user: { id: string; role: string }) {
+  vi.mocked(auth.api.getSession).mockResolvedValue({ user } as never);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
+  vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
 });
 
 describe("help loader", () => {
@@ -38,28 +42,42 @@ describe("help loader", () => {
   });
 
   it("returns the session user when signed in", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
-    } as never);
+    signInAs({ id: "u1", role: "STUDENT" });
     const result = await loader(makeArgs());
-    expect(result).toEqual({ user: { id: "u1", role: "STUDENT" }, isTA: false });
+    expect(result).toEqual({
+      user: { id: "u1", role: "STUDENT" },
+      isTA: false,
+      isCourseInstructor: false,
+    });
   });
 
   it("marks a STUDENT with an active TA enrollment as isTA", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
-    } as never);
-    vi.mocked(prisma.enrollment.count).mockResolvedValue(1);
+    signInAs({ id: "u1", role: "STUDENT" });
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([{ role: "TA" }] as never);
     const result = await loader(makeArgs());
-    expect(result).toEqual({ user: { id: "u1", role: "STUDENT" }, isTA: true });
+    expect(result).toMatchObject({ isTA: true, isCourseInstructor: false });
+    expect(prisma.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "u1", role: { in: ["TA", "INSTRUCTOR"] }, isActive: true },
+      }),
+    );
   });
 
-  it("does not check TA enrollment for non-STUDENT roles", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "admin-1", role: "ADMIN" },
-    } as never);
+  it("marks a STUDENT with an active INSTRUCTOR enrollment as isCourseInstructor", async () => {
+    signInAs({ id: "u1", role: "STUDENT" });
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([{ role: "INSTRUCTOR" }] as never);
     const result = await loader(makeArgs());
-    expect(result).toEqual({ user: { id: "admin-1", role: "ADMIN" }, isTA: false });
-    expect(prisma.enrollment.count).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ isTA: false, isCourseInstructor: true });
+  });
+
+  it("does not check course enrollments for non-STUDENT roles", async () => {
+    signInAs({ id: "admin-1", role: "ADMIN" });
+    const result = await loader(makeArgs());
+    expect(result).toEqual({
+      user: { id: "admin-1", role: "ADMIN" },
+      isTA: false,
+      isCourseInstructor: false,
+    });
+    expect(prisma.enrollment.findMany).not.toHaveBeenCalled();
   });
 });

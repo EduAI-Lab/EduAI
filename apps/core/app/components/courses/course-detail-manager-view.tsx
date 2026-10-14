@@ -27,7 +27,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@edua
 import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
-import { MaterialList, type MaterialListItem } from "@eduai/ui";
+import { HelpHint, MaterialList, type MaterialListItem } from "@eduai/ui";
+import { Link } from "react-router";
+import { CORE_HELP } from "~/components/help/help-hints";
 
 /**
  * The manager list carries three extra fields beyond what the shared list
@@ -1171,10 +1173,13 @@ export function CourseDetailManagerView({
       >
         <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <IconEye className="h-4 w-4" />
-              Student visibility
-            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2">
+                <IconEye className="h-4 w-4" />
+                Student visibility
+              </DialogTitle>
+              <HelpHint {...CORE_HELP.materialVisibility} LinkComponent={Link} />
+            </div>
             <DialogDescription>
               Control whether students can see this material, and optionally schedule when it
               becomes available. Instructors and TAs always see every material.
@@ -1323,8 +1328,9 @@ export function CourseDetailManagerView({
                     <StatusBadge active={course.isActive} />
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                    <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
                       Published
+                      <HelpHint {...CORE_HELP.coursePublishing} LinkComponent={Link} />
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge
@@ -1421,6 +1427,12 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
+            title={
+              <span className="inline-flex items-center gap-1.5">
+                Course materials
+                <HelpHint {...CORE_HELP.materialStates} LinkComponent={Link} />
+              </span>
+            }
             items={materials.map((m): ManagerMaterialListItem => ({
               id: m.id,
               name: m.title,
