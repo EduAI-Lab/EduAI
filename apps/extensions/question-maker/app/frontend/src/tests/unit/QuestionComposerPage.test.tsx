@@ -721,4 +721,41 @@ describe("QuestionComposerPage batch generation (#1973)", () => {
     expect(confirmSpy).toHaveBeenCalledTimes(3);
     confirmSpy.mockRestore();
   });
+
+  it("builds drafts from topics that finish loading while generation runs", async () => {
+    let resolveTopics: (topics: Array<{ id: string; name: string }>) => void = () => {};
+    courseService.getCourseTopics.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTopics = resolve;
+      }),
+    );
+    let resolveGeneration: (value: {
+      data: { questions: ReturnType<typeof mcq>[] };
+    }) => void = () => {};
+    eduaiService.generateQuestions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeneration = resolve;
+      }),
+    );
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("set-prompt"));
+    fireEvent.click(screen.getByText("set-count-3"));
+    fireEvent.click(screen.getByText("generate"));
+    await waitFor(() => expect(eduaiService.generateQuestions).toHaveBeenCalled());
+
+    resolveTopics([{ id: "t1", name: "Topic 1" }]);
+    await waitFor(() => expect(screen.getByText("set-primary-topic")).toBeInTheDocument());
+    resolveGeneration({ data: { questions: ["Q1?", "Q2?", "Q3?"].map(mcq) } });
+    await screen.findByText("Draft 1 of 3");
+
+    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    await waitFor(() =>
+      expect(questionService.createQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({ primaryTopicId: "t1" }),
+      ),
+    );
+  });
 });

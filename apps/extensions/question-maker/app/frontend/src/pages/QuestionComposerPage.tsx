@@ -210,6 +210,10 @@ export function QuestionComposerPage() {
 
   // Keep a ref to the latest save handler so the global shortcut never goes stale.
   const saveRef = useRef<() => void>(() => {});
+  // Generation is awaited for up to a minute; drafts must be built from the form and
+  // topics as they are when it returns (topics may load and default the primary topic).
+  const latestRef = useRef({ form, topics });
+  latestRef.current = { form, topics };
 
   // ── Load course (for code + contextual title) ────────────────────────────
   useEffect(() => {
@@ -581,9 +585,12 @@ export function QuestionComposerPage() {
         );
       }
 
-      const topicIds = topics.map((t) => String(t.id));
+      const latest = latestRef.current;
+      const topicIds = latest.topics.map((t) => String(t.id));
       if (requestedCount > 1 && generatedList.length > 1) {
-        const built = generatedList.map((g) => applyGeneratedQuestion(form, g, topicIds, "create"));
+        const built = generatedList.map((g) =>
+          applyGeneratedQuestion(latest.form, g, topicIds, "create"),
+        );
         setDrafts(built.map((draftForm) => ({ form: draftForm, status: "pending" })));
         setCurrentDraftIndex(0);
         setForm(built[0]);
