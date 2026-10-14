@@ -49,6 +49,8 @@ import {
 import type { Topic } from "@/types/topic";
 
 import { QuestionAIControls } from "@/components/questions/QuestionAIControls";
+import { DraftQueueStrip } from "@/components/questions/DraftQueueStrip";
+import { nextPendingIndex, type DraftStatus } from "@/lib/draftQueue";
 import {
   DEFAULT_CHOICES,
   applyGeneratedQuestion,
@@ -85,6 +87,12 @@ interface FormState {
   description: string;
   generationPrompt: string;
   generationModel: string;
+}
+
+/** One AI-generated draft waiting for review in a batch (#1973). */
+interface QueuedDraft {
+  form: FormState;
+  status: DraftStatus;
 }
 
 const createInitialForm = (): FormState => ({
@@ -170,6 +178,12 @@ export function QuestionComposerPage() {
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [attemptedSave, setAttemptedSave] = useState(false);
+  // Batch generation (#1973): drafts are reviewed one at a time in the form below.
+  const [questionCount, setQuestionCount] = useState(1);
+  const [drafts, setDrafts] = useState<QueuedDraft[]>([]);
+  const [currentDraftIndex, setCurrentDraftIndex] = useState(0);
+  const queueActive = drafts.length > 1;
+  const hasPendingDrafts = queueActive && drafts.some((d) => d.status === "pending");
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -178,6 +192,21 @@ export function QuestionComposerPage() {
       mountedRef.current = false;
     };
   }, []);
+
+  // Closing or reloading the tab would silently drop unsaved generated drafts.
+  useEffect(() => {
+    if (!hasPendingDrafts) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasPendingDrafts]);
+
+  const confirmDiscardDrafts = () =>
+    !hasPendingDrafts ||
+    window.confirm("You have generated drafts that are not saved yet. Discard them?");
 
   // Keep a ref to the latest save handler so the global shortcut never goes stale.
   const saveRef = useRef<() => void>(() => {});
@@ -433,6 +462,9 @@ export function QuestionComposerPage() {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
     }
+    if (!confirmDiscardDrafts()) return;
+    // Variants and edits stay single-question; only a new question can be batched.
+    const requestedCount = mode === "create" ? questionCount : 1;
     let processingToast: string | number | undefined;
     try {
       setIsGenerating(true);
@@ -446,9 +478,9 @@ export function QuestionComposerPage() {
       );
 
       const difficultyDistribution = {
-        easy: form.difficulty === "easy" ? 1 : 0,
-        medium: form.difficulty === "medium" ? 1 : 0,
-        hard: form.difficulty === "hard" ? 1 : 0,
+        easy: form.difficulty === "easy" ? requestedCount : 0,
+        medium: form.difficulty === "medium" ? requestedCount : 0,
+        hard: form.difficulty === "hard" ? requestedCount : 0,
       };
       const reasoningDistribution = {
         factual: form.reasoningLevel === "factual" ? 100 : 0,
@@ -520,7 +552,7 @@ export function QuestionComposerPage() {
         courseId: validCourseId,
         courseCode: code || undefined,
         model: form.generationModel,
-        numQuestions: 1,
+        numQuestions: requestedCount,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
@@ -531,7 +563,8 @@ export function QuestionComposerPage() {
       }
       const response = await eduaiService.generateQuestions(generateParams);
 
-      const generated = response?.data?.questions?.[0];
+      const generatedList = response?.data?.questions ?? [];
+      const generated = generatedList[0];
       if (!generated)
         throw new Error("AI service did not return a question. Try a different prompt.");
 
@@ -548,20 +581,38 @@ export function QuestionComposerPage() {
         );
       }
 
-      setForm((prev) =>
-        applyGeneratedQuestion(
-          prev,
-          generated,
-          topics.map((t) => String(t.id)),
-          mode === "variant" ? "variant" : "create",
-        ),
-      );
+      const topicIds = topics.map((t) => String(t.id));
+      if (requestedCount > 1 && generatedList.length > 1) {
+        const built = generatedList.map((g) => applyGeneratedQuestion(form, g, topicIds, "create"));
+        setDrafts(built.map((draftForm) => ({ form: draftForm, status: "pending" })));
+        setCurrentDraftIndex(0);
+        setForm(built[0]);
+        setAttemptedSave(false);
+      } else {
+        setDrafts([]);
+        setForm((prev) =>
+          applyGeneratedQuestion(
+            prev,
+            generated,
+            topicIds,
+            mode === "variant" ? "variant" : "create",
+          ),
+        );
+      }
 
       setIsAiGenerated(true);
       if (mountedRef.current) setQuestionGenerationPhase("review");
       else setQuestionGenerationPhase(null);
       if (processingToast !== undefined) toast.dismiss(processingToast);
-      toast(mode === "variant" ? "Variant generated" : "Question generated", {
+      const generatedTitle =
+        mode === "variant"
+          ? "Variant generated"
+          : requestedCount === 1
+            ? "Question generated"
+            : generatedList.length < requestedCount
+              ? `Generated ${generatedList.length} of ${requestedCount} questions`
+              : `Generated ${requestedCount} questions`;
+      toast(generatedTitle, {
         description: "Review the generated text and adjust any details before saving.",
       });
     } catch (generateError: unknown) {
@@ -593,6 +644,48 @@ export function QuestionComposerPage() {
   // ── Save (create / variant / edit) ───────────────────────────────────────
   const navigateBackToQuestions = () => {
     navigate(`/courses/${validCourseId}?tab=questions`);
+  };
+
+  const handleCancel = () => {
+    if (confirmDiscardDrafts()) navigateBackToQuestions();
+  };
+
+  // Loads a queued draft into the form, keeping the prompt and model typed in the AI panel.
+  const loadDraft = (index: number, list: QueuedDraft[]) => {
+    setForm((prev) => ({
+      ...list[index].form,
+      generationPrompt: prev.generationPrompt,
+      generationModel: prev.generationModel,
+    }));
+    setCurrentDraftIndex(index);
+    setAttemptedSave(false);
+    setError(null);
+  };
+
+  const selectDraft = (index: number) => {
+    const updated = drafts.map((d, i) => (i === currentDraftIndex ? { ...d, form } : d));
+    setDrafts(updated);
+    loadDraft(index, updated);
+  };
+
+  // Marks the current draft saved or discarded, then moves on or returns to the bank.
+  const finishDraft = (status: Exclude<DraftStatus, "pending">) => {
+    const updated = drafts.map((d, i) => (i === currentDraftIndex ? { form, status } : d));
+    const next = nextPendingIndex(
+      updated.map((d) => d.status),
+      currentDraftIndex,
+    );
+    if (next === -1) {
+      const saved = updated.filter((d) => d.status === "saved").length;
+      setDrafts([]);
+      toast(saved > 0 ? `Saved ${saved} of ${updated.length} questions` : "No questions saved", {
+        description: "All generated drafts have been reviewed.",
+      });
+      navigateBackToQuestions();
+      return;
+    }
+    setDrafts(updated);
+    loadDraft(next, updated);
   };
 
   const buildVariantChoices = (): MCQChoice[] | null => {
@@ -734,6 +827,13 @@ export function QuestionComposerPage() {
         isDraft: !approveOnSave,
         shareWithExtensions: shareOnSave,
       });
+      if (queueActive) {
+        toast("Question created", {
+          description: `Draft ${currentDraftIndex + 1} of ${drafts.length} saved.`,
+        });
+        finishDraft("saved");
+        return;
+      }
       toast("Question created", { description: "The question has been added to the bank." });
       navigateBackToQuestions();
     } catch (err: unknown) {
@@ -843,16 +943,42 @@ export function QuestionComposerPage() {
     <ComposerShell
       title={contextTitle}
       courseCode={course?.code ?? undefined}
-      onCancel={navigateBackToQuestions}
+      onCancel={handleCancel}
       onSave={handleSave}
       saving={isSubmitting}
       saveLabel={
-        mode === "variant" ? "Add variant" : mode === "edit" ? "Save changes" : "Save question"
+        mode === "variant"
+          ? "Add variant"
+          : mode === "edit"
+            ? "Save changes"
+            : queueActive
+              ? "Save & next"
+              : "Save question"
       }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         {/* LEFT: form */}
         <div className="flex flex-col gap-6">
+          {queueActive && (
+            <Card>
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+                <DraftQueueStrip
+                  statuses={drafts.map((d) => d.status)}
+                  currentIndex={currentDraftIndex}
+                  onSelect={selectDraft}
+                  disabled={isSubmitting || isGenerating}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => finishDraft("discarded")}
+                  disabled={isSubmitting}
+                >
+                  Discard draft
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2.5 text-base">
@@ -975,6 +1101,8 @@ export function QuestionComposerPage() {
             onChange={(field, value) => setField(field, value)}
             onGenerate={handleGenerateWithAI}
             isGenerating={isGenerating}
+            questionCount={questionCount}
+            onQuestionCountChange={mode === "create" ? setQuestionCount : undefined}
             availableModels={availableModels}
             providerApiKey={providerApiKey}
             onProviderApiKeyChange={(value) => {
