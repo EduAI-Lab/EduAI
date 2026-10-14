@@ -50,4 +50,16 @@ describe("HelpView", () => {
     expect(screen.queryByText("For admins")).not.toBeInTheDocument();
     expect(screen.getByText("Student")).toBeInTheDocument();
   });
+
+  it("gives students the knowledge-level and grading topics but not publishing or topics", () => {
+    render(
+      <MemoryRouter>
+        <HelpView role="STUDENT" />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByText("Knowledge level").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("How answers are graded").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Publishing courses, modules, and lessons")).not.toBeInTheDocument();
+    expect(screen.queryByText("Topics and topic sync")).not.toBeInTheDocument();
+  });
 });

@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { Link } from "react-router";
-import { Spinner } from "@eduai/ui";
+import { HelpHint, Spinner } from "@eduai/ui";
 import {
   Badge,
   Button,
@@ -63,6 +63,7 @@ import {
   providerRequiresByokKey,
 } from "~/lib/provider-keys";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
+import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { z } from "zod";
 import { cn } from "~/lib/utils";
 import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
@@ -834,18 +835,24 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   {availableTabs[0].label}
                 </Badge>
               ) : null}
+              {availableTabs.length > 0 && (
+                <HelpHint {...AI_TUTOR_HELP.chatModes} LinkComponent={Link} />
+              )}
 
               {knowledgeLevel && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto rounded-full"
-                  onClick={onAdjustKnowledgeLevel}
-                  aria-label="Change knowledge level"
-                >
-                  {knowledgeLevelLabel(knowledgeLevel)}
-                </Button>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={onAdjustKnowledgeLevel}
+                    aria-label="Change knowledge level"
+                  >
+                    {knowledgeLevelLabel(knowledgeLevel)}
+                  </Button>
+                  <HelpHint {...AI_TUTOR_HELP.knowledgeLevel} LinkComponent={Link} align="end" />
+                </div>
               )}
             </div>
           )}

@@ -5,14 +5,18 @@
  * as Core's `apps/core/app/components/help/help-view.tsx`, built on
  * `@eduai/ui`'s `Card` primitives instead of hand-rolled divs.
  */
-import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { useEffect, type ReactNode } from "react";
+import { Link, useLocation } from "react-router";
 import {
   IconRobot,
   IconBooks,
   IconCommand,
   IconChalkboard,
   IconShieldLock,
+  IconGauge,
+  IconChecklist,
+  IconWorldUpload,
+  IconTags,
   type Icon,
 } from "@tabler/icons-react";
 import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
@@ -58,6 +62,32 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
           setup you can revisit any time from &ldquo;Change&rdquo; next to your level.
         </>,
         "Every conversation is saved automatically. Reopen a past chat from the history panel above the message box.",
+      ],
+    },
+    {
+      id: "knowledge-level",
+      title: "Knowledge level",
+      icon: IconGauge,
+      points: [
+        "Your knowledge level tells the tutor how much you already know about an activity's topic: Beginner, Intermediate, or Advanced.",
+        "The tutor is told your level with every message and adjusts how it explains: more basics for Beginner, more depth for Advanced.",
+        "You pick it per activity. If you skip it, the tutor assumes Intermediate.",
+        "Change it any time with the level button above the chat. Your next message uses the new level.",
+      ],
+    },
+    {
+      id: "grading",
+      title: "How answers are graded",
+      icon: IconChecklist,
+      points: [
+        "A multiple-choice answer is checked against the correct option as soon as you submit it.",
+        "A short answer is compared with the instructor's answer key, ignoring capitals and extra spaces.",
+        "A short answer with no answer key can't be checked automatically, so it waits for your instructor or TA to grade it.",
+        "You can keep trying until you get it right. Every attempt is recorded.",
+        <>
+          Staff see every attempt on a course&rsquo;s <strong>Submissions</strong> tab, where they
+          can filter to attempts that need grading and override any grade or add a score.
+        </>,
       ],
     },
     {
@@ -110,6 +140,31 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
       ],
     },
     {
+      id: "publishing",
+      title: "Publishing courses, modules, and lessons",
+      icon: IconWorldUpload,
+      roles: STAFF,
+      points: [
+        "Students only see a lesson when its course, its module, and the lesson itself are all published.",
+        "Publish from the top down. The course is published in EduAI Core; a module can't be published until its course is, and a lesson can't be published until its module is.",
+        "Unpublishing cascades down: unpublishing a course or module also unpublishes everything beneath it, so students lose access straight away.",
+        "Publishing never cascades. After re-publishing a module, publish each lesson you want students to see again.",
+        "Use Preview as student on a course to check exactly what students can see.",
+      ],
+    },
+    {
+      id: "topics",
+      title: "Topics and topic sync",
+      icon: IconTags,
+      roles: STAFF,
+      points: [
+        "A course's topics come from EduAI Core and are synced automatically each time the topic list loads. There is no sync button to press.",
+        "Topics added to the course in Core appear here on the next load. A topic you create here is saved to Core first, so the other EduAI apps see it too.",
+        "Sync only adds topics. A topic renamed or removed in Core stays on activities that already use it.",
+        "Tag every activity with one main topic, plus any secondary topics it also touches. In Teach me, students can pick which of an activity's topics the tutor focuses on.",
+      ],
+    },
+    {
       id: "admin",
       title: "For admins",
       icon: IconShieldLock,
@@ -136,6 +191,15 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
 
 export function HelpView({ role }: { role?: Role }) {
   const topics = buildTopics(role).filter((t) => !t.roles || (role && t.roles.includes(role)));
+  const { hash } = useLocation();
+  const topicIds = topics.map((t) => t.id).join();
+
+  // HelpHint links land here as /help#section. Staff sections only render once
+  // the user's role has loaded, after ScrollRestoration has already looked.
+  useEffect(() => {
+    const id = decodeURIComponent(hash.slice(1));
+    if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
+  }, [hash, topicIds]);
 
   return (
     <div className="flex flex-col gap-6 px-4 lg:px-6 pb-10">
