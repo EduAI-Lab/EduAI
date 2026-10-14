@@ -56,6 +56,7 @@ import {
   slugifyAssessmentBasename,
 } from "../utils/assessmentExport";
 import { difficultySolidVar, normalizeDifficulty } from "../lib/difficulty";
+import { getAssessmentTopicIds } from "../utils/assessmentTopicScope";
 import { toast } from "sonner";
 
 /** Coloured icon tones for the summary stat tiles — keeps the strip from going monotone. */
@@ -200,10 +201,7 @@ const AssessmentBuilderPage = () => {
   }, [topics]);
 
   // #1974: a topic-limited assessment only offers questions from its topics.
-  const assessmentTopicIds = useMemo(() => {
-    const raw = assessment?.blueprintConfig?.primaryTopicIds;
-    return Array.isArray(raw) ? raw : [];
-  }, [assessment?.blueprintConfig?.primaryTopicIds]);
+  const assessmentTopicIds = useMemo(() => getAssessmentTopicIds(assessment), [assessment]);
 
   const scopedTopics = useMemo(
     () =>

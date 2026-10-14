@@ -83,6 +83,7 @@ import { MCQChoicesField } from "./MCQChoicesField";
 import { buildVariantMetadataUpdates } from "../../utils/questionMetadataEdit";
 import { reviewStatusConfirm } from "../../lib/review-status";
 import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../../utils/aiModels";
+import { assessmentCoversTopic } from "../../utils/assessmentTopicScope";
 import {
   DIFFICULTY_META,
   difficultyChipClass,
@@ -813,11 +814,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
     createMode === "variant"
       ? (createProps?.presetVariant?.primaryTopicId ?? "")
       : form.primaryTopicId;
-  const assessmentCoversTopic = (assessment: Assessment) => {
-    const limited = assessment.blueprintConfig?.primaryTopicIds;
-    if (!Array.isArray(limited) || limited.length === 0 || !targetTopicId) return true;
-    return limited.includes(targetTopicId);
-  };
 
   const assessmentOptions = useMemo(
     () =>
@@ -825,7 +821,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         (assessment) =>
           (createProps?.courseId
             ? assessment.courseId === undefined || assessment.courseId === createProps.courseId
-            : true) && assessmentCoversTopic(assessment),
+            : true) && assessmentCoversTopic(assessment, targetTopicId),
       ),
     [assessments, createProps?.courseId, targetTopicId],
   );
@@ -834,7 +830,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
   useEffect(() => {
     if (form.variantAssessmentId === "none") return;
     const chosen = assessments.find((a) => a.id.toString() === form.variantAssessmentId);
-    if (chosen && !assessmentCoversTopic(chosen)) {
+    if (chosen && !assessmentCoversTopic(chosen, targetTopicId)) {
       setForm((prev) => ({ ...prev, variantAssessmentId: "none" }));
     }
   }, [targetTopicId, assessments, form.variantAssessmentId]);
@@ -1290,7 +1286,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       const chosenAssessment = assessments.find(
         (a) => a.id.toString() === form.variantAssessmentId,
       );
-      if (chosenAssessment && !assessmentCoversTopic(chosenAssessment)) {
+      if (chosenAssessment && !assessmentCoversTopic(chosenAssessment, targetTopicId)) {
         throw new Error(
           `"${chosenAssessment.name}" is limited to other topics. Pick a different assessment or a topic it covers.`,
         );
