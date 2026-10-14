@@ -117,6 +117,7 @@ vi.mock("@/components/questions/QuestionAIControls", () => ({
       <span data-testid="ai-status">{props.status}</span>
       <button onClick={() => props.onQuestionCountChange?.(3)}>set-count-3</button>
       <span data-testid="has-count">{String(Boolean(props.onQuestionCountChange))}</span>
+      <span data-testid="ai-disabled">{String(Boolean(props.disabled))}</span>
     </div>
   ),
 }));
@@ -757,5 +758,19 @@ describe("QuestionComposerPage batch generation (#1973)", () => {
         expect.objectContaining({ primaryTopicId: "t1" }),
       ),
     );
+  });
+
+  it("keeps Generate disabled until the course topics have loaded", async () => {
+    let resolveTopics: (topics: Array<{ id: string; name: string }>) => void = () => {};
+    courseService.getCourseTopics.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTopics = resolve;
+      }),
+    );
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    expect(screen.getByTestId("ai-disabled")).toHaveTextContent("true");
+    resolveTopics([{ id: "t1", name: "Topic 1" }]);
+    await waitFor(() => expect(screen.getByTestId("ai-disabled")).toHaveTextContent("false"));
   });
 });

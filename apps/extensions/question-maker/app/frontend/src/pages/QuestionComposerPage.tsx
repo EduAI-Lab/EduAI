@@ -1143,7 +1143,8 @@ export function QuestionComposerPage() {
             questionGenerationPhase={eduaiStatus.questionGenerationPhase}
             courseWarningMessage={courseWarningMessage}
             mode={mode === "variant" ? "variant" : "new"}
-            disabled={isSubmitting}
+            // The prompt lists course topic IDs and drafts resolve against them, so wait for them.
+            disabled={isSubmitting || topicsLoading}
           />
 
           {mode === "edit" && sourceQuestion && (sourceQuestion.variants?.length ?? 0) > 1 && (
