@@ -1171,7 +1171,14 @@ export function CourseDetailManagerView({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+        <DialogContent
+          className="sm:max-w-md rounded-[var(--radius-xl)]"
+          onOpenAutoFocus={(event) => {
+            // Start on the switch, not the header's help hint.
+            event.preventDefault();
+            document.getElementById("material-visible")?.focus();
+          }}
+        >
           <DialogHeader>
             <div className="flex items-center gap-2">
               <DialogTitle className="flex items-center gap-2">

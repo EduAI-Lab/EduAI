@@ -54,12 +54,14 @@ export function HelpHint({
   // pop the summary tooltip straight back up over the content just dismissed.
   const suppressNextTooltipRef = React.useRef(false);
   const dismissedOutsideRef = React.useRef(false);
+  const ignoreFocusOpenRef = React.useRef(false);
 
   const handleTooltipOpenChange = (open: boolean) => {
     if (open && suppressNextTooltipRef.current) {
       suppressNextTooltipRef.current = false;
       return;
     }
+    if (open && ignoreFocusOpenRef.current) return;
     setTooltipOpen(open);
   };
 
@@ -78,6 +80,15 @@ export function HelpHint({
               type="button"
               aria-label={`About ${title}`}
               data-slot="help-hint-trigger"
+              onFocus={(event) => {
+                // Programmatic focus after a click (e.g. a dialog's auto-focus) isn't
+                // focus-visible; only keyboard focus should show the summary.
+                if (event.currentTarget.matches(":focus-visible")) return;
+                ignoreFocusOpenRef.current = true;
+                queueMicrotask(() => {
+                  ignoreFocusOpenRef.current = false;
+                });
+              }}
               className={cn(
                 // The pseudo-element widens the touch target without shifting layout.
                 "relative inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full align-middle text-muted-foreground transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:text-primary-text",

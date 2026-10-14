@@ -44,6 +44,20 @@ describe("HelpHint", () => {
     expect(trigger()).toHaveAttribute("aria-describedby", tooltip.id);
   });
 
+  it("stays quiet on programmatic focus that isn't focus-visible, but still shows on hover", async () => {
+    render(<HelpHint {...CONTENT} />);
+    const button = trigger();
+    const matches = button.matches.bind(button);
+    // A dialog auto-focusing the hint after a mouse click.
+    button.matches = (selector: string) => selector !== ":focus-visible" && matches(selector);
+    act(() => button.focus());
+    await act(() => Promise.resolve());
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    hover(button);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(CONTENT.summary);
+  });
+
   it("opens the details, title and guide link on click, and hides the summary", () => {
     render(<HelpHint {...CONTENT} />);
     fireEvent.click(trigger());

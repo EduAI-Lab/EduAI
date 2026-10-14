@@ -69,7 +69,7 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
       title: "Knowledge level",
       icon: IconGauge,
       points: [
-        "Your knowledge level tells the tutor how much you already know about an activity's topic: Beginner, Intermediate, or Advanced.",
+        "Your knowledge level tells the tutor how much you already know about an activity's topic: Beginner (“New to this”), Intermediate (“Some idea”), or Advanced (“Confident”).",
         "The tutor is told your level with every message and adjusts how it explains: more basics for Beginner, more depth for Advanced.",
         "You pick it per activity. If you skip it, the tutor assumes Intermediate.",
         "Change it any time with the level button above the chat. Your next message uses the new level.",
