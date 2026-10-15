@@ -19,7 +19,10 @@ import {
   deactivateEnrollment,
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
-import { updateCourse } from "~/lib/courses/server";
+import { listCoursesForUser, updateCourse } from "~/lib/courses/server";
+import { getCourseEnrollments } from "~/lib/courses/enrollments.server";
+import { getCourseInstructors } from "~/lib/courses/instructors.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 import { auth } from "~/lib/auth/server";
 import { seedUser, mockSession, type SeededUser } from "../helpers/rbac";
@@ -459,5 +462,54 @@ describe("#1840 — the instructor candidate picker", () => {
       }),
     );
     expect(denied.status).toBe(403);
+  });
+});
+
+// #1964: the second instructor is a full instructor, not a lesser co-owner —
+// every check keys on their own enrollment, never on `Course.instructorId`.
+describe("#1964 — both instructors of one section get the same access", () => {
+  async function courseWithTwoInstructors() {
+    const course = await seedCourseWithInstructor(abdallah.id);
+    await prisma.enrollment.create({
+      data: { courseId: course.id, userId: fahd.id, role: "INSTRUCTOR", isActive: true },
+    });
+    return course;
+  }
+
+  it("gives the non-primary instructor the instructor tier on the course", async () => {
+    const course = await courseWithTwoInstructors();
+
+    for (const user of [abdallah, fahd]) {
+      const { access } = await resolveCourseAccessGate(user, course.id);
+      expect(access).toMatchObject({ level: "instructor", rank: INSTRUCTOR_RANK });
+    }
+  });
+
+  it("lists the course for both instructors", async () => {
+    const course = await courseWithTwoInstructors();
+
+    for (const user of [abdallah, fahd]) {
+      const { courses } = await listCoursesForUser(user, { pageSize: 100 });
+      expect(courses.map((c) => c.id)).toContain(course.id);
+    }
+  });
+
+  it("names both instructors, primary first", async () => {
+    const course = await courseWithTwoInstructors();
+
+    const instructors = (await getCourseInstructors([course.id])).get(course.id) ?? [];
+    expect(instructors.map((i) => [i.id, i.isPrimary])).toEqual([
+      [abdallah.id, true],
+      [fahd.id, false],
+    ]);
+  });
+
+  it("returns both instructors in the full roster the extensions authorize against", async () => {
+    const course = await courseWithTwoInstructors();
+
+    const instructors = (await getCourseEnrollments(course.id))
+      .filter((e) => e.role === "INSTRUCTOR" && e.isActive)
+      .map((e) => e.userId);
+    expect(instructors).toEqual(expect.arrayContaining([abdallah.id, fahd.id]));
   });
 });
