@@ -7,6 +7,10 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import {
+  isTopicGenerationEnabled,
+  setTopicGenerationEnabled,
+} from "~/lib/topics/generation-setting.server";
+import {
   approveGeneratedTopic,
   dismissGeneratedTopic,
   latestTopicAnalysisForCourse,
@@ -24,7 +28,7 @@ function json(body: JsonValue, status = 200): Response {
 const topicId = z.string().min(1);
 
 /**
- * The four bodies this action accepts. The "merge into itself" check lives in
+ * The five bodies this action accepts. The "merge into itself" check lives in
  * the handler rather than a `.refine()` here: refining a member turns it into a
  * ZodEffects, which `discriminatedUnion` will not accept.
  */
@@ -33,6 +37,7 @@ const ReviewBodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("dismiss"), topicId }),
   z.object({ action: z.literal("merge"), topicId, intoTopicId: topicId }),
   z.object({ action: z.literal("retry") }),
+  z.object({ action: z.literal("set-generation"), enabled: z.boolean() }),
 ]);
 
 /**
@@ -64,7 +69,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
  * `POST /api/courses/:courseId/topic-analysis` — act on a generated topic.
  *
  * `{ action: "approve" | "dismiss", topicId }` or
- * `{ action: "merge", topicId, intoTopicId }` or `{ action: "retry" }`.
+ * `{ action: "merge", topicId, intoTopicId }` or `{ action: "retry" }` or
+ * `{ action: "set-generation", enabled }` (#1966). `retry` also serves as the
+ * one-time run over existing materials after generation is switched on.
  *
  * Restricted to rank >= 2 (INSTRUCTOR and above). A TA is deliberately excluded
  * even under the `tas.canManageTopics` grant: merging repoints every question on
@@ -97,7 +104,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
   const actor = getActorContext(session.user);
 
+  if (parsed.action === "set-generation") {
+    await setTopicGenerationEnabled(courseId, parsed.enabled);
+    fireAndForget(
+      logAuditAction({
+        ...actor,
+        ...requestContext,
+        actionCode: parsed.enabled ? "TOPIC_GENERATION_ENABLED" : "TOPIC_GENERATION_DISABLED",
+        category: "TOPIC",
+        entityType: "Course",
+        entityId: courseId,
+        details: { courseId },
+      }),
+    );
+    return json({ generationEnabled: parsed.enabled });
+  }
+
   if (parsed.action === "retry") {
+    if (!(await isTopicGenerationEnabled(courseId))) {
+      return json({ error: "TOPIC_GENERATION_OFF" }, 409);
+    }
     const started = await retryTopicAnalysis(courseId, session.user.id);
     if (!started) return json({ error: "NO_ANALYZABLE_MATERIALS" }, 409);
     return json({ jobId: started.jobId });

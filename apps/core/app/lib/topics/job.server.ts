@@ -7,6 +7,7 @@ import prisma from "~/lib/prisma.server";
 import { JobPayloadSchema, type JobPayload } from "~/lib/queue/job-schema";
 import { runTopicAnalysisCompletion } from "~/lib/topics/completion.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
+import { isTopicGenerationEnabled } from "~/lib/topics/generation-setting.server";
 import { provisionCourseTopics, type RunTopicCompletion } from "~/lib/topics/provision.server";
 
 /**
@@ -210,9 +211,12 @@ async function recordChunk(
     // would group only the new batchKey, and a sibling chunk completing would
     // hide the failure. Recycle the row into this batch and make it PENDING so
     // it is run again and counted with its siblings. A restore recycles a
-    // COMPLETED row the same way (see `rerunCompleted`).
+    // COMPLETED row the same way (see `rerunCompleted`), and a row CANCELLED
+    // because topic generation was switched off (#1966) is recycled like a
+    // FAILED one, so switching it back on can run that batch.
     if (
       existing.status === "FAILED" ||
+      existing.status === "CANCELLED" ||
       (args.rerunCompleted === true && existing.status === "COMPLETED")
     ) {
       await prisma.aiJob.update({
@@ -335,6 +339,22 @@ export async function runTopicAnalysisJob(
   }
   const { input } = parsed.data;
 
+  // Checked at run time as well as at start: a job recorded before the
+  // instructor switched generation off, or one resumed after a restart, must
+  // not create topics the course no longer wants (#1966).
+  if (!(await isTopicGenerationEnabled(input.courseId))) {
+    await ensureCourseHasTopic(input.courseId).catch(() => undefined);
+    await prisma.aiJob.update({
+      where: { id: jobId },
+      data: {
+        status: "CANCELLED",
+        completedAt: new Date(),
+        errorMessage: "Topic generation is turned off for this course",
+      },
+    });
+    return;
+  }
+
   try {
     const result = await provisionCourseTopics({
       courseId: input.courseId,
@@ -394,12 +414,16 @@ async function failJob(jobId: string, message: string): Promise<void> {
  * request path that has already earned its response. A batch larger than one
  * job's material bound becomes several rows, run in order.
  *
+ * Records nothing when the course has topic generation switched off (#1966),
+ * so an upload to such a course leaves no job row and no banner behind.
+ *
  * Never throws: topic provisioning is layered on top of material sync, so a
  * failure here must degrade to "no topics generated", never to a failed import
  * that loses the instructor's materials.
  */
 export function startTopicAnalysis(args: StartTopicAnalysisArgs): void {
   void (async () => {
+    if (!(await isTopicGenerationEnabled(args.courseId))) return;
     const recorded = await recordTopicAnalysisJobs(args);
     for (const job of recorded) {
       // A row that already exists and is still leased belongs to another runner;

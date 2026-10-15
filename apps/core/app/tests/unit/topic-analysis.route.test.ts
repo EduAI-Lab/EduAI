@@ -13,6 +13,11 @@ const review = vi.hoisted(() => ({
 vi.mock("~/lib/auth/course-access.server", () => ({ resolveCourseAccessGate }));
 vi.mock("~/lib/auth/request-session.server", () => ({ getRequestSession }));
 vi.mock("~/lib/topics/review.server", () => review);
+const generation = vi.hoisted(() => ({
+  isTopicGenerationEnabled: vi.fn(),
+  setTopicGenerationEnabled: vi.fn(),
+}));
+vi.mock("~/lib/topics/generation-setting.server", () => generation);
 vi.mock("~/lib/logging.server", () => ({ fireAndForget: vi.fn(), logAuditAction: vi.fn() }));
 vi.mock("~/lib/request-context.server", () => ({
   getActorContext: () => ({}),
@@ -27,7 +32,7 @@ const PARAMS = { courseId: "course-1" };
 
 /** The bodies this route accepts, plus the malformed ones under test. */
 type ReviewBody =
-  | { action: string; topicId?: string; intoTopicId?: string }
+  | { action: string; topicId?: string; intoTopicId?: string; enabled?: boolean }
   | Record<string, never>;
 
 function post(body: ReviewBody, method: "POST" | "PATCH" = "POST") {
@@ -50,6 +55,7 @@ beforeEach(() => {
     access: { level: "instructor", rank: 2 },
   });
   review.latestTopicAnalysisForCourse.mockResolvedValue({ job: null, pendingSuggestions: 0 });
+  generation.isTopicGenerationEnabled.mockResolvedValue(true);
   review.approveGeneratedTopic.mockResolvedValue({
     status: "200",
     topic: { id: "topic-1", name: "Recursion" },
@@ -148,6 +154,52 @@ describe("POST /api/courses/:courseId/topic-analysis", () => {
     const response = await action({ request: post({ action: "retry" }), params: PARAMS } as never);
 
     expect(response.status).toBe(409);
+  });
+
+  it("409s a retry when the course has topic generation switched off (#1966)", async () => {
+    generation.isTopicGenerationEnabled.mockResolvedValue(false);
+
+    const response = await action({ request: post({ action: "retry" }), params: PARAMS } as never);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "TOPIC_GENERATION_OFF" });
+    expect(review.retryTopicAnalysis).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    "lets an instructor set topic generation to %s (#1966)",
+    async (enabled) => {
+      const response = await action({
+        request: post({ action: "set-generation", enabled }),
+        params: PARAMS,
+      } as never);
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ generationEnabled: enabled });
+      expect(generation.setTopicGenerationEnabled).toHaveBeenCalledWith("course-1", enabled);
+    },
+  );
+
+  it("403s a TA changing topic generation (#1966)", async () => {
+    resolveCourseAccessGate.mockResolvedValue({ course: COURSE, access: { level: "ta", rank: 1 } });
+
+    const response = await action({
+      request: post({ action: "set-generation", enabled: false }),
+      params: PARAMS,
+    } as never);
+
+    expect(response.status).toBe(403);
+    expect(generation.setTopicGenerationEnabled).not.toHaveBeenCalled();
+  });
+
+  it("400s a set-generation body without a boolean", async () => {
+    const response = await action({
+      request: post({ action: "set-generation" }),
+      params: PARAMS,
+    } as never);
+
+    expect(response.status).toBe(400);
+    expect(generation.setTopicGenerationEnabled).not.toHaveBeenCalled();
   });
 
   it("403s a TA — merging repoints every question on a topic", async () => {

@@ -4,6 +4,7 @@ import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
+import { isTopicGenerationEnabled } from "~/lib/topics/generation-setting.server";
 import {
   recordTopicAnalysisJobs,
   resumeStaleTopicAnalysisJobs,
@@ -23,6 +24,8 @@ export type TopicAnalysisStatus = {
   } | null;
   /** How many generated topics are still awaiting review. */
   pendingSuggestions: number;
+  /** The course's "Generate topics from course material" setting (#1966). */
+  generationEnabled: boolean;
 };
 
 type ReviewOutcome =
@@ -149,7 +152,7 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
   // never disturbed.
   await resumeStaleTopicAnalysisJobs(courseId);
 
-  const [rows, pendingSuggestions] = await Promise.all([
+  const [rows, pendingSuggestions, generationEnabled] = await Promise.all([
     prisma.aiJob.findMany({
       where: { courseId, kind: "topic-analysis" },
       orderBy: { createdAt: "desc" },
@@ -167,17 +170,18 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
     prisma.courseTopic.count({
       where: { courseId, deletedAt: null, reviewStatus: "SUGGESTED" },
     }),
+    isTopicGenerationEnabled(courseId),
   ]);
 
   const newest = rows[0];
-  if (!newest) return { job: null, pendingSuggestions };
+  if (!newest) return { job: null, pendingSuggestions, generationEnabled };
 
   // Group by the newest row's batch. A row with no `batchKey` predates chunking
   // and stands alone, which is exactly the old single-row behaviour.
   const batchKey = batchKeyOf(newest);
   const chunks = batchKey ? rows.filter((row) => batchKeyOf(row) === batchKey) : [newest];
 
-  return { job: aggregateBatch(chunks, newest), pendingSuggestions };
+  return { job: aggregateBatch(chunks, newest), pendingSuggestions, generationEnabled };
 }
 
 /**

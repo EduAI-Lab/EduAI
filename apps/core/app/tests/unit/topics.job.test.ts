@@ -14,9 +14,11 @@ const prismaMock = vi.hoisted(() => ({
   },
 }));
 const provisionCourseTopics = vi.hoisted(() => vi.fn());
+const isTopicGenerationEnabled = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 vi.mock("~/lib/topics/provision.server", () => ({ provisionCourseTopics }));
+vi.mock("~/lib/topics/generation-setting.server", () => ({ isTopicGenerationEnabled }));
 vi.mock("~/lib/topics/completion.server", () => ({ runTopicAnalysisCompletion: vi.fn() }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
@@ -57,6 +59,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "existing-topic" });
   prismaMock.aiJob.update.mockResolvedValue({});
+  isTopicGenerationEnabled.mockResolvedValue(true);
   provisionCourseTopics.mockResolvedValue({
     created: 2,
     createdNames: ["Chapter 1", "Chapter 2"],
@@ -276,6 +279,28 @@ describe("recordTopicAnalysisJobs", () => {
     );
   });
 
+  it("recycles a chunk cancelled while generation was off, so switching it on can run it (#1966)", async () => {
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-a" }]);
+    prismaMock.aiJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }),
+    );
+    prismaMock.aiJob.findUnique.mockResolvedValue({
+      id: "job-cancelled",
+      status: "CANCELLED",
+      startedAt: new Date(),
+    });
+    prismaMock.aiJob.update.mockResolvedValue({ id: "job-cancelled" });
+
+    const result = await recordTopicAnalysisJobs({
+      courseId: "course-1",
+      userId: "user-1",
+      materialIds: ["m1"],
+    });
+
+    expect(result).toEqual([{ jobId: "job-cancelled", created: false, resumable: true }]);
+    expect(prismaMock.aiJob.update.mock.calls[0][0].data).toMatchObject({ status: "PENDING" });
+  });
+
   it("recycles a COMPLETED chunk when asked to re-run it, as a restore does (#1937)", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1", checksum: "sum-a" }]);
     prismaMock.aiJob.create.mockRejectedValue(
@@ -410,6 +435,18 @@ describe("startTopicAnalysis", () => {
     );
     expect(logSystemError).not.toHaveBeenCalled();
   });
+
+  it("records no job when the course has topic generation switched off (#1966)", async () => {
+    isTopicGenerationEnabled.mockResolvedValue(false);
+
+    startTopicAnalysis({ courseId: "course-1", userId: "user-1", materialIds: ["m1"] });
+
+    await vi.waitFor(() => expect(isTopicGenerationEnabled).toHaveBeenCalledWith("course-1"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(prismaMock.courseMaterial.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.aiJob.create).not.toHaveBeenCalled();
+    expect(provisionCourseTopics).not.toHaveBeenCalled();
+  });
 });
 
 describe("resumeStaleTopicAnalysisJobs", () => {
@@ -452,6 +489,21 @@ describe("runTopicAnalysisJob", () => {
       usedSource: "material-headings",
       createdNames: ["Chapter 1", "Chapter 2"],
     });
+  });
+
+  it("cancels instead of provisioning when generation was switched off after the job was recorded (#1966)", async () => {
+    isTopicGenerationEnabled.mockResolvedValue(false);
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
+
+    await runTopicAnalysisJob("job-1", vi.fn());
+
+    expect(provisionCourseTopics).not.toHaveBeenCalled();
+    const final = prismaMock.aiJob.update.mock.calls.at(-1)?.[0];
+    expect(final.where).toEqual({ id: "job-1" });
+    expect(final.data).toMatchObject({ status: "CANCELLED" });
+    // The course still has a topic to author questions against.
+    expect(prismaMock.courseTopic.findFirst).toHaveBeenCalled();
   });
 
   it("does nothing when another runner already claimed the job", async () => {

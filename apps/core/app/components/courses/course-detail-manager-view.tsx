@@ -93,6 +93,7 @@ import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
 import { useTopicAnalysis } from "~/hooks/api/use-topic-analysis";
 import { TopicAnalysisBanner } from "~/components/courses/topic-analysis-banner";
+import { TopicGenerationSetting } from "~/components/courses/topic-generation-setting";
 import {
   isSuggestion,
   TopicOriginBadge,
@@ -396,6 +397,7 @@ export function CourseDetailManagerView({
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    setGenerationEnabled,
     refetch: refetchTopicAnalysis,
     // `courseId` is optional on this component; without one there is nothing to
     // poll, so the hook stays idle rather than fetching `/api/courses//…`.
@@ -1555,6 +1557,16 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <div className="flex flex-col gap-4">
+            {/* #1966: per-course switch for generating topics from materials. */}
+            <TopicGenerationSetting
+              enabled={topicAnalysis.generationEnabled}
+              canChange={canReviewTopicSuggestions}
+              onChange={setGenerationEnabled}
+              onGenerateFromExisting={async () => {
+                await retryAnalysis();
+                await onRefreshTopics?.();
+              }}
+            />
             {/* #1624: persistent status for automatic topic provisioning. Reads
                 the durable job row, so it survives a reload. */}
             <TopicAnalysisBanner

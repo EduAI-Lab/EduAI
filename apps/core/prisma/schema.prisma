@@ -157,6 +157,10 @@ model Course {
   ragTopK                     Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
   ragSimilarityThreshold      Float?
+  /// Whether uploads generate topics from this course's materials (#1966).
+  /// Off for new courses; the migration that added it turned it on for every
+  /// course that already existed, so their behaviour did not change.
+  topicGenerationEnabled      Boolean                   @default(false)
   instructor                  User?                     @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
   embeddingProvider           String?

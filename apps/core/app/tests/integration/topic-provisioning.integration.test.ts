@@ -101,6 +101,9 @@ beforeAll(async () => {
       term: "W1",
       year: 2026,
       startDate: new Date("2026-09-01"),
+      // New courses start with generation off (#1966); this file is about the
+      // generator, so its course opts in.
+      topicGenerationEnabled: true,
     },
   });
   courseId = course.id;
@@ -108,6 +111,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  await prisma.course.update({ where: { id: courseId }, data: { topicGenerationEnabled: true } });
   await prisma.aiJob.deleteMany({ where: { courseId } });
   await prisma.courseTopic.deleteMany({ where: { courseId } });
   await prisma.courseMaterial.deleteMany({ where: { courseId } });
@@ -180,6 +184,63 @@ describe("initial sync", () => {
       usedSource: "material-headings",
     });
     expect(status.pendingSuggestions).toBe(1);
+  });
+});
+
+describe("topic generation switch (#1966)", () => {
+  it("starts new courses with generation off", async () => {
+    const course = await prisma.course.create({
+      data: {
+        name: "Fresh Course",
+        code: "TPR 998",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+      },
+    });
+    try {
+      expect(course.topicGenerationEnabled).toBe(false);
+    } finally {
+      await prisma.course.delete({ where: { id: course.id } });
+    }
+  });
+
+  it("cancels a recorded job instead of creating topics when generation is off", async () => {
+    const material = await seedMaterial({ checksum: "sum-off", rawText: "Chapter 1 — Limits\n" });
+    const recorded = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
+    await prisma.course.update({
+      where: { id: courseId },
+      data: { topicGenerationEnabled: false },
+    });
+
+    await runTopicAnalysisJob(recorded!.jobId, noAi);
+
+    const job = await prisma.aiJob.findUniqueOrThrow({ where: { id: recorded!.jobId } });
+    expect(job.status).toBe("CANCELLED");
+    // Only the fallback, so the course stays authorable.
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+    expect((await latestTopicAnalysisForCourse(courseId)).generationEnabled).toBe(false);
+  });
+
+  it("runs the cancelled batch once generation is switched back on", async () => {
+    const material = await seedMaterial({
+      checksum: "sum-back-on",
+      rawText: "Chapter 1 — Limits\n",
+    });
+    const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
+    await prisma.course.update({
+      where: { id: courseId },
+      data: { topicGenerationEnabled: false },
+    });
+    await runTopicAnalysisJob(first!.jobId, noAi);
+
+    await prisma.course.update({ where: { id: courseId }, data: { topicGenerationEnabled: true } });
+    const again = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
+    expect(again).toEqual({ jobId: first!.jobId, created: false, resumable: true });
+    await runTopicAnalysisJob(again!.jobId, noAi);
+
+    expect((await liveTopics()).map((topic) => topic.name)).toContain("Chapter 1 — Limits");
   });
 });
 

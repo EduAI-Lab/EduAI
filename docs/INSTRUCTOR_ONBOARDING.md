@@ -107,6 +107,17 @@ On the **Materials** tab you can either upload files from your device, or pull t
 
 Uploaded material is chunked and indexed before course-aware chat can use it. Watch the **Material status** panel on your dashboard: a file is only usable once it reaches **Ready**. A **Failed** file will not appear in AI answers. Select the **?** next to a failed file for the reason and what to do; every reason is listed in [When a file fails](USER_GUIDE.md#when-a-file-fails).
 
+### Topics
+
+The **Topics** tab lists the course's topics. You can always add your own.
+
+**Generate topics from course material** at the top of the tab lets EduAI suggest topics from your uploads. Suggestions stay hidden from students until you approve them.
+
+- **New courses:** off. Topics are only the ones you add.
+- **Courses created before this setting existed:** on, so they keep working as before.
+- **Turning it on** covers future uploads. EduAI also offers **Generate now** to suggest topics from the materials already in the course.
+- **Turning it off** stops new suggestions. Topics you already have, including unreviewed suggestions, stay until you approve or dismiss them.
+
 ### Enrollments
 
 On the **Enrollments** tab, review who is enrolled and add students or TAs as your pilot process requires.

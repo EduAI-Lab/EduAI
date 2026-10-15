@@ -13,15 +13,21 @@ export type TopicAnalysisJob = {
 export type TopicAnalysisStatus = {
   job: TopicAnalysisJob | null;
   pendingSuggestions: number;
+  /**
+   * The course's "Generate topics from course material" setting (#1966). Null
+   * until the status has loaded, so the switch never shows a guessed value.
+   */
+  generationEnabled: boolean | null;
 };
 
-/** The four bodies the topic-analysis action accepts. Mirrors its Zod schema. */
+/** The five bodies the topic-analysis action accepts. Mirrors its Zod schema. */
 export type TopicReviewRequest =
   | { action: "approve" | "dismiss"; topicId: string }
   | { action: "merge"; topicId: string; intoTopicId: string }
-  | { action: "retry" };
+  | { action: "retry" }
+  | { action: "set-generation"; enabled: boolean };
 
-const EMPTY: TopicAnalysisStatus = { job: null, pendingSuggestions: 0 };
+const EMPTY: TopicAnalysisStatus = { job: null, pendingSuggestions: 0, generationEnabled: null };
 
 /** Poll interval while a job is still in flight. */
 const IN_FLIGHT_POLL_MS = 5000;
@@ -126,6 +132,10 @@ export function useTopicAnalysis(
     [post],
   );
   const retryAnalysis = useCallback(() => post({ action: "retry" }), [post]);
+  const setGenerationEnabled = useCallback(
+    (next: boolean) => post({ action: "set-generation", enabled: next }),
+    [post],
+  );
 
   return {
     status,
@@ -135,6 +145,7 @@ export function useTopicAnalysis(
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    setGenerationEnabled,
     refetch: fetchStatus,
   };
 }

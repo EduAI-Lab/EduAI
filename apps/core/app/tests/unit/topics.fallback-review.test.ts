@@ -25,9 +25,11 @@ const recordTopicAnalysisJobs = vi.hoisted(() => vi.fn());
 const runTopicAnalysisJob = vi.hoisted(() => vi.fn());
 const resumeStaleTopicAnalysisJobs = vi.hoisted(() => vi.fn());
 const invalidateCourseTopicNamesCache = vi.hoisted(() => vi.fn());
+const isTopicGenerationEnabled = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 vi.mock("~/lib/courses/server", () => ({ invalidateCourseTopicNamesCache }));
+vi.mock("~/lib/topics/generation-setting.server", () => ({ isTopicGenerationEnabled }));
 vi.mock("~/lib/topics/job.server", () => ({
   recordTopicAnalysisJobs,
   runTopicAnalysisJob,
@@ -47,6 +49,7 @@ const SUGGESTION = { id: "topic-1", name: "Chapter 1 — Recursion" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  isTopicGenerationEnabled.mockResolvedValue(true);
   // The transaction callback is handed the same mock, so a merge's writes land
   // on the spies the assertions read.
   type TxClient = typeof prismaMock;
@@ -361,6 +364,7 @@ describe("latestTopicAnalysisForCourse", () => {
         usedSource: "canvas-modules",
       },
       pendingSuggestions: 4,
+      generationEnabled: true,
     });
   });
 
@@ -371,6 +375,7 @@ describe("latestTopicAnalysisForCourse", () => {
     expect(await latestTopicAnalysisForCourse("course-1")).toEqual({
       job: null,
       pendingSuggestions: 0,
+      generationEnabled: true,
     });
   });
 
