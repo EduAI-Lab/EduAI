@@ -22,8 +22,7 @@ import {
   previewSelfEnrollmentLink,
   redeemSelfEnrollmentLink,
 } from "~/lib/courses/self-enrollment.server";
-import { fireAndForget, logAuditAction } from "~/lib/logging.server";
-import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { logSelfEnrollmentRedeemed } from "~/lib/courses/self-enrollment-audit.server";
 
 /**
  * A `Map` because the code arrives as a plain string from the library's result
@@ -107,29 +106,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const result = await redeemSelfEnrollmentLink({ token, userId: session.user.id });
   if (result.status === "201") {
-    // Every other path that creates an enrollment logs it — the single-add
-    // route and the CSV import both do — so a roster built from a shared link
-    // must not be the one that is invisible when someone asks who joined this
-    // course and how. `source` names the link so the answer is "and how".
     // Only on 201: a 200 means the student was already enrolled and this
     // request wrote nothing.
-    fireAndForget(
-      logAuditAction({
-        ...getActorContext(session.user),
-        ...getRequestContext(request),
-        actionCode: "ENROLLMENT_ADDED",
-        category: "ENROLLMENT",
-        entityType: "Enrollment",
-        entityId: result.enrollmentId,
-        details: {
-          courseId: result.courseId,
-          role: "STUDENT",
-          targetUserId: session.user.id,
-          source: "SELF_ENROLLMENT_LINK",
-          linkId: result.linkId,
-        },
-      }),
-    );
+    logSelfEnrollmentRedeemed({
+      user: session.user,
+      request,
+      enrollmentId: result.enrollmentId,
+      courseId: result.courseId,
+      linkId: result.linkId,
+      deferred: false,
+    });
   }
   if (result.status === "201" || result.status === "200") {
     // Both outcomes mean "you are in this course" — land the student on it
