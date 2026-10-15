@@ -202,6 +202,40 @@ describe("POST /api/assistant/settings", () => {
     expect(keysMock.setUserEnabledModels).not.toHaveBeenCalled();
   });
 
+  describe("a local provider never widens past the admin catalogue", () => {
+    beforeEach(() => {
+      keysMock.loadUserAiRows.mockResolvedValue([]);
+      catalogueMock.loadAssistantCatalogue.mockResolvedValue([
+        { name: "ollama", displayName: "Ollama", models: ["llama3"] },
+      ]);
+    });
+
+    it("refuses an API key", async () => {
+      const res = (await settingsAction(
+        req("/api/assistant/settings", "POST", {
+          provider: "ollama",
+          model: "llama3.1:70b",
+          apiKey: "x",
+          enabledModels: ["llama3.1:70b"],
+        }),
+      )) as Response;
+      expect(res.status).toBe(422);
+      expect(keysMock.saveAssistantPreference).not.toHaveBeenCalled();
+    });
+
+    it("ignores self-curated models", async () => {
+      const res = (await settingsAction(
+        req("/api/assistant/settings", "POST", {
+          provider: "ollama",
+          model: "llama3.1:70b",
+          enabledModels: ["llama3.1:70b"],
+        }),
+      )) as Response;
+      expect(res.status).toBe(422);
+      expect(keysMock.saveAssistantPreference).not.toHaveBeenCalled();
+    });
+  });
+
   it("refuses a provider the administrator has not enabled", async () => {
     const res = (await settingsAction(
       req("/api/assistant/settings", "POST", { provider: "google", model: "gemini-2.5-flash" }),

@@ -260,6 +260,12 @@ describe("offeredModels — the #1823 policy", () => {
     expect(offeredModels(openai, keyed)).toEqual(["gpt-4o-mini", "gpt-4.1-withheld"]);
   });
 
+  it("a stored key on a local provider widens nothing", () => {
+    const ollama: CatalogueProvider = { name: "ollama", displayName: "Ollama", models: ["llama3"] };
+    const keyed = row({ provider: "ollama", key: "x", enabledModels: ["llama3.1:70b"] });
+    expect(offeredModels(ollama, keyed)).toEqual(["llama3"]);
+  });
+
   it("a key-less user cannot be handed a withheld model even as their explicit preference", () => {
     process.env.OPENAI_API_KEY = "sk-platform";
     const choice = chooseProviderAndModel({

@@ -65,6 +65,7 @@ function deps(overrides: Partial<AskDependencies> & { help?: boolean } = {}) {
     buildMaterial: vi.fn().mockResolvedValue({ status: "empty", label: "CS101 — Intro" }),
     callModel: vi.fn().mockResolvedValue({ kind: "success", text: "Open **Courses**." }),
     consumeDailyCap: vi.fn().mockResolvedValue(null),
+    refundDailyCap: vi.fn().mockResolvedValue(undefined),
     log: (line) => lines.push(line),
   };
   return { deps: { ...base, ...overrides }, lines };
@@ -76,6 +77,9 @@ const input = {
   history: [],
   hint: null,
 };
+
+const charged = () =>
+  vi.fn().mockResolvedValue({ limited: false, retryAfter: 0, reservationToken: "tok-1" });
 
 describe("answerAssistantQuestion", () => {
   it("answers from documentation and cites it", async () => {
@@ -120,6 +124,18 @@ describe("answerAssistantQuestion", () => {
     await expect(
       answerAssistantQuestion({ ...input, hint: { courseId: "gone", materialId: null } }, d),
     ).resolves.toEqual({ kind: "not_found" });
+  });
+
+  it("a page-context failure degrades to docs-only instead of failing the question", async () => {
+    const { deps: d } = deps({
+      resolvePageContext: vi.fn().mockRejectedValue(new Error("pool timeout")),
+    });
+    const outcome = await answerAssistantQuestion(
+      { ...input, hint: { courseId: "c1", materialId: null } },
+      d,
+    );
+    expect(outcome).toMatchObject({ kind: "answered", scope: { docs: true, material: null } });
+    expect(d.buildMaterial).not.toHaveBeenCalled();
   });
 
   it("reports no_key when no provider resolves", async () => {
@@ -282,6 +298,56 @@ describe("answerAssistantQuestion", () => {
     });
     expect(d.retrieveDocs).not.toHaveBeenCalled();
     expect(d.callModel).not.toHaveBeenCalled();
+  });
+
+  describe("daily cap refunds", () => {
+    const refunded = { userId: "u1", reservationToken: "tok-1" };
+
+    it("keeps the charge when the answer model answers", async () => {
+      const { deps: d } = deps({ consumeDailyCap: charged() });
+      await answerAssistantQuestion(input, d);
+      expect(d.refundDailyCap).not.toHaveBeenCalled();
+    });
+
+    it("refunds the fixed not-documented reply", async () => {
+      const { deps: d } = deps({
+        consumeDailyCap: charged(),
+        retrieveDocs: vi.fn().mockResolvedValue([]),
+      });
+      await expect(answerAssistantQuestion(input, d)).resolves.toMatchObject({
+        answer: NOT_DOCUMENTED_ANSWER,
+      });
+      expect(d.refundDailyCap).toHaveBeenCalledWith(refunded);
+    });
+
+    it("refunds a retrieval failure", async () => {
+      const { deps: d } = deps({
+        consumeDailyCap: charged(),
+        retrieveDocs: vi.fn().mockRejectedValue(new HelpDocsUnavailableError("down")),
+      });
+      await answerAssistantQuestion(input, d);
+      expect(d.refundDailyCap).toHaveBeenCalledWith(refunded);
+    });
+
+    it("refunds every failed answer call", async () => {
+      for (const result of [{ kind: "busy" }, { kind: "transport_failure" }] as const) {
+        const { deps: d } = deps({
+          consumeDailyCap: charged(),
+          callModel: vi.fn().mockResolvedValue(result),
+        });
+        await answerAssistantQuestion(input, d);
+        expect(d.refundDailyCap).toHaveBeenCalledWith(refunded);
+      }
+    });
+
+    it("refunds once when the pipeline throws", async () => {
+      const { deps: d } = deps({
+        consumeDailyCap: charged(),
+        retrieveDocs: vi.fn().mockRejectedValue(new Error("boom")),
+      });
+      await expect(answerAssistantQuestion(input, d)).rejects.toThrow("boom");
+      expect(d.refundDailyCap).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("maps model failures to the closed outcome set", async () => {

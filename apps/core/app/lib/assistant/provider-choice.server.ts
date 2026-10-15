@@ -71,7 +71,9 @@ export function catalogueHasEnabledProvider(catalogue: CatalogueProvider[]): boo
  * widen it.
  */
 export function offeredModels(provider: CatalogueProvider, row: UserAiRow | undefined): string[] {
-  const own = row?.key && row.enabledModels ? row.enabledModels : [];
+  // A keyless (local) provider always runs on the platform's servers, so a stored key widens nothing.
+  const ownKey = PROVIDER_CONFIGS[provider.name].requiresApiKey && row?.key;
+  const own = ownKey && row?.enabledModels ? row.enabledModels : [];
   return [...new Set([...provider.models, ...own])];
 }
 

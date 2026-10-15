@@ -4,6 +4,7 @@
  * Order matters and each step can end the request:
  *
  * 1. Scope — re-derived server-side from the hint; neither source → `unavailable`.
+ *    A page-context failure drops only the material half.
  * 2. Provider/key/model — nothing resolves → `no_key`. Never a pasted key.
  * 3. Documentation retrieval — a FAILURE returns immediately, before any answer
  *    call is billed. Found-nothing is a valid outcome, not a failure.
@@ -11,6 +12,9 @@
  *    so the docs half can still answer.
  * 5. Nothing to ground in → a fixed sentence, and the answer model is NOT called.
  * 6. The grounded answer call.
+ *
+ * A local model's daily-cap charge is refunded on every outcome the answer model
+ * didn't produce, so fixed replies and failures never spend course chat's quota.
  *
  * Nothing is persisted. The audit line is an operational record, never a
  * transcript: no question, history, answer or key ever reaches it.
@@ -42,6 +46,7 @@ import {
   scopeLabel,
   type MaterialContext,
   type PageContextHint,
+  type PageContextResolution,
 } from "~/lib/assistant/material-context.server";
 import {
   HELP_GUIDE_SOURCE,
@@ -56,7 +61,7 @@ import {
   type ProviderChoice,
 } from "~/lib/assistant/provider-choice.server";
 import { describeKeyTier } from "~/lib/assistant/user-ai-keys.server";
-import { consumeLocalChatDailyCap } from "~/lib/chat-daily-limits.server";
+import { consumeLocalChatDailyCap, refundLocalChatDailyCap } from "~/lib/chat-daily-limits.server";
 
 export type AssistantSource = { id: string; title: string; url: string };
 
@@ -122,6 +127,7 @@ export type AskDependencies = {
   buildMaterial: typeof buildMaterialContext;
   callModel: typeof callAssistantModel;
   consumeDailyCap: typeof consumeLocalChatDailyCap;
+  refundDailyCap: typeof refundLocalChatDailyCap;
   log: (line: AssistantAuditLine) => void;
 };
 
@@ -133,6 +139,7 @@ const defaultDependencies: AskDependencies = {
   buildMaterial: buildMaterialContext,
   callModel: callAssistantModel,
   consumeDailyCap: consumeLocalChatDailyCap,
+  refundDailyCap: refundLocalChatDailyCap,
   log: (line) => console.info("[assistant] ask", line),
 };
 
@@ -156,9 +163,52 @@ function modelFailure(
   }
 }
 
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/** The daily-cap slot one question holds, if any, until it produces a model answer. */
+type DailyCapCharge = {
+  hold: (reservationToken: string) => void;
+  refund: () => Promise<void>;
+};
+
+function dailyCapCharge(userId: string, deps: AskDependencies): DailyCapCharge {
+  let token: string | null = null;
+  return {
+    hold: (reservationToken) => {
+      token = reservationToken;
+    },
+    refund: async () => {
+      if (!token) return;
+      const reservationToken = token;
+      token = null;
+      try {
+        await deps.refundDailyCap({ userId, reservationToken });
+      } catch (cause) {
+        console.error("[assistant] daily cap refund failed", errorMessage(cause));
+      }
+    },
+  };
+}
+
 export async function answerAssistantQuestion(
   input: AskInput,
   deps: AskDependencies = defaultDependencies,
+): Promise<AskOutcome> {
+  const charge = dailyCapCharge(input.user.id, deps);
+  try {
+    return await runPipeline(input, deps, charge);
+  } catch (cause) {
+    await charge.refund();
+    throw cause;
+  }
+}
+
+async function runPipeline(
+  input: AskInput,
+  deps: AskDependencies,
+  charge: DailyCapCharge,
 ): Promise<AskOutcome> {
   const audit: AssistantAuditLine = {
     userId: input.user.id,
@@ -172,8 +222,9 @@ export async function answerAssistantQuestion(
     rewriteFailed: false,
     outcome: "unavailable",
   };
-  const finish = (outcome: AskOutcome, fixed = false): AskOutcome => {
+  const finish = async (outcome: AskOutcome, fixed = false): Promise<AskOutcome> => {
     audit.outcome = fixed ? "answered_fixed" : outcome.kind;
+    if (outcome.kind !== "answered" || fixed) await charge.refund();
     deps.log(buildAuditLine(audit));
     return outcome;
   };
@@ -181,7 +232,12 @@ export async function answerAssistantQuestion(
   // 1. Scope.
   const [availability, pageResolution] = await Promise.all([
     deps.loadAvailability(),
-    deps.resolvePageContext(input.user, input.hint),
+    deps
+      .resolvePageContext(input.user, input.hint)
+      .catch((cause: unknown): PageContextResolution => {
+        console.error("[assistant] page context failed", errorMessage(cause));
+        return { kind: "none" };
+      }),
   ]);
   let resolution = pageResolution;
   if (resolution.kind === "missing") {
@@ -211,6 +267,7 @@ export async function answerAssistantQuestion(
     model: `${choice.provider}:${choice.model}`,
   });
   if (dailyCap?.limited) return finish({ kind: "daily_limited", retryAfter: dailyCap.retryAfter });
+  if (dailyCap?.reservationToken) charge.hold(dailyCap.reservationToken);
 
   // The retrieval query: a follow-up is rewritten into a standalone query so
   // retrieval sees the conversation (invariant 2 of #1819).

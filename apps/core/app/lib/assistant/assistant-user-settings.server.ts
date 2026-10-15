@@ -126,6 +126,13 @@ export async function saveAssistantUserSettings(
     return { ok: false, status: 422, error: "One of the selected models isn't a valid id." };
   }
 
+  const requiresKey = PROVIDER_CONFIGS[provider.name].requiresApiKey;
+  if (!requiresKey && input.apiKey?.trim()) {
+    return { ok: false, status: 422, error: "That provider doesn't take an API key." };
+  }
+  // Curation only widens what a user's own key pays for; a local provider has none.
+  const enabledModels = requiresKey ? input.enabledModels : undefined;
+
   const current = rows.find((row) => row.provider === provider.name);
   const newKey = input.apiKey?.trim() || null;
   const wouldHoldKey = newKey ? true : input.removeKey ? false : Boolean(current?.key);
@@ -135,8 +142,7 @@ export async function saveAssistantUserSettings(
     key: wouldHoldKey ? (newKey ?? current?.key ?? "pending") : null,
     model: input.model,
     preferred: true,
-    enabledModels:
-      input.enabledModels !== undefined ? input.enabledModels : (current?.enabledModels ?? null),
+    enabledModels: enabledModels !== undefined ? enabledModels : (current?.enabledModels ?? null),
   };
   if (!offeredModels(provider, wouldRow).includes(input.model)) {
     return {
@@ -153,7 +159,7 @@ export async function saveAssistantUserSettings(
     model: input.model,
     apiKey: newKey ?? undefined,
     removeKey: Boolean(input.removeKey) && !newKey,
-    enabledModels: input.enabledModels,
+    enabledModels,
   });
   return { ok: true, settings: await readAssistantUserSettings(userId) };
 }
