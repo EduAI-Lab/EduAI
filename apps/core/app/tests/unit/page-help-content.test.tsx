@@ -53,6 +53,20 @@ describe("getCorePageHelp", () => {
     expect(tips).toContain("Chat about this course");
   });
 
+  it("words the course-page tips so they also hold for a TA, who gets the same copy (#1962)", () => {
+    const tips = (getCorePageHelp("/courses/abc", "STUDENT").tips ?? []).map(String).join(" ");
+    // A TA's course view has no chat button, and its banner also lists suggested topics.
+    expect(tips).toContain("If you're a student here, Chat about this course");
+    expect(tips).not.toMatch(/instructor has set/i);
+  });
+
+  it("offers students no cited source to open from chat, and keeps that tip for staff (#1962)", () => {
+    const studentTips = (getCorePageHelp("/chat", "STUDENT").tips ?? []).map(String).join(" ");
+    const staffTips = (getCorePageHelp("/chat", "INSTRUCTOR").tips ?? []).map(String).join(" ");
+    expect(studentTips).not.toMatch(/open the cited source/i);
+    expect(staffTips).toMatch(/open the cited source/i);
+  });
+
   it("does not mistake /courses/self-enroll-style nested paths for the workspace", () => {
     expect(getCorePageHelp("/courses/abc/extra", "ADMIN").title).toBe(FALLBACK_TITLE);
   });

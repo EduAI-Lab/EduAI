@@ -34,6 +34,7 @@ import type {
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { setCoursePublished } from "~/lib/courses/set-course-published";
@@ -205,7 +206,7 @@ export default function CourseDetailPage() {
     access === "admin" || access === "unit" || access === "instructor",
   );
   // #1962: a student's page never shows the course's files, and the API
-  // refuses students on every materials path, so it never asks for them.
+  // refuses anyone `canViewMaterial` does not name, so it never asks for them.
   const {
     materials,
     uploadMaterial,
@@ -215,7 +216,7 @@ export default function CourseDetailPage() {
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
     refetch: refetchMaterials,
-  } = useCourseMaterials(course.id, access !== "student");
+  } = useCourseMaterials(course.id, canViewMaterial(access));
   const { tas, addTA, removeTA } = useCourseTAs(course.id);
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);

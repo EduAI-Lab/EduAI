@@ -179,7 +179,7 @@ describe("GET /api/dashboard/stats", () => {
     });
   });
 
-  it("keeps a TA's material count, scoped to their enrollments", async () => {
+  it("keeps a TA's material count, scoped to the courses they assist", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "ta-1", role: "STUDENT" },
     } as never);
@@ -192,8 +192,11 @@ describe("GET /api/dashboard/stats", () => {
     const body = await (await loader(makeArgs())).json();
 
     expect(body.materialCount).toBe(6);
+    // course-2 is a course they study in: its files are not theirs to count.
     expect(prisma.courseMaterial.count).toHaveBeenCalledWith({
-      where: { courseId: { in: ["course-1", "course-2"] }, status: "READY", deletedAt: null },
+      where: { courseId: { in: ["course-1"] }, status: "READY", deletedAt: null },
     });
+    // The TA display has no topics tile, so no topic query runs.
+    expect(prisma.courseTopic.count).not.toHaveBeenCalled();
   });
 });

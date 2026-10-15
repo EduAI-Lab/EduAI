@@ -207,6 +207,21 @@ export function useCourseMaterials(courseId: string, enabled = true) {
     fetchMaterials();
   }, [fetchMaterials]);
 
+  // A disabled hook holds no rows (#1962). The course switcher keeps the page
+  // mounted, so moving from a course the user assists to one they study in
+  // would otherwise keep the old course's list on screen — and any PROCESSING
+  // row in it would keep the background poll asking the new course's API,
+  // which refuses students. Bumping the read number drops a full read that is
+  // still in flight for the course being left.
+  useEffect(() => {
+    if (enabled) return;
+    lastFullReadRef.current = ++readSeqRef.current;
+    setMaterials([]);
+    setNextCursor(null);
+    setError(null);
+    setLoading(false);
+  }, [courseId, enabled]);
+
   const deleteMaterial = useCallback(
     async (materialId: string): Promise<void> => {
       const res = await fetch(`/api/courses/${courseId}/materials/${materialId}`, {
@@ -354,12 +369,12 @@ export function useCourseMaterials(courseId: string, enabled = true) {
   const hasProcessingRow = materials.some((m) => m.status === "PROCESSING");
 
   useEffect(() => {
-    if (!courseId || !hasProcessingRow) return;
+    if (!courseId || !enabled || !hasProcessingRow) return;
     const timer = setInterval(() => {
       void refreshProcessingRows();
     }, BACKGROUND_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [courseId, hasProcessingRow, refreshProcessingRows]);
+  }, [courseId, enabled, hasProcessingRow, refreshProcessingRows]);
 
   /**
    * Watch a material until it leaves PROCESSING (#949). Page 1 is read first,

@@ -244,24 +244,26 @@ export async function computeDashboardStats(
     where: { userId: user.id, isActive: true },
     select: { courseId: true, role: true },
   });
-  const courseIds = enrollments.map((e) => e.courseId);
-  // #1962: students never see course files, so only a TA's dashboard counts
-  // them — the same active-TA-enrollment test the dashboard route uses to pick
-  // the TA display. A student is sent 0, and no material query runs.
-  const isTa = enrollments.some((e) => e.role === "TA");
+  // #1962: students never see course files, so a TA's "Materials" tile counts
+  // only the courses they assist — never one they are a student in. Any active
+  // TA enrollment is the same test the dashboard route uses to pick the TA
+  // display. A student is sent 0, and no material query runs.
+  const taCourseIds = enrollments.filter((e) => e.role === "TA").map((e) => e.courseId);
+  const isTa = taCourseIds.length > 0;
   const studentCourseIds = enrollments.filter((e) => e.role === "STUDENT").map((e) => e.courseId);
 
   const [chatCount, chatCountWeek, materialCount, topicCount] = await Promise.all([
     prisma.chat.count({ where: { userId: user.id } }),
     prisma.chat.count({ where: { userId: user.id, createdAt: { gte: week } } }),
-    isTa && courseIds.length
+    isTa
       ? prisma.courseMaterial.count({
-          where: { courseId: { in: courseIds }, status: "READY", deletedAt: null },
+          where: { courseId: { in: taCourseIds }, status: "READY", deletedAt: null },
         })
       : Promise.resolve(0),
     // What a student's course pages show them: the learner topics (#1937) of
-    // the published courses they're enrolled in as a student.
-    studentCourseIds.length
+    // the published courses they're enrolled in as a student. The TA display
+    // has no topics tile, so a TA skips the query.
+    !isTa && studentCourseIds.length
       ? prisma.courseTopic.count({
           where: {
             courseId: { in: studentCourseIds },

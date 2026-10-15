@@ -30,6 +30,7 @@ import {
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import type { Session } from "~/lib/auth/server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -76,7 +77,10 @@ type MaterialEditAuditDetails = {
  * #1962: students never see a course's files — course chat is their way into a
  * course — so a student is refused here, before any read or write, on every
  * path this module serves: list, `?ids=` re-read, preview, upload, rename,
- * delete and reprocess.
+ * delete and reprocess. `canViewMaterial` is an allow-list of staff levels, so
+ * a level added later is refused until it is named there. No student UI calls
+ * this API any more, so the refusal is audited like the policy denials it
+ * replaced: a student request here is a stale client or a probe.
  */
 async function resolveMaterialsAccess(
   request: Request,
@@ -94,7 +98,22 @@ async function resolveMaterialsAccess(
   if (!course) {
     return { response: json(404, { error: "COURSE_NOT_FOUND" }) };
   }
-  if (!access || access.level === "student") {
+  if (!access) {
+    return { response: json(403, { error: "Forbidden" }) };
+  }
+  if (!canViewMaterial(access.level)) {
+    const { fireAndForget, logSecurityEvent } = await import("~/lib/logging.server");
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(session.user),
+        ...getRequestContext(request),
+        actionCode: "MATERIALS_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Course",
+        entityId: courseId,
+        details: { level: access.level },
+      }),
+    );
     return { response: json(403, { error: "Forbidden" }) };
   }
 

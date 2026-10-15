@@ -656,6 +656,31 @@ describe("useCourseMaterials background refresh (#1494 review)", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("drops the old course's rows and stops polling on a switch to a course it is off for (#1962)", async () => {
+    // A TA moves from a course they assist, with a row still PROCESSING, to one
+    // they are a student in. The page stays mounted, so the hook is only re-rendered.
+    vi.mocked(fetch).mockResolvedValueOnce(materialsResponse([processing]));
+    const { result, rerender } = renderHook(({ id, enabled }) => useCourseMaterials(id, enabled), {
+      initialProps: { id: "course-1", enabled: true },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.materials).toHaveLength(1);
+    const callsBefore = vi.mocked(fetch).mock.calls.length;
+
+    rerender({ id: "course-2", enabled: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS * 3);
+    });
+
+    expect(result.current.materials).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.loading).toBe(false);
+    // No poll of course-2's materials API, which refuses students.
+    expect(vi.mocked(fetch).mock.calls.length).toBe(callsBefore);
+  });
+
   it("clears the interval on unmount", async () => {
     const { unmount } = await mount([processing]);
     const callsBefore = vi.mocked(fetch).mock.calls.length;
