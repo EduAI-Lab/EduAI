@@ -359,6 +359,8 @@ describe("latestTopicAnalysisForCourse", () => {
         completedAt: createdAt.toISOString(),
         created: 4,
         usedSource: "canvas-modules",
+        matched: null,
+        unmatched: null,
       },
       pendingSuggestions: 4,
     });
@@ -435,6 +437,21 @@ describe("latestTopicAnalysisForCourse", () => {
 
     const status = await latestTopicAnalysisForCourse("course-1");
     expect(status.job).toMatchObject({ status: "COMPLETED", created: 7 });
+  });
+
+  it("sums matched and unmatched files across a completed batch (#1965)", async () => {
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      jobRow({ id: "chunk-b", result: { kind: "topic-analysis", matched: 3, unmatched: 1 } }),
+      jobRow({ id: "chunk-a", result: { kind: "topic-analysis", matched: 2, unmatched: 0 } }),
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(0);
+
+    expect((await latestTopicAnalysisForCourse("course-1")).job).toMatchObject({
+      status: "COMPLETED",
+      matched: 5,
+      unmatched: 1,
+      created: null,
+    });
   });
 
   it("labels the batch with the source that actually produced topics", async () => {

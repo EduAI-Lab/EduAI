@@ -20,6 +20,10 @@ export type TopicAnalysisStatus = {
     completedAt: string | null;
     created: number | null;
     usedSource: string | null;
+    /** Files filed under an existing topic (#1965); null on rows from before matching. */
+    matched: number | null;
+    /** Files that fit no existing topic (#1965); null on rows from before matching. */
+    unmatched: number | null;
   } | null;
   /** How many generated topics are still awaiting review. */
   pendingSuggestions: number;
@@ -53,13 +57,30 @@ function batchKeyOf(row: JobRow): string | null {
   return asPresentText(input?.batchKey);
 }
 
-function resultOf(row: JobRow): { created: number | null; usedSource: string | null } | null {
+type ChunkResult = {
+  created: number | null;
+  usedSource: string | null;
+  matched: number | null;
+  unmatched: number | null;
+};
+
+function resultOf(row: JobRow): ChunkResult | null {
   const result = asJsonObject(row.result);
   if (!result) return null;
   return {
     created: asFiniteNumber(result.created),
     usedSource: asText(result.usedSource),
+    matched: asFiniteNumber(result.matched),
+    unmatched: asFiniteNumber(result.unmatched),
   };
+}
+
+/** Sum one count across a batch's chunks, or null when no chunk reported it. */
+function sumOf(chunks: JobRow[], field: "created" | "matched" | "unmatched"): number | null {
+  const counts = chunks
+    .map((chunk) => resultOf(chunk)?.[field])
+    .filter((count): count is number => count !== null && count !== undefined);
+  return counts.length > 0 ? counts.reduce((a, b) => a + b, 0) : null;
 }
 
 const IN_FLIGHT = new Set(["PENDING", "RUNNING"]);
@@ -88,10 +109,6 @@ function aggregateBatch(chunks: JobRow[], newest: JobRow) {
         : chunks.every((chunk) => chunk.status === "COMPLETED")
           ? "COMPLETED"
           : newest.status;
-
-  const createdCounts = chunks
-    .map((chunk) => resultOf(chunk)?.created)
-    .filter((count): count is number => count !== null && count !== undefined);
 
   // The source that actually produced topics is the informative one; a chunk of
   // untitled material reporting "none" should not label the whole batch.
@@ -128,8 +145,10 @@ function aggregateBatch(chunks: JobRow[], newest: JobRow) {
       settled && completedAts.length > 0
         ? new Date(Math.max(...completedAts.map((at) => at.getTime()))).toISOString()
         : null,
-    created: createdCounts.length > 0 ? createdCounts.reduce((a, b) => a + b, 0) : null,
+    created: sumOf(chunks, "created"),
     usedSource: usedSource ?? null,
+    matched: sumOf(chunks, "matched"),
+    unmatched: sumOf(chunks, "unmatched"),
   };
 }
 

@@ -8,6 +8,10 @@ export type TopicAnalysisJob = {
   completedAt: string | null;
   created: number | null;
   usedSource: string | null;
+  /** Files filed under an existing topic (#1965); null on jobs from before matching. */
+  matched: number | null;
+  /** Files that fit no existing topic (#1965); null on jobs from before matching. */
+  unmatched: number | null;
 };
 
 export type TopicAnalysisStatus = {

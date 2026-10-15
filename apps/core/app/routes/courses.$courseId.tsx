@@ -167,6 +167,7 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
     duplicateOfId: m.duplicateOfId ?? null,
     hasExtractedText: m.hasExtractedText,
     failureCode: m.failureCode ?? null,
+    topics: m.topics,
   };
 }
 
@@ -209,6 +210,7 @@ export default function CourseDetailPage() {
     uploadMaterial,
     deleteMaterial,
     reprocessMaterial,
+    setMaterialTopics,
     hasMore: hasMoreMaterials,
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
@@ -409,7 +411,9 @@ export default function CourseDetailPage() {
       const batchNames = new Map<string, string>();
       setUploads([...results]);
       const settle = (i: number, item: UploadResult) => {
-        results[i] = { ...item, name: files[i].name };
+        // Keep the material id once known, so the file's topic picker (#1965)
+        // stays attached as its status moves on.
+        results[i] = { materialId: results[i].materialId, ...item, name: files[i].name };
         if (isCurrent()) setUploads([...results]);
       };
 
@@ -422,7 +426,10 @@ export default function CourseDetailPage() {
             // The upload endpoint returns 202 and processes in the background (#949),
             // so the outcome arrives from polling rather than from the POST status.
             const outcome = await uploadMaterial(files[i], {
-              onAccepted: (id) => batchNames.set(id, files[i].name),
+              onAccepted: (id) => {
+                batchNames.set(id, files[i].name);
+                settle(i, { status: "uploading", materialId: id });
+              },
             });
             settle(i, describeUpload(outcome, batchNames));
           } catch (e) {
@@ -541,6 +548,7 @@ export default function CourseDetailPage() {
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
               onReprocessMaterial={reprocessMaterial}
+              onSetMaterialTopics={setMaterialTopics}
               onPublishChange={handlePublishChange}
               courseId={course.id}
               currentUserId={user.id}

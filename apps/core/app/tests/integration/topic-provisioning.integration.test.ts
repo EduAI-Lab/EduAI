@@ -6,6 +6,10 @@
 // constraints behind them: initial sync, resync of unchanged material, changed
 // material, duplicate prevention under retry, job failure, and the zero-topic
 // fallback.
+//
+// #1965: the job that runs after uploads now files materials under the course's
+// existing topics instead of generating new ones. The generator itself is kept
+// for on-demand suggestions (#1966), so its tests call it directly.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 
@@ -27,7 +31,9 @@ import {
   TOPIC_ANALYSIS_LEASE_MS,
   type StartTopicAnalysisArgs,
 } from "~/lib/topics/job.server";
-import { provisionCourseTopics } from "~/lib/topics/provision.server";
+import { matchMaterialsToTopics } from "~/lib/topics/auto-match.server";
+import { setMaterialTopics } from "~/lib/topics/material-topics.server";
+import { provisionCourseTopics, type RunTopicCompletion } from "~/lib/topics/provision.server";
 import {
   approveGeneratedTopic,
   dismissGeneratedTopic,
@@ -73,6 +79,32 @@ async function softDeleteMaterial(materialId: string) {
     where: { id: materialId },
     data: { deletedAt: new Date() },
   });
+}
+
+/** Run the topic generator directly; uploads no longer run it (#1965). */
+async function generateTopics(materialIds: string[]) {
+  return provisionCourseTopics({
+    courseId,
+    materialIds,
+    canvasCourseId: null,
+    userId,
+    jobId: "job-generate",
+    runCompletion: noAi,
+  });
+}
+
+async function acceptedTopic(name: string) {
+  return prisma.courseTopic.create({ data: { courseId, name, createdBy: userId } });
+}
+
+/** Names of the topics a material is filed under, main topic first. */
+async function materialTopicNames(materialId: string) {
+  const links = await prisma.courseTopicSource.findMany({
+    where: { materialId, topic: { deletedAt: null, reviewStatus: "ACCEPTED" } },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: { topic: { select: { name: true } } },
+  });
+  return links.map((link) => link.topic.name);
 }
 
 async function liveTopics() {
@@ -128,14 +160,7 @@ describe("initial sync", () => {
       rawText: "Chapter 1 — Limits\nChapter 2 — Derivatives\n",
     });
 
-    const recorded = await recordTopicAnalysisJob({
-      courseId,
-      userId,
-      materialIds: [material.id],
-    });
-    expect(recorded).toMatchObject({ created: true });
-
-    await runTopicAnalysisJob(recorded!.jobId, noAi);
+    await generateTopics([material.id]);
 
     const topics = await liveTopics();
     expect(topics.map((topic) => topic.name)).toEqual([
@@ -144,7 +169,7 @@ describe("initial sync", () => {
     ]);
     expect(topics.every((topic) => topic.reviewStatus === "SUGGESTED")).toBe(true);
     expect(topics.every((topic) => topic.origin === "MATERIAL_HEADING")).toBe(true);
-    expect(topics.every((topic) => topic.generatedByJobId === recorded!.jobId)).toBe(true);
+    expect(topics.every((topic) => topic.generatedByJobId === "job-generate")).toBe(true);
   });
 
   it("records which materials each generated topic came from", async () => {
@@ -152,12 +177,7 @@ describe("initial sync", () => {
       checksum: "sum-sources",
       rawText: "Chapter 1 — Limits\n",
     });
-    const recorded = await recordTopicAnalysisJob({
-      courseId,
-      userId,
-      materialIds: [material.id],
-    });
-    await runTopicAnalysisJob(recorded!.jobId, noAi);
+    await generateTopics([material.id]);
 
     const [topic] = await liveTopics();
     const sources = await prisma.courseTopicSource.findMany({ where: { topicId: topic.id } });
@@ -165,6 +185,7 @@ describe("initial sync", () => {
   });
 
   it("marks the job COMPLETED with a readable summary", async () => {
+    await acceptedTopic("Chapter 1 — Limits");
     const material = await seedMaterial({ checksum: "sum-summary", rawText: "Chapter 1 — Limits" });
     const recorded = await recordTopicAnalysisJob({
       courseId,
@@ -174,12 +195,9 @@ describe("initial sync", () => {
     await runTopicAnalysisJob(recorded!.jobId, noAi);
 
     const status = await latestTopicAnalysisForCourse(courseId);
-    expect(status.job).toMatchObject({
-      status: "COMPLETED",
-      created: 1,
-      usedSource: "material-headings",
-    });
-    expect(status.pendingSuggestions).toBe(1);
+    expect(status.job).toMatchObject({ status: "COMPLETED", matched: 1, unmatched: 0 });
+    expect(status.pendingSuggestions).toBe(0);
+    expect(await materialTopicNames(material.id)).toEqual(["Chapter 1 — Limits"]);
   });
 });
 
@@ -196,7 +214,8 @@ describe("resync and retry", () => {
     expect(await prisma.aiJob.count({ where: { courseId, kind: "topic-analysis" } })).toBe(1);
   });
 
-  it("does not create duplicate topics when the job is run twice", async () => {
+  it("does not file a material twice when the job is run twice", async () => {
+    await acceptedTopic("Chapter 1 — Limits");
     const material = await seedMaterial({ checksum: "sum-twice", rawText: "Chapter 1 — Limits" });
     const recorded = await recordTopicAnalysisJob({
       courseId,
@@ -206,20 +225,27 @@ describe("resync and retry", () => {
 
     await runTopicAnalysisJob(recorded!.jobId, noAi);
     // The second run cannot claim a COMPLETED row, which is what makes a
-    // duplicated delivery a no-op rather than a duplicated topic list.
+    // duplicated delivery a no-op rather than a duplicated link.
     await runTopicAnalysisJob(recorded!.jobId, noAi);
 
-    expect((await liveTopics()).map((topic) => topic.name)).toEqual(["Chapter 1 — Limits"]);
+    expect(await prisma.courseTopicSource.count({ where: { materialId: material.id } })).toBe(1);
   });
 
   it("runs a fresh job when a material's content actually changes", async () => {
+    await acceptedTopic("Chapter 1 — Limits");
+    await acceptedTopic("Chapter 2 — Derivatives");
     const material = await seedMaterial({ checksum: "sum-v1", rawText: "Chapter 1 — Limits" });
     const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
     await runTopicAnalysisJob(first!.jobId, noAi);
 
     await prisma.courseMaterial.update({
       where: { id: material.id },
-      data: { checksum: "sum-v2", rawText: "Chapter 1 — Limits\nChapter 2 — Derivatives" },
+      // Reprocessed after its first link was made, so it is matched again.
+      data: {
+        checksum: "sum-v2",
+        rawText: "Chapter 2 — Derivatives",
+        processedAt: new Date(Date.now() + 1000),
+      },
     });
 
     const second = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
@@ -228,7 +254,8 @@ describe("resync and retry", () => {
 
     await runTopicAnalysisJob(second!.jobId, noAi);
 
-    expect((await liveTopics()).map((topic) => topic.name)).toEqual([
+    // Matching adds the new fit and never removes the old one.
+    expect(await materialTopicNames(material.id)).toEqual([
       "Chapter 1 — Limits",
       "Chapter 2 — Derivatives",
     ]);
@@ -251,12 +278,7 @@ describe("existing topics are never modified", () => {
       rawText: "Chapter 1: limits\nChapter 2 — Derivatives",
     });
 
-    const recorded = await recordTopicAnalysisJob({
-      courseId,
-      userId,
-      materialIds: [material.id],
-    });
-    await runTopicAnalysisJob(recorded!.jobId, noAi);
+    await generateTopics([material.id]);
 
     const after = await prisma.courseTopic.findUniqueOrThrow({ where: { id: human.id } });
     expect(after).toMatchObject({
@@ -277,24 +299,18 @@ describe("existing topics are never modified", () => {
       checksum: "sum-dismiss-1",
       rawText: "Chapter 1 — Limits",
     });
-    const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
-    await runTopicAnalysisJob(first!.jobId, noAi);
+    await generateTopics([material.id]);
 
     const [suggestion] = await liveTopics();
     expect(await dismissGeneratedTopic(courseId, suggestion.id, userId)).toMatchObject({
       status: "200",
     });
 
-    // Same content, new batch identity — the generator must still not resurrect it.
-    await prisma.courseMaterial.update({
-      where: { id: material.id },
-      data: { checksum: "sum-dismiss-2" },
-    });
-    const second = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
-    await runTopicAnalysisJob(second!.jobId, noAi);
+    // A second run over the same material must still not resurrect it. The
+    // dismissal restored the fallback, since it left the course with no topics.
+    await generateTopics([material.id]);
 
-    expect(await liveTopics()).toHaveLength(1);
-    expect((await liveTopics())[0].name).toBe(FALLBACK_TOPIC_NAME);
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
   });
 });
 
@@ -331,11 +347,13 @@ describe("zero-topic fallback", () => {
     await runTopicAnalysisJob(recorded!.jobId, noAi);
 
     expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+    // No accepted topics to match against: nothing filed, nothing asked of a model.
     const status = await latestTopicAnalysisForCourse(courseId);
-    expect(status.job).toMatchObject({ status: "COMPLETED", created: 0, usedSource: "none" });
+    expect(status.job).toMatchObject({ status: "COMPLETED", matched: 0, unmatched: 0 });
   });
 
-  it("records FAILED and still guarantees a topic when the AI path throws", async () => {
+  it("records FAILED when the model throws, leaving the course's topics alone", async () => {
+    await acceptedTopic("Integrals");
     const material = await seedMaterial({
       checksum: "sum-ai-fail",
       rawText: "prose with no structure whatsoever",
@@ -353,7 +371,7 @@ describe("zero-topic fallback", () => {
     const status = await latestTopicAnalysisForCourse(courseId);
     expect(status.job).toMatchObject({ status: "FAILED" });
     expect(status.job?.errorMessage).toContain("model unreachable");
-    expect((await liveTopics()).map((topic) => topic.name)).toEqual([FALLBACK_TOPIC_NAME]);
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual(["Integrals"]);
   });
 });
 
@@ -542,6 +560,7 @@ describe("review actions", () => {
 
 describe("stale job recovery", () => {
   it("resumes a RUNNING row abandoned past its lease", async () => {
+    await acceptedTopic("Chapter 1 — Limits");
     const material = await seedMaterial({
       checksum: "sum-stale",
       rawText: "Chapter 1 — Limits",
@@ -567,7 +586,7 @@ describe("stale job recovery", () => {
       const row = await prisma.aiJob.findUniqueOrThrow({ where: { id: recorded!.jobId } });
       expect(row.status).toBe("COMPLETED");
     });
-    expect((await liveTopics()).map((topic) => topic.name)).toContain("Chapter 1 — Limits");
+    expect(await materialTopicNames(material.id)).toEqual(["Chapter 1 — Limits"]);
   });
 
   it("leaves a job still inside its lease alone", async () => {
@@ -856,6 +875,7 @@ describe("unreviewed suggestions stay with staff and their materials (#1937)", (
       });
       const first = await recordTopicAnalysisJob({ courseId, userId, materialIds: [material.id] });
       await runTopicAnalysisJob(first!.jobId, noAi);
+      await generateTopics([material.id]);
       const limits = await prisma.courseTopic.findFirstOrThrow({
         where: { courseId, name: "Chapter 1 — Limits" },
       });
@@ -880,6 +900,7 @@ describe("unreviewed suggestions stay with staff and their materials (#1937)", (
       });
       expect(again).toMatchObject({ jobId: first!.jobId, resumable: true });
       await runTopicAnalysisJob(again.jobId, noAi);
+      await generateTopics([material.id]);
 
       expect((await liveTopics()).map((topic) => topic.name)).toEqual([
         "Chapter 2 — Derivatives",
@@ -901,5 +922,266 @@ describe("unreviewed suggestions stay with staff and their materials (#1937)", (
 
       expect(await prisma.courseTopic.findUnique({ where: { id: orphan.id } })).toBeNull();
     });
+  });
+});
+
+// #1965: uploads are filed under the course's existing topics, and instructors
+// choose a material's topics themselves.
+describe("auto-matching uploads to existing topics (#1965)", () => {
+  function match(materialIds: string[], runCompletion: RunTopicCompletion = noAi) {
+    return matchMaterialsToTopics({
+      courseId,
+      materialIds,
+      canvasCourseId: null,
+      userId,
+      runCompletion,
+    });
+  }
+
+  /** A completion seam that always chooses `match` (null: "none fits"). */
+  function replying(match: string | null) {
+    return vi.fn(async () => JSON.stringify({ match }));
+  }
+
+  it("files a material whose heading names a topic, without asking a model", async () => {
+    await acceptedTopic("Chapter 3 — Loop");
+    const material = await seedMaterial({ checksum: "m-heading", rawText: "Chapter 3: Loops" });
+
+    expect(await match([material.id])).toEqual({ matched: 1, unmatched: 0 });
+    expect(await materialTopicNames(material.id)).toEqual(["Chapter 3 — Loop"]);
+    expect(noAi).not.toHaveBeenCalled();
+  });
+
+  it("asks the model when the structure names no topic, and files by its choice", async () => {
+    await acceptedTopic("Recursion");
+    await acceptedTopic("Sorting");
+    const material = await seedMaterial({ checksum: "m-model", rawText: "quicksort and merge" });
+    const model = replying("sorting");
+
+    expect(await match([material.id], model)).toEqual({ matched: 1, unmatched: 0 });
+    expect(await materialTopicNames(material.id)).toEqual(["Sorting"]);
+    expect(model).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a material unfiled when the model says none fits, creating nothing", async () => {
+    await acceptedTopic("Recursion");
+    const material = await seedMaterial({ checksum: "m-none", rawText: "linear algebra" });
+
+    expect(await match([material.id], replying(null))).toEqual({
+      matched: 0,
+      unmatched: 1,
+    });
+    expect(await materialTopicNames(material.id)).toEqual([]);
+    expect((await liveTopics()).map((topic) => topic.name)).toEqual(["Recursion"]);
+  });
+
+  it("ignores a model choice that is not one of the course's topics", async () => {
+    await acceptedTopic("Recursion");
+    const material = await seedMaterial({ checksum: "m-invented", rawText: "graphs" });
+
+    expect(await match([material.id], replying("Graph Theory"))).toEqual({
+      matched: 0,
+      unmatched: 1,
+    });
+    expect(await liveTopics()).toHaveLength(1);
+  });
+
+  it("never files under a suggestion or the fallback, and skips the model with nothing else", async () => {
+    await ensureCourseHasTopic(courseId);
+    await prisma.courseTopic.create({
+      data: { courseId, name: "Chapter 1 — Limits", origin: "AI", reviewStatus: "SUGGESTED" },
+    });
+    const material = await seedMaterial({ checksum: "m-suggested", rawText: "Chapter 1 — Limits" });
+
+    expect(await match([material.id])).toEqual({ matched: 0, unmatched: 0 });
+    expect(noAi).not.toHaveBeenCalled();
+  });
+
+  it("leaves a material whose topics were set by hand alone", async () => {
+    await acceptedTopic("Chapter 1 — Limits");
+    const material = await seedMaterial({ checksum: "m-manual", rawText: "Chapter 1 — Limits" });
+    await prisma.courseMaterial.update({
+      where: { id: material.id },
+      data: { topicsSetManuallyAt: new Date() },
+    });
+
+    expect(await match([material.id])).toEqual({ matched: 0, unmatched: 0 });
+    expect(await materialTopicNames(material.id)).toEqual([]);
+  });
+
+  it("does not add a topic to a material that already has three", async () => {
+    const material = await seedMaterial({
+      checksum: "m-full",
+      rawText: "Chapter 4 — Trees",
+    });
+    for (const [position, name] of ["A topic", "B topic", "C topic"].entries()) {
+      const topic = await acceptedTopic(name);
+      await prisma.courseTopicSource.create({
+        data: { topicId: topic.id, materialId: material.id, position },
+      });
+    }
+    await acceptedTopic("Chapter 4 — Trees");
+    await prisma.courseMaterial.update({
+      where: { id: material.id },
+      data: { processedAt: new Date(Date.now() + 1000) },
+    });
+
+    expect(await match([material.id])).toEqual({ matched: 0, unmatched: 0 });
+    expect(await materialTopicNames(material.id)).toEqual(["A topic", "B topic", "C topic"]);
+  });
+});
+
+describe("instructors choosing a material's topics (#1965)", () => {
+  function choose(
+    materialId: string,
+    topics: Parameters<typeof setMaterialTopics>[0]["topics"],
+    canCreateTopics = true,
+  ) {
+    return setMaterialTopics({ courseId, materialId, topics, userId, canCreateTopics });
+  }
+
+  it("saves the topics in order and stops auto-matching from changing them", async () => {
+    const a = await acceptedTopic("Arrays");
+    const b = await acceptedTopic("Big-O");
+    const material = await seedMaterial({ checksum: "c-order", rawText: "x" });
+
+    const outcome = await choose(material.id, [{ topicId: b.id }, { topicId: a.id }]);
+
+    expect(outcome).toMatchObject({ status: "200", createdTopics: [] });
+    expect(await materialTopicNames(material.id)).toEqual(["Big-O", "Arrays"]);
+    const row = await prisma.courseMaterial.findUniqueOrThrow({ where: { id: material.id } });
+    expect(row.topicsSetManuallyAt).not.toBeNull();
+  });
+
+  it("reuses an existing topic for a typed near-duplicate name", async () => {
+    await acceptedTopic("Loops");
+    const material = await seedMaterial({ checksum: "c-plural", rawText: "x" });
+
+    expect(await choose(material.id, [{ name: "  loop " }])).toMatchObject({
+      status: "200",
+      createdTopics: [],
+    });
+    expect(await materialTopicNames(material.id)).toEqual(["Loops"]);
+    expect(await liveTopics()).toHaveLength(1);
+  });
+
+  it("creates a new name as an accepted instructor topic", async () => {
+    const material = await seedMaterial({ checksum: "c-new", rawText: "x" });
+
+    const outcome = await choose(material.id, [{ name: "Hash tables" }]);
+
+    expect(outcome).toMatchObject({ status: "200", createdTopics: [{ name: "Hash tables" }] });
+    const [topic] = await liveTopics();
+    expect(topic).toMatchObject({
+      name: "Hash tables",
+      origin: "HUMAN",
+      reviewStatus: "ACCEPTED",
+      createdBy: userId,
+    });
+  });
+
+  it("approves a pending suggestion that the instructor names", async () => {
+    const suggestion = await prisma.courseTopic.create({
+      data: { courseId, name: "Graphs", origin: "AI", reviewStatus: "SUGGESTED" },
+    });
+    const material = await seedMaterial({ checksum: "c-approve", rawText: "x" });
+
+    await choose(material.id, [{ name: "graphs" }]);
+
+    const after = await prisma.courseTopic.findUniqueOrThrow({ where: { id: suggestion.id } });
+    expect(after.reviewStatus).toBe("ACCEPTED");
+    expect(await materialTopicNames(material.id)).toEqual(["Graphs"]);
+  });
+
+  it("refuses more than three topics and changes nothing", async () => {
+    const material = await seedMaterial({ checksum: "c-cap", rawText: "x" });
+
+    expect(
+      await choose(material.id, [
+        { name: "One" },
+        { name: "Two" },
+        { name: "Three" },
+        { name: "Four" },
+      ]),
+    ).toEqual({ status: "400", error: "TOO_MANY_TOPICS" });
+    expect(await liveTopics()).toHaveLength(0);
+  });
+
+  it("counts a repeated choice once toward the cap", async () => {
+    const a = await acceptedTopic("Arrays");
+    const material = await seedMaterial({ checksum: "c-repeat", rawText: "x" });
+
+    const outcome = await choose(material.id, [
+      { topicId: a.id },
+      { name: "arrays" },
+      { name: "Two" },
+      { name: "Three" },
+    ]);
+
+    expect(outcome).toMatchObject({ status: "200" });
+    expect(await materialTopicNames(material.id)).toEqual(["Arrays", "Two", "Three"]);
+  });
+
+  it("refuses a new name from a caller who cannot create topics", async () => {
+    const material = await seedMaterial({ checksum: "c-forbidden", rawText: "x" });
+
+    expect(await choose(material.id, [{ name: "Hash tables" }], false)).toEqual({
+      status: "403",
+      error: "TOPIC_CREATE_FORBIDDEN",
+    });
+  });
+
+  it("refuses a name a deleted topic still holds", async () => {
+    await prisma.courseTopic.create({
+      data: { courseId, name: "Heaps", deletedAt: new Date() },
+    });
+    const material = await seedMaterial({ checksum: "c-taken", rawText: "x" });
+
+    expect(await choose(material.id, [{ name: "Heaps" }])).toEqual({
+      status: "409",
+      error: "TOPIC_NAME_TAKEN",
+    });
+    expect(await materialTopicNames(material.id)).toEqual([]);
+  });
+
+  it("refuses a suggestion or unknown topic chosen by id", async () => {
+    const suggestion = await prisma.courseTopic.create({
+      data: { courseId, name: "Tries", origin: "AI", reviewStatus: "SUGGESTED" },
+    });
+    const material = await seedMaterial({ checksum: "c-by-id", rawText: "x" });
+
+    expect(await choose(material.id, [{ topicId: suggestion.id }])).toEqual({
+      status: "404",
+      error: "TOPIC_NOT_FOUND",
+    });
+    expect(await choose(material.id, [{ topicId: "missing" }])).toEqual({
+      status: "404",
+      error: "TOPIC_NOT_FOUND",
+    });
+  });
+
+  it("replaces the material's topics but keeps a suggestion's record of its source", async () => {
+    const old = await acceptedTopic("Old topic");
+    const next = await acceptedTopic("New topic");
+    const material = await seedMaterial({ checksum: "c-replace", rawText: "x" });
+    const suggestion = await prisma.courseTopic.create({
+      data: {
+        courseId,
+        name: "Pending",
+        origin: "AI",
+        reviewStatus: "SUGGESTED",
+        sources: { create: [{ materialId: material.id }] },
+      },
+    });
+    await prisma.courseTopicSource.create({ data: { topicId: old.id, materialId: material.id } });
+
+    await choose(material.id, [{ topicId: next.id }]);
+
+    expect(await materialTopicNames(material.id)).toEqual(["New topic"]);
+    expect(
+      await prisma.courseTopicSource.count({
+        where: { topicId: suggestion.id, materialId: material.id },
+      }),
+    ).toBe(1);
   });
 });

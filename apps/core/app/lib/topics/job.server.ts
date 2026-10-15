@@ -6,8 +6,9 @@ import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import { JobPayloadSchema, type JobPayload } from "~/lib/queue/job-schema";
 import { runTopicAnalysisCompletion } from "~/lib/topics/completion.server";
+import { matchMaterialsToTopics } from "~/lib/topics/auto-match.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
-import { provisionCourseTopics, type RunTopicCompletion } from "~/lib/topics/provision.server";
+import type { RunTopicCompletion } from "~/lib/topics/provision.server";
 
 /**
  * Topic analysis runs in-process against a durable `AiJob` row rather than on
@@ -98,8 +99,8 @@ export type StartTopicAnalysisArgs = {
   /**
    * Run the batch again even if it already COMPLETED (#1937). A restored
    * material keeps its checksum, so its earlier analysis matches by key, but
-   * the delete removed the suggestions that analysis made. Safe because
-   * provisioning only creates names the course does not already hold.
+   * the course's topics may have changed while it was deleted. Safe because
+   * matching skips a material that is already filed (#1965).
    */
   rerunCompleted?: boolean;
 };
@@ -336,13 +337,15 @@ export async function runTopicAnalysisJob(
   const { input } = parsed.data;
 
   try {
-    const result = await provisionCourseTopics({
+    // #1965: uploads are filed under the course's existing topics. Proposing new
+    // topics is no longer part of the upload path.
+    const result = await matchMaterialsToTopics({
       courseId: input.courseId,
       materialIds: input.materialIds,
       canvasCourseId: input.canvasCourseId ?? null,
       userId: row.userId,
-      jobId,
       runCompletion,
+      heartbeat: () => renewTopicAnalysisLease(jobId),
     });
 
     // The course must be authorable whatever the analysis produced — including
@@ -356,10 +359,8 @@ export async function runTopicAnalysisJob(
         completedAt: new Date(),
         result: {
           kind: "topic-analysis",
-          created: result.created,
-          createdNames: result.createdNames,
-          usedSource: result.usedSource,
-          duplicatesSkipped: result.duplicatesSkipped,
+          matched: result.matched,
+          unmatched: result.unmatched,
         },
       },
     });
@@ -380,6 +381,18 @@ export async function runTopicAnalysisJob(
       }),
     );
   }
+}
+
+/**
+ * Push a running job's lease forward. Matching makes up to one model call per
+ * material, so a large Canvas sync can outlast `TOPIC_ANALYSIS_LEASE_MS`; without
+ * renewal a status read would reclaim the job as abandoned and run it twice.
+ */
+async function renewTopicAnalysisLease(jobId: string): Promise<void> {
+  await prisma.aiJob.updateMany({
+    where: { id: jobId, status: "RUNNING" },
+    data: { startedAt: new Date() },
+  });
 }
 
 async function failJob(jobId: string, message: string): Promise<void> {

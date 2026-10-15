@@ -13,10 +13,10 @@ const prismaMock = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
 }));
-const provisionCourseTopics = vi.hoisted(() => vi.fn());
+const matchMaterialsToTopics = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
-vi.mock("~/lib/topics/provision.server", () => ({ provisionCourseTopics }));
+vi.mock("~/lib/topics/auto-match.server", () => ({ matchMaterialsToTopics }));
 vi.mock("~/lib/topics/completion.server", () => ({ runTopicAnalysisCompletion: vi.fn() }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
@@ -57,12 +57,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "existing-topic" });
   prismaMock.aiJob.update.mockResolvedValue({});
-  provisionCourseTopics.mockResolvedValue({
-    created: 2,
-    createdNames: ["Chapter 1", "Chapter 2"],
-    usedSource: "material-headings",
-    duplicatesSkipped: 0,
-  });
+  matchMaterialsToTopics.mockResolvedValue({ matched: 2, unmatched: 1 });
 });
 
 describe("topicAnalysisIdempotencyKey", () => {
@@ -439,7 +434,7 @@ describe("resumeStaleTopicAnalysisJobs", () => {
 });
 
 describe("runTopicAnalysisJob", () => {
-  it("claims, provisions, and completes with a readable result", async () => {
+  it("claims, matches, and completes with a readable result", async () => {
     prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
 
@@ -447,10 +442,21 @@ describe("runTopicAnalysisJob", () => {
 
     const completion = prismaMock.aiJob.update.mock.calls.at(-1)?.[0].data;
     expect(completion).toMatchObject({ status: "COMPLETED" });
-    expect(completion.result).toMatchObject({
-      created: 2,
-      usedSource: "material-headings",
-      createdNames: ["Chapter 1", "Chapter 2"],
+    expect(completion.result).toEqual({ kind: "topic-analysis", matched: 2, unmatched: 1 });
+  });
+
+  it("renews its lease after each material, so a long batch is not reclaimed", async () => {
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
+
+    await runTopicAnalysisJob("job-1", vi.fn());
+    const { heartbeat } = matchMaterialsToTopics.mock.calls[0][0];
+    prismaMock.aiJob.updateMany.mockClear();
+    await heartbeat();
+
+    expect(prismaMock.aiJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job-1", status: "RUNNING" },
+      data: { startedAt: expect.any(Date) },
     });
   });
 
@@ -459,7 +465,7 @@ describe("runTopicAnalysisJob", () => {
 
     await runTopicAnalysisJob("job-1", vi.fn());
 
-    expect(provisionCourseTopics).not.toHaveBeenCalled();
+    expect(matchMaterialsToTopics).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.update).not.toHaveBeenCalled();
   });
 
@@ -485,7 +491,7 @@ describe("runTopicAnalysisJob", () => {
   it("records a failure on the row rather than throwing", async () => {
     prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
-    provisionCourseTopics.mockRejectedValue(new Error("model unreachable"));
+    matchMaterialsToTopics.mockRejectedValue(new Error("model unreachable"));
 
     await expect(runTopicAnalysisJob("job-1", vi.fn())).resolves.toBeUndefined();
 
@@ -500,7 +506,7 @@ describe("runTopicAnalysisJob", () => {
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
     prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     prismaMock.courseTopic.create.mockResolvedValue({ id: "fallback" });
-    provisionCourseTopics.mockRejectedValue(new Error("boom"));
+    matchMaterialsToTopics.mockRejectedValue(new Error("boom"));
 
     await runTopicAnalysisJob("job-1", vi.fn());
 
@@ -515,12 +521,7 @@ describe("runTopicAnalysisJob", () => {
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
     prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     prismaMock.courseTopic.create.mockResolvedValue({ id: "fallback" });
-    provisionCourseTopics.mockResolvedValue({
-      created: 0,
-      createdNames: [],
-      usedSource: "none",
-      duplicatesSkipped: 0,
-    });
+    matchMaterialsToTopics.mockResolvedValue({ matched: 0, unmatched: 0 });
 
     await runTopicAnalysisJob("job-1", vi.fn());
 
@@ -535,6 +536,6 @@ describe("runTopicAnalysisJob", () => {
     await runTopicAnalysisJob("job-1", vi.fn());
 
     expect(prismaMock.aiJob.update.mock.calls.at(-1)?.[0].data.status).toBe("FAILED");
-    expect(provisionCourseTopics).not.toHaveBeenCalled();
+    expect(matchMaterialsToTopics).not.toHaveBeenCalled();
   });
 });

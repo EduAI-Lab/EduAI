@@ -43,6 +43,7 @@ import {
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
+import { topicsForMaterials, type MaterialTopic } from "~/lib/topics/material-topics.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
@@ -867,18 +868,30 @@ async function toMaterialListRows(
   staff: boolean,
 ) {
   const retryableIds = await resolveRetryableMaterialIds(rows);
-  return rows.map(({ _count, visibleToStudents, availableAt, ...material }) => {
-    const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
-      ...material,
-      chunkCount: _count?.chunks ?? 0,
-    };
-    // See the includeDeleted path above: failed rows only (#1749).
-    if (material.status === "FAILED") {
-      row.hasExtractedText = retryableIds.has(material.id);
-    }
-    if (!staff) return row;
-    return { ...row, visibleToStudents, availableAt };
-  });
+  // #1965: staff see and edit each material's topics; students are not shown them.
+  const topicsByMaterial = staff
+    ? await topicsForMaterials(rows.map((row) => row.id))
+    : new Map<string, MaterialTopic[]>();
+  return rows.map(
+    ({ _count, visibleToStudents, availableAt, topicsSetManuallyAt, ...material }) => {
+      const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+        ...material,
+        chunkCount: _count?.chunks ?? 0,
+      };
+      // See the includeDeleted path above: failed rows only (#1749).
+      if (material.status === "FAILED") {
+        row.hasExtractedText = retryableIds.has(material.id);
+      }
+      if (!staff) return row;
+      return {
+        ...row,
+        visibleToStudents,
+        availableAt,
+        topics: topicsByMaterial.get(material.id) ?? [],
+        topicsSetManually: topicsSetManuallyAt !== null,
+      };
+    },
+  );
 }
 
 const MATERIAL_LIST_SELECT = {
@@ -908,6 +921,7 @@ const MATERIAL_LIST_SELECT = {
   // unrecoverable one.
   duplicateResolution: true,
   failureCode: true,
+  topicsSetManuallyAt: true,
   createdAt: true,
   updatedAt: true,
   processedAt: true,

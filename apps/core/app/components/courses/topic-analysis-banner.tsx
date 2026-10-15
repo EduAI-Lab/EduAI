@@ -26,7 +26,7 @@ type TopicAnalysisBannerProps = {
 };
 
 /**
- * Persistent status for automatic topic provisioning (#1624).
+ * Persistent status for the topic job that runs after uploads (#1624, #1965).
  *
  * Reads the durable AiJob row rather than a toast, so an instructor who kicked
  * off a Canvas sync and closed the tab still finds out what happened. Renders
@@ -40,8 +40,8 @@ export function TopicAnalysisBanner({ status, onRetry, retrying }: TopicAnalysis
   if (job.status === "PENDING" || job.status === "RUNNING") {
     return (
       <Banner tone="muted" icon={<IconLoader2 className="h-4 w-4 animate-spin" />}>
-        Looking for topics in this course&rsquo;s materials. You can keep authoring questions while
-        this runs.
+        Filing new materials under this course&rsquo;s topics. You can keep authoring questions
+        while this runs.
       </Banner>
     );
   }
@@ -57,13 +57,15 @@ export function TopicAnalysisBanner({ status, onRetry, retrying }: TopicAnalysis
           </Button>
         }
       >
-        Topic analysis failed{job.errorMessage ? `: ${job.errorMessage}` : "."} Your materials were
-        imported normally, and you can still create topics by hand.
+        Filing materials under topics failed{job.errorMessage ? `: ${job.errorMessage}` : "."} Your
+        materials were imported normally, and you can still set their topics on the Materials tab.
       </Banner>
     );
   }
 
   if (job.status !== "COMPLETED") return null;
+
+  if (job.matched !== null) return <MatchSummary matched={job.matched} unmatched={job.unmatched} />;
 
   const created = job.created ?? 0;
   if (created === 0) {
@@ -82,6 +84,31 @@ export function TopicAnalysisBanner({ status, onRetry, retrying }: TopicAnalysis
       {status.pendingSuggestions > 0
         ? ` ${status.pendingSuggestions} still awaiting your review.`
         : ""}
+    </Banner>
+  );
+}
+
+const files = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
+
+/**
+ * Outcome of filing uploads under the course's existing topics (#1965). Says
+ * nothing when there was nothing to file — a course with no topics yet, or a
+ * batch whose files all had their topics set by hand.
+ */
+function MatchSummary({ matched, unmatched }: { matched: number; unmatched: number | null }) {
+  const unfiled = unmatched ?? 0;
+  if (matched === 0 && unfiled === 0) return null;
+
+  const unfiledNote =
+    unfiled > 0
+      ? ` ${files(unfiled)} didn't fit any topic. You can set their topics on the Materials tab.`
+      : "";
+
+  return (
+    <Banner tone="muted" icon={<IconSparkles className="h-4 w-4" />}>
+      {matched > 0
+        ? `Filed ${files(matched)} under existing topics.${unfiledNote}`
+        : unfiledNote.trim()}
     </Banner>
   );
 }

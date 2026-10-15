@@ -39,7 +39,20 @@ export interface CourseMaterial {
    * the client — the list resolves this server-side.
    */
   hasExtractedText?: boolean;
+  /** The material's topics, main topic first (#1965). Staff-only. */
+  topics?: MaterialTopic[];
+  /** Whether a person set the topics; auto-matching then leaves them alone (#1965). Staff-only. */
+  topicsSetManually?: boolean;
 }
+
+/** One of a material's topics (#1965). */
+export interface MaterialTopic {
+  id: string;
+  name: string;
+}
+
+/** An entry in a material's chosen topics: an existing topic, or a name to find or create. */
+export type MaterialTopicChoice = { topicId: string } | { name: string };
 
 /**
  * Why a material's background processing failed (#1791). Mirrors the Prisma
@@ -475,6 +488,43 @@ export function useCourseMaterials(courseId: string) {
     [courseId, refreshFirstPage, watchUpload, deleteMaterial],
   );
 
+  /**
+   * Replace a material's topics (#1965) and update its row in place, so pages
+   * loaded with "load more" stay put. Returns the topics as the server saved
+   * them — a typed name may have resolved to an existing topic.
+   */
+  const setMaterialTopics = useCallback(
+    async (materialId: string, topics: MaterialTopicChoice[]): Promise<MaterialTopic[]> => {
+      const res = await fetch(`/api/courses/${courseId}/materials/${materialId}/topics`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topics }),
+      });
+      // SAFETY: `Response#json` resolves to whatever the server sent; `topics`
+      // is only read on a 200, whose shape the route fixes.
+      const body = (await res.json().catch(() => ({}))) as {
+        topics?: MaterialTopic[];
+        error?: string;
+      };
+      if (!res.ok || !body.topics) {
+        throw new Error(body.error ?? `Saving topics failed (${res.status})`);
+      }
+      const saved = body.topics;
+      if (courseIdRef.current === courseId) {
+        // Newer than any read still in flight, which would otherwise put the
+        // old topics back.
+        rowSeqRef.current.set(materialId, ++readSeqRef.current);
+        setMaterials((prev) =>
+          prev.map((m) =>
+            m.id === materialId ? { ...m, topics: saved, topicsSetManually: true } : m,
+          ),
+        );
+      }
+      return saved;
+    },
+    [courseId],
+  );
+
   return {
     materials,
     loading,
@@ -485,6 +535,7 @@ export function useCourseMaterials(courseId: string) {
     uploadMaterial,
     deleteMaterial,
     reprocessMaterial,
+    setMaterialTopics,
     refetch: fetchMaterials,
   };
 }

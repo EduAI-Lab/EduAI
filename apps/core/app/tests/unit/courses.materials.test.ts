@@ -63,6 +63,11 @@ vi.mock("~/lib/topics/orphaned-suggestions.server", () => ({
   removeOrphanedSuggestions: vi.fn().mockResolvedValue(0),
 }));
 
+// #1965: staff rows carry each material's topics.
+vi.mock("~/lib/topics/material-topics.server", () => ({
+  topicsForMaterials: vi.fn(async () => new Map([["mat-1", [{ id: "t1", name: "Limits" }]]])),
+}));
+
 vi.mock("~/lib/ai/file-processing", () => ({
   processUploadedFile: vi.fn(),
   validateUploadedFile: vi.fn(),
@@ -1656,6 +1661,7 @@ describe("GET materials — student visibility gate (#839)", () => {
       title: "Week 5 slides",
       visibleToStudents: false,
       availableAt: new Date("2099-01-01"),
+      topicsSetManuallyAt: null,
       _count: { chunks: 3 },
     };
     // Staff response
@@ -1665,6 +1671,10 @@ describe("GET materials — student visibility gate (#839)", () => {
     const staffBody = await (await loader(makeArgs("GET"))).json();
     expect(staffBody.materials[0]).toHaveProperty("visibleToStudents", false);
     expect(staffBody.materials[0]).toHaveProperty("availableAt");
+    expect(staffBody.materials[0]).toMatchObject({
+      topics: [{ id: "t1", name: "Limits" }],
+      topicsSetManually: false,
+    });
 
     // Student response — fields omitted
     vi.clearAllMocks();
@@ -1677,6 +1687,8 @@ describe("GET materials — student visibility gate (#839)", () => {
     const studentBody = await (await loader(makeArgs("GET"))).json();
     expect(studentBody.materials[0]).not.toHaveProperty("visibleToStudents");
     expect(studentBody.materials[0]).not.toHaveProperty("availableAt");
+    expect(studentBody.materials[0]).not.toHaveProperty("topics");
+    expect(studentBody.materials[0]).not.toHaveProperty("topicsSetManually");
   });
 
   it("applies the visibility filter to a single-material preview for students", async () => {
