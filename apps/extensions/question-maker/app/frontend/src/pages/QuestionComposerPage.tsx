@@ -13,8 +13,18 @@
  */
 import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
-import { Button, Card, CardContent, CardHeader, CardTitle, Label, Separator } from "@eduai/ui";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  HelpHint,
+  Label,
+  Separator,
+} from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 import { ComposerSkeleton } from "@/components/shared/Skeletons";
 import {
   IconArrowLeft,
@@ -1148,6 +1158,7 @@ export function QuestionComposerPage() {
             Mark as reviewed{" "}
             <span className="text-muted-foreground">(otherwise saved as a draft)</span>
           </Label>
+          <HelpHint {...QUESTION_MAKER_HELP.draftVsReviewed} LinkComponent={Link} />
         </div>
         <div className="flex items-center gap-2">
           <input

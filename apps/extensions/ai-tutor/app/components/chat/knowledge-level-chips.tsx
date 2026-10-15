@@ -1,3 +1,7 @@
+import { Link } from "react-router";
+import { HelpHint } from "@eduai/ui";
+
+import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { KNOWLEDGE_LEVELS } from "~/lib/knowledge-levels";
 import { cn } from "~/lib/utils";
 
@@ -15,9 +19,12 @@ type KnowledgeLevelChipsProps = {
 export function KnowledgeLevelChips({ value, onSelect, className }: KnowledgeLevelChipsProps) {
   return (
     <div className={cn("w-full max-w-sm space-y-2", className)}>
-      <p className="text-center text-xs font-medium text-muted-foreground">
-        How much do you already know about this?
-      </p>
+      <div className="flex items-center justify-center gap-1">
+        <p className="text-xs font-medium text-muted-foreground">
+          How much do you already know about this?
+        </p>
+        <HelpHint {...AI_TUTOR_HELP.knowledgeLevel} LinkComponent={Link} />
+      </div>
       <div className="flex flex-wrap justify-center gap-2">
         {KNOWLEDGE_LEVELS.map((level) => (
           <button

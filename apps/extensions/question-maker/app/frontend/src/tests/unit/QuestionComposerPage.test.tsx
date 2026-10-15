@@ -69,6 +69,7 @@ const {
 });
 
 vi.mock("react-router", () => ({
+  Link: ({ children, to }: any) => <a href={to}>{children}</a>,
   useNavigate: () => navigateMock,
   useParams: () => routeParams.current,
   useSearchParams: () => [searchParamsBox.current, vi.fn()],
@@ -90,6 +91,7 @@ vi.mock("@/services/eduaiService", () => ({ default: eduaiService }));
 vi.mock("@/services/apiKeyStorage", () => ({ apiKeyStorage }));
 
 vi.mock("@eduai/ui", () => ({
+  HelpHint: ({ title }: any) => <button type="button" aria-label={`About ${title}`} />,
   Button: ({ children, onClick, disabled, ...rest }: any) => (
     <button onClick={onClick} disabled={disabled} {...rest}>
       {children}

@@ -20,6 +20,11 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import {
+  deleteUserAccount,
+  userEntityLabel,
+  type DeleteUserError,
+} from "~/lib/auth/delete-user.server";
+import {
   paginatedResponse,
   parseIdsParam,
   parsePaginationParams,
@@ -43,14 +48,6 @@ const USER_SORT_FIELDS = [
   "updatedAt",
 ] as const;
 type UserSortField = (typeof USER_SORT_FIELDS)[number];
-
-function userEntityLabel(
-  name: string | null | undefined,
-  email: string | null | undefined,
-): string | null {
-  if (email && name) return `${name} <${email}>`;
-  return email ?? name ?? null;
-}
 
 const activeStudentEnrollmentWhere = {
   role: "STUDENT",
@@ -614,63 +611,17 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(403, "Forbidden");
       }
 
-      if (userId === session.user.id) {
-        return apiError(400, "CANNOT_DELETE_SELF");
-      }
-
-      try {
-        const transactionResult = await prisma.$transaction(async (tx) => {
-          const target = await tx.user.findUnique({
-            where: { id: userId },
-            select: { id: true, name: true, email: true, role: true, isActive: true },
-          });
-          if (!target) {
-            return { error: "USER_NOT_FOUND" } as const;
-          }
-          // AUTH-04: hard-delete of an active ADMIN must leave >= 1 active ADMIN.
-          if (target.role === "ADMIN" && target.isActive) {
-            const violation = await adminFloorViolation(tx, userId);
-            if (violation) return violation;
-          }
-          const deleted = await tx.user.delete({
-            where: { id: userId },
-            select: { id: true, name: true, email: true },
-          });
-          return { deleted } as const;
-        });
-
-        if ("error" in transactionResult) {
-          const error =
-            transactionResult.error === "ADMIN_FLOOR_VIOLATION"
-              ? "ADMIN_FLOOR_VIOLATION"
-              : "USER_NOT_FOUND";
-          return apiError(error === "ADMIN_FLOOR_VIOLATION" ? 409 : 404, error);
-        }
-
-        const deleted = transactionResult.deleted;
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session.user),
-            ...requestContext,
-            actionCode: "USER_DELETED",
-            category: "USER",
-            entityType: "User",
-            entityId: deleted.id,
-            entityLabel: userEntityLabel(deleted.name, deleted.email),
-            details: { email: deleted.email },
-          }),
-        );
-
+      const result = await deleteUserAccount(session.user, userId, requestContext);
+      if ("ok" in result) {
         return new Response(null, { status: 204 });
-      } catch (error: any) {
-        if (error.code === "P2025") {
-          return apiError(404, "USER_NOT_FOUND");
-        }
-        if (error.code === "P2003") {
-          return apiError(400, "CANNOT_DELETE_USER_WITH_DATA");
-        }
-        throw error;
       }
+      const status = {
+        CANNOT_DELETE_SELF: 400,
+        USER_NOT_FOUND: 404,
+        ADMIN_FLOOR_VIOLATION: 409,
+        CANNOT_DELETE_USER_WITH_DATA: 400,
+      } satisfies Record<DeleteUserError, number>;
+      return apiError(status[result.error], result.error);
     }
 
     default:

@@ -20,7 +20,7 @@
  */
 import type { FormEvent } from "react";
 import { useOptimistic, useRef, useState } from "react";
-import { useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
 import {
@@ -72,7 +72,8 @@ import { CourseAnalyticsPanel } from "../components/courses/CourseAnalyticsPanel
 import { CourseTopicsHeroAction } from "../components/courses/CourseTopicsHeroAction";
 import { CourseFeedbackPanel } from "../components/courses/CourseFeedbackPanel";
 import { CourseSubmissionsPanel } from "../components/courses/CourseSubmissionsPanel";
-import { PermissionGate } from "@eduai/ui";
+import { HelpHint, PermissionGate } from "@eduai/ui";
+import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { getCourseDetailTabs } from "~/lib/rbac/nav";
 import { useCourseTopics } from "../hooks/useCourseTopics";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
@@ -571,7 +572,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
         <PageTabsContent value="content" className="space-y-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-foreground">Modules</h2>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-lg font-semibold text-foreground">Modules</h2>
+              <HelpHint {...AI_TUTOR_HELP.publishingHierarchy} LinkComponent={Link} />
+            </div>
             <div className="flex items-center gap-2">
               {/* #1660: TA excluded — a TA already has a real (non-preview)
                   view of this course via /student, not a preview of someone
