@@ -428,3 +428,92 @@ describe("auth/login loader — a course join link (#1961)", () => {
     expect(describeSelfEnrollmentLinkForVisitor).not.toHaveBeenCalled();
   });
 });
+
+describe("auth/login action — joins that waited for activation (#1961)", () => {
+  const CREDENTIALS = { email: "a@ubc.ca", password: "correct-password-123" };
+
+  function signedIn() {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT", emailVerified: true } }), {
+        status: 200,
+        headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+      }),
+    );
+  }
+
+  it("lands on the join outcome when this sign-in finished a waiting join", async () => {
+    signedIn();
+    vi.mocked(redeemPendingSelfEnrollments).mockResolvedValue([
+      { linkId: "link-1", outcome: "JOINED" },
+    ]);
+
+    const res = (await action(
+      makeActionArgs({ ...CREDENTIALS, redirectTo: "/dashboard" }),
+    )) as Response;
+
+    expect(redeemPendingSelfEnrollments).toHaveBeenCalledWith(
+      { id: "u1", role: "STUDENT" },
+      expect.any(Request),
+    );
+    expect(res.headers.get("Location")).toBe("/courses/self-enroll/complete");
+    expect(res.headers.get("Set-Cookie")).toContain("better-auth.session=abc");
+  });
+
+  it("goes where it was going when nothing was waiting", async () => {
+    signedIn();
+
+    const res = (await action(
+      makeActionArgs({ ...CREDENTIALS, redirectTo: "/dashboard" }),
+    )) as Response;
+
+    expect(res.headers.get("Location")).toBe("/dashboard");
+  });
+
+  it("points a join sign-in's verification email at the landing page", async () => {
+    signedIn();
+
+    await action(makeActionArgs({ ...CREDENTIALS, redirectTo: JOIN_REDIRECT }));
+
+    const signIn = vi.mocked(auth.handler).mock.calls[0][0] as Request;
+    expect((await signIn.json()).callbackURL).toBe("/courses/self-enroll/complete");
+  });
+
+  it("remembers the join for an account refused only as unverified", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ code: "EMAIL_NOT_VERIFIED" }), { status: 403 }),
+    );
+
+    const res = (await action(
+      makeActionArgs({ ...CREDENTIALS, redirectTo: JOIN_REDIRECT }),
+    )) as Response;
+
+    expect(res.headers.get("Location")).toBe("/auth/verify-email");
+    expect(rememberPendingSelfEnrollmentForEmail).toHaveBeenCalledWith({
+      email: "a@ubc.ca",
+      token: "tok-1",
+    });
+  });
+
+  it("remembers nothing for an unverified sign-in that did not come from a join link", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ code: "EMAIL_NOT_VERIFIED" }), { status: 403 }),
+    );
+
+    await action(makeActionArgs({ ...CREDENTIALS, redirectTo: "/dashboard" }));
+
+    expect(rememberPendingSelfEnrollmentForEmail).not.toHaveBeenCalled();
+  });
+
+  it("remembers nothing on a wrong password", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" }),
+        { status: 401 },
+      ),
+    );
+
+    await action(makeActionArgs({ ...CREDENTIALS, redirectTo: JOIN_REDIRECT }));
+
+    expect(rememberPendingSelfEnrollmentForEmail).not.toHaveBeenCalled();
+  });
+});

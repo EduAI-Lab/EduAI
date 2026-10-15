@@ -19,7 +19,12 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
 import {
+  redeemPendingSelfEnrollments,
+  rememberPendingSelfEnrollmentForEmail,
+} from "~/lib/courses/pending-self-enrollment.server";
+import {
   describeSelfEnrollmentLinkForVisitor,
+  SELF_ENROLL_COMPLETE_PATH,
   selfEnrollmentTokenFromRedirect,
 } from "~/lib/courses/self-enrollment.server";
 
@@ -150,6 +155,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const values = Object.fromEntries(formData);
   const redirectTo = validateRedirectUrl(String(values.redirectTo || ""));
+  // #1961: signing in on the way to a course join link.
+  const joinToken = selfEnrollmentTokenFromRedirect(redirectTo);
   const input = {
     email: String(values.email || ""),
     password: String(values.password || ""),
@@ -175,7 +182,8 @@ export async function action({ request }: ActionFunctionArgs) {
       body: JSON.stringify({
         email: input.email,
         password: input.password,
-        callbackURL: "/onboarding/student-id",
+        // Where the verification email Better Auth sends an unverified account lands.
+        callbackURL: joinToken ? SELF_ENROLL_COMPLETE_PATH : "/onboarding/student-id",
       }),
     });
 
@@ -199,6 +207,11 @@ export async function action({ request }: ActionFunctionArgs) {
         }),
       );
       if (errorData.code === "EMAIL_NOT_VERIFIED") {
+        if (joinToken) {
+          // Better Auth checks the password before it answers this, so the
+          // caller owns the account: remember the join for when they verify.
+          await rememberPendingSelfEnrollmentForEmail({ email: input.email, token: joinToken });
+        }
         return redirect("/auth/verify-email");
       }
       return {
@@ -253,6 +266,13 @@ export async function action({ request }: ActionFunctionArgs) {
         details: { email: input.email },
       }),
     );
+
+    // #1961: a join this account started before it was activated, finished here
+    // when no verification hook did (for example where verification is off).
+    if (signedInUser) {
+      const finished = await redeemPendingSelfEnrollments(signedInUser, request);
+      if (finished.length > 0) return redirect(SELF_ENROLL_COMPLETE_PATH, { headers });
+    }
 
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
