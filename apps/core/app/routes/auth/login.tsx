@@ -182,8 +182,11 @@ export async function action({ request }: ActionFunctionArgs) {
       body: JSON.stringify({
         email: input.email,
         password: input.password,
-        // Where the verification email Better Auth sends an unverified account lands.
-        callbackURL: joinToken ? SELF_ENROLL_COMPLETE_PATH : "/onboarding/student-id",
+        // Where the verification email Better Auth sends an unverified account
+        // lands: the page that reports a course join waiting on this account
+        // (#1961) and otherwise carries on to onboarding. A join started from an
+        // earlier link may be waiting even when this sign-in did not start one.
+        callbackURL: SELF_ENROLL_COMPLETE_PATH,
       }),
     });
 
@@ -269,9 +272,13 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // #1961: a join this account started before it was activated, finished here
     // when no verification hook did (for example where verification is off).
+    // Its outcome page replaces only the default destination: someone signing in
+    // on the way somewhere (another join link, say) still gets there.
     if (signedInUser) {
       const finished = await redeemPendingSelfEnrollments(signedInUser, request);
-      if (finished.length > 0) return redirect(SELF_ENROLL_COMPLETE_PATH, { headers });
+      if (finished.length > 0 && redirectTo === "/dashboard") {
+        return redirect(SELF_ENROLL_COMPLETE_PATH, { headers });
+      }
     }
 
     return redirect(redirectTo, { headers });

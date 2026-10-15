@@ -241,10 +241,12 @@ describe("auth/login action", () => {
     expect(result.headers.get("Location")).toBe("/auth/verify-email");
     expect(result.headers.get("Set-Cookie")).toBeNull();
     const signInRequest = vi.mocked(auth.handler).mock.calls[0][0] as Request;
+    // #1961: the email lands where a waiting course join is reported; that page
+    // carries on to onboarding when there is none.
     expect(await signInRequest.json()).toEqual({
       email: "a@ubc.ca",
       password: "correct-password-123",
-      callbackURL: "/onboarding/student-id",
+      callbackURL: "/courses/self-enroll/complete",
     });
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "LOGIN_FAILED", outcome: "FAILURE" }),
@@ -469,13 +471,29 @@ describe("auth/login action — joins that waited for activation (#1961)", () =>
     expect(res.headers.get("Location")).toBe("/dashboard");
   });
 
-  it("points a join sign-in's verification email at the landing page", async () => {
+  it("still goes to an explicit destination, such as another join link, after settling a waiting join", async () => {
+    signedIn();
+    vi.mocked(redeemPendingSelfEnrollments).mockResolvedValue([
+      { linkId: "link-1", outcome: "LINK_REVOKED" },
+    ]);
+
+    const res = (await action(
+      makeActionArgs({ ...CREDENTIALS, redirectTo: JOIN_REDIRECT }),
+    )) as Response;
+
+    expect(redeemPendingSelfEnrollments).toHaveBeenCalled();
+    expect(res.headers.get("Location")).toBe(JOIN_REDIRECT);
+  });
+
+  it("points the verification email at the landing page whether or not this sign-in came from a join link", async () => {
     signedIn();
 
+    await action(makeActionArgs({ ...CREDENTIALS, redirectTo: "/dashboard" }));
     await action(makeActionArgs({ ...CREDENTIALS, redirectTo: JOIN_REDIRECT }));
 
-    const signIn = vi.mocked(auth.handler).mock.calls[0][0] as Request;
-    expect((await signIn.json()).callbackURL).toBe("/courses/self-enroll/complete");
+    for (const [signIn] of vi.mocked(auth.handler).mock.calls) {
+      expect((await (signIn as Request).json()).callbackURL).toBe("/courses/self-enroll/complete");
+    }
   });
 
   it("remembers the join for an account refused only as unverified", async () => {
