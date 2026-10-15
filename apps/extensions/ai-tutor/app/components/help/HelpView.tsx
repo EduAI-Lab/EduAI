@@ -197,7 +197,12 @@ export function HelpView({ role }: { role?: Role }) {
   // HelpHint links land here as /help#section. Staff sections only render once
   // the user's role has loaded, after ScrollRestoration has already looked.
   useEffect(() => {
-    const id = decodeURIComponent(hash.slice(1));
+    let id: string;
+    try {
+      id = decodeURIComponent(hash.slice(1));
+    } catch {
+      return; // malformed hash like #100%
+    }
     if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
   }, [hash, topicIds]);
 
