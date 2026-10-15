@@ -15,6 +15,7 @@ import {
   resolveSessionRecentMessages,
   resolveSessionCharBudget,
   resolveToolResultMaxChars,
+  selectCappedRagExcerpts,
   truncateToMaxChars,
   RAG_COURSE_GROUNDING_INSTRUCTION,
   UNTRUSTED_RAG_OPEN,
@@ -720,5 +721,46 @@ describe("resolveMaxDigestSourceMessages", () => {
     expect(resolveMaxDigestSourceMessages()).toBe(200);
     process.env.CHAT_DIGEST_MAX_SOURCE_MESSAGES = "9999";
     expect(resolveMaxDigestSourceMessages()).toBe(2_000);
+  });
+});
+
+describe("excerpt headers (#1963)", () => {
+  const hits = [
+    {
+      content: "Lab 14 is due Nov 20.",
+      similarity: 0.9,
+      materialTitle: "L14.pdf",
+      materialId: "m14",
+    },
+  ];
+
+  it("heads each excerpt with the file title by default", () => {
+    expect(buildCappedRagContextText(hits, 4, 14_000)).toContain("**Source**: L14.pdf");
+  });
+
+  it("uses a caller's header instead, so a student's prompt need not carry the title", () => {
+    const text = buildCappedRagContextText(hits, 4, 14_000, () => "**Topics**: Labs\n");
+
+    expect(text).toContain("**Topics**: Labs");
+    expect(text).not.toContain("L14.pdf");
+  });
+
+  it("budgets selection with the same header the context uses", () => {
+    const long = "x".repeat(200);
+    const budgetHits = [
+      { content: long, similarity: 0.9, materialTitle: "a", materialId: "m1" },
+      { content: long, similarity: 0.8, materialTitle: "b", materialId: "m2" },
+    ];
+    const header = () => `${"H".repeat(150)}\n`;
+
+    // Room for exactly one excerpt with this header (151 + 200 = 351 chars), and
+    // too little left for a truncated second. The default header would fit two.
+    expect(selectCappedRagExcerpts(budgetHits, 4, 400).map((hit) => hit.materialId)).toEqual([
+      "m1",
+      "m2",
+    ]);
+    expect(
+      selectCappedRagExcerpts(budgetHits, 4, 400, header).map((hit) => hit.materialId),
+    ).toEqual(["m1"]);
   });
 });
