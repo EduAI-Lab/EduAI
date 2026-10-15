@@ -54,6 +54,22 @@ export function selfEnrollmentUrl(origin: string, token: string): string {
   return `${origin}${REDEEM_PATH}?token=${encodeURIComponent(token)}`;
 }
 
+/** Where a join that waited for sign-up lands (#1961): the verification email's callback. */
+export const SELF_ENROLL_COMPLETE_PATH = "/courses/self-enroll/complete";
+
+/**
+ * The token in a post-sign-in redirect back to the join page, or null (#1961).
+ * Only a same-origin path counts: `validateRedirectUrl` also lets absolute URLs
+ * for sibling EduAI apps through, and none of those is a join link.
+ */
+export function selfEnrollmentTokenFromRedirect(redirectTo: string): string | null {
+  if (!redirectTo.startsWith("/") || redirectTo.startsWith("//")) return null;
+  const url = new URL(redirectTo, "http://localhost");
+  if (url.pathname !== REDEEM_PATH) return null;
+  const token = url.searchParams.get("token")?.trim() ?? "";
+  return token === "" ? null : token;
+}
+
 export type SelfEnrollmentLinkStatus = "ACTIVE" | "REVOKED" | "EXPIRED" | "EXHAUSTED";
 
 /** What a staff member may see about a link. Never includes the hash. */
@@ -224,6 +240,27 @@ function linkUsabilityFailure(link: LinkRow, now: Date): SelfEnrollmentRejection
   return null;
 }
 
+/**
+ * How a caller names a link: the raw token from a share URL, or the id a pending
+ * join kept (#1961). That one stores the link, never the token, so a database
+ * leak still yields nothing redeemable.
+ */
+export type SelfEnrollmentLinkLocator = { token: string } | { linkId: string };
+
+async function findLink(locator: SelfEnrollmentLinkLocator) {
+  if ("linkId" in locator) {
+    return prisma.selfEnrollmentLink.findUnique({
+      where: { id: locator.linkId },
+      select: LINK_SELECT,
+    });
+  }
+  if (locator.token.trim() === "") return null;
+  return prisma.selfEnrollmentLink.findUnique({
+    where: { tokenHash: hashToken(locator.token) },
+    select: LINK_SELECT,
+  });
+}
+
 type ResolvedLink = {
   ok: true;
   link: LinkRow;
@@ -246,21 +283,12 @@ type ResolvedLink = {
  * is still decided here, so the two callers cannot drift on those.
  */
 async function resolveSelfEnrollmentLink(
-  token: string,
+  locator: SelfEnrollmentLinkLocator,
   expectedCourseId?: string,
   options?: { deferUsability?: boolean },
 ): Promise<ResolvedLink | { ok: false; failure: SelfEnrollmentRejection }> {
-  const invalid = {
-    ok: false as const,
-    failure: { status: "404", error: "INVALID_TOKEN" } as const,
-  };
-  if (token.trim() === "") return invalid;
-
-  const link = await prisma.selfEnrollmentLink.findUnique({
-    where: { tokenHash: hashToken(token) },
-    select: LINK_SELECT,
-  });
-  if (!link) return invalid;
+  const link = await findLink(locator);
+  if (!link) return { ok: false, failure: { status: "404", error: "INVALID_TOKEN" } };
 
   if (expectedCourseId !== undefined && link.courseId !== expectedCourseId) {
     return { ok: false, failure: { status: "404", error: "COURSE_MISMATCH" } };
@@ -321,7 +349,7 @@ async function activeEnrollment(courseId: string, userId: string) {
 export async function previewSelfEnrollmentLink(token: string, viewerId: string) {
   // Deferred for the same reason the redeem defers it — the verdict is applied
   // below, after idempotency, by the same `linkUsabilityFailure`.
-  const resolved = await resolveSelfEnrollmentLink(token, undefined, { deferUsability: true });
+  const resolved = await resolveSelfEnrollmentLink({ token }, undefined, { deferUsability: true });
   if (!resolved.ok) return { ok: false as const, error: resolved.failure.error };
 
   const course = {
@@ -341,6 +369,24 @@ export async function previewSelfEnrollmentLink(token: string, viewerId: string)
   if (unusable) return { ok: false as const, error: unusable.error };
 
   return { ok: true as const, alreadyEnrolled: false, ...course };
+}
+
+/**
+ * The course a link is for, told to a visitor who has not signed in yet (#1961):
+ * sign-in and sign-up name it. Code and name only, with no revoked/expired/full
+ * verdict, for the reason the preview takes a `viewerId`: a signed-out student who
+ * is already in the course must not read that the link is a dead end.
+ */
+export async function describeSelfEnrollmentLinkForVisitor(token: string) {
+  const resolved = await resolveSelfEnrollmentLink({ token }, undefined, { deferUsability: true });
+  if (!resolved.ok) return null;
+  return { courseCode: resolved.course.code, courseName: resolved.course.name };
+}
+
+/** The link a token belongs to, in whatever state, for a pending join to keep (#1961). */
+export async function selfEnrollmentLinkIdForToken(token: string): Promise<string | null> {
+  const link = await findLink({ token });
+  return link?.id ?? null;
 }
 
 /**
@@ -412,10 +458,13 @@ async function releaseRedemptionSlot(linkId: string): Promise<void> {
   });
 }
 
-export type RedeemSelfEnrollmentInput = {
-  token: string;
+/**
+ * A token from a share URL, or the link id a pending join kept (#1961). Both are
+ * judged by the same checks below, at the moment of redemption.
+ */
+export type RedeemSelfEnrollmentInput = SelfEnrollmentLinkLocator & {
   userId: string;
-  /** When set, the token must belong to this course or redemption is refused. */
+  /** When set, the link must belong to this course or redemption is refused. */
   courseId?: string;
 };
 
@@ -432,7 +481,7 @@ export type RedeemSelfEnrollmentInput = {
  * the wrong thing to answer someone who is already in the course.
  */
 export async function redeemSelfEnrollmentLink(input: RedeemSelfEnrollmentInput) {
-  const resolved = await resolveSelfEnrollmentLink(input.token, input.courseId, {
+  const resolved = await resolveSelfEnrollmentLink(input, input.courseId, {
     deferUsability: true,
   });
   if (!resolved.ok) return resolved.failure;

@@ -36,10 +36,13 @@ vi.mock("~/lib/courses/enrollments.server", async (importOriginal) => {
 
 import {
   createSelfEnrollmentLink,
+  describeSelfEnrollmentLinkForVisitor,
   listSelfEnrollmentLinks,
   previewSelfEnrollmentLink,
   redeemSelfEnrollmentLink,
   revokeSelfEnrollmentLink,
+  selfEnrollmentLinkIdForToken,
+  selfEnrollmentTokenFromRedirect,
   selfEnrollmentUrl,
   DEFAULT_LINK_TTL_DAYS,
   MAX_LINK_TTL_DAYS,
@@ -653,5 +656,103 @@ describe("previewSelfEnrollmentLink", () => {
         courseId: "course-1",
       });
     });
+  });
+});
+
+describe("redeemSelfEnrollmentLink — by link id, for a join that waited for sign-up (#1961)", () => {
+  it("finds the link by id and enrolls through the same checks", async () => {
+    mockLiveLink();
+    const result = await redeemSelfEnrollmentLink({ linkId: "link-1", userId: "student-1" });
+    expect(prismaMock.selfEnrollmentLink.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "link-1" } }),
+    );
+    expect(result).toMatchObject({ status: "201", courseId: "course-1", linkId: "link-1" });
+  });
+
+  it("refuses a link revoked since the join was remembered", async () => {
+    mockLiveLink({ revokedAt: PAST });
+    const result = await redeemSelfEnrollmentLink({ linkId: "link-1", userId: "student-1" });
+    expect(result).toEqual({ status: "403", error: "LINK_REVOKED" });
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a link that expired since", async () => {
+    mockLiveLink({ expiresAt: PAST });
+    const result = await redeemSelfEnrollmentLink({ linkId: "link-1", userId: "student-1" });
+    expect(result).toEqual({ status: "410", error: "LINK_EXPIRED" });
+  });
+
+  it("refuses a link that filled up since", async () => {
+    mockLiveLink({ maxRedemptions: 1, redemptionCount: 1 });
+    const result = await redeemSelfEnrollmentLink({ linkId: "link-1", userId: "student-1" });
+    expect(result).toEqual({ status: "409", error: "LINK_EXHAUSTED" });
+    expect(addEnrollmentMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a deleted link like an invalid one", async () => {
+    prismaMock.selfEnrollmentLink.findUnique.mockResolvedValue(null);
+    const result = await redeemSelfEnrollmentLink({ linkId: "gone", userId: "student-1" });
+    expect(result).toEqual({ status: "404", error: "INVALID_TOKEN" });
+  });
+});
+
+describe("describeSelfEnrollmentLinkForVisitor (#1961)", () => {
+  it("names the course a live link is for", async () => {
+    mockLiveLink();
+    expect(await describeSelfEnrollmentLinkForVisitor("raw-token")).toEqual({
+      courseCode: "COSC 111",
+      courseName: "Intro to CS",
+    });
+  });
+
+  it("still names it for a revoked, expired or full link: a signed-out student may already be in the course", async () => {
+    mockLiveLink({ revokedAt: PAST, expiresAt: PAST, maxRedemptions: 1, redemptionCount: 1 });
+    expect(await describeSelfEnrollmentLinkForVisitor("raw-token")).toEqual({
+      courseCode: "COSC 111",
+      courseName: "Intro to CS",
+    });
+  });
+
+  it("names nothing for an unknown token or a course students cannot see", async () => {
+    prismaMock.selfEnrollmentLink.findUnique.mockResolvedValue(null);
+    expect(await describeSelfEnrollmentLinkForVisitor("nope")).toBeNull();
+
+    mockLiveLink();
+    prismaMock.course.findFirst.mockResolvedValue({ ...PUBLISHED_COURSE, isPublished: false });
+    expect(await describeSelfEnrollmentLinkForVisitor("raw-token")).toBeNull();
+  });
+});
+
+describe("selfEnrollmentLinkIdForToken (#1961)", () => {
+  it("finds the link by the token's hash, in any state", async () => {
+    mockLiveLink({ revokedAt: PAST });
+    expect(await selfEnrollmentLinkIdForToken("raw-token")).toBe("link-1");
+    expect(prismaMock.selfEnrollmentLink.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tokenHash: hashToken("raw-token") } }),
+    );
+  });
+
+  it("returns null for a blank or unknown token", async () => {
+    expect(await selfEnrollmentLinkIdForToken("  ")).toBeNull();
+    expect(prismaMock.selfEnrollmentLink.findUnique).not.toHaveBeenCalled();
+    prismaMock.selfEnrollmentLink.findUnique.mockResolvedValue(null);
+    expect(await selfEnrollmentLinkIdForToken("nope")).toBeNull();
+  });
+});
+
+describe("selfEnrollmentTokenFromRedirect (#1961)", () => {
+  it("reads the token from a redirect back to the join page", () => {
+    expect(selfEnrollmentTokenFromRedirect("/courses/self-enroll?token=abc")).toBe("abc");
+  });
+
+  it("ignores other pages, a missing token and absolute URLs", () => {
+    expect(selfEnrollmentTokenFromRedirect("/dashboard")).toBeNull();
+    expect(selfEnrollmentTokenFromRedirect("/courses/self-enroll")).toBeNull();
+    expect(selfEnrollmentTokenFromRedirect("/courses/self-enroll?token=%20")).toBeNull();
+    expect(selfEnrollmentTokenFromRedirect("/courses/self-enroll/complete?token=abc")).toBeNull();
+    expect(
+      selfEnrollmentTokenFromRedirect("http://localhost/courses/self-enroll?token=abc"),
+    ).toBeNull();
+    expect(selfEnrollmentTokenFromRedirect("//evil.test/courses/self-enroll?token=abc")).toBeNull();
   });
 });
