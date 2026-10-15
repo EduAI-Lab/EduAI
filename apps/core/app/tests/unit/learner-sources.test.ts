@@ -138,6 +138,11 @@ describe("readerSeesMaterialFiles (#1963)", () => {
     expect(await readerSeesMaterialFiles({ id: "t", role: "STUDENT" }, owned("c1"))).toBe(true);
   });
 
+  it("hides files from an owner whose chat no longer has a course (course deleted)", async () => {
+    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, owned(null))).toBe(false);
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
+  });
+
   it("hides files from an owner who has lost course access", async () => {
     vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },

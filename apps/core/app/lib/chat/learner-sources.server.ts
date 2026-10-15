@@ -102,12 +102,17 @@ export function toLearnerRagHits(
  * overseeing a student's chat do. An owner is checked against the chat's course,
  * because the same platform role can be a student in one course and a TA in
  * another; an owner who is a student there — or has lost access — does not.
+ *
+ * Every turn of a chat runs in its course (chat.ts rejects a mismatched course),
+ * so the chat's course decides. One with no course left — the course was deleted
+ * and the FK set null — fails closed: nobody can tell any more who the owner was.
  */
 export async function readerSeesMaterialFiles(
   viewer: { id: string; role?: string | null },
   access: { isOwner: boolean; chat: { courseId: string | null } },
 ): Promise<boolean> {
-  if (viewer.role === "ADMIN" || !access.isOwner || !access.chat.courseId) return true;
+  if (viewer.role === "ADMIN" || !access.isOwner) return true;
+  if (!access.chat.courseId) return false;
   const { access: courseAccess } = await resolveCourseAccessGate(viewer, access.chat.courseId);
   return courseAccess !== null && courseAccess.level !== "student";
 }
