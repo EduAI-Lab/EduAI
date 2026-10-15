@@ -142,6 +142,7 @@ import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/cour
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { parseMessageAttachments, toModelMessage } from "~/lib/chat/chat-attachments";
+import { stripModelSourceCitations } from "~/lib/chat/material-citations";
 import { CHAT_MAX_ATTACHMENT_CHARS_DEFAULT } from "~/lib/chat/attachment-types";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -403,6 +404,35 @@ function reviveStoredMessage(record: StoredMessageRecord): ChatMessage {
     role: record.role,
     content: "",
   };
+}
+
+const textPartSchema = z.object({ type: z.literal("text"), text: z.string() }).passthrough();
+
+/**
+ * An assistant turn without the file citations its text carries (#1963). A
+ * student's prompt never holds a file title, so the only place the model could
+ * copy one from is its own older replies — written before #1963 or #1936.
+ */
+function withoutSourceCitations(message: ChatMessage): ChatMessage {
+  if (message.role !== "assistant") return message;
+  let next = message;
+  const content = z.string().safeParse(message.content);
+  if (content.success) {
+    next = { ...next, content: stripModelSourceCitations(content.data) };
+  }
+  const parts = z.array(z.unknown()).safeParse(message.parts);
+  if (parts.success) {
+    next = {
+      ...next,
+      parts: parts.data.map((part) => {
+        const text = textPartSchema.safeParse(part);
+        return text.success
+          ? { ...text.data, text: stripModelSourceCitations(text.data.text) }
+          : part;
+      }),
+    };
+  }
+  return next;
 }
 
 /**
@@ -1446,18 +1476,20 @@ export async function action({ request }: ActionFunctionArgs) {
           loadedOlderCount = olderRecords.length;
           priorOlderEntries = olderRecords
             .reverse()
-            .map((record) => ({
-              role: record.role,
-              text: extractMessageText(
-                reviveStoredMessage({
-                  messageId: record.messageId,
-                  role: record.role,
-                  content: record.content,
-                }),
-              )
-                .replace(/\s+/g, " ")
-                .trim(),
-            }))
+            .map((record) => {
+              const revived = reviveStoredMessage({
+                messageId: record.messageId,
+                role: record.role,
+                content: record.content,
+              });
+              // #1963: the digest must not hand a student's model a file name either.
+              // Stripped before whitespace is collapsed: citations are line-shaped.
+              const message = isLearnerTurn ? withoutSourceCitations(revived) : revived;
+              return {
+                role: record.role,
+                text: extractMessageText(message).replace(/\s+/g, " ").trim(),
+              };
+            })
             .filter((entry) => entry.text.length > 0);
         }
 
@@ -1473,6 +1505,10 @@ export async function action({ request }: ActionFunctionArgs) {
           mergedMessages.length > maxContextMessages
             ? mergedMessages.slice(-maxContextMessages)
             : mergedMessages;
+        // #1963: what the model is given back of this history on a student's turn.
+        const modelHistory = isLearnerTurn
+          ? trimmedMessages.map(withoutSourceCitations)
+          : trimmedMessages;
 
         // Older turns cut before the digest sees them as *content*: those beyond the
         // digest-source span (loaded above into priorOlderEntries) plus those the
@@ -1495,7 +1531,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // Cap oversized tool results (#260), then digest older turns when the thread
         // exceeds the char budget (#259). Budget accounting counts tool payloads.
         let modelMessages = prepareBoundedSessionContext(
-          capToolResultsInMessages(trimmedMessages.map(toModelMessage)),
+          capToolResultsInMessages(modelHistory.map(toModelMessage)),
           {
             priorOmittedCount,
             priorOlderEntries,
@@ -2785,7 +2821,7 @@ export async function action({ request }: ActionFunctionArgs) {
             reserveToolSteps: budgetReserveToolSteps,
           });
           modelMessages = prepareBoundedSessionContext(
-            capToolResultsInMessages(trimmedMessages.map(toModelMessage), budgetToolResultCap),
+            capToolResultsInMessages(modelHistory.map(toModelMessage), budgetToolResultCap),
             {
               charBudget: historyCharBudget,
               recentCount: budgetContextWindow <= 16_384 ? 3 : undefined,

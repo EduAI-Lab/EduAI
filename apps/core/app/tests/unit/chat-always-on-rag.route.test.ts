@@ -1013,3 +1013,53 @@ describe("token-budget context window — pre-digest omissions and fail-closed f
     expect(streamText).not.toHaveBeenCalled();
   });
 });
+
+describe("a student's history goes back to the model without file citations (#1963)", () => {
+  const CITED_REPLY = "Trees are hierarchical.\n\nSource: Secret_Notes.pdf";
+
+  function historyText() {
+    return JSON.stringify(lastStreamMessages());
+  }
+
+  it("strips the citation an older reply wrote before the model sees it again", async () => {
+    // A long thread, so older turns also reach the model through the digest.
+    vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+      storedRecord("stored-1", "assistant", CITED_REPLY),
+      storedRecord("stored-0", "user", "What are trees?"),
+    ] as never);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream("asst-1");
+
+    await action(
+      makeRequest(
+        baseBody({ messages: [{ id: "incoming-1", role: "user", content: "And graphs?" }] }),
+      ),
+    );
+
+    expect(historyText()).toContain("Trees are hierarchical.");
+    expect(historyText()).not.toContain("Secret_Notes.pdf");
+  });
+
+  it("leaves staff history as it was", async () => {
+    vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "course-1", isPublished: true, code: "COSC101" },
+      access: { level: "instructor" },
+    } as never);
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+      storedRecord("stored-1", "assistant", CITED_REPLY),
+      storedRecord("stored-0", "user", "What are trees?"),
+    ] as never);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream("asst-1");
+
+    await action(
+      makeRequest(
+        baseBody({ messages: [{ id: "incoming-1", role: "user", content: "And graphs?" }] }),
+      ),
+    );
+
+    expect(historyText()).toContain("Secret_Notes.pdf");
+  });
+});
