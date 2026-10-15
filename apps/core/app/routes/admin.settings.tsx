@@ -2,6 +2,7 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { CORE_HELP } from "~/components/help/help-hints";
 import { ChatDailyLimitSettingsCard } from "~/components/settings/chat-daily-limit-settings";
 import { BedrockOverflowSettingsCard } from "~/components/settings/bedrock-overflow-settings";
 import {
@@ -22,6 +23,7 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
+  HelpHint,
 } from "@eduai/ui";
 import { apiFetch } from "~/hooks/api/config";
 import { usePolicies } from "~/hooks/api/use-policies";
@@ -143,7 +145,12 @@ export default function AdminSettingsPage() {
             <div className="px-4 lg:px-6">
               <PageHeading
                 heading="Settings"
-                subheading="Toggle role-based capabilities across the platform. Changes take effect live."
+                subheading={
+                  <>
+                    Toggle role-based capabilities across the platform. Changes take effect live.{" "}
+                    <HelpHint {...CORE_HELP.platformPolicies} LinkComponent={Link} />
+                  </>
+                }
               />
             </div>
 

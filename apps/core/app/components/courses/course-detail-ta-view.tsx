@@ -6,7 +6,9 @@ import { termLabel } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { StatCard } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
-import { MaterialList, type MaterialListItem } from "@eduai/ui";
+import { HelpHint, MaterialList, type MaterialListItem } from "@eduai/ui";
+import { Link } from "react-router";
+import { CORE_HELP } from "~/components/help/help-hints";
 import {
   Dialog,
   DialogContent,
@@ -479,6 +481,12 @@ export function CourseDetailTaView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
+            title={
+              <span className="inline-flex items-center gap-1.5">
+                Course materials
+                <HelpHint {...CORE_HELP.materialStates} LinkComponent={Link} />
+              </span>
+            }
             items={materials.map((m): MaterialListItem => ({
               id: m.id,
               name: m.title,

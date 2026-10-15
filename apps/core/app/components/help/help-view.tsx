@@ -12,6 +12,11 @@ import {
   IconFileText,
   IconShieldLock,
   IconCommand,
+  IconCpu,
+  IconEye,
+  IconMessages,
+  IconProgressCheck,
+  IconToggleRight,
   type Icon,
 } from "@tabler/icons-react";
 import { Button, PageHeading, useTour } from "@eduai/ui";
@@ -27,6 +32,7 @@ type HelpTopic = {
 
 const STAFF = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
 const ADMINS = ["ADMIN", "UNIT_ADMIN"];
+const PLATFORM_ADMINS = ["ADMIN"];
 
 const TOPICS: HelpTopic[] = [
   {
@@ -88,14 +94,57 @@ const TOPICS: HelpTopic[] = [
     ],
   },
   {
+    id: "chat-scope",
+    title: "Course chat vs. general chat",
+    icon: IconMessages,
+    points: [
+      "Course Chat is scoped to one course: it searches only that course's uploaded materials and cites them in its answers.",
+      "Switching course in the composer starts a separate conversation, so answers never mix material from two courses.",
+      "Students only get answers from materials their instructor has made visible to them.",
+      "The admin chatbot and the instructors' course assistant are different tools: they help with operational tasks such as enrollments, users and topics, and do not read course materials.",
+    ],
+  },
+  {
     id: "materials",
     title: "Course materials",
     icon: IconFileText,
     roles: STAFF,
     points: [
       "Upload materials on a course's Materials tab. Each file is processed so the chatbot can search and cite it.",
-      "Watch the status chip: Processing means the file is still being prepared, Ready means it's live for chat, Failed means it needs a re-upload.",
       "Control per-material visibility and scheduled availability so students only see what you've released.",
+    ],
+  },
+  {
+    id: "material-status",
+    title: "Material status",
+    icon: IconProgressCheck,
+    roles: STAFF,
+    points: [
+      <>
+        <strong>Processing</strong>: the file is being read and indexed. Large files can take a few
+        minutes.
+      </>,
+      <>
+        <strong>Embedded</strong>: the file is ready. The course chatbot can search it and cite it
+        in answers.
+      </>,
+      <>
+        <strong>Failed</strong>: the file couldn't be indexed. The row explains why: a duplicate of
+        a file already in the course, a file that couldn't be read, or an indexing error. Retry when
+        the row offers it, otherwise upload a fixed copy.
+      </>,
+    ],
+  },
+  {
+    id: "publishing",
+    title: "Publishing and visibility",
+    icon: IconEye,
+    roles: STAFF,
+    points: [
+      "A new course starts as a draft. Only course staff and administrators can open a draft, and self-enrollment links won't let students join it.",
+      "Publish the course from its Overview tab when it's ready. Unpublishing removes student access again without deleting anything.",
+      "Inside a published course, each material can be hidden from students or scheduled to appear on a date. Hidden and not-yet-available materials are also left out of students' chat answers.",
+      "Instructors and TAs always see every material, whatever its visibility.",
     ],
   },
   {
@@ -115,17 +164,55 @@ const TOPICS: HelpTopic[] = [
       "Platform policies gate features across roles — review them before turning capabilities on or off.",
     ],
   },
+  {
+    id: "ai-models",
+    title: "AI providers and models",
+    icon: IconCpu,
+    roles: PLATFORM_ADMINS,
+    points: [
+      "A provider is a service EduAI connects to for AI, such as a cloud API or a campus-hosted server. It holds the endpoint and API key.",
+      "A model belongs to one provider. Chat models appear in the chat model picker; embedding models turn course materials into searchable text.",
+      "Only active models on an active provider are offered. Turning a provider off hides all of its models at once.",
+      "Campus-hosted providers can sync their model list automatically instead of adding models one by one.",
+      "Auto routing and Assist use the models you assign to them on the Models tab.",
+    ],
+  },
+  {
+    id: "platform-policies",
+    title: "Platform policies",
+    icon: IconToggleRight,
+    roles: PLATFORM_ADMINS,
+    points: [
+      "Policies are switches on the admin Settings page that decide what each role (instructors, students, TAs, unit admins) may do.",
+      "A switch applies to every course on the platform and takes effect as soon as you flip it. There is no save step.",
+      "Controls that a policy turns off stay visible but disabled, with a tooltip explaining why, so people know the feature exists.",
+      "Check who relies on a capability before turning it off.",
+    ],
+  },
 ];
 
-export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean }) {
+/** Topics a TA can use: they manage materials in their courses (AUTH-08) but aren't platform staff. */
+const TA_TOPICS = new Set(["materials", "material-status"]);
+/** A platform STUDENT with an INSTRUCTOR enrollment gets the staff course view, so its topics too. */
+const COURSE_INSTRUCTOR_TOPICS = new Set([...TA_TOPICS, "publishing"]);
+
+export function HelpView({
+  role,
+  isTA = false,
+  isCourseInstructor = false,
+}: {
+  role?: string;
+  isTA?: boolean;
+  isCourseInstructor?: boolean;
+}) {
   const { startTour } = useTour();
-  // TAs are platform STUDENTs (Enrollment.role carries TA). They can upload
-  // and manage their own course materials (AUTH-08), so they need the
-  // materials topic even though session.user.role is not in STAFF.
+  // TAs are platform STUDENTs (Enrollment.role carries TA), so their topics
+  // come from TA_TOPICS rather than session.user.role.
   const topics = TOPICS.filter((t) => {
     if (!t.roles) return true;
     if (role && t.roles.includes(role)) return true;
-    return isTA && t.id === "materials";
+    if (isCourseInstructor && COURSE_INSTRUCTOR_TOPICS.has(t.id)) return true;
+    return isTA && TA_TOPICS.has(t.id);
   });
 
   return (

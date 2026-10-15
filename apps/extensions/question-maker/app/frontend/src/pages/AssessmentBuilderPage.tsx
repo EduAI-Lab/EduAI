@@ -10,14 +10,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  HelpHint,
   StackedBar,
   cn,
 } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 import { PermissionGate } from "@eduai/ui";
 import { ConfirmDialog } from "@eduai/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import {
   IconArrowLeft,
   IconAlertTriangle,
@@ -648,7 +650,7 @@ const AssessmentBuilderPage = () => {
            *  - Everything that manages the assessment itself (rename/retype, delete) lives
            *    together under a single labelled "Manage" menu — no lone kebab, no jargon.
            */}
-          <div className="flex shrink-0 flex-nowrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-nowrap">
             <PermissionGate allow={canUseVariantWorkflow}>
               {variantsHref &&
                 (noQuestions ? (
@@ -679,51 +681,59 @@ const AssessmentBuilderPage = () => {
             </PermissionGate>
 
             <PermissionGate allow={canExportAssessment}>
-              {exportBlockedReason ? (
-                <Tooltip content={exportBlockedReason} side="bottom">
-                  <span className="inline-flex">
-                    <Button type="button" disabled className="gap-1.5 opacity-60">
-                      <IconShare2 className="size-4" />
-                      Export
-                      <IconChevronDown className="size-3.5" />
-                    </Button>
-                  </span>
-                </Tooltip>
-              ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" className="gap-1.5" data-tour="export-assessment-btn">
-                      <IconShare2 className="size-4" />
-                      Export
-                      <IconChevronDown className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      data-tour="export-canvas-btn"
-                      onSelect={() => setTimeout(() => setIsCanvasExportOpen(true), 0)}
-                    >
-                      <IconUpload className="size-4" /> Send to Canvas
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      data-tour="export-word-btn"
-                      disabled={isWordExporting}
-                      onSelect={() => void handleExportWord()}
-                    >
-                      <IconFileTypeDocx className="size-4" />
-                      {isWordExporting ? "Preparing…" : "Download as Word (.docx)"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      data-tour="export-txt-btn"
-                      disabled={isTxtExporting}
-                      onSelect={handleExportTxt}
-                    >
-                      <IconFileText className="size-4" />
-                      {isTxtExporting ? "Preparing…" : "Download as text (.txt)"}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              <div className="flex items-center gap-2">
+                {exportBlockedReason ? (
+                  <Tooltip content={exportBlockedReason} side="bottom">
+                    <span className="inline-flex">
+                      <Button type="button" disabled className="gap-1.5 opacity-60">
+                        <IconShare2 className="size-4" />
+                        Export
+                        <IconChevronDown className="size-3.5" />
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" className="gap-1.5" data-tour="export-assessment-btn">
+                        <IconShare2 className="size-4" />
+                        Export
+                        <IconChevronDown className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        data-tour="export-canvas-btn"
+                        onSelect={() => setTimeout(() => setIsCanvasExportOpen(true), 0)}
+                      >
+                        <IconUpload className="size-4" /> Send to Canvas
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        data-tour="export-word-btn"
+                        disabled={isWordExporting}
+                        onSelect={() => void handleExportWord()}
+                      >
+                        <IconFileTypeDocx className="size-4" />
+                        {isWordExporting ? "Preparing…" : "Download as Word (.docx)"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        data-tour="export-txt-btn"
+                        disabled={isTxtExporting}
+                        onSelect={handleExportTxt}
+                      >
+                        <IconFileText className="size-4" />
+                        {isTxtExporting ? "Preparing…" : "Download as text (.txt)"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <HelpHint
+                  {...QUESTION_MAKER_HELP.exportReadiness}
+                  LinkComponent={Link}
+                  side="bottom"
+                  align="end"
+                />
+              </div>
             </PermissionGate>
 
             <PermissionGate allow={canManageAssessment}>
