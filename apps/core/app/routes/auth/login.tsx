@@ -3,6 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
 import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
+import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
@@ -17,6 +18,10 @@ import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import {
+  describeSelfEnrollmentLinkForVisitor,
+  selfEnrollmentTokenFromRedirect,
+} from "~/lib/courses/self-enrollment.server";
 
 const authErrorSchema = z.object({
   code: z.string().optional(),
@@ -102,6 +107,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+  // #1961: a signed-out visitor from a course join link. Name the course, and keep
+  // the link through Sign up so an account created there still joins it.
+  const joinToken = selfEnrollmentTokenFromRedirect(redirectTo);
+  const joining = joinToken ? await describeSelfEnrollmentLinkForVisitor(joinToken) : null;
+  const registerHref = joinToken
+    ? `/auth/register?redirect=${encodeURIComponent(redirectTo)}`
+    : "/auth/register";
   let demoPassword: string | null = null;
   if (isLocalDemoEnabled()) {
     try {
@@ -115,6 +127,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     redirectTo,
     allowRegistration,
+    joining,
+    registerHref,
     forceReauth,
     // Demo credentials are available only for an explicitly configured local
     // deployment with a caller-supplied seed password. This is evaluated on the
@@ -265,14 +279,23 @@ export default function LoginPage() {
         formError?: string;
       }
     | undefined;
-  const { redirectTo, allowRegistration, forceReauth, showDemoLogin, demoPassword } =
-    useLoaderData() as {
-      redirectTo: string;
-      allowRegistration: boolean;
-      forceReauth: boolean;
-      showDemoLogin: boolean;
-      demoPassword: string | null;
-    };
+  const {
+    redirectTo,
+    allowRegistration,
+    joining,
+    registerHref,
+    forceReauth,
+    showDemoLogin,
+    demoPassword,
+  } = useLoaderData() as {
+    redirectTo: string;
+    allowRegistration: boolean;
+    joining: { courseCode: string; courseName: string } | null;
+    registerHref: string;
+    forceReauth: boolean;
+    showDemoLogin: boolean;
+    demoPassword: string | null;
+  };
 
   return (
     <div
@@ -314,6 +337,9 @@ export default function LoginPage() {
         className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg"
         style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
       >
+        {joining && (
+          <JoinCourseNotice {...joining} action="sign-in" canRegister={allowRegistration} />
+        )}
         {forceReauth && (
           <p className="text-sm text-muted-foreground mb-4 text-center">
             Sign in again so your session works across EduAI apps on this server.
@@ -334,6 +360,7 @@ export default function LoginPage() {
             fieldErrors={actionData?.fieldErrors}
             isLoading={false}
             allowRegistration={allowRegistration}
+            registerHref={registerHref}
           />
         </form>
         {/* #1728: outside the form — a GET link must not submit the credentials. */}

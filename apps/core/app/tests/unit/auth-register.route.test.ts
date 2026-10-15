@@ -17,10 +17,23 @@ vi.mock("~/lib/canvas/onboarding.server", () => ({
   redirectToStudentIdOnboardingIfNeeded: vi.fn().mockResolvedValue(null),
 }));
 
+// #1961: keep the real join-redirect parser; stub the course lookup and the
+// pending-join store.
+vi.mock("~/lib/prisma.server", () => ({ default: {} }));
+vi.mock("~/lib/courses/self-enrollment.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/courses/self-enrollment.server")>();
+  return { ...actual, describeSelfEnrollmentLinkForVisitor: vi.fn() };
+});
+vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
+  rememberPendingSelfEnrollment: vi.fn().mockResolvedValue(true),
+}));
+
 import { loader, action } from "~/routes/auth/register";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
+import { describeSelfEnrollmentLinkForVisitor } from "~/lib/courses/self-enrollment.server";
+import { rememberPendingSelfEnrollment } from "~/lib/courses/pending-self-enrollment.server";
 
 function makeLoaderArgs() {
   return {
@@ -91,14 +104,14 @@ describe("auth/register loader", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(getPolicy).mockResolvedValue(false);
     const result = await loader(makeLoaderArgs());
-    expect(result).toEqual({ registrationDisabled: true });
+    expect(result).toEqual({ registrationDisabled: true, joining: null, redirectTo: "" });
   });
 
   it("returns registrationDisabled:false when public registration is on", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(getPolicy).mockResolvedValue(true);
     const result = await loader(makeLoaderArgs());
-    expect(result).toEqual({ registrationDisabled: false });
+    expect(result).toEqual({ registrationDisabled: false, joining: null, redirectTo: "" });
   });
 });
 
@@ -202,5 +215,43 @@ describe("auth/register action", () => {
       }),
     )) as { formError?: string };
     expect(result.formError).toBe("network down");
+  });
+});
+
+function makeLoaderArgsAt(url: string) {
+  return { request: new Request(url), params: {}, context: {} as never } as never;
+}
+
+describe("auth/register loader — a course join link (#1961)", () => {
+  it("names the course and keeps the link for the form", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(describeSelfEnrollmentLinkForVisitor).mockResolvedValue({
+      courseCode: "PSYO 121",
+      courseName: "Introductory Psychology",
+    });
+
+    const data = await loader(
+      makeLoaderArgsAt(
+        `http://localhost/auth/register?redirect=${encodeURIComponent("/courses/self-enroll?token=tok-1")}`,
+      ),
+    );
+
+    expect(describeSelfEnrollmentLinkForVisitor).toHaveBeenCalledWith("tok-1");
+    expect(data).toEqual({
+      registrationDisabled: false,
+      joining: { courseCode: "PSYO 121", courseName: "Introductory Psychology" },
+      redirectTo: "/courses/self-enroll?token=tok-1",
+    });
+  });
+
+  it("ignores a redirect that is not a join link", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    const data = await loader(
+      makeLoaderArgsAt("http://localhost/auth/register?redirect=%2Fdashboard"),
+    );
+
+    expect(data).toEqual({ registrationDisabled: false, joining: null, redirectTo: "" });
+    expect(describeSelfEnrollmentLinkForVisitor).not.toHaveBeenCalled();
   });
 });

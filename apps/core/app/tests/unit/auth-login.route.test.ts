@@ -32,10 +32,27 @@ vi.mock("~/lib/logging.server", () => ({
   logSecurityEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// #1961: keep the real join-redirect parser; stub the course lookup and the
+// pending-join store.
+vi.mock("~/lib/prisma.server", () => ({ default: {} }));
+vi.mock("~/lib/courses/self-enrollment.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/courses/self-enrollment.server")>();
+  return { ...actual, describeSelfEnrollmentLinkForVisitor: vi.fn() };
+});
+vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
+  redeemPendingSelfEnrollments: vi.fn().mockResolvedValue([]),
+  rememberPendingSelfEnrollmentForEmail: vi.fn().mockResolvedValue(true),
+}));
+
 import { loader, action } from "~/routes/auth/login";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
+import { describeSelfEnrollmentLinkForVisitor } from "~/lib/courses/self-enrollment.server";
+import {
+  redeemPendingSelfEnrollments,
+  rememberPendingSelfEnrollmentForEmail,
+} from "~/lib/courses/pending-self-enrollment.server";
 
 const originalCookieDomain = process.env.COOKIE_DOMAIN;
 
@@ -63,6 +80,7 @@ function makeActionArgs(form: Record<string, string>) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getPolicy).mockResolvedValue(true);
+  vi.mocked(redeemPendingSelfEnrollments).mockResolvedValue([]);
   delete process.env.COOKIE_DOMAIN;
   authServerMocks.authBaseURL = "http://localhost:3000";
 });
@@ -118,6 +136,8 @@ describe("auth/login loader", () => {
     expect(result).toEqual({
       redirectTo: "/dashboard",
       allowRegistration: false,
+      joining: null,
+      registerHref: "/auth/register",
       forceReauth: false,
       showDemoLogin: false,
       demoPassword: null,
@@ -368,5 +388,43 @@ describe("auth/login action", () => {
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "LOGIN_FAILED" }),
     );
+  });
+});
+
+const JOIN_REDIRECT = "/courses/self-enroll?token=tok-1";
+
+type LoginJoinData = {
+  joining: { courseCode: string; courseName: string } | null;
+  registerHref: string;
+};
+
+describe("auth/login loader — a course join link (#1961)", () => {
+  it("names the course and carries the link into Sign up", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(describeSelfEnrollmentLinkForVisitor).mockResolvedValue({
+      courseCode: "PSYO 121",
+      courseName: "Introductory Psychology",
+    });
+
+    const data = (await loader(
+      makeLoaderArgs(`http://localhost/auth/login?redirect=${encodeURIComponent(JOIN_REDIRECT)}`),
+    )) as LoginJoinData;
+
+    expect(describeSelfEnrollmentLinkForVisitor).toHaveBeenCalledWith("tok-1");
+    expect(data.joining).toEqual({
+      courseCode: "PSYO 121",
+      courseName: "Introductory Psychology",
+    });
+    expect(data.registerHref).toBe(`/auth/register?redirect=${encodeURIComponent(JOIN_REDIRECT)}`);
+  });
+
+  it("looks nothing up for an ordinary sign-in", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    const data = (await loader(makeLoaderArgs())) as LoginJoinData;
+
+    expect(data.joining).toBeNull();
+    expect(data.registerHref).toBe("/auth/register");
+    expect(describeSelfEnrollmentLinkForVisitor).not.toHaveBeenCalled();
   });
 });

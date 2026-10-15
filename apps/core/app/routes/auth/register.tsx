@@ -1,6 +1,7 @@
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
+import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { RegisterForm } from "~/components/register-form";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { signUpSchema, type SignUpInput } from "~/lib/auth";
@@ -10,6 +11,11 @@ import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { validateRedirectUrl } from "~/lib/auth/guards.server";
+import {
+  describeSelfEnrollmentLinkForVisitor,
+  selfEnrollmentTokenFromRedirect,
+} from "~/lib/courses/self-enrollment.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -35,10 +41,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // message. Read the flag server-side (the signup page is unauthenticated, so
   // usePolicies() is unavailable here).
   if (!(await getPolicy("auth.allowPublicRegistration"))) {
-    return { registrationDisabled: true };
+    return { registrationDisabled: true, joining: null, redirectTo: "" };
   }
 
-  return { registrationDisabled: false };
+  // #1961: arrived from a course join link via sign-in. Name the course and keep
+  // the link for the action, which remembers the join once the account exists.
+  const redirectTo = validateRedirectUrl(new URL(request.url).searchParams.get("redirect"));
+  const joinToken = selfEnrollmentTokenFromRedirect(redirectTo);
+  if (!joinToken) return { registrationDisabled: false, joining: null, redirectTo: "" };
+  return {
+    registrationDisabled: false,
+    joining: await describeSelfEnrollmentLinkForVisitor(joinToken),
+    redirectTo,
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -102,8 +117,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function RegisterPage() {
   const isLoading = useNavigation().state !== "idle";
-  const { registrationDisabled } = useLoaderData() as {
+  const { registrationDisabled, joining, redirectTo } = useLoaderData() as {
     registrationDisabled: boolean;
+    joining: { courseCode: string; courseName: string } | null;
+    redirectTo: string;
   };
   const actionData = useActionData() as
     | {
@@ -174,7 +191,17 @@ export default function RegisterPage() {
             {actionData?.formError && (
               <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
             )}
-            <RegisterForm fieldErrors={actionData?.fieldErrors} isLoading={isLoading} />
+            {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
+            {joining && <JoinCourseNotice {...joining} action="sign-up" />}
+            <RegisterForm
+              fieldErrors={actionData?.fieldErrors}
+              isLoading={isLoading}
+              loginHref={
+                redirectTo
+                  ? `/auth/login?redirect=${encodeURIComponent(redirectTo)}`
+                  : "/auth/login"
+              }
+            />
           </Form>
         )}
       </div>
