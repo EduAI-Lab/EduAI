@@ -6,6 +6,7 @@ import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { startTopicSuggestion } from "~/lib/topics/job.server";
 import {
   approveGeneratedTopic,
   dismissGeneratedTopic,
@@ -24,7 +25,7 @@ function json(body: JsonValue, status = 200): Response {
 const topicId = z.string().min(1);
 
 /**
- * The four bodies this action accepts. The "merge into itself" check lives in
+ * The bodies this action accepts. The "merge into itself" check lives in
  * the handler rather than a `.refine()` here: refining a member turns it into a
  * ZodEffects, which `discriminatedUnion` will not accept.
  */
@@ -33,6 +34,7 @@ const ReviewBodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("dismiss"), topicId }),
   z.object({ action: z.literal("merge"), topicId, intoTopicId: topicId }),
   z.object({ action: z.literal("retry") }),
+  z.object({ action: z.literal("suggest") }),
 ]);
 
 /**
@@ -64,7 +66,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
  * `POST /api/courses/:courseId/topic-analysis` — act on a generated topic.
  *
  * `{ action: "approve" | "dismiss", topicId }` or
- * `{ action: "merge", topicId, intoTopicId }` or `{ action: "retry" }`.
+ * `{ action: "merge", topicId, intoTopicId }`, `{ action: "retry" }`, or
+ * `{ action: "suggest" }` (#1966).
  *
  * Restricted to rank >= 2 (INSTRUCTOR and above). A TA is deliberately excluded
  * even under the `tas.canManageTopics` grant: merging repoints every question on
@@ -96,6 +99,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const requestContext = getRequestContext(request);
   const actor = getActorContext(session.user);
+
+  if (parsed.action === "suggest") {
+    // #1966: propose the topics the course is missing. Answers with the job,
+    // which the status read then reports; a run already in flight is reused.
+    const started = await startTopicSuggestion({ courseId, userId: session.user.id });
+    if (!started) return json({ error: "NO_ANALYZABLE_MATERIALS" }, 409);
+    fireAndForget(
+      logAuditAction({
+        ...actor,
+        ...requestContext,
+        actionCode: "TOPIC_SUGGESTIONS_REQUESTED",
+        category: "TOPIC",
+        entityType: "Course",
+        entityId: courseId,
+        details: { courseId, jobId: started.jobId },
+      }),
+    );
+    return json({ jobId: started.jobId }, 202);
+  }
 
   if (parsed.action === "retry") {
     const started = await retryTopicAnalysis(courseId, session.user.id);

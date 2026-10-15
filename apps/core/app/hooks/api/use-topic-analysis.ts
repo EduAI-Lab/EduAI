@@ -12,20 +12,25 @@ export type TopicAnalysisJob = {
   matched: number | null;
   /** Files that fit no existing topic (#1965); null on jobs from before matching. */
   unmatched: number | null;
+  /** `suggest` for an on-demand Suggest run (#1966); `match` for an upload batch. */
+  mode: "match" | "suggest";
 };
 
 export type TopicAnalysisStatus = {
   job: TopicAnalysisJob | null;
   pendingSuggestions: number;
+  /** Processed materials with no accepted topic (#1966). */
+  unfiledMaterials: number;
 };
 
-/** The four bodies the topic-analysis action accepts. Mirrors its Zod schema. */
+/** The bodies the topic-analysis action accepts. Mirrors its Zod schema. */
 export type TopicReviewRequest =
   | { action: "approve" | "dismiss"; topicId: string }
   | { action: "merge"; topicId: string; intoTopicId: string }
-  | { action: "retry" };
+  | { action: "retry" }
+  | { action: "suggest" };
 
-const EMPTY: TopicAnalysisStatus = { job: null, pendingSuggestions: 0 };
+const EMPTY: TopicAnalysisStatus = { job: null, pendingSuggestions: 0, unfiledMaterials: 0 };
 
 /** Poll interval while a job is still in flight. */
 const IN_FLIGHT_POLL_MS = 5000;
@@ -130,6 +135,8 @@ export function useTopicAnalysis(
     [post],
   );
   const retryAnalysis = useCallback(() => post({ action: "retry" }), [post]);
+  /** Ask for the topics the course is missing (#1966); the status poll reports the run. */
+  const suggestTopics = useCallback(() => post({ action: "suggest" }), [post]);
 
   return {
     status,
@@ -139,6 +146,7 @@ export function useTopicAnalysis(
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    suggestTopics,
     refetch: fetchStatus,
   };
 }

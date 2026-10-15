@@ -33,6 +33,7 @@ import {
 } from "~/lib/topics/job.server";
 import { matchMaterialsToTopics } from "~/lib/topics/auto-match.server";
 import { setMaterialTopics } from "~/lib/topics/material-topics.server";
+import { suggestCourseTopics } from "~/lib/topics/suggest.server";
 import { provisionCourseTopics, type RunTopicCompletion } from "~/lib/topics/provision.server";
 import {
   approveGeneratedTopic,
@@ -1183,5 +1184,129 @@ describe("instructors choosing a material's topics (#1965)", () => {
         where: { topicId: suggestion.id, materialId: material.id },
       }),
     ).toBe(1);
+  });
+});
+
+// #1966: Suggest reads the whole course and proposes only what it is missing;
+// approving or merging a suggestion files the materials it covered.
+describe("on-demand topic suggestions (#1966)", () => {
+  /** Run Suggest with a model that proposes `topics` (file numbers are 1-based). */
+  async function suggest(topics: Array<{ name: string; files: number[] }>) {
+    const model = vi.fn(async (_args: { systemPrompt: string; prompt: string }) =>
+      JSON.stringify({ topics }),
+    );
+    const result = await suggestCourseTopics({
+      courseId,
+      canvasCourseId: null,
+      userId,
+      jobId: "job-suggest",
+      runCompletion: model,
+    });
+    return { result, prompt: model.mock.calls[0]?.[0].prompt ?? "" };
+  }
+
+  /** Seed in order; Suggest numbers files newest first. */
+  async function seedInOrder(count: number) {
+    const materials = [];
+    for (let i = 0; i < count; i += 1) {
+      materials.push(
+        await prisma.courseMaterial.create({
+          data: {
+            courseId,
+            title: `File ${i + 1}`,
+            mimeType: "text/plain",
+            fileSize: 1,
+            checksum: `s-${i}`,
+            rawText: `Chapter ${i + 1} — Topic ${i + 1}`,
+            status: "READY",
+            uploadedBy: userId,
+            createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)),
+          },
+        }),
+      );
+    }
+    return materials;
+  }
+
+  it("creates the missing topics as suggestions linked to the files they cover", async () => {
+    const [first, second] = await seedInOrder(2);
+
+    // Newest first: 1 is File 2, 2 is File 1.
+    const { result } = await suggest([{ name: "Recursion", files: [1, 2] }]);
+
+    expect(result).toEqual({ created: 1, createdNames: ["Recursion"], duplicatesSkipped: 0 });
+    const [topic] = await liveTopics();
+    expect(topic).toMatchObject({ name: "Recursion", origin: "AI", reviewStatus: "SUGGESTED" });
+    const sources = await prisma.courseTopicSource.findMany({ where: { topicId: topic.id } });
+    const linked = sources.map((s) => s.materialId);
+    expect(linked).toHaveLength(2);
+    expect(linked).toEqual(expect.arrayContaining([first.id, second.id]));
+  });
+
+  it("shows the model every kind of topic, and drops anything the course already has", async () => {
+    await seedInOrder(1);
+    await acceptedTopic("Loops");
+    await prisma.courseTopic.create({
+      data: { courseId, name: "Arrays", origin: "AI", reviewStatus: "SUGGESTED" },
+    });
+    await prisma.courseTopic.create({
+      data: { courseId, name: "Pointers", origin: "AI", deletedAt: new Date() },
+    });
+
+    const { result, prompt } = await suggest([
+      { name: "loop", files: [1] },
+      { name: "Array", files: [1] },
+      { name: "pointers", files: [1] },
+      { name: FALLBACK_TOPIC_NAME, files: [1] },
+      { name: "Graphs", files: [1] },
+      { name: "graph", files: [1] },
+    ]);
+
+    expect(prompt).toContain("- Loops");
+    expect(prompt).toContain("- Arrays");
+    expect(prompt).toContain("## Dismissed topics (never propose these again)\n\n- Pointers");
+    expect(result).toEqual({ created: 1, createdNames: ["Graphs"], duplicatesSkipped: 5 });
+  });
+
+  it("does nothing for a course with no processed materials", async () => {
+    const { result, prompt } = await suggest([{ name: "Graphs", files: [1] }]);
+    expect(result.created).toBe(0);
+    expect(prompt).toBe("");
+  });
+
+  it("approving files the suggestion under its materials, within the cap", async () => {
+    const [roomy, full] = await seedInOrder(2);
+    for (const name of ["A topic", "B topic", "C topic"]) {
+      const topic = await acceptedTopic(name);
+      await prisma.courseTopicSource.create({ data: { topicId: topic.id, materialId: full.id } });
+    }
+    await suggest([{ name: "Recursion", files: [1, 2] }]);
+    const suggestion = await prisma.courseTopic.findFirstOrThrow({ where: { name: "Recursion" } });
+
+    await approveGeneratedTopic(courseId, suggestion.id);
+
+    expect(await materialTopicNames(roomy.id)).toEqual(["Recursion"]);
+    expect(await materialTopicNames(full.id)).toEqual(["A topic", "B topic", "C topic"]);
+  });
+
+  it("merging moves the suggestion's files onto the target topic", async () => {
+    const [material] = await seedInOrder(1);
+    const target = await acceptedTopic("Recursion");
+    await suggest([{ name: "Recursive functions", files: [1] }]);
+    const suggestion = await prisma.courseTopic.findFirstOrThrow({
+      where: { name: "Recursive functions" },
+    });
+
+    await mergeGeneratedTopic(courseId, suggestion.id, target.id, userId);
+
+    expect(await materialTopicNames(material.id)).toEqual(["Recursion"]);
+  });
+
+  it("counts processed materials with no accepted topic in the status", async () => {
+    const [filed] = await seedInOrder(3);
+    const topic = await acceptedTopic("Loops");
+    await prisma.courseTopicSource.create({ data: { topicId: topic.id, materialId: filed.id } });
+
+    expect((await latestTopicAnalysisForCourse(courseId)).unfiledMaterials).toBe(2);
   });
 });

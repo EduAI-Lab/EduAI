@@ -16,7 +16,13 @@ const prismaMock = vi.hoisted(() => ({
     findMany: vi.fn(),
     count: vi.fn(),
   },
-  courseMaterial: { findMany: vi.fn() },
+  courseMaterial: { findMany: vi.fn(), count: vi.fn() },
+  courseTopicSource: {
+    findMany: vi.fn(),
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
+    upsert: vi.fn(),
+  },
   course: { findUnique: vi.fn() },
   aiJob: { findFirst: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
   $transaction: vi.fn(),
@@ -24,6 +30,7 @@ const prismaMock = vi.hoisted(() => ({
 const recordTopicAnalysisJobs = vi.hoisted(() => vi.fn());
 const runTopicAnalysisJob = vi.hoisted(() => vi.fn());
 const resumeStaleTopicAnalysisJobs = vi.hoisted(() => vi.fn());
+const startTopicSuggestion = vi.hoisted(() => vi.fn());
 const invalidateCourseTopicNamesCache = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -32,6 +39,7 @@ vi.mock("~/lib/topics/job.server", () => ({
   recordTopicAnalysisJobs,
   runTopicAnalysisJob,
   resumeStaleTopicAnalysisJobs,
+  startTopicSuggestion,
 }));
 
 const { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } = await import("~/lib/topics/fallback.server");
@@ -63,6 +71,9 @@ beforeEach(() => {
   prismaMock.question.findMany.mockResolvedValue([]);
   // Dismiss re-checks the fallback invariant; a live topic means nothing to do.
   prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "some-topic" });
+  // #1966: no source files and no unfiled materials unless a test says so.
+  prismaMock.courseTopicSource.findMany.mockResolvedValue([]);
+  prismaMock.courseMaterial.count.mockResolvedValue(0);
 });
 
 describe("ensureCourseHasTopic", () => {
@@ -361,8 +372,10 @@ describe("latestTopicAnalysisForCourse", () => {
         usedSource: "canvas-modules",
         matched: null,
         unmatched: null,
+        mode: "match",
       },
       pendingSuggestions: 4,
+      unfiledMaterials: 0,
     });
   });
 
@@ -373,6 +386,7 @@ describe("latestTopicAnalysisForCourse", () => {
     expect(await latestTopicAnalysisForCourse("course-1")).toEqual({
       job: null,
       pendingSuggestions: 0,
+      unfiledMaterials: 0,
     });
   });
 
@@ -437,6 +451,22 @@ describe("latestTopicAnalysisForCourse", () => {
 
     const status = await latestTopicAnalysisForCourse("course-1");
     expect(status.job).toMatchObject({ status: "COMPLETED", created: 7 });
+  });
+
+  it("reports a Suggest run's mode and the unfiled material count (#1966)", async () => {
+    const row = jobRow({
+      id: "job-s",
+      result: { kind: "topic-analysis", mode: "suggest", created: 2 },
+    });
+    prismaMock.aiJob.findMany.mockResolvedValue([
+      { ...row, payload: { input: { kind: "topic-analysis", mode: "suggest", batchKey: "s" } } },
+    ]);
+    prismaMock.courseTopic.count.mockResolvedValue(2);
+    prismaMock.courseMaterial.count.mockResolvedValue(5);
+
+    const status = await latestTopicAnalysisForCourse("course-1");
+    expect(status.job).toMatchObject({ mode: "suggest", created: 2 });
+    expect(status.unfiledMaterials).toBe(5);
   });
 
   it("sums matched and unmatched files across a completed batch (#1965)", async () => {
@@ -526,6 +556,17 @@ describe("latestTopicAnalysisForCourse", () => {
 });
 
 describe("retryTopicAnalysis", () => {
+  it("retries a failed Suggest run as a Suggest run (#1966)", async () => {
+    prismaMock.aiJob.findFirst.mockResolvedValueOnce({
+      payload: { input: { kind: "topic-analysis", mode: "suggest" } },
+    });
+    startTopicSuggestion.mockResolvedValue({ jobId: "job-s2" });
+
+    expect(await retryTopicAnalysis("course-1", "user-1")).toEqual({ jobId: "job-s2" });
+    expect(startTopicSuggestion).toHaveBeenCalledWith({ courseId: "course-1", userId: "user-1" });
+    expect(recordTopicAnalysisJobs).not.toHaveBeenCalled();
+  });
+
   it("clears the failed row and re-records over the course's ready materials", async () => {
     prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m1" }, { id: "m2" }]);
     prismaMock.course.findUnique.mockResolvedValue({

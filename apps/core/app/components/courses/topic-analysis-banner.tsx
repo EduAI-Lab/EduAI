@@ -37,11 +37,14 @@ export function TopicAnalysisBanner({ status, onRetry, retrying }: TopicAnalysis
   const job = status.job;
   if (!job) return null;
 
+  const suggesting = job.mode === "suggest";
+
   if (job.status === "PENDING" || job.status === "RUNNING") {
     return (
       <Banner tone="muted" icon={<IconLoader2 className="h-4 w-4 animate-spin" />}>
-        Filing new materials under this course&rsquo;s topics. You can keep authoring questions
-        while this runs.
+        {suggesting
+          ? "Reading this course’s materials for topics it’s missing. This can take a minute."
+          : "Filing new materials under this course’s topics. You can keep authoring questions while this runs."}
       </Banner>
     );
   }
@@ -57,8 +60,11 @@ export function TopicAnalysisBanner({ status, onRetry, retrying }: TopicAnalysis
           </Button>
         }
       >
-        Filing materials under topics failed{job.errorMessage ? `: ${job.errorMessage}` : "."} Your
-        materials were imported normally, and you can still set their topics on the Materials tab.
+        {suggesting ? "Suggesting topics failed" : "Filing materials under topics failed"}
+        {job.errorMessage ? `: ${job.errorMessage}` : "."}{" "}
+        {suggesting
+          ? "Your topics are unchanged."
+          : "Your materials were imported normally, and you can still set their topics on the Materials tab."}
       </Banner>
     );
   }
@@ -71,7 +77,9 @@ export function TopicAnalysisBanner({ status, onRetry, retrying }: TopicAnalysis
   if (created === 0) {
     return (
       <Banner tone="muted" icon={<IconSparkles className="h-4 w-4" />}>
-        No new topics were found in this course&rsquo;s materials.
+        {suggesting
+          ? "No missing topics found. Your topics already cover this course’s materials."
+          : "No new topics were found in this course’s materials."}
       </Banner>
     );
   }
