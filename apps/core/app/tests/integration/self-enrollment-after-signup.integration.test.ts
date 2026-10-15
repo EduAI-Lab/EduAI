@@ -8,6 +8,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { auth } from "~/lib/auth/server";
@@ -27,7 +28,7 @@ const suffix = randomUUID().slice(0, 8);
 const emails: string[] = [];
 let courseId = "";
 let instructorId = "";
-let consoleSpy: ReturnType<typeof vi.spyOn>;
+let consoleSpy: MockInstance<typeof console.info>;
 let originalSmtpHost: string | undefined;
 
 function postForm(url: string, values: Record<string, string>): Request {
