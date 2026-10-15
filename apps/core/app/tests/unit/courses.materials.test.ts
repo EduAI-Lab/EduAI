@@ -89,6 +89,13 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   };
 });
 
+// The rest of the logging facade stays real; only the security-event write is
+// observed, for the audited student refusal (#1962).
+vi.mock("~/lib/logging.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/logging.server")>()),
+  logSecurityEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { loader, action } from "~/routes/api/courses.materials.$";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import { auth } from "~/lib/auth/server";
@@ -103,6 +110,7 @@ import {
   validateUploadedFile,
 } from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import { logSecurityEvent } from "~/lib/logging.server";
 import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
@@ -370,6 +378,35 @@ describe("students are refused on every materials path (#1962)", () => {
     expect(await res.json()).toEqual({ error: "Forbidden" });
   });
 
+  it("audits the refusal as a security event, since no student UI calls this API", async () => {
+    mockSession("STUDENT", "student-user");
+    mockAccess(STUDENT);
+
+    await loader(makePreviewArgs("mat-1"));
+
+    expect(logSecurityEvent).toHaveBeenCalledTimes(1);
+    expect(logSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: "student-user",
+        actionCode: "MATERIALS_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Course",
+        entityId: COURSE_ID,
+        details: { level: "student" },
+      }),
+    );
+  });
+
+  it("refuses a level the staff allow-list does not name, rather than letting it through", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "observer", rank: 0 });
+
+    expect((await loader(makeArgs("GET"))).status).toBe(403);
+    expect((await action(stubUploadArgs())).status).toBe(403);
+    expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+  });
+
   it("refuses by role alone, consulting no policy flag", async () => {
     mockSession("STUDENT");
     mockAccess(STUDENT);
@@ -396,6 +433,7 @@ describe("students are refused on every materials path (#1962)", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).materials).toHaveLength(1);
+    expect(logSecurityEvent).not.toHaveBeenCalled();
   });
 });
 
