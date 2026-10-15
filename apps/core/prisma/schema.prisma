@@ -53,6 +53,7 @@ model User {
   systemLogs                SystemLog[]
   passwordHistory           PasswordHistory[]
   selfEnrollmentLinks       SelfEnrollmentLink[]   @relation("SelfEnrollmentLinkCreator")
+  pendingSelfEnrollments    PendingSelfEnrollment[]
 
   @@map("user")
 }
@@ -325,6 +326,9 @@ model SelfEnrollmentLink {
   createdById String?
   createdBy   User?   @relation("SelfEnrollmentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
+  /// Joins started from this link by people who had no activated account yet (#1961).
+  pendingJoins PendingSelfEnrollment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -334,6 +338,37 @@ model SelfEnrollmentLink {
   /// delete seq-scans this table to apply the action.
   @@index([createdById])
   @@map("self_enrollment_links")
+}
+
+/// A course join someone started from a self-enrollment link before they had an
+/// activated account (#1961). Written when they register through the link (or
+/// sign in still unverified), redeemed through the link when they activate.
+///
+/// Holds the link, never its token, so #1756's hash-only rule still holds. Keeps
+/// the verdict once redeemed: the person is often not the one who triggers it (a
+/// mail scanner can open the verification link first), and the landing page still
+/// has to tell them whether they got in.
+model PendingSelfEnrollment {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  linkId String
+  link   SelfEnrollmentLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime  @default(now())
+  /// Null while the join waits for activation.
+  resolvedAt DateTime?
+  /// What redemption answered: "JOINED", or the link's refusal code (LINK_EXPIRED, …).
+  outcome    String?
+
+  /// One pending join per person per link; also serves "this user's joins" and
+  /// the cascade when a user is deleted.
+  @@unique([userId, linkId])
+  /// The cascade when a link (or its course) is deleted.
+  @@index([linkId])
+  @@map("pending_self_enrollments")
 }
 
 model AIInteraction {
