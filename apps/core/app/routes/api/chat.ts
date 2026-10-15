@@ -142,8 +142,8 @@ import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/cour
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { parseMessageAttachments, toModelMessage } from "~/lib/chat/chat-attachments";
-import { stripModelSourceCitations } from "~/lib/chat/material-citations";
 import { CHAT_MAX_ATTACHMENT_CHARS_DEFAULT } from "~/lib/chat/attachment-types";
+import { withoutSourceCitations } from "~/lib/chat/revive-message.server";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import {
@@ -404,35 +404,6 @@ function reviveStoredMessage(record: StoredMessageRecord): ChatMessage {
     role: record.role,
     content: "",
   };
-}
-
-const textPartSchema = z.object({ type: z.literal("text"), text: z.string() }).passthrough();
-
-/**
- * An assistant turn without the file citations its text carries (#1963). A
- * student's prompt never holds a file title, so the only place the model could
- * copy one from is its own older replies — written before #1963 or #1936.
- */
-function withoutSourceCitations(message: ChatMessage): ChatMessage {
-  if (message.role !== "assistant") return message;
-  let next = message;
-  const content = z.string().safeParse(message.content);
-  if (content.success) {
-    next = { ...next, content: stripModelSourceCitations(content.data) };
-  }
-  const parts = z.array(z.unknown()).safeParse(message.parts);
-  if (parts.success) {
-    next = {
-      ...next,
-      parts: parts.data.map((part) => {
-        const text = textPartSchema.safeParse(part);
-        return text.success
-          ? { ...text.data, text: stripModelSourceCitations(text.data.text) }
-          : part;
-      }),
-    };
-  }
-  return next;
 }
 
 /**

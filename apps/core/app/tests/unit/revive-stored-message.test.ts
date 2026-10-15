@@ -407,4 +407,39 @@ describe("ragTopics and the learner transcript (#1963)", () => {
     expect(plain.metadata).toBeUndefined();
     expect(JSON.stringify([current, legacy])).not.toMatch(/L14\.pdf|"ragSources"/);
   });
+
+  it("cuts the model's own file citations from a student's transcript text", () => {
+    const [preFileList, listed, question] = toLearnerTranscript([
+      // A pre-#1936 turn: the only trace of the file is the citation in its text.
+      reviveStoredMessage({
+        messageId: "m1",
+        role: "assistant",
+        content: {
+          content: "Trees are hierarchical (Source: Week 3 Lecture.pdf).\n\nSources:\n- L14.pdf",
+        },
+      }),
+      reviveStoredMessage({
+        messageId: "m2",
+        role: "assistant",
+        content: {
+          content: "Graphs have edges.\n\nSource: W1.pdf",
+          metadata: { ragSources: ["W1.pdf"] },
+        },
+      }),
+      reviveStoredMessage({
+        messageId: "m3",
+        role: "user",
+        content: { content: "(Source: my notes)" },
+      }),
+    ]);
+
+    expect(preFileList.content).toBe("Trees are hierarchical.");
+    expect(preFileList.parts).toEqual([{ type: "text", text: "Trees are hierarchical." }]);
+    expect(preFileList.metadata).toBeUndefined();
+    expect(listed.content).toBe("Graphs have edges.");
+    expect(listed.metadata).toEqual({ ragTopics: [] });
+    // A student's own words are theirs to see as written.
+    expect(question.content).toBe("(Source: my notes)");
+    expect(JSON.stringify([preFileList, listed])).not.toMatch(/Week 3 Lecture|L14\.pdf|W1\.pdf/);
+  });
 });
