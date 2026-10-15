@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { messageToText, reviveStoredMessage } from "~/lib/chat/revive-message.server";
+import {
+  messageToText,
+  reviveStoredMessage,
+  toLearnerTranscript,
+} from "~/lib/chat/revive-message.server";
 import { encodeTextDataUrl } from "~/lib/chat/chat-attachments";
 
 /**
@@ -367,5 +371,40 @@ describe("reviveStoredMessage — course-material sources (#1936)", () => {
       content: { content: "question", metadata: { ragSources: ["301_1_Intro"] } },
     });
     expect(revived.metadata).toBeUndefined();
+  });
+});
+
+describe("ragTopics and the learner transcript (#1963)", () => {
+  it("carries a student turn's topics back with its file titles", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m1",
+      role: "assistant",
+      content: { content: "answer", metadata: { ragSources: ["L14.pdf"], ragTopics: ["Labs"] } },
+    });
+
+    expect(revived.metadata).toEqual({ ragSources: ["L14.pdf"], ragTopics: ["Labs"] });
+  });
+
+  it("drops file titles for a student reader and keeps their topics", () => {
+    const [current, legacy, plain] = toLearnerTranscript([
+      reviveStoredMessage({
+        messageId: "m1",
+        role: "assistant",
+        content: { content: "a", metadata: { ragSources: ["L14.pdf"], ragTopics: ["Labs"] } },
+      }),
+      reviveStoredMessage({
+        messageId: "m2",
+        role: "assistant",
+        content: { content: "b (Source: W1.pdf)", metadata: { ragSources: ["W1.pdf"] } },
+      }),
+      reviveStoredMessage({ messageId: "m3", role: "user", content: { content: "q" } }),
+    ]);
+
+    expect(current.metadata).toEqual({ ragTopics: ["Labs"] });
+    // A pre-#1963 turn: no topics to show, but still a course turn, so the UI keeps
+    // stripping the model's own citation.
+    expect(legacy.metadata).toEqual({ ragTopics: [] });
+    expect(plain.metadata).toBeUndefined();
+    expect(JSON.stringify([current, legacy])).not.toMatch(/L14\.pdf|"ragSources"/);
   });
 });

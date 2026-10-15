@@ -5,6 +5,7 @@ import {
   adhdAssistFromMessage,
   courseScopeRedirectFromMessage,
   ragSourcesFromMessage,
+  ragTopicsFromMessage,
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
@@ -20,6 +21,7 @@ export type StoredChatMessageMetadata = {
   courseScopeRedirect?: boolean;
   adhdAssist?: boolean;
   ragSources?: string[];
+  ragTopics?: string[];
 };
 
 /** The only attachment shape a restored message carries back to the client (#1902). */
@@ -140,6 +142,7 @@ export function reviveStoredMessage(record: {
   // dropped like the other flags below (#1671).
   const adhdAssist = role === "assistant" ? adhdAssistFromMessage(parsed) : undefined;
   const ragSources = role === "assistant" ? ragSourcesFromMessage(parsed) : undefined;
+  const ragTopics = role === "assistant" ? ragTopicsFromMessage(parsed) : undefined;
   // `hitLongOutputCap` is owned by this module rather than chat-message-metadata:
   // it is only ever read back out of a stored row, never written to a live turn.
   const hitLongOutputCap =
@@ -155,6 +158,7 @@ export function reviveStoredMessage(record: {
   if (courseScopeRedirect) metadata.courseScopeRedirect = true;
   if (adhdAssist !== undefined) metadata.adhdAssist = adhdAssist;
   if (ragSources !== undefined) metadata.ragSources = ragSources;
+  if (ragTopics !== undefined) metadata.ragTopics = ragTopics;
 
   const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
@@ -190,4 +194,18 @@ export function reviveStoredMessage(record: {
   }
 
   return revived;
+}
+
+/**
+ * A transcript as a student may read it (#1963): course file names never leave
+ * the server. A turn's topics stay; a pre-#1963 turn that recorded file names
+ * but no topics keeps an empty topic list, so the client still treats it as a
+ * course turn and strips the model's own citation from its text.
+ */
+export function toLearnerTranscript(messages: StoredChatMessage[]): StoredChatMessage[] {
+  return messages.map((message) => {
+    if (message.metadata?.ragSources === undefined) return message;
+    const { ragSources: _ragSources, ...rest } = message.metadata;
+    return { ...message, metadata: { ...rest, ragTopics: rest.ragTopics ?? [] } };
+  });
 }
