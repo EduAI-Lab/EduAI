@@ -28,6 +28,13 @@ import {
 /** The verdict a pending join records when the person got in. */
 export const PENDING_JOIN_JOINED = "JOINED";
 
+/**
+ * How far back the landing page looks for a verdict: the activation that just
+ * happened, not every join this account ever settled. Verification links last
+ * an hour; a day leaves room for a scanner opening one well before the person.
+ */
+const OUTCOME_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 type PendingJoinUser = { id: string; role?: string | null };
 
 /** A pending join that was just redeemed or refused. */
@@ -58,6 +65,32 @@ export async function rememberPendingSelfEnrollment(input: {
       userId: input.userId,
       error,
     });
+    return false;
+  }
+}
+
+/**
+ * The same, for a sign-up through a join link. Only a sign-up that created this
+ * account counts: Better Auth answers one for an email that already has an
+ * account with a stand-in user whose id matches no row (so the form cannot probe
+ * which emails exist), and whoever typed that address has not shown they own the
+ * account. Signing in does check the password, and remembers the join there.
+ */
+export async function rememberPendingSelfEnrollmentForSignUp(input: {
+  userId: string;
+  email: string;
+  token: string;
+}): Promise<boolean> {
+  try {
+    const user = await prisma.user.findUnique({
+      // Better Auth stores emails lowercased.
+      where: { email: input.email.trim().toLowerCase() },
+      select: { id: true },
+    });
+    if (user?.id !== input.userId) return false;
+    return await rememberPendingSelfEnrollment({ userId: input.userId, token: input.token });
+  } catch (error) {
+    console.error("[pending-self-enrollment] could not remember a join at sign-up", { error });
     return false;
   }
 }
@@ -169,21 +202,26 @@ export async function redeemPendingSelfEnrollments(
   }
 }
 
-/** The most recent verdict on this account's joins, for the landing page. */
-export async function latestPendingSelfEnrollmentOutcome(userId: string) {
-  const row = await prisma.pendingSelfEnrollment.findFirst({
-    where: { userId, resolvedAt: { not: null } },
+/**
+ * The verdict the landing page reports: from this account's recent joins, a
+ * refusal if there is one (the one thing the person can act on, by asking for a
+ * new link; a course they did join is on their dashboard), else the latest join.
+ */
+export async function recentPendingSelfEnrollmentOutcome(userId: string) {
+  const rows = await prisma.pendingSelfEnrollment.findMany({
+    where: { userId, resolvedAt: { gte: new Date(Date.now() - OUTCOME_WINDOW_MS) } },
     orderBy: { resolvedAt: "desc" },
     select: {
       outcome: true,
       link: { select: { course: { select: { id: true, code: true } } } },
     },
   });
-  if (!row?.outcome) return null;
+  const shown = rows.find((row) => row.outcome !== PENDING_JOIN_JOINED) ?? rows[0];
+  if (!shown?.outcome) return null;
   return {
-    joined: row.outcome === PENDING_JOIN_JOINED,
-    outcome: row.outcome,
-    courseId: row.link.course.id,
-    courseCode: row.link.course.code,
+    joined: shown.outcome === PENDING_JOIN_JOINED,
+    outcome: shown.outcome,
+    courseId: shown.link.course.id,
+    courseCode: shown.link.course.code,
   };
 }

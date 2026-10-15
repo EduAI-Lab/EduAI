@@ -20,7 +20,7 @@ import { IconStack2 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
-  latestPendingSelfEnrollmentOutcome,
+  recentPendingSelfEnrollmentOutcome,
   redeemPendingSelfEnrollments,
 } from "~/lib/courses/pending-self-enrollment.server";
 import { SELF_ENROLL_COMPLETE_PATH } from "~/lib/courses/self-enrollment.server";
@@ -35,7 +35,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   await redeemPendingSelfEnrollments(session.user, request);
-  const outcome = await latestPendingSelfEnrollmentOutcome(session.user.id);
+  const outcome = await recentPendingSelfEnrollmentOutcome(session.user.id);
   // No join to report (a resent verification email for an ordinary sign-up):
   // carry on where verification has always gone.
   if (!outcome) return redirect("/onboarding/student-id");

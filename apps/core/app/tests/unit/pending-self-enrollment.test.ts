@@ -10,7 +10,6 @@ vi.mock("~/lib/prisma.server", () => ({
       upsert: vi.fn(),
       findMany: vi.fn(),
       updateMany: vi.fn(),
-      findFirst: vi.fn(),
     },
     user: { findUnique: vi.fn() },
   },
@@ -30,10 +29,11 @@ import {
 } from "~/lib/courses/self-enrollment.server";
 import { logSelfEnrollmentRedeemed } from "~/lib/courses/self-enrollment-audit.server";
 import {
-  latestPendingSelfEnrollmentOutcome,
+  recentPendingSelfEnrollmentOutcome,
   redeemPendingSelfEnrollments,
   rememberPendingSelfEnrollment,
   rememberPendingSelfEnrollmentForEmail,
+  rememberPendingSelfEnrollmentForSignUp,
 } from "~/lib/courses/pending-self-enrollment.server";
 
 const USER = { id: "u1", role: "STUDENT" };
@@ -85,6 +85,42 @@ describe("rememberPendingSelfEnrollment (#1961)", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
     expect(await rememberPendingSelfEnrollment({ userId: "u1", token: "raw" })).toBe(false);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+});
+
+describe("rememberPendingSelfEnrollmentForSignUp (#1961)", () => {
+  const SIGN_UP = { userId: "new-user", email: " New@Student.UBC.ca ", token: "raw" };
+
+  it("remembers the join for the account this sign-up created", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "new-user" } as never);
+    vi.mocked(selfEnrollmentLinkIdForToken).mockResolvedValue("link-1");
+
+    expect(await rememberPendingSelfEnrollmentForSignUp(SIGN_UP)).toBe(true);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { email: "new@student.ubc.ca" },
+      select: { id: true },
+    });
+    expect(pending.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: { userId: "new-user", linkId: "link-1" } }),
+    );
+  });
+
+  it("ignores Better Auth's stand-in for an email that already has an account", async () => {
+    // The stand-in's id matches no row; the real account belongs to whoever
+    // registered that email, which this sign-up has not proved to be its author.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "existing-user" } as never);
+
+    expect(await rememberPendingSelfEnrollmentForSignUp(SIGN_UP)).toBe(false);
+    expect(pending.upsert).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed lookup instead of throwing into the sign-up", async () => {
+    vi.mocked(prisma.user.findUnique).mockRejectedValue(new Error("db down"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await rememberPendingSelfEnrollmentForSignUp(SIGN_UP)).toBe(false);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });
@@ -258,37 +294,58 @@ describe("redeemPendingSelfEnrollments (#1961)", () => {
   });
 });
 
-describe("latestPendingSelfEnrollmentOutcome (#1961)", () => {
-  it("reads the most recent verdict with its course", async () => {
-    pending.findFirst.mockResolvedValue({
-      outcome: "LINK_REVOKED",
-      link: { course: { id: "c1", code: "PSYO 121" } },
-    } as never);
+describe("recentPendingSelfEnrollmentOutcome (#1961)", () => {
+  const ROW = (outcome: string, id = "c1", code = "PSYO 121") => ({
+    outcome,
+    link: { course: { id, code } },
+  });
 
-    expect(await latestPendingSelfEnrollmentOutcome("u1")).toEqual({
-      joined: false,
-      outcome: "LINK_REVOKED",
+  it("looks only at verdicts from the last day, newest first", async () => {
+    pending.findMany.mockResolvedValue([]);
+    const before = Date.now();
+
+    expect(await recentPendingSelfEnrollmentOutcome("u1")).toBeNull();
+
+    const query = pending.findMany.mock.calls[0][0] as {
+      where: { userId: string; resolvedAt: { gte: Date } };
+    };
+    expect(query.where.userId).toBe("u1");
+    const windowMs = before - query.where.resolvedAt.gte.getTime();
+    expect(windowMs).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1000);
+    expect(windowMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1000);
+    expect(pending.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { resolvedAt: "desc" },
+        select: {
+          outcome: true,
+          link: { select: { course: { select: { id: true, code: true } } } },
+        },
+      }),
+    );
+  });
+
+  it("reports a join with its course", async () => {
+    pending.findMany.mockResolvedValue([ROW("JOINED")] as never);
+
+    expect(await recentPendingSelfEnrollmentOutcome("u1")).toEqual({
+      joined: true,
+      outcome: "JOINED",
       courseId: "c1",
       courseCode: "PSYO 121",
     });
-    expect(pending.findFirst).toHaveBeenCalledWith({
-      where: { userId: "u1", resolvedAt: { not: null } },
-      orderBy: { resolvedAt: "desc" },
-      select: {
-        outcome: true,
-        link: { select: { course: { select: { id: true, code: true } } } },
-      },
-    });
   });
 
-  it("marks a JOINED verdict as joined, and returns null when there is none", async () => {
-    pending.findFirst.mockResolvedValueOnce({
-      outcome: "JOINED",
-      link: { course: { id: "c1", code: "PSYO 121" } },
-    } as never);
-    expect((await latestPendingSelfEnrollmentOutcome("u1"))?.joined).toBe(true);
+  it("reports a refusal ahead of a newer join, so it is not hidden", async () => {
+    pending.findMany.mockResolvedValue([
+      ROW("JOINED", "c2", "DATA 301"),
+      ROW("LINK_EXPIRED", "c1", "PSYO 121"),
+    ] as never);
 
-    pending.findFirst.mockResolvedValueOnce(null);
-    expect(await latestPendingSelfEnrollmentOutcome("u1")).toBeNull();
+    expect(await recentPendingSelfEnrollmentOutcome("u1")).toEqual({
+      joined: false,
+      outcome: "LINK_EXPIRED",
+      courseId: "c1",
+      courseCode: "PSYO 121",
+    });
   });
 });

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("~/lib/auth/request-session.server", () => ({ getRequestSession: vi.fn() }));
 vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
   redeemPendingSelfEnrollments: vi.fn(),
-  latestPendingSelfEnrollmentOutcome: vi.fn(),
+  recentPendingSelfEnrollmentOutcome: vi.fn(),
 }));
 vi.mock("~/lib/courses/self-enrollment.server", () => ({
   SELF_ENROLL_COMPLETE_PATH: "/courses/self-enroll/complete",
@@ -15,7 +15,7 @@ vi.mock("~/lib/courses/self-enrollment.server", () => ({
 
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
-  latestPendingSelfEnrollmentOutcome,
+  recentPendingSelfEnrollmentOutcome,
   redeemPendingSelfEnrollments,
 } from "~/lib/courses/pending-self-enrollment.server";
 import SelfEnrollCompletePage, { loader } from "~/routes/courses.self-enroll.complete";
@@ -46,7 +46,7 @@ describe("/courses/self-enroll/complete loader (#1961)", () => {
 
   it("finishes anything still waiting, then lands a joined student in the course", async () => {
     vi.mocked(getRequestSession).mockResolvedValue(STUDENT as never);
-    vi.mocked(latestPendingSelfEnrollmentOutcome).mockResolvedValue({
+    vi.mocked(recentPendingSelfEnrollmentOutcome).mockResolvedValue({
       joined: true,
       outcome: "JOINED",
       courseId: "c1",
@@ -61,7 +61,7 @@ describe("/courses/self-enroll/complete loader (#1961)", () => {
 
   it("explains a link that stopped working before they activated", async () => {
     vi.mocked(getRequestSession).mockResolvedValue(STUDENT as never);
-    vi.mocked(latestPendingSelfEnrollmentOutcome).mockResolvedValue({
+    vi.mocked(recentPendingSelfEnrollmentOutcome).mockResolvedValue({
       joined: false,
       outcome: "LINK_EXPIRED",
       courseId: "c1",
@@ -76,7 +76,7 @@ describe("/courses/self-enroll/complete loader (#1961)", () => {
 
   it("falls back to the generic copy for a refusal it has no words for", async () => {
     vi.mocked(getRequestSession).mockResolvedValue(STUDENT as never);
-    vi.mocked(latestPendingSelfEnrollmentOutcome).mockResolvedValue({
+    vi.mocked(recentPendingSelfEnrollmentOutcome).mockResolvedValue({
       joined: false,
       outcome: "USER_NOT_FOUND",
       courseId: "c1",
@@ -91,7 +91,7 @@ describe("/courses/self-enroll/complete loader (#1961)", () => {
 
   it("carries on to onboarding when there is no join to report", async () => {
     vi.mocked(getRequestSession).mockResolvedValue(STUDENT as never);
-    vi.mocked(latestPendingSelfEnrollmentOutcome).mockResolvedValue(null);
+    vi.mocked(recentPendingSelfEnrollmentOutcome).mockResolvedValue(null);
 
     const res = (await loader(loaderArgs())) as Response;
 

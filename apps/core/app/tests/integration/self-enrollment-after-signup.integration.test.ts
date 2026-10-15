@@ -258,6 +258,48 @@ describe("a course join link survives sign-up and email verification (#1961)", (
     expect((await enrollmentOf(user.id))?.role).toBe("STUDENT");
   });
 
+  it("remembers nothing when a join-link sign-up uses an email that already has an account", async () => {
+    const link = await mintLink();
+    const email = `taken-${randomUUID().slice(0, 8)}@student.ubc.ca`;
+    emails.push(email);
+    await auth.handler(
+      buildAuthSubRequest(
+        "/api/auth/sign-up/email",
+        new Request("http://localhost/auth/register"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "First Owner",
+            email,
+            password: PASSWORD,
+            callbackURL: "/onboarding/student-id",
+          }),
+        },
+      ),
+    );
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Better Auth answers this second sign-up with a stand-in user, not an error.
+    const res = (await registerAction(
+      routeArgs(
+        postForm("http://localhost/auth/register", {
+          name: "Someone Else",
+          email,
+          password: "An0ther!Passw0rd",
+          confirmPassword: "An0ther!Passw0rd",
+          redirectTo: `/courses/self-enroll?token=${link.token}`,
+        }),
+      ),
+    )) as Response;
+
+    expect(res.headers.get("Location")).toBe("/auth/verify-email");
+    expect(await prisma.pendingSelfEnrollment.count({ where: { userId: owner.id } })).toBe(0);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
   it("remembers a join for an existing unverified account at a blocked sign-in; verifying redeems it", async () => {
     const link = await mintLink();
     const email = `unverified-${randomUUID().slice(0, 8)}@student.ubc.ca`;

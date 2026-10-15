@@ -13,7 +13,7 @@ import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
-import { rememberPendingSelfEnrollment } from "~/lib/courses/pending-self-enrollment.server";
+import { rememberPendingSelfEnrollmentForSignUp } from "~/lib/courses/pending-self-enrollment.server";
 import {
   describeSelfEnrollmentLinkForVisitor,
   SELF_ENROLL_COMPLETE_PATH,
@@ -122,7 +122,11 @@ export async function action({ request }: ActionFunctionArgs) {
       // verified, so the link need not survive the trip through the inbox.
       const signedUp = signUpResponseSchema.safeParse(await response.json().catch(() => null));
       if (signedUp.success) {
-        await rememberPendingSelfEnrollment({ userId: signedUp.data.user.id, token: joinToken });
+        await rememberPendingSelfEnrollmentForSignUp({
+          userId: signedUp.data.user.id,
+          email: input.email,
+          token: joinToken,
+        });
       }
     }
 

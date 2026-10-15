@@ -25,7 +25,7 @@ vi.mock("~/lib/courses/self-enrollment.server", async (importOriginal) => {
   return { ...actual, describeSelfEnrollmentLinkForVisitor: vi.fn() };
 });
 vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
-  rememberPendingSelfEnrollment: vi.fn().mockResolvedValue(true),
+  rememberPendingSelfEnrollmentForSignUp: vi.fn().mockResolvedValue(true),
 }));
 
 import { loader, action } from "~/routes/auth/register";
@@ -33,7 +33,7 @@ import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { describeSelfEnrollmentLinkForVisitor } from "~/lib/courses/self-enrollment.server";
-import { rememberPendingSelfEnrollment } from "~/lib/courses/pending-self-enrollment.server";
+import { rememberPendingSelfEnrollmentForSignUp } from "~/lib/courses/pending-self-enrollment.server";
 
 function makeLoaderArgs() {
   return {
@@ -276,8 +276,11 @@ describe("auth/register action — a course join link (#1961)", () => {
     expect(res.headers.get("Location")).toBe("/auth/verify-email");
     const signup = vi.mocked(auth.handler).mock.calls[0][0] as Request;
     expect((await signup.json()).callbackURL).toBe("/courses/self-enroll/complete");
-    expect(rememberPendingSelfEnrollment).toHaveBeenCalledWith({
+    // The email goes along so the store can tell a new account from Better
+    // Auth's stand-in for an email that is already taken.
+    expect(rememberPendingSelfEnrollmentForSignUp).toHaveBeenCalledWith({
       userId: "new-user",
+      email: "new@student.ubc.ca",
       token: "tok-1",
     });
   });
@@ -291,7 +294,7 @@ describe("auth/register action — a course join link (#1961)", () => {
 
     const signup = vi.mocked(auth.handler).mock.calls[0][0] as Request;
     expect((await signup.json()).callbackURL).toBe("/onboarding/student-id");
-    expect(rememberPendingSelfEnrollment).not.toHaveBeenCalled();
+    expect(rememberPendingSelfEnrollmentForSignUp).not.toHaveBeenCalled();
   });
 
   it("remembers nothing when the sign-up itself failed", async () => {
@@ -304,6 +307,6 @@ describe("auth/register action — a course join link (#1961)", () => {
     );
 
     expect(result).toEqual({ formError: "User already exists" });
-    expect(rememberPendingSelfEnrollment).not.toHaveBeenCalled();
+    expect(rememberPendingSelfEnrollmentForSignUp).not.toHaveBeenCalled();
   });
 });
