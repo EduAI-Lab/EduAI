@@ -255,3 +255,55 @@ describe("auth/register loader — a course join link (#1961)", () => {
     expect(describeSelfEnrollmentLinkForVisitor).not.toHaveBeenCalled();
   });
 });
+
+describe("auth/register action — a course join link (#1961)", () => {
+  const FORM = {
+    name: "New Student",
+    email: "new@student.ubc.ca",
+    password: STRONG_PASSWORD,
+    confirmPassword: STRONG_PASSWORD,
+  };
+
+  it("points the verification email at the landing page and remembers the join for the new account", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ token: null, user: { id: "new-user" } }), { status: 200 }),
+    );
+
+    const res = (await action(
+      makeActionArgs({ ...FORM, redirectTo: "/courses/self-enroll?token=tok-1" }),
+    )) as Response;
+
+    expect(res.headers.get("Location")).toBe("/auth/verify-email");
+    const signup = vi.mocked(auth.handler).mock.calls[0][0] as Request;
+    expect((await signup.json()).callbackURL).toBe("/courses/self-enroll/complete");
+    expect(rememberPendingSelfEnrollment).toHaveBeenCalledWith({
+      userId: "new-user",
+      token: "tok-1",
+    });
+  });
+
+  it("remembers nothing for an ordinary sign-up, whose email still lands on onboarding", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ token: null, user: { id: "new-user" } }), { status: 200 }),
+    );
+
+    await action(makeActionArgs({ ...FORM, redirectTo: "/dashboard" }));
+
+    const signup = vi.mocked(auth.handler).mock.calls[0][0] as Request;
+    expect((await signup.json()).callbackURL).toBe("/onboarding/student-id");
+    expect(rememberPendingSelfEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("remembers nothing when the sign-up itself failed", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ message: "User already exists" }), { status: 422 }),
+    );
+
+    const result = await action(
+      makeActionArgs({ ...FORM, redirectTo: "/courses/self-enroll?token=tok-1" }),
+    );
+
+    expect(result).toEqual({ formError: "User already exists" });
+    expect(rememberPendingSelfEnrollment).not.toHaveBeenCalled();
+  });
+});

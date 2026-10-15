@@ -1,5 +1,6 @@
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
 
 import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { RegisterForm } from "~/components/register-form";
@@ -12,10 +13,14 @@ import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
+import { rememberPendingSelfEnrollment } from "~/lib/courses/pending-self-enrollment.server";
 import {
   describeSelfEnrollmentLinkForVisitor,
+  SELF_ENROLL_COMPLETE_PATH,
   selfEnrollmentTokenFromRedirect,
 } from "~/lib/courses/self-enrollment.server";
+
+const signUpResponseSchema = z.object({ user: z.object({ id: z.string() }) });
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -66,6 +71,10 @@ export async function action({ request }: ActionFunctionArgs) {
     throw error;
   }
   const values = Object.fromEntries(formData);
+  // #1961: the course join link this sign-up started from, kept by the form.
+  const joinToken = selfEnrollmentTokenFromRedirect(
+    validateRedirectUrl(String(values.redirectTo || "")),
+  );
   const input = {
     name: String(values.name || ""),
     email: String(values.email || ""),
@@ -92,7 +101,7 @@ export async function action({ request }: ActionFunctionArgs) {
         name: input.name,
         email: input.email,
         password: input.password,
-        callbackURL: "/onboarding/student-id",
+        callbackURL: joinToken ? SELF_ENROLL_COMPLETE_PATH : "/onboarding/student-id",
       }),
     });
 
@@ -106,6 +115,15 @@ export async function action({ request }: ActionFunctionArgs) {
           (errorData as { error?: string }).error ||
           `Sign up failed (${response.status})`,
       };
+    }
+
+    if (joinToken) {
+      // Remembered against the new account and redeemed when the email is
+      // verified, so the link need not survive the trip through the inbox.
+      const signedUp = signUpResponseSchema.safeParse(await response.json().catch(() => null));
+      if (signedUp.success) {
+        await rememberPendingSelfEnrollment({ userId: signedUp.data.user.id, token: joinToken });
+      }
     }
 
     return redirect("/auth/verify-email");

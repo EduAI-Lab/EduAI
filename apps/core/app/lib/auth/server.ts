@@ -25,6 +25,7 @@ import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asJsonObject, asText } from "~/lib/json-value";
 import { fireAndForget } from "~/lib/logging.server";
+import { redeemPendingSelfEnrollments } from "~/lib/courses/pending-self-enrollment.server";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
 import { buildEmailVerificationEmail } from "../email/templates/email-verification";
 import { buildPasswordResetOtpEmail } from "../email/templates/password-reset-otp";
@@ -214,6 +215,15 @@ export const auth = betterAuth({
           to: user.email,
           verificationUrl: url,
         }),
+      );
+    },
+    // #1961: a course join started from a self-enrollment link before this
+    // account existed is redeemed the moment the account is activated. Never
+    // throws: the email is already marked verified by the time this runs.
+    afterEmailVerification: async (user, request) => {
+      await redeemPendingSelfEnrollments(
+        user,
+        request ?? new Request(`${authBaseURL}/api/auth/verify-email`),
       );
     },
   },
