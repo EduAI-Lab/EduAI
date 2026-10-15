@@ -122,8 +122,11 @@ function ChatMessageBody({
   const [copied, setCopied] = useState(false);
   // Only turns the server tagged with retrieved sources (course retrieval ran)
   // lose model-written citations; admin and general chat keep their text as-is.
+  // #1963: a student turn strips from the first streamed token — its topics only
+  // arrive with the finish annotation.
   const stripsCitations =
-    message.role === "assistant" && (materialSources !== undefined || materialTopics !== undefined);
+    message.role === "assistant" &&
+    (materialSources !== undefined || materialTopics !== undefined || learnerView);
 
   const handleCopy = async () => {
     // Extract text content from all text parts

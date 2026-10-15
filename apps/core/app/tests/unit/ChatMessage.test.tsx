@@ -437,6 +437,15 @@ describe("ChatMessage — a student's course turn (#1963)", () => {
     expect(screen.queryByText(/ZZ-TEST-DATA301/)).not.toBeInTheDocument();
   });
 
+  it("hides the model's file citation while a student's reply is still streaming", () => {
+    // ragTopics arrives with the finish annotation; until then only learnerView says
+    // this is a student turn.
+    render(<ChatMessage message={citedMessage} isStreaming learnerView />);
+
+    expect(screen.getByText("Lab 14 is due Nov 20.")).toBeInTheDocument();
+    expect(screen.queryByText(/ZZ-TEST-DATA301/)).not.toBeInTheDocument();
+  });
+
   it("shows a student's course-material search as a chip with nothing to expand", () => {
     const withTool = {
       id: "6",
