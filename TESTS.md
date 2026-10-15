@@ -1193,6 +1193,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`chat-mode.admin-prompt.test.ts`](apps/core/app/tests/unit/chat-mode.admin-prompt.test.ts) | (#1963) The learning prompts ground answers in course materials but tell the model not to write file names, titles or a Sources line. |
 | [`page-help-content.test.tsx`](apps/core/app/tests/unit/page-help-content.test.tsx) | (#1962) The student help for `/courses` and a course page mentions no materials or tabs, and the course page tips point to "Chat about this course"; those tips also hold for a TA, who gets the same copy, and the chat help offers only staff a cited source to open. |
 | [`self-enroll-page.test.tsx`](apps/core/app/tests/unit/self-enroll-page.test.tsx) | (#1962) A usable self-enroll link promises course chat and says nothing about the course's materials. |
+| [`revive-stored-message.test.ts`](apps/core/app/tests/unit/revive-stored-message.test.ts) | (#1963 review) `toLearnerTranscript` cuts the model's own file citations from a student's transcript text, in both `content` and its text part, on a pre-#1936 turn with no file list as well as on a later one; a student's own message is left as written. |
 
 ## EduAI Integration Tests
 
