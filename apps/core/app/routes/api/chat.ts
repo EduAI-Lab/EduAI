@@ -194,7 +194,15 @@ import {
   withCourseScopeRedirectMetadata,
   withAdhdAssistMetadata,
   withRagSourcesMetadata,
+  withRagTopicsMetadata,
 } from "~/lib/chat/chat-message-metadata";
+import {
+  learnerExcerptHeader,
+  learnerTopicLabels,
+  loadLearnerTopicsByMaterial,
+  toLearnerRagHits,
+  type LearnerTopicsByMaterial,
+} from "~/lib/chat/learner-sources.server";
 import {
   COURSE_MATERIALS_NO_COVERAGE_REPLY,
   ragSourceTitles,
@@ -340,16 +348,6 @@ type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 /** An id or role that survives a round-trip: present, and not just whitespace. */
 const presentTextSchema = z.string().trim().min(1);
-
-/** The part of a getInformation tool result that names the materials it retrieved (#1936). */
-const getInformationToolResultSchema = z.object({
-  toolName: z.literal("getInformation"),
-  result: z.object({
-    relevantContent: z.array(
-      z.object({ content: z.string(), similarity: z.number(), materialTitle: z.string() }),
-    ),
-  }),
-});
 
 const isPresentText = (value: string | undefined): value is string =>
   value !== undefined && presentTextSchema.safeParse(value).success;
@@ -1271,6 +1269,9 @@ export async function action({ request }: ActionFunctionArgs) {
         // future reveal — exclude them from RAG retrieval. Staff (and service/admin
         // callers, whose level is never "student") retrieve everything.
         const restrictRagToStudentVisible = courseAccess?.level === "student";
+        // #1963: the same caller never sees a course file name in chat; their
+        // turn carries the accepted topics a retrieved file belongs to instead.
+        const isLearnerTurn = restrictRagToStudentVisible;
 
         // Service-key (server-to-server) callers — e.g. the Question Maker proxy —
         // are stateless and have no real User row, so persisting a Chat would violate
@@ -1878,6 +1879,19 @@ export async function action({ request }: ActionFunctionArgs) {
          */
         let turnRagSources: string[] | null = null;
 
+        /**
+         * The topics a student's turn shows in place of `turnRagSources` (#1963).
+         * Null on every other turn. `turnRagSources` is still kept for a student
+         * turn — it is stored for staff oversight, but never sent to the student.
+         */
+        let turnRagTopics: string[] | null = null;
+
+        /** A reply's source list as the browser receives it: topics for a student, file titles otherwise. */
+        const turnSourcesAnnotation = ():
+          | { ragSources: string[] | null }
+          | { ragTopics: string[] | null } =>
+          isLearnerTurn ? { ragTopics: turnRagTopics } : { ragSources: turnRagSources };
+
         const appendMessages = async (messages: ChatMessage[]) => {
           // Stateless callers never persist messages (no chat row / no real user).
           // regenerateOnly is a read-only content preview (#1246) — never persists.
@@ -1902,10 +1916,14 @@ export async function action({ request }: ActionFunctionArgs) {
                     effectiveAdhdAssist,
                   )
                 : null;
-            const messageToPersist = assistantMessage
-              ? turnRagSources !== null
+            const withSources =
+              assistantMessage && turnRagSources !== null
                 ? withRagSourcesMetadata(assistantMessage, turnRagSources)
-                : assistantMessage
+                : assistantMessage;
+            const messageToPersist = withSources
+              ? turnRagTopics !== null
+                ? withRagTopicsMetadata(withSources, turnRagTopics)
+                : withSources
               : message;
 
             rows.push({
@@ -2073,7 +2091,11 @@ export async function action({ request }: ActionFunctionArgs) {
         const respondWithFixedAssistantText = async (
           text: string,
           message: ChatMessage,
-          extraJson: { courseScopeRedirect?: true; ragSources?: string[] },
+          extraJson: {
+            courseScopeRedirect?: true;
+            ragSources?: string[] | null;
+            ragTopics?: string[] | null;
+          },
         ) => {
           await appendMessages([message]);
           // Emit the same routing/admission headers as every other
@@ -2093,7 +2115,9 @@ export async function action({ request }: ActionFunctionArgs) {
               headers: fixedHeaders,
               execute: (dataStream) => {
                 dataStream.write(formatDataStreamPart("text", text));
-                if (extraJson.ragSources) {
+                if (extraJson.ragTopics) {
+                  dataStream.writeMessageAnnotation({ ragTopics: extraJson.ragTopics });
+                } else if (extraJson.ragSources) {
                   dataStream.writeMessageAnnotation({ ragSources: extraJson.ragSources });
                 }
                 dataStream.write(formatDataStreamPart("finish_message", { finishReason: "stop" }));
@@ -2166,6 +2190,7 @@ export async function action({ request }: ActionFunctionArgs) {
         /** The hits that fit the prompt (#1936) — what the model sees, after the caps. */
         let courseRagExcerpts: HybridRagHit[] = [];
         let courseRagContextText = "";
+        let learnerTopicsByMaterial: LearnerTopicsByMaterial = new Map();
         let courseRagInject = false;
         let effectiveForceHybridRag = forceHybridRag;
         // Set in both branches below once `webToolsEnabledPromise` resolves; read
@@ -2382,6 +2407,26 @@ export async function action({ request }: ActionFunctionArgs) {
             effectiveCourseId,
             webToolsEnabled,
             restrictToStudentVisible: restrictRagToStudentVisible,
+            // #1936/#1963: the turn's source list comes from here, not from the
+            // model's text. A student's result is relabelled with topics before
+            // the model or their browser sees it; staff keep file titles.
+            onMaterialsRetrieved: async (hits) => {
+              const sources = turnRagSources;
+              if (sources !== null) {
+                for (const title of ragSourceTitles(hits)) {
+                  if (!sources.includes(title)) sources.push(title);
+                }
+              }
+              if (!isLearnerTurn || !effectiveCourseId) return null;
+              const topicsByMaterial = await loadLearnerTopicsByMaterial(effectiveCourseId, hits);
+              const topics = turnRagTopics;
+              if (topics !== null) {
+                for (const name of learnerTopicLabels(hits, topicsByMaterial)) {
+                  if (!topics.includes(name)) topics.push(name);
+                }
+              }
+              return toLearnerRagHits(hits, topicsByMaterial);
+            },
           });
           supportsTools = modelCapabilities.supportsTools;
           effectiveForceHybridRag =
@@ -2473,21 +2518,38 @@ export async function action({ request }: ActionFunctionArgs) {
               hits: courseRagHits,
             });
             if (courseRagInject && courseRagHits.length > 0) {
+              if (isLearnerTurn) {
+                learnerTopicsByMaterial = await loadLearnerTopicsByMaterial(
+                  effectiveCourseId,
+                  courseRagHits,
+                );
+              }
+              // #1963: a student's excerpts are headed by topic, so their prompt
+              // carries no file title for the model to repeat. Selection and the
+              // context use the same header so they budget the same text.
+              const excerptHeader = isLearnerTurn
+                ? learnerExcerptHeader(learnerTopicsByMaterial)
+                : undefined;
               courseRagExcerpts = selectCappedRagExcerpts(
                 courseRagHits,
                 HYBRID_RAG_MAX_CHUNKS,
                 HYBRID_RAG_MAX_CONTEXT_CHARS,
+                excerptHeader,
               );
               courseRagContextText = buildCappedRagContextText(
                 courseRagHits,
                 HYBRID_RAG_MAX_CHUNKS,
                 HYBRID_RAG_MAX_CONTEXT_CHARS,
+                excerptHeader,
               );
             }
           }
 
           if (effectiveCourseId) {
             turnRagSources = ragSourceTitles(courseRagExcerpts);
+            turnRagTopics = isLearnerTurn
+              ? learnerTopicLabels(courseRagExcerpts, learnerTopicsByMaterial)
+              : null;
 
             // #1936: when retrieval can't support a course question — nothing came
             // back on the opening question, or the question names an item ("Lab 15")
@@ -2523,6 +2585,7 @@ export async function action({ request }: ActionFunctionArgs) {
               }
               // No material answered this turn, whatever retrieval returned.
               turnRagSources = [];
+              turnRagTopics = isLearnerTurn ? [] : null;
               return respondWithFixedAssistantText(
                 COURSE_MATERIALS_NO_COVERAGE_REPLY,
                 {
@@ -2530,7 +2593,7 @@ export async function action({ request }: ActionFunctionArgs) {
                   role: "assistant",
                   content: COURSE_MATERIALS_NO_COVERAGE_REPLY,
                 },
-                { ragSources: [] },
+                turnSourcesAnnotation(),
               );
             }
           }
@@ -3119,16 +3182,6 @@ export async function action({ request }: ActionFunctionArgs) {
               if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
                 adhdToolsUsed = true;
               }
-              const sources = turnRagSources;
-              if (sources !== null) {
-                for (const toolResult of toolResults ?? []) {
-                  const found = getInformationToolResultSchema.safeParse(toolResult);
-                  if (!found.success) continue;
-                  for (const title of ragSourceTitles(found.data.result.relevantContent)) {
-                    if (!sources.includes(title)) sources.push(title);
-                  }
-                }
-              }
             },
             onFinish:
               needsOversight || structuredAssistOutput
@@ -3155,7 +3208,7 @@ export async function action({ request }: ActionFunctionArgs) {
                     });
                     streamData?.appendMessageAnnotation({
                       hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
-                      ragSources: turnRagSources,
+                      ...turnSourcesAnnotation(),
                     });
                     void streamData?.close();
                     const assistantText = text || extractAssistantText(response?.messages);
@@ -3475,7 +3528,7 @@ export async function action({ request }: ActionFunctionArgs) {
                   dataStream.writeMessageAnnotation({
                     hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                     ragLatencyMs,
-                    ragSources: turnRagSources,
+                    ...turnSourcesAnnotation(),
                   });
 
                   dataStream.write(
@@ -3502,7 +3555,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 finishReason,
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                 sources: sources || [],
-                ragSources: turnRagSources,
+                ...turnSourcesAnnotation(),
                 reasoning,
                 responseId: response?.id,
                 courseCode: effectiveCourseCode,
@@ -3635,7 +3688,7 @@ export async function action({ request }: ActionFunctionArgs) {
                   dataStream.write(formatDataStreamPart("text", normalizedText));
                   dataStream.writeMessageAnnotation({
                     hitLongOutputCap: didHitLongOutputCap(usage),
-                    ragSources: turnRagSources,
+                    ...turnSourcesAnnotation(),
                   });
                   dataStream.write(
                     formatDataStreamPart("finish_message", {
@@ -3656,7 +3709,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 finishReason,
                 hitLongOutputCap: didHitLongOutputCap(usage),
                 sources: sources || [],
-                ragSources: turnRagSources,
+                ...turnSourcesAnnotation(),
                 reasoning,
                 responseId: response?.id,
                 courseCode,
@@ -3829,7 +3882,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 finishReason,
                 hitLongOutputCap: didHitLongOutputCap(tokenUsageSchema.parse(usage)),
                 sources: sources || [],
-                ragSources: turnRagSources,
+                ...turnSourcesAnnotation(),
                 reasoning,
                 responseId: response?.id,
                 courseCode: effectiveCourseCode,
