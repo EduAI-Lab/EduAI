@@ -2,7 +2,9 @@
  * AI configuration block: status badge, prompt, model, difficulty/reasoning, API key, Generate button.
  * For use in AddQuestionDialog right column (prototype-style layout).
  */
-import { Label, Button, Input, Textarea } from "@eduai/ui";
+import { Link } from "react-router";
+import { Label, Button, HelpHint, Input, Textarea } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { AIServiceIndicators } from "../eduai/AIServiceIndicators";
@@ -108,12 +110,15 @@ export function QuestionAIControls({
 
       {/* AI Model selector — folded in from Advanced Options */}
       <div className="space-y-1.5" data-tour="aq-model-picker">
-        <Label
-          htmlFor="ai-model"
-          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-        >
-          AI Model
-        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label
+            htmlFor="ai-model"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            AI Model
+          </Label>
+          <HelpHint {...QUESTION_MAKER_HELP.aiModels} LinkComponent={Link} />
+        </div>
         <Select
           value={value.generationModel}
           onValueChange={(v) => onChange("generationModel", v)}

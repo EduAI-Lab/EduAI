@@ -67,7 +67,7 @@ function routes(isStaff: boolean): PageHelpRoute[] {
             summary:
               "Manage one course: its materials, topics, enrollments and settings, each on its own tab.",
             tips: [
-              "Materials: upload files so the chatbot can answer from them. Ready means a file is live for chat; Failed means it needs another try.",
+              "Materials: upload files so the chatbot can answer from them. Embedded means a file is live for chat; Failed means it needs another try.",
               "Topics: group materials into the concepts your course covers.",
               "Enrollments: add students one at a time, by CSV, or with a self-enrollment link.",
             ],
