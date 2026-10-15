@@ -20,6 +20,7 @@ vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { loadLearnerTopicsByMaterial } from "~/lib/chat/learner-sources.server";
 import { seedCourse, cleanupRbac } from "../helpers/rbac";
 import { seedMaterial, seedMaterialChunkWithEmbedding } from "../helpers/materials";
 import { seedTestDisciplines } from "../helpers/disciplines";
@@ -76,5 +77,44 @@ describe("findRelevantContent names the material each hit came from (#1963)", ()
 
     expect(hits).toHaveLength(1);
     expect(hits[0]).toMatchObject({ materialId: material.id, materialTitle: material.title });
+  });
+});
+
+describe("loadLearnerTopicsByMaterial against real rows (#1963)", () => {
+  it("returns only accepted, live, non-fallback topics of this course", async () => {
+    const { course, material } = await seedCourseWithChunk("Lab 14.pdf");
+    const other = await seedCourseWithChunk("Other.pdf");
+    const linked = (
+      name: string,
+      extra: Partial<{ reviewStatus: "SUGGESTED"; deletedAt: Date }> = {},
+    ) =>
+      prisma.courseTopic.create({
+        data: {
+          courseId: course.id,
+          name,
+          sources: { create: [{ materialId: material.id }] },
+          ...extra,
+        },
+      });
+    await linked("Data cleaning");
+    await linked("Labs");
+    await linked("Unreviewed", { reviewStatus: "SUGGESTED" });
+    await linked("Uncategorized");
+    await linked("Gone", { deletedAt: new Date() });
+    await prisma.courseTopic.create({
+      data: {
+        courseId: other.course.id,
+        name: "Elsewhere",
+        sources: { create: [{ materialId: other.material.id }] },
+      },
+    });
+
+    const topics = await loadLearnerTopicsByMaterial(course.id, [
+      { content: "c", similarity: 1, materialTitle: "Lab 14.pdf", materialId: material.id },
+      { content: "c", similarity: 1, materialTitle: "Other.pdf", materialId: other.material.id },
+    ]);
+
+    expect(topics.get(material.id)).toEqual(["Data cleaning", "Labs"]);
+    expect(topics.has(other.material.id)).toBe(false);
   });
 });
