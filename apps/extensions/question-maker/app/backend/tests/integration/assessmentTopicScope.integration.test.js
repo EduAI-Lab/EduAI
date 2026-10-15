@@ -271,5 +271,26 @@ describeDb("assessment topic scope (integration)", () => {
       const row = await prisma.questionMetadata.findUnique({ where: { id: question.id } });
       expect(row.primaryTopicId).toBe(topicB);
     });
+
+    it("preflights a primary-topic change without writing anything", async () => {
+      const a = await create([topicA, topicB]);
+      const section = await sections.createAssessmentSection(a.id, USER.id, { name: "S" });
+      const { question, variant } = await makeVariant(topicA);
+      await sections.addVariantToSection(section.id, USER.id, variant.id);
+
+      const err = await questions
+        .checkQuestionTopicChange(question.id, USER.id, topicC)
+        .catch((e) => e);
+      expect(err).toMatchObject({ status: 409, code: "QM_ASSESSMENT_TOPIC_CONFLICT" });
+      expect(err.details.assessments).toEqual([{ id: a.id, name: "Topic Quiz" }]);
+      await expect(
+        questions.checkQuestionTopicChange(question.id, USER.id, topicB),
+      ).resolves.toBeUndefined();
+      await expect(
+        questions.checkQuestionTopicChange(question.id, USER.id, foreignTopic),
+      ).rejects.toThrow();
+      const row = await prisma.questionMetadata.findUnique({ where: { id: question.id } });
+      expect(row.primaryTopicId).toBe(topicA);
+    });
   });
 });

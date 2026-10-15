@@ -731,6 +731,22 @@ export function QuestionComposerPage() {
         // reviewed.
         const wasApproved = sourceVariant.isDraft === false;
         const nextIsDraft = wasApproved ? true : approveOnSave ? false : undefined;
+        // Only send type/primaryTopicId when they actually changed: a question can have
+        // more than one variant, and reverting `sourceVariant` below doesn't unlock a
+        // *sibling* variant that's still reviewed — resending the unchanged value would
+        // otherwise 409 on an edit that never touched these fields (e.g. description-only).
+        const typeChanged = form.questionType !== sourceQuestion?.type;
+        const primaryTopicChanged =
+          form.primaryTopicId.trim() !== (sourceQuestion?.primaryTopicId ?? "");
+        // #1974: a topic change can be refused by a topic-limited assessment the question
+        // is in. Check that before the variant write, which may already have reopened an
+        // approved question as a draft by the time the metadata update 409s.
+        if (primaryTopicChanged) {
+          await questionService.checkQuestionTopicChange(
+            sourceQuestionId,
+            form.primaryTopicId.trim(),
+          );
+        }
         // Revert (if approved) + save the variant content …
         await questionService.updateVariant(sourceVariant.id, {
           questionText: form.questionText.trim(),
@@ -750,13 +766,6 @@ export function QuestionComposerPage() {
           ...(nextIsDraft === false && { shareWithExtensions: shareOnSave }),
         });
         // … then the question metadata (description, topic, type), now unlocked.
-        // Only send type/primaryTopicId when they actually changed: a question can have
-        // more than one variant, and reverting `sourceVariant` above doesn't unlock a
-        // *sibling* variant that's still reviewed — resending the unchanged value would
-        // otherwise 409 on an edit that never touched these fields (e.g. description-only).
-        const typeChanged = form.questionType !== sourceQuestion?.type;
-        const primaryTopicChanged =
-          form.primaryTopicId.trim() !== (sourceQuestion?.primaryTopicId ?? "");
         await questionService.updateQuestion(sourceQuestionId, {
           description:
             form.description.trim() || createDescriptionFromText(form.questionText) || null,

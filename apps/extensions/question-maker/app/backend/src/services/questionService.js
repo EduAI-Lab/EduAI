@@ -528,6 +528,65 @@ export const getQuestionById = async (questionId, userId) => {
   return withDerivedVariantSemesters(await enrichRowWithCourse(question));
 };
 
+/**
+ * #1974: reject moving a question to a primary topic that a topic-limited
+ * assessment containing it doesn't cover. A no-op when the topic is unchanged.
+ */
+async function assertTopicChangeKeepsAssessmentScope(question, primaryTopicId, db = prisma) {
+  if (primaryTopicId === undefined || primaryTopicId === question.primaryTopicId) return;
+  const containing = await db.assessments.findMany({
+    where: {
+      OR: [
+        { variants: { some: { questionMetadataId: question.id } } },
+        {
+          sections: {
+            some: {
+              sectionVariants: { some: { variant: { questionMetadataId: question.id } } },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true, name: true, blueprintConfig: true },
+    orderBy: { id: "asc" },
+  });
+  const blocking = containing.filter((assessment) => {
+    const scope = assessmentTopicScope(assessment);
+    return scope && !scope.has(primaryTopicId);
+  });
+  if (blocking.length > 0) {
+    const names = blocking.map(({ name }) => `"${name}"`).join(", ");
+    const error = topicConflictError(
+      `This question is in an assessment that doesn't cover the new topic (${names}). Remove it from that assessment or add the topic to it first.`,
+      [],
+    );
+    error.details = { assessments: blocking.map(({ id, name }) => ({ id, name })) };
+    throw error;
+  }
+}
+
+/**
+ * #1974 preflight: checks a primary-topic change against the topic-limited
+ * assessments the question is in, without writing anything. The composer runs
+ * this before its variant write, which can reopen an approved question, so a
+ * refused topic change leaves the question untouched.
+ */
+export const checkQuestionTopicChange = async (questionId, userId, primaryTopicId) => {
+  const question = await prisma.questionMetadata.findFirst({
+    where: { id: Number(questionId), course: { userId } },
+    select: { id: true, courseId: true, primaryTopicId: true },
+  });
+  if (!question) {
+    throw new Error("Question not found");
+  }
+  const parsedPrimaryTopicId = normalizePrimaryTopicId(primaryTopicId);
+  if (!parsedPrimaryTopicId) {
+    throw new Error("Valid primaryTopicId is required");
+  }
+  await assertTopicsInCourse([parsedPrimaryTopicId], question.courseId, "Primary topic");
+  await assertTopicChangeKeepsAssessmentScope(question, parsedPrimaryTopicId);
+};
+
 /** Updates metadata fields while ensuring provided IDs and types remain valid. */
 export const updateQuestion = async (questionId, userId, updateData) => {
   const parsedQuestionId = Number(questionId);
@@ -652,40 +711,7 @@ export const updateQuestion = async (questionId, userId, updateData) => {
 
     // #1974: a question already in a topic-limited assessment can't move to
     // a topic that assessment doesn't cover.
-    if (
-      updates.primaryTopicId !== undefined &&
-      updates.primaryTopicId !== question.primaryTopicId
-    ) {
-      const containing = await db.assessments.findMany({
-        where: {
-          OR: [
-            { variants: { some: { questionMetadataId: question.id } } },
-            {
-              sections: {
-                some: {
-                  sectionVariants: { some: { variant: { questionMetadataId: question.id } } },
-                },
-              },
-            },
-          ],
-        },
-        select: { id: true, name: true, blueprintConfig: true },
-        orderBy: { id: "asc" },
-      });
-      const blocking = containing.filter((assessment) => {
-        const scope = assessmentTopicScope(assessment);
-        return scope && !scope.has(updates.primaryTopicId);
-      });
-      if (blocking.length > 0) {
-        const names = blocking.map(({ name }) => `"${name}"`).join(", ");
-        const error = topicConflictError(
-          `This question is in an assessment that doesn't cover the new topic (${names}). Remove it from that assessment or add the topic to it first.`,
-          [],
-        );
-        error.details = { assessments: blocking.map(({ id, name }) => ({ id, name })) };
-        throw error;
-      }
-    }
+    await assertTopicChangeKeepsAssessmentScope(question, updates.primaryTopicId, db);
 
     const ALLOWED_QUESTION_UPDATE_FIELDS = [
       "description",

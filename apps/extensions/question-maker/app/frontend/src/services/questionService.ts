@@ -256,6 +256,15 @@ export const questionService = {
     return mapQuestion(response.data.data);
   },
 
+  /**
+   * Checks a primary-topic change against the topic-limited assessments the
+   * question is in, without saving anything (#1974). Rejects with a 409 when
+   * an assessment doesn't cover the new topic.
+   */
+  async checkQuestionTopicChange(id: number, primaryTopicId: string): Promise<void> {
+    await api.post(`/api/questions/${id}/topic-check`, { primaryTopicId });
+  },
+
   /** Deletes a question. */
   async deleteQuestion(id: number): Promise<void> {
     await api.delete(`/api/questions/${id}`);
