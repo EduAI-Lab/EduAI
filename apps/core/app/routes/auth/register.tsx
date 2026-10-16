@@ -6,6 +6,7 @@ import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { RegisterForm } from "~/components/register-form";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { signUpSchema, type SignUpInput } from "~/lib/auth";
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { auth } from "~/lib/auth/server";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
@@ -13,14 +14,20 @@ import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
-import { rememberPendingSelfEnrollmentForSignUp } from "~/lib/courses/pending-self-enrollment.server";
+import {
+  redeemPendingSelfEnrollments,
+  rememberPendingSelfEnrollmentForSignUp,
+} from "~/lib/courses/pending-self-enrollment.server";
 import {
   describeSelfEnrollmentLinkForVisitor,
   SELF_ENROLL_COMPLETE_PATH,
   selfEnrollmentTokenFromRedirect,
 } from "~/lib/courses/self-enrollment.server";
 
-const signUpResponseSchema = z.object({ user: z.object({ id: z.string() }) });
+const signUpResponseSchema = z.object({
+  token: z.string().nullable().optional(),
+  user: z.object({ id: z.string(), role: z.string().nullable().optional() }),
+});
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -127,7 +134,20 @@ export async function action({ request }: ActionFunctionArgs) {
           email: input.email,
           token: joinToken,
         });
+        if (signedUp.data.token) {
+          // Verification is disabled: signup already created a session. Redeem
+          // now and forward every auth cookie before the completion loader runs.
+          await redeemPendingSelfEnrollments(signedUp.data.user, request);
+          const headers = new Headers();
+          appendAuthSetCookies(response, headers);
+          return redirect(SELF_ENROLL_COMPLETE_PATH, { headers });
+        }
       }
+      // Keep the link for both new accounts and Better Auth's stand-in response.
+      // The same destination and notice preserve email anti-enumeration; only a
+      // password-checked sign-in may attach this join to an existing account.
+      const joinPath = `/courses/self-enroll?token=${encodeURIComponent(joinToken)}`;
+      return redirect(`/auth/login?registered=1&redirect=${encodeURIComponent(joinPath)}`);
     }
 
     return redirect("/auth/verify-email");

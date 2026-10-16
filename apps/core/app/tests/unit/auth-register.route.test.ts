@@ -26,6 +26,7 @@ vi.mock("~/lib/courses/self-enrollment.server", async (importOriginal) => {
 });
 vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
   rememberPendingSelfEnrollmentForSignUp: vi.fn().mockResolvedValue(true),
+  redeemPendingSelfEnrollments: vi.fn().mockResolvedValue([]),
 }));
 
 import { loader, action } from "~/routes/auth/register";
@@ -33,7 +34,10 @@ import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { describeSelfEnrollmentLinkForVisitor } from "~/lib/courses/self-enrollment.server";
-import { rememberPendingSelfEnrollmentForSignUp } from "~/lib/courses/pending-self-enrollment.server";
+import {
+  redeemPendingSelfEnrollments,
+  rememberPendingSelfEnrollmentForSignUp,
+} from "~/lib/courses/pending-self-enrollment.server";
 
 function makeLoaderArgs() {
   return {
@@ -60,6 +64,7 @@ const STRONG_PASSWORD = "Str0ng!Passw0rd";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(rememberPendingSelfEnrollmentForSignUp).mockResolvedValue(true);
   vi.mocked(getPolicy).mockResolvedValue(true);
   vi.mocked(redirectToStudentIdOnboardingIfNeeded).mockResolvedValue(null);
 });
@@ -273,7 +278,9 @@ describe("auth/register action — a course join link (#1961)", () => {
       makeActionArgs({ ...FORM, redirectTo: "/courses/self-enroll?token=tok-1" }),
     )) as Response;
 
-    expect(res.headers.get("Location")).toBe("/auth/verify-email");
+    expect(res.headers.get("Location")).toBe(
+      "/auth/login?registered=1&redirect=%2Fcourses%2Fself-enroll%3Ftoken%3Dtok-1",
+    );
     const signup = vi.mocked(auth.handler).mock.calls[0][0] as Request;
     expect((await signup.json()).callbackURL).toBe("/courses/self-enroll/complete");
     // The email goes along so the store can tell a new account from Better
@@ -309,4 +316,46 @@ describe("auth/register action — a course join link (#1961)", () => {
     expect(result).toEqual({ formError: "User already exists" });
     expect(rememberPendingSelfEnrollmentForSignUp).not.toHaveBeenCalled();
   });
+});
+
+describe("join signup review regressions", () => {
+  const form = {
+    name: "Join Student",
+    email: "new@student.ubc.ca",
+    password: STRONG_PASSWORD,
+    confirmPassword: STRONG_PASSWORD,
+    redirectTo: "/courses/self-enroll?token=tok-1",
+  };
+  it("redeems immediately and forwards all cookies when signup creates a session", async () => {
+    const headers = new Headers();
+    headers.append("Set-Cookie", "better-auth.session_token=session; Path=/; HttpOnly");
+    headers.append("Set-Cookie", "better-auth.session_data=data; Path=/; HttpOnly");
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(
+        JSON.stringify({ token: "session", user: { id: "new-user", role: "STUDENT" } }),
+        { headers },
+      ),
+    );
+    const res = (await action(makeActionArgs(form))) as Response;
+    expect(res.headers.get("Location")).toBe("/courses/self-enroll/complete");
+    expect(res.headers.getSetCookie()).toHaveLength(2);
+    expect(redeemPendingSelfEnrollments).toHaveBeenCalledWith(
+      { id: "new-user", role: "STUDENT" },
+      expect.any(Request),
+    );
+  });
+  it.each([true, false])(
+    "preserves the join through sign-in without exposing whether signup created an account: %s",
+    async (remembered) => {
+      vi.mocked(rememberPendingSelfEnrollmentForSignUp).mockResolvedValue(remembered);
+      vi.mocked(auth.handler).mockResolvedValue(
+        new Response(JSON.stringify({ token: null, user: { id: "stand-in-or-new" } })),
+      );
+      const res = (await action(makeActionArgs(form))) as Response;
+      expect(res.headers.get("Location")).toBe(
+        "/auth/login?registered=1&redirect=%2Fcourses%2Fself-enroll%3Ftoken%3Dtok-1",
+      );
+      expect(redeemPendingSelfEnrollments).not.toHaveBeenCalled();
+    },
+  );
 });

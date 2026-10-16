@@ -143,3 +143,53 @@ describe("onboarding.student-id action", () => {
     await expect(action(makeActionArgs({ studentNumber: "12345678" }))).rejects.toThrow("db down");
   });
 });
+
+describe("onboarding course continuation", () => {
+  beforeEach(() => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
+    vi.mocked(linkCanvasRosterSelfService).mockResolvedValue(undefined as never);
+  });
+  it.each(["skip", "link"])("continues to the joined course after %s", async (intent) => {
+    const res = (await action({
+      request: new Request("http://localhost/onboarding/student-id?next=%2Fcourses%2Fc1", {
+        method: "POST",
+        body: new URLSearchParams({ intent, studentNumber: "12345678" }),
+      }),
+      params: {},
+      context: {},
+    } as never)) as Response;
+    expect(res.headers.get("Location")).toBe("/courses/c1");
+  });
+  it.each([
+    "https://evil.example",
+    "//evil.example",
+    "/\\evil.example",
+    "/auth/logout",
+    "/courses/c1?next=bad",
+  ])("rejects unsafe continuation %s", async (next) => {
+    const res = (await action({
+      request: new Request(
+        `http://localhost/onboarding/student-id?next=${encodeURIComponent(next)}`,
+        { method: "POST", body: new URLSearchParams({ intent: "skip" }) },
+      ),
+      params: {},
+      context: {},
+    } as never)) as Response;
+    expect(res.headers.get("Location")).toBe("/dashboard");
+  });
+});
+
+it("continues directly to the course when student-number onboarding is already complete", async () => {
+  vi.mocked(auth.api.getSession).mockResolvedValue({
+    user: { id: "u1", role: "STUDENT" },
+  } as never);
+  vi.mocked(userNeedsStudentIdOnboarding).mockResolvedValue(false);
+  const res = (await loader({
+    request: new Request("http://localhost/onboarding/student-id?next=%2Fcourses%2Fc1"),
+    params: {},
+    context: {},
+  } as never)) as Response;
+  expect(res.headers.get("Location")).toBe("/courses/c1");
+});

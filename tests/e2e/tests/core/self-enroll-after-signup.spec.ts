@@ -3,8 +3,8 @@
  * account, and ends up in the course without reopening the link.
  *
  * The docker stack runs with email verification off (accounts are minted
- * verified, but the sign-up page still says "Check your email"), so the join is
- * finished by the first sign-in. The verification-hook path is covered against
+ * verified), so signup immediately joins and forwards the new session. Students
+ * finish or skip student-number onboarding before reaching the course. The verification-hook path is covered against
  * real Postgres in self-enrollment-after-signup.integration.test.ts.
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
@@ -65,7 +65,12 @@ async function publishedCourseWithLink(
   };
 }
 
-async function createAccountFromLink(page: Page, fixture: JoinFixture, email: string) {
+async function createAccountFromLink(
+  page: Page,
+  fixture: JoinFixture,
+  email: string,
+  beforeSubmit?: () => Promise<void>,
+) {
   await page.goto(fixture.url);
   await expect(page).toHaveURL(/\/auth\/login\?redirect=/);
   await expect(page.getByText(`Sign in to join ${fixture.code}`, { exact: false })).toBeVisible();
@@ -79,16 +84,8 @@ async function createAccountFromLink(page: Page, fixture: JoinFixture, email: st
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(DEFAULT_PASSWORD);
   await page.getByLabel("Confirm Password").fill(DEFAULT_PASSWORD);
+  await beforeSubmit?.();
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/auth\/verify-email/);
-}
-
-async function firstSignIn(page: Page, email: string) {
-  await page.getByRole("link", { name: "Back to sign in" }).click();
-  await expect(page).toHaveURL(/\/auth\/login/);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(DEFAULT_PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
 }
 
 test.describe("Join link → new account → in the course (#1961)", () => {
@@ -106,7 +103,8 @@ test.describe("Join link → new account → in the course (#1961)", () => {
       const email = uniqueEmail("j61-student");
 
       await createAccountFromLink(page, fixture, email);
-      await firstSignIn(page, email);
+      await expect(page).toHaveURL(/\/onboarding\/student-id\?next=/);
+      await page.getByRole("button", { name: /Skip/i }).click();
 
       await expect(page).toHaveURL(new RegExp(`/courses/${fixture.courseId}`));
     } finally {
@@ -115,7 +113,7 @@ test.describe("Join link → new account → in the course (#1961)", () => {
     }
   });
 
-  test("a link revoked before the first sign-in is not redeemed, and the student is told", async ({
+  test("a link revoked before signup is not redeemed, and the student is told", async ({
     page,
     playwright,
   }) => {
@@ -128,12 +126,12 @@ test.describe("Join link → new account → in the course (#1961)", () => {
       const fixture = await publishedCourseWithLink(adminCtx, instrCtx);
       const email = uniqueEmail("j61r-student");
 
-      await createAccountFromLink(page, fixture, email);
-      const revoked = await instrCtx.delete(
-        `${CORE_URL}/api/courses/${fixture.courseId}/self-enroll?linkId=${encodeURIComponent(fixture.linkId)}`,
-      );
-      expect(revoked.status(), await revoked.text()).toBe(204);
-      await firstSignIn(page, email);
+      await createAccountFromLink(page, fixture, email, async () => {
+        const revoked = await instrCtx.delete(
+          `${CORE_URL}/api/courses/${fixture.courseId}/self-enroll?linkId=${encodeURIComponent(fixture.linkId)}`,
+        );
+        expect(revoked.status(), await revoked.text()).toBe(204);
+      });
 
       await expect(page).toHaveURL(/\/courses\/self-enroll\/complete/);
       await expect(page.getByText(`Can't join ${fixture.code}`)).toBeVisible();

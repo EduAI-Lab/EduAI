@@ -4,6 +4,10 @@ import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("~/lib/canvas/onboarding.server", () => ({
+  redirectToStudentIdOnboardingIfNeeded: vi.fn(),
+}));
+
 vi.mock("~/lib/auth/request-session.server", () => ({ getRequestSession: vi.fn() }));
 vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
   redeemPendingSelfEnrollments: vi.fn(),
@@ -13,6 +17,7 @@ vi.mock("~/lib/courses/self-enrollment.server", () => ({
   SELF_ENROLL_COMPLETE_PATH: "/courses/self-enroll/complete",
 }));
 
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
   recentPendingSelfEnrollmentOutcome,
@@ -123,4 +128,19 @@ describe("/courses/self-enroll/complete page (#1961)", () => {
       "/dashboard",
     );
   });
+});
+
+it("requires student-number onboarding before continuing to the joined course", async () => {
+  vi.mocked(getRequestSession).mockResolvedValue(STUDENT as never);
+  vi.mocked(recentPendingSelfEnrollmentOutcome).mockResolvedValue({
+    joined: true,
+    outcome: "JOINED",
+    courseId: "c1",
+    courseCode: "PSYO 121",
+  });
+  vi.mocked(redirectToStudentIdOnboardingIfNeeded).mockResolvedValue(
+    new Response(null, { status: 302, headers: { Location: "/onboarding/student-id" } }),
+  );
+  const res = (await loader(loaderArgs())) as Response;
+  expect(res.headers.get("Location")).toBe("/onboarding/student-id?next=%2Fcourses%2Fc1");
 });

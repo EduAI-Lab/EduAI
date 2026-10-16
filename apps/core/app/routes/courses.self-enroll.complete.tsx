@@ -18,6 +18,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { IconStack2 } from "@tabler/icons-react";
 
 import { Button } from "@eduai/ui";
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
   recentPendingSelfEnrollmentOutcome,
@@ -39,7 +40,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // No join to report (a resent verification email for an ordinary sign-up):
   // carry on where verification has always gone.
   if (!outcome) return redirect("/onboarding/student-id");
-  if (outcome.joined) return redirect(`/courses/${outcome.courseId}`);
+  if (outcome.joined) {
+    const coursePath = `/courses/${outcome.courseId}`;
+    const onboarding = await redirectToStudentIdOnboardingIfNeeded(
+      session.user.id,
+      session.user.role,
+      request,
+    );
+    if (onboarding)
+      return redirect(`/onboarding/student-id?next=${encodeURIComponent(coursePath)}`);
+    return redirect(coursePath);
+  }
   return { courseCode: outcome.courseCode, message: friendlySelfEnrollmentError(outcome.outcome) };
 }
 

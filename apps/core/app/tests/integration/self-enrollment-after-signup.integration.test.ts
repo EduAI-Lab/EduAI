@@ -67,7 +67,9 @@ async function registerThroughLink(token: string) {
       }),
     ),
   )) as Response;
-  expect(res.headers.get("Location")).toBe("/auth/verify-email");
+  expect(res.headers.get("Location")).toBe(
+    `/auth/login?registered=1&redirect=${encodeURIComponent(`/courses/self-enroll?token=${token}`)}`,
+  );
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
   return { email, user };
 }
@@ -179,7 +181,9 @@ describe("a course join link survives sign-up and email verification (#1961)", (
     expect(await outcomeOf(user.id)).toBe("JOINED");
 
     const landing = (await landingAs(cookieFrom(verify))) as Response;
-    expect(landing.headers.get("Location")).toBe(`/courses/${courseId}`);
+    expect(landing.headers.get("Location")).toBe(
+      `/onboarding/student-id?next=${encodeURIComponent(`/courses/${courseId}`)}`,
+    );
   });
 
   it("does not enroll from a link revoked before verification, and says why", async () => {
@@ -294,10 +298,32 @@ describe("a course join link survives sign-up and email verification (#1961)", (
       ),
     )) as Response;
 
-    expect(res.headers.get("Location")).toBe("/auth/verify-email");
+    expect(res.headers.get("Location")).toBe(
+      `/auth/login?registered=1&redirect=${encodeURIComponent(`/courses/self-enroll?token=${link.token}`)}`,
+    );
     expect(await prisma.pendingSelfEnrollment.count({ where: { userId: owner.id } })).toBe(0);
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
+
+    // The preserved link only attaches to the real account after its owner
+    // proves the password. Verifying then completes the join as usual.
+    await loginAction(
+      routeArgs(
+        postForm("http://localhost/auth/login", {
+          email,
+          password: PASSWORD,
+          redirectTo: `/courses/self-enroll?token=${link.token}`,
+        }),
+      ),
+    );
+    expect(await prisma.pendingSelfEnrollment.count({ where: { userId: owner.id } })).toBe(1);
+    const verify = await auth.handler(new Request(verificationUrlFor(email)));
+    expect((await enrollmentOf(owner.id))?.role).toBe("STUDENT");
+    expect(await outcomeOf(owner.id)).toBe("JOINED");
+    const landing = (await landingAs(cookieFrom(verify))) as Response;
+    expect(landing.headers.get("Location")).toBe(
+      `/onboarding/student-id?next=${encodeURIComponent(`/courses/${courseId}`)}`,
+    );
   });
 
   it("remembers a join for an existing unverified account at a blocked sign-in; verifying redeems it", async () => {

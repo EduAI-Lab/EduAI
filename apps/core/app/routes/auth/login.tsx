@@ -135,6 +135,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     joining,
     registerHref,
     forceReauth,
+    registrationSubmitted: url.searchParams.get("registered") === "1",
     // Demo credentials are available only for an explicitly configured local
     // deployment with a caller-supplied seed password. This is evaluated on the
     // server so production never renders the controls or receives the password.
@@ -314,12 +315,14 @@ export default function LoginPage() {
     forceReauth,
     showDemoLogin,
     demoPassword,
+    registrationSubmitted,
   } = useLoaderData() as {
     redirectTo: string;
     allowRegistration: boolean;
     joining: { courseCode: string; courseName: string } | null;
     registerHref: string;
     forceReauth: boolean;
+    registrationSubmitted: boolean;
     showDemoLogin: boolean;
     demoPassword: string | null;
   };
@@ -366,6 +369,12 @@ export default function LoginPage() {
       >
         {joining && (
           <JoinCourseNotice {...joining} action="sign-in" canRegister={allowRegistration} />
+        )}
+        {registrationSubmitted && (
+          <p role="status" className="text-sm text-muted-foreground mb-4">
+            Check your inbox for a verification email if needed, then sign in to continue joining
+            your course.
+          </p>
         )}
         {forceReauth && (
           <p className="text-sm text-muted-foreground mb-4 text-center">

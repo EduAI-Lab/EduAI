@@ -138,6 +138,7 @@ describe("auth/login loader", () => {
       allowRegistration: false,
       joining: null,
       registerHref: "/auth/register",
+      registrationSubmitted: false,
       forceReauth: false,
       showDemoLogin: false,
       demoPassword: null,

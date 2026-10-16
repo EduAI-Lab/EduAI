@@ -155,10 +155,16 @@ async function redeemOne(
     outcome = result.error;
   }
 
-  // Guarded on `resolvedAt: null`: the verification hook and the landing page
-  // can race (a mail scanner and the person), and the first verdict stands.
+  // A successful redemption must replace a racing refusal (for example when
+  // the other request sees the last slot claimed before enrollment commits).
+  // Refusals only settle pending rows and can never replace JOINED.
   const { count } = await prisma.pendingSelfEnrollment.updateMany({
-    where: { id: row.id, resolvedAt: null },
+    where: {
+      id: row.id,
+      ...(outcome === PENDING_JOIN_JOINED
+        ? { OR: [{ resolvedAt: null }, { outcome: { not: PENDING_JOIN_JOINED } }] }
+        : { resolvedAt: null }),
+    },
     data: { resolvedAt: new Date(), outcome },
   });
   return count > 0 ? { linkId: row.linkId, outcome } : null;
@@ -206,6 +212,7 @@ export async function redeemPendingSelfEnrollments(
  * The verdict the landing page reports: from this account's recent joins, a
  * refusal if there is one (the one thing the person can act on, by asking for a
  * new link; a course they did join is on their dashboard), else the latest join.
+ * Refusals for a course with a recent successful join no longer need action.
  */
 export async function recentPendingSelfEnrollmentOutcome(userId: string) {
   const rows = await prisma.pendingSelfEnrollment.findMany({
@@ -216,7 +223,13 @@ export async function recentPendingSelfEnrollmentOutcome(userId: string) {
       link: { select: { course: { select: { id: true, code: true } } } },
     },
   });
-  const shown = rows.find((row) => row.outcome !== PENDING_JOIN_JOINED) ?? rows[0];
+  const joinedCourses = new Set(
+    rows.filter((row) => row.outcome === PENDING_JOIN_JOINED).map((row) => row.link.course.id),
+  );
+  const shown =
+    rows.find(
+      (row) => row.outcome !== PENDING_JOIN_JOINED && !joinedCourses.has(row.link.course.id),
+    ) ?? rows.find((row) => row.outcome === PENDING_JOIN_JOINED);
   if (!shown?.outcome) return null;
   return {
     joined: shown.outcome === PENDING_JOIN_JOINED,

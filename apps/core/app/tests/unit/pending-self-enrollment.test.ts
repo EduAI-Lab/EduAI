@@ -200,7 +200,7 @@ describe("redeemPendingSelfEnrollments (#1961)", () => {
     ]);
     expect(redeemSelfEnrollmentLink).toHaveBeenCalledWith({ linkId: "link-1", userId: "u1" });
     expect(pending.updateMany).toHaveBeenCalledWith({
-      where: { id: "p1", resolvedAt: null },
+      where: { id: "p1", OR: [{ resolvedAt: null }, { outcome: { not: "JOINED" } }] },
       data: { resolvedAt: expect.any(Date), outcome: "JOINED" },
     });
     expect(logSelfEnrollmentRedeemed).toHaveBeenCalledWith({
@@ -349,3 +349,56 @@ describe("recentPendingSelfEnrollmentOutcome (#1961)", () => {
     });
   });
 });
+
+it("suppresses refusals for a course joined through another link", async () => {
+  pending.findMany.mockResolvedValue([
+    { outcome: "LINK_EXPIRED", link: { course: { id: "c1", code: "PSYO 121" } } },
+    { outcome: "JOINED", link: { course: { id: "c1", code: "PSYO 121" } } },
+  ] as never);
+  expect(await recentPendingSelfEnrollmentOutcome("u1")).toMatchObject({
+    joined: true,
+    courseId: "c1",
+  });
+});
+
+it.each([false, true])(
+  "keeps JOINED when concurrent redemption records refusal first: %s",
+  async (refusalFirst) => {
+    onePending();
+    activeAccount();
+    let release!: (result: never) => void;
+    const delayed = new Promise<never>((resolve) => {
+      release = resolve;
+    });
+    const joined = {
+      status: "200",
+      courseId: "c1",
+      enrollmentId: "enr-1",
+      linkId: "link-1",
+      alreadyEnrolled: true,
+    };
+    const refused = { status: "410", error: "LINK_EXHAUSTED" };
+    vi.mocked(redeemSelfEnrollmentLink)
+      .mockReturnValueOnce(delayed)
+      .mockResolvedValueOnce((refusalFirst ? refused : joined) as never);
+    let stored: string | null = null;
+    pending.updateMany.mockImplementation((args) => {
+      const where = args.where as { resolvedAt?: null; OR?: unknown };
+      if (stored !== null && !(where.OR && stored !== "JOINED"))
+        return Promise.resolve({ count: 0 }) as ReturnType<
+          typeof prisma.pendingSelfEnrollment.updateMany
+        >;
+      stored = args.data.outcome as string;
+      return Promise.resolve({ count: 1 }) as ReturnType<
+        typeof prisma.pendingSelfEnrollment.updateMany
+      >;
+    });
+    const first = redeemPendingSelfEnrollments(USER, REQUEST);
+    // Wait until the first request is inside redemption before starting the second.
+    await vi.waitFor(() => expect(redeemSelfEnrollmentLink).toHaveBeenCalledTimes(1));
+    await redeemPendingSelfEnrollments(USER, REQUEST);
+    release((refusalFirst ? joined : refused) as never);
+    await first;
+    expect(stored).toBe("JOINED");
+  },
+);
