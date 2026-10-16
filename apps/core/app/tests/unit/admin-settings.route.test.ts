@@ -32,6 +32,17 @@ vi.mock("~/lib/ai/routing/bedrock/bedrock-settings.server", () => ({
   }),
 }));
 
+// #1817: the help assistant's on/off card loads with the page.
+vi.mock("~/lib/assistant/assistant-settings.server", () => ({
+  getAssistantSettings: vi.fn().mockResolvedValue({
+    enableHelpAssistant: false,
+    enableStudentMaterialQuestions: true,
+    maxDocs: 3,
+    routerModel: "",
+    defaultModel: "",
+  }),
+}));
+
 import { loader } from "~/routes/admin.settings";
 import { auth } from "~/lib/auth/server";
 import { getEnvironmentHealth } from "~/lib/environment-health.server";
@@ -85,6 +96,13 @@ describe("admin.settings loader", () => {
         resourceLimit: 0,
       },
       bedrockTokenConfigured: false,
+      assistantSettings: {
+        enableHelpAssistant: false,
+        enableStudentMaterialQuestions: true,
+        maxDocs: 3,
+        routerModel: "",
+        defaultModel: "",
+      },
     });
   });
 });

@@ -41,6 +41,7 @@ export const COURSE_STAFF_SELECT = {
   aiInstructions: true,
   responseStyleTags: true,
   courseScopeGuardrailEnabled: true,
+  aiAssistantEnabled: true,
   ragTopK: true,
   ragSimilarityThreshold: true,
   instructorId: true,
@@ -141,6 +142,7 @@ export type CoursePublicDto = {
   externalId?: string | null;
   aiInstructions?: string | null;
   courseScopeGuardrailEnabled?: boolean;
+  aiAssistantEnabled?: boolean;
   ragTopK?: number | null;
   ragSimilarityThreshold?: number | null;
   instructorId?: string | null;
@@ -252,6 +254,9 @@ export function serializeCourseForApi(
   }
   if (options.detail && hasOwn(row, "courseScopeGuardrailEnabled")) {
     dto.courseScopeGuardrailEnabled = Boolean(row.courseScopeGuardrailEnabled);
+  }
+  if (options.detail && hasOwn(row, "aiAssistantEnabled")) {
+    dto.aiAssistantEnabled = row.aiAssistantEnabled !== false;
   }
   if (options.detail && hasOwn(row, "ragTopK")) dto.ragTopK = row.ragTopK ?? null;
   if (options.detail && hasOwn(row, "ragSimilarityThreshold")) {

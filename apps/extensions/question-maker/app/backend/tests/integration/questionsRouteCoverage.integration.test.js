@@ -14,6 +14,7 @@ import supertest from "supertest";
 
 const {
   mockUpdate,
+  mockTopicCheck,
   mockDelete,
   mockCreate,
   mockList,
@@ -33,6 +34,7 @@ const {
   mockVisibleCourseWhere,
 } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
+  mockTopicCheck: vi.fn(),
   mockDelete: vi.fn().mockResolvedValue(true),
   mockCreate: vi.fn(),
   mockList: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
@@ -76,6 +78,7 @@ vi.mock("../../src/services/questionService.js", () => ({
   enrichQuestionRows: mockEnrich,
   getQuestionById: mockGetById,
   updateQuestion: mockUpdate,
+  checkQuestionTopicChange: mockTopicCheck,
   deleteQuestion: mockDelete,
   createMultipleQuestions: mockCreateMultiple,
   getQuestionStats: mockStats,
@@ -460,6 +463,60 @@ describe("PUT /api/questions/:id", () => {
       COURSE.userId,
       expect.objectContaining({ questionOrder: { 1: 2 }, isAiGenerated: true, isDraft: false }),
     );
+  });
+});
+
+describe("POST /api/questions/:id/topic-check", () => {
+  it("rejects a missing primaryTopicId without calling the service", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .post("/api/questions/7/topic-check")
+      .set("Cookie", "session=v")
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Valid primaryTopicId is required/);
+    expect(mockTopicCheck).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 when the topic change is allowed", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockTopicCheck.mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .post("/api/questions/7/topic-check")
+      .set("Cookie", "session=v")
+      .send({ primaryTopicId: "topic-b" });
+
+    expect(res.status).toBe(200);
+    expect(mockTopicCheck).toHaveBeenCalledWith("7", COURSE.userId, "topic-b");
+  });
+
+  it("surfaces the service's topic conflict as a 409", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    loadQuestion(INSTRUCTOR.id);
+    mockTopicCheck.mockRejectedValue(
+      Object.assign(
+        new Error("This question is in an assessment that doesn't cover the new topic"),
+        {
+          status: 409,
+          statusCode: 409,
+          code: "QM_ASSESSMENT_TOPIC_CONFLICT",
+          isPublic: true,
+        },
+      ),
+    );
+
+    const res = await request(app)
+      .post("/api/questions/7/topic-check")
+      .set("Cookie", "session=v")
+      .send({ primaryTopicId: "topic-c" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/doesn't cover the new topic/);
   });
 });
 

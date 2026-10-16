@@ -27,6 +27,11 @@ vi.mock("~/lib/cron-scheduler.server", () => ({
   ensureCronSchedulerRunning: vi.fn(),
 }));
 
+// #1822: the help assistant's render condition is resolved through its own gate.
+vi.mock("~/lib/assistant/assistant-gate.server", () => ({
+  loadAssistantGateSnapshot: vi.fn(),
+}));
+
 const prismaMock = vi.hoisted(() => ({
   userPreference: { findUnique: vi.fn() },
   enrollment: { findFirst: vi.fn() },
@@ -40,6 +45,7 @@ import { loader } from "~/root";
 import { auth } from "~/lib/auth/server";
 import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { getPolicies } from "~/lib/policy.server";
+import { loadAssistantGateSnapshot } from "~/lib/assistant/assistant-gate.server";
 
 type RootData = {
   assistive: boolean;
@@ -49,6 +55,7 @@ type RootData = {
   canInvite: boolean;
   canUseCourseAssistant: boolean;
   hasTeachingAssistantEnrollment: boolean;
+  assistant: { mounted: boolean; docs: boolean };
   policies: Record<string, boolean>;
 };
 
@@ -77,6 +84,7 @@ function signedInAs(role: string, id = "u1") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(loadAssistantGateSnapshot).mockResolvedValue({ mounted: true, docs: true });
   vi.mocked(getPolicies).mockResolvedValue({} as never);
   vi.mocked(getExpiredPasswordRedirect).mockResolvedValue(null);
   prismaMock.userPreference.findUnique.mockResolvedValue(null);
@@ -97,6 +105,23 @@ describe("root loader — guest", () => {
     expect(data.policies).toEqual({ "unitAdmins.canInvite": true });
     expect(prismaMock.userPreference.findUnique).not.toHaveBeenCalled();
     expect(getExpiredPasswordRedirect).not.toHaveBeenCalled();
+  });
+
+  it("never mounts the help assistant for a guest (#1822)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const data = (await run()) as RootData;
+    expect(data.assistant).toEqual({ mounted: false, docs: false });
+    expect(loadAssistantGateSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+describe("root loader — help assistant gate (#1822)", () => {
+  it("hands the signed-in user's gate snapshot to the shell, asked with their role", async () => {
+    signedInAs("INSTRUCTOR");
+    vi.mocked(loadAssistantGateSnapshot).mockResolvedValue({ mounted: true, docs: false });
+    const data = (await run()) as RootData;
+    expect(data.assistant).toEqual({ mounted: true, docs: false });
+    expect(loadAssistantGateSnapshot).toHaveBeenCalledWith("INSTRUCTOR");
   });
 });
 

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
@@ -13,9 +14,10 @@ import { ProvidersTable } from "~/components/admin/providers-table";
 import { RoutingModelsTable } from "~/components/admin/routing-models-table";
 import { FleetConfigPanel } from "~/components/admin/fleet-config-panel";
 import { TablePagination } from "~/components/ui/table-pagination";
+import { CORE_HELP } from "~/components/help/help-hints";
 import { fetchAllModels, fetchModelsByProvider } from "~/hooks/api/use-ai-models";
 import type { PaginationState } from "~/hooks/api/pagination";
-import { Button } from "@eduai/ui";
+import { Button, HelpHint } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { PageHeading } from "@eduai/ui";
@@ -469,7 +471,10 @@ export function AiModelsAdminView({
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div>
-                        <CardTitle>AI Models</CardTitle>
+                        <CardTitle className="flex items-center gap-1.5">
+                          AI Models
+                          <HelpHint {...CORE_HELP.aiModels} LinkComponent={Link} />
+                        </CardTitle>
                         <CardDescription>Manage AI models across all providers</CardDescription>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -589,7 +594,10 @@ export function AiModelsAdminView({
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div>
-                        <CardTitle>AI Providers</CardTitle>
+                        <CardTitle className="flex items-center gap-1.5">
+                          AI Providers
+                          <HelpHint {...CORE_HELP.aiProviders} LinkComponent={Link} />
+                        </CardTitle>
                         <CardDescription>
                           Manage AI service providers and their configurations
                         </CardDescription>

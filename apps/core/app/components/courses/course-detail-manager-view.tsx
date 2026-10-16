@@ -27,7 +27,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@edua
 import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
-import { MaterialList, type MaterialListItem } from "@eduai/ui";
+import { HelpHint, MaterialList, type MaterialListItem } from "@eduai/ui";
+import { Link } from "react-router";
+import { CORE_HELP } from "~/components/help/help-hints";
 
 /**
  * The manager list carries three extra fields beyond what the shared list
@@ -105,6 +107,7 @@ import {
 import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
+import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
 
 /**
  * One active INSTRUCTOR enrollment, as the course loader projects it (#1840).
@@ -349,6 +352,7 @@ function instructorErrorMessage(code: string, fallback: string): string {
 /** The body of `PATCH /api/courses/:id/rag-settings`. */
 type RagSettingsPatch = {
   courseScopeGuardrailEnabled: boolean;
+  aiAssistantEnabled: boolean;
   ragTopK: number | null;
   ragSimilarityThreshold: number | null;
 };
@@ -453,6 +457,7 @@ export function CourseDetailManagerView({
   const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] = useState(
     course.courseScopeGuardrailEnabled,
   );
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(course.aiAssistantEnabled !== false);
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -982,6 +987,7 @@ export function CourseDetailManagerView({
       // both are always sent rather than omitted when blank.
       const payload: RagSettingsPatch = {
         courseScopeGuardrailEnabled,
+        aiAssistantEnabled,
         ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
         ragSimilarityThreshold: ragThreshold === "" ? null : parseFloat(ragThreshold),
       };
@@ -1236,12 +1242,22 @@ export function CourseDetailManagerView({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+        <DialogContent
+          className="sm:max-w-md rounded-[var(--radius-xl)]"
+          onOpenAutoFocus={(event) => {
+            // Start on the switch, not the header's help hint.
+            event.preventDefault();
+            document.getElementById("material-visible")?.focus();
+          }}
+        >
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <IconEye className="h-4 w-4" />
-              Student visibility
-            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2">
+                <IconEye className="h-4 w-4" />
+                Student visibility
+              </DialogTitle>
+              <HelpHint {...CORE_HELP.materialVisibility} LinkComponent={Link} />
+            </div>
             <DialogDescription>
               Control whether students can see this material, and optionally schedule when it
               becomes available. Instructors and TAs always see every material.
@@ -1390,8 +1406,9 @@ export function CourseDetailManagerView({
                     <StatusBadge active={course.isActive} />
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                    <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
                       Published
+                      <HelpHint {...CORE_HELP.coursePublishing} LinkComponent={Link} />
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge
@@ -1488,6 +1505,12 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
+            title={
+              <span className="inline-flex items-center gap-1.5">
+                Course materials
+                <HelpHint {...CORE_HELP.materialStates} LinkComponent={Link} />
+              </span>
+            }
             items={materials.map((m): ManagerMaterialListItem => ({
               id: m.id,
               name: m.title,
@@ -2260,6 +2283,24 @@ export function CourseDetailManagerView({
                       checked={courseScopeGuardrailEnabled}
                       onCheckedChange={setCourseScopeGuardrailEnabled}
                       aria-label="Restrict Course Chat to this course"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="course-ai-assistant">
+                        Let {ASSISTANT_DISPLAY_NAME} answer from this course
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        The help assistant can answer questions about this course&apos;s materials
+                        for people who can see them. Turn off to keep this course&apos;s content out
+                        of the assistant entirely.
+                      </p>
+                    </div>
+                    <Switch
+                      id="course-ai-assistant"
+                      checked={aiAssistantEnabled}
+                      onCheckedChange={setAiAssistantEnabled}
+                      aria-label={`Let ${ASSISTANT_DISPLAY_NAME} answer from this course`}
                     />
                   </div>
                   <div className="grid gap-2">

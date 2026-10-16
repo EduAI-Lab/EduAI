@@ -33,13 +33,42 @@ import type {
 } from "~/components/course-materials-upload";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
-import type { RbacUser } from "~/lib/rbac";
+import type { CourseAccess, RbacUser } from "~/lib/rbac";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { setCoursePublished } from "~/lib/courses/set-course-published";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { describeUploadFailure } from "~/lib/material-failure-notice";
+import {
+  loadAssistantAvailability,
+  materialSourceAvailable,
+} from "~/lib/assistant/assistant-gate.server";
+import { resolveCourseContext } from "~/lib/assistant/material-context.server";
+import { accessLevelFor } from "~/lib/auth/course-access.server";
+import { usePublishAssistantContext } from "~/components/assistant/assistant-events";
+
+/**
+ * #1821/#1822: whether the help assistant may ground answers in THIS course for
+ * this reader — the same gate `POST /api/assistant/ask` re-checks per question.
+ * The page publishes it so the bubble's visibility and the endpoint can't drift.
+ * Built from the course and access the loader already resolved, not re-queried.
+ * A failure here only hides the course half; it never fails the page.
+ */
+async function resolveAssistantMaterialScope(
+  course: Parameters<typeof resolveCourseContext>[0]["course"],
+  access: CourseAccess,
+): Promise<boolean> {
+  try {
+    const [availability, resolution] = await Promise.all([
+      loadAssistantAvailability(),
+      resolveCourseContext({ course, access: access ? accessLevelFor(access) : null }),
+    ]);
+    return materialSourceAvailable(availability, resolution);
+  } catch {
+    return false;
+  }
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -122,7 +151,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // #1841: every active instructor, so the detail header stops rendering one of
   // three. The serializer redacts their emails for the student audience.
-  const instructorSummaries = (await getCourseInstructors([course.id])).get(course.id) ?? [];
+  const [instructorSummaries, assistantMaterialScope] = await Promise.all([
+    getCourseInstructors([course.id]).then((byCourse) => byCourse.get(course.id) ?? []),
+    resolveAssistantMaterialScope(course, access),
+  ]);
 
   return {
     // SAFETY: the serializer adds audience-specific fields on top of the
@@ -138,6 +170,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     user,
     access,
     courseInstructors,
+    assistantMaterialScope,
   };
 }
 
@@ -181,8 +214,21 @@ const UPLOAD_PROCESSING_MESSAGE =
   "Upload accepted. Processing is taking a while — the list will update when it finishes.";
 
 export default function CourseDetailPage() {
-  const { course, user, access, courseInstructors } = useLoaderData<typeof loader>();
+  const { course, user, access, courseInstructors, assistantMaterialScope } =
+    useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
+  // The material a student is previewing (or asked the assistant about); null
+  // means the course as a whole. Published to the shell-mounted assistant.
+  const [assistantMaterial, setAssistantMaterial] = useState<{ id: string; title: string } | null>(
+    null,
+  );
+  useEffect(() => setAssistantMaterial(null), [course.id]);
+  usePublishAssistantContext({
+    courseId: course.id,
+    materialId: assistantMaterial?.id ?? null,
+    label: assistantMaterial ? assistantMaterial.title : `${course.code} — ${course.name}`,
+    materialScope: assistantMaterialScope,
+  });
   const {
     topics,
     createTopic,
@@ -599,6 +645,8 @@ export default function CourseDetailPage() {
               materialsSuccess={materialsSuccess}
               uploads={uploads}
               onFilesSelect={handleFilesSelect}
+              assistantMaterialScope={assistantMaterialScope}
+              onAssistantMaterialChange={setAssistantMaterial}
             />
           )}
         </div>

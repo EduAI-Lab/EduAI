@@ -2,8 +2,11 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { CORE_HELP } from "~/components/help/help-hints";
 import { ChatDailyLimitSettingsCard } from "~/components/settings/chat-daily-limit-settings";
 import { BedrockOverflowSettingsCard } from "~/components/settings/bedrock-overflow-settings";
+import { AssistantToggleCard } from "~/components/settings/assistant-settings-cards";
+import { getAssistantSettings } from "~/lib/assistant/assistant-settings.server";
 import {
   Card,
   CardContent,
@@ -22,6 +25,7 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
+  HelpHint,
 } from "@eduai/ui";
 import { apiFetch } from "~/hooks/api/config";
 import { usePolicies } from "~/hooks/api/use-policies";
@@ -97,12 +101,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
     chatDailyLimits: await getChatDailyLimitSettings(),
     bedrockSettings: await getBedrockOverflowSettings(),
     bedrockTokenConfigured: isBedrockTokenConfigured(),
+    assistantSettings: await getAssistantSettings(),
   };
 }
 
 export default function AdminSettingsPage() {
-  const { user, environmentHealth, chatDailyLimits, bedrockSettings, bedrockTokenConfigured } =
-    useLoaderData<typeof loader>();
+  const {
+    user,
+    environmentHealth,
+    chatDailyLimits,
+    bedrockSettings,
+    bedrockTokenConfigured,
+    assistantSettings,
+  } = useLoaderData<typeof loader>();
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies();
 
   // Bucket each flag into the first group whose `match` passes, preserving the
@@ -143,7 +154,12 @@ export default function AdminSettingsPage() {
             <div className="px-4 lg:px-6">
               <PageHeading
                 heading="Settings"
-                subheading="Toggle role-based capabilities across the platform. Changes take effect live."
+                subheading={
+                  <>
+                    Toggle role-based capabilities across the platform. Changes take effect live.{" "}
+                    <HelpHint {...CORE_HELP.platformPolicies} LinkComponent={Link} />
+                  </>
+                }
               />
             </div>
 
@@ -174,6 +190,7 @@ export default function AdminSettingsPage() {
                   });
                 }}
               />
+              <AssistantToggleCard initialSettings={assistantSettings} />
               <BedrockOverflowSettingsCard
                 initialSettings={bedrockSettings}
                 tokenConfigured={bedrockTokenConfigured}
