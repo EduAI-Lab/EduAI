@@ -46,6 +46,13 @@ const TopicAnalysisInputSchema = z.object({
    * rows written before chunking existed have none, and are read alone.
    */
   batchKey: z.string().min(1).optional(),
+  /**
+   * What the job does (#1966). `match` (the default, and every row written
+   * before this field) files just-processed materials under existing topics.
+   * `suggest` is an instructor's on-demand request to propose the topics the
+   * whole course is missing; its `materialIds` are the course's materials.
+   */
+  mode: z.enum(["match", "suggest"]).optional(),
 });
 
 export const JobInputSchema = z.discriminatedUnion("kind", [

@@ -229,6 +229,13 @@ export const HELP_DOC_PAGES: readonly HelpDocPage[] = [
     slice: "instructor",
   },
   {
+    id: "onboarding-file-topics",
+    source: "instructor-onboarding",
+    heading: "Topics on your files",
+    title: "Onboarding: topics on your files",
+    slice: "instructor",
+  },
+  {
     id: "onboarding-enrollments",
     source: "instructor-onboarding",
     heading: "Enrollments",

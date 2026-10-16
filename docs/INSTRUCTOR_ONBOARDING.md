@@ -107,6 +107,14 @@ On the **Materials** tab you can either upload files from your device, or pull t
 
 Uploaded material is chunked and indexed before course-aware chat can use it. Watch the **Material status** panel on your dashboard: a file is only usable once it reaches **Ready**. A **Failed** file will not appear in AI answers. Select the **?** next to a failed file for the reason and what to do; every reason is listed in [When a file fails](USER_GUIDE.md#when-a-file-fails).
 
+### Topics on your files
+
+Each file can have up to three topics, shown as tags under its name on the **Materials** tab. The first tag is the file's main topic.
+
+- **Automatic:** once a file finishes processing, EduAI files it under the existing topic that fits it best. It only uses topics you have approved, and it never creates a topic by itself. A file that fits nothing shows **No topic**.
+- **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
+- **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Suggestions are hidden from students until you approve them. Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
+
 ### Enrollments
 
 On the **Enrollments** tab, review who is enrolled and add students or TAs as your pilot process requires.

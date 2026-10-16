@@ -44,6 +44,7 @@ import {
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.server";
+import { topicsForMaterials, type MaterialTopic } from "~/lib/topics/material-topics.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
@@ -812,10 +813,20 @@ async function toMaterialListRows(
   rows: Array<Prisma.CourseMaterialGetPayload<{ select: typeof MATERIAL_LIST_SELECT }>>,
 ) {
   const retryableIds = await resolveRetryableMaterialIds(rows);
-  return rows.map(({ _count, ...material }) => {
-    const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
+  // #1965: each material's topics, which staff see and edit. Every caller here
+  // is staff (#1962), so every row carries them.
+  const topicsByMaterial = await topicsForMaterials(rows.map((row) => row.id));
+  return rows.map(({ _count, topicsSetManuallyAt, ...material }) => {
+    const row: typeof material & {
+      chunkCount: number;
+      hasExtractedText?: boolean;
+      topics: MaterialTopic[];
+      topicsSetManually: boolean;
+    } = {
       ...material,
       chunkCount: _count?.chunks ?? 0,
+      topics: topicsByMaterial.get(material.id) ?? [],
+      topicsSetManually: topicsSetManuallyAt !== null,
     };
     // Only meaningful for a failed row; left off entirely elsewhere rather
     // than emitted as a misleading `false` (#1749).
@@ -853,6 +864,7 @@ const MATERIAL_LIST_SELECT = {
   // unrecoverable one.
   duplicateResolution: true,
   failureCode: true,
+  topicsSetManuallyAt: true,
   createdAt: true,
   updatedAt: true,
   processedAt: true,

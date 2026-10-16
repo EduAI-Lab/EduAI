@@ -582,6 +582,10 @@ model CourseMaterial {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   processedAt       DateTime?
+  /// When a person last set this material's topics by hand (#1965). Null means
+  /// EduAI may file it automatically; once set, auto-matching leaves the
+  /// material's topics alone, including after a re-sync changes its content.
+  topicsSetManuallyAt DateTime?
   course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   uploader          User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
   duplicateOf       CourseMaterial? @relation("MaterialDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
@@ -677,13 +681,17 @@ model CourseTopic {
   @@map("course_topics")
 }
 
-/// Which materials a generated topic was derived from (#1624) — the provenance
-/// half of "generated topics identify their source materials". Empty for
-/// human-created topics and for the SYSTEM fallback topic.
+/// A material filed under a topic. Written three ways: as the provenance of a
+/// generated topic (#1624), by auto-matching a processed material to an
+/// existing topic (#1965), and by a person choosing a material's topics. A
+/// material has at most `MAX_TOPICS_PER_MATERIAL` live topics (enforced in code).
 model CourseTopicSource {
   id         String         @id @default(cuid())
   topicId    String
   materialId String
+  /// Order of this topic among the material's topics; the lowest is its main
+  /// topic (#1965). Ties (rows from before this column) fall back to createdAt.
+  position   Int            @default(0)
   createdAt  DateTime       @default(now())
   topic      CourseTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
@@ -1268,6 +1276,7 @@ enum SystemLogSource {
   DB
   SSR
   API
+  HOST
 }
 
 model AuditLog {
