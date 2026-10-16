@@ -124,10 +124,15 @@ function pickNewer(
   return row;
 }
 
-/** Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch. */
-export function useCourseMaterials(courseId: string) {
+/**
+ * Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch.
+ *
+ * `enabled = false` never asks the server (#1962): a student's course page has
+ * no materials to show, and the API refuses students on every materials path.
+ */
+export function useCourseMaterials(courseId: string, enabled = true) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -172,7 +177,7 @@ export function useCourseMaterials(courseId: string) {
   );
 
   const fetchMaterials = useCallback(async () => {
-    if (!courseId) return;
+    if (!courseId || !enabled) return;
     const seq = ++readSeqRef.current;
     lastFullReadRef.current = seq;
     // A newer full read, or a different course, owns the list now.
@@ -193,7 +198,7 @@ export function useCourseMaterials(courseId: string) {
     } finally {
       if (!superseded()) setLoading(false);
     }
-  }, [courseId, fetchPage]);
+  }, [courseId, enabled, fetchPage]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
@@ -214,6 +219,21 @@ export function useCourseMaterials(courseId: string) {
   useEffect(() => {
     fetchMaterials();
   }, [fetchMaterials]);
+
+  // A disabled hook holds no rows (#1962). The course switcher keeps the page
+  // mounted, so moving from a course the user assists to one they study in
+  // would otherwise keep the old course's list on screen — and any PROCESSING
+  // row in it would keep the background poll asking the new course's API,
+  // which refuses students. Bumping the read number drops a full read that is
+  // still in flight for the course being left.
+  useEffect(() => {
+    if (enabled) return;
+    lastFullReadRef.current = ++readSeqRef.current;
+    setMaterials([]);
+    setNextCursor(null);
+    setError(null);
+    setLoading(false);
+  }, [courseId, enabled]);
 
   const deleteMaterial = useCallback(
     async (materialId: string): Promise<void> => {
@@ -362,12 +382,12 @@ export function useCourseMaterials(courseId: string) {
   const hasProcessingRow = materials.some((m) => m.status === "PROCESSING");
 
   useEffect(() => {
-    if (!courseId || !hasProcessingRow) return;
+    if (!courseId || !enabled || !hasProcessingRow) return;
     const timer = setInterval(() => {
       void refreshProcessingRows();
     }, BACKGROUND_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [courseId, hasProcessingRow, refreshProcessingRows]);
+  }, [courseId, enabled, hasProcessingRow, refreshProcessingRows]);
 
   /**
    * Watch a material until it leaves PROCESSING (#949). Page 1 is read first,

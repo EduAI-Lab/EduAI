@@ -35,6 +35,7 @@ import {
 import { getCourseInstructors } from "./instructors.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
 import { ensureCourseHasTopic, FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
+import { LEARNER_TOPIC_WHERE } from "~/lib/topics/learner-view.server";
 import {
   COURSE_PUBLIC_SELECT,
   COURSE_SERVICE_SELECT,
@@ -1250,15 +1251,14 @@ function withSourceProjection<T extends TopicWithSourceRows>(topic: T) {
 export type TopicAudience = "staff" | "learner";
 
 /**
- * The learner view: topics an instructor accepted, minus the Uncategorized
- * placeholder, which exists so Question Maker always has something to author
- * against and says nothing about the course. Served by the
- * `[courseId, reviewStatus]` index.
+ * A topic as the topics API serves it. Staff reads carry the source projection
+ * (#1624); learner reads never do (#1962), so both fields are optional — the
+ * same contract the client's `CourseTopic` type already states.
  */
-const LEARNER_TOPIC_WHERE = {
-  reviewStatus: "ACCEPTED",
-  name: { not: FALLBACK_TOPIC_NAME },
-} satisfies Prisma.CourseTopicWhereInput;
+export type ServedCourseTopic = Prisma.CourseTopicGetPayload<object> & {
+  sources?: { materialId: string; title: string | null }[];
+  sourceCount?: number;
+};
 
 function audienceWhere(audience: TopicAudience): Prisma.CourseTopicWhereInput {
   return audience === "learner" ? LEARNER_TOPIC_WHERE : {};
@@ -1280,18 +1280,27 @@ export async function getCourseTopics(courseId: string, includeDeleted = false) 
   });
 }
 
-/** Topics for a course, each carrying the bounded source projection (#1624). */
+/**
+ * Topics for a course, each carrying the bounded source projection (#1624).
+ *
+ * The learner view carries no projection at all (#1962): a topic's sources are
+ * course files, and students never see those.
+ */
 export async function getCourseTopicsWithSources(
   courseId: string,
   includeDeleted = false,
   audience: TopicAudience = "staff",
-) {
+): Promise<ServedCourseTopic[]> {
+  const where: Prisma.CourseTopicWhereInput = {
+    courseId,
+    deletedAt: includeDeleted ? undefined : null,
+    ...audienceWhere(audience),
+  };
+  if (audience === "learner") {
+    return prisma.courseTopic.findMany({ where, orderBy: { name: "asc" } });
+  }
   const topics = await prisma.courseTopic.findMany({
-    where: {
-      courseId,
-      deletedAt: includeDeleted ? undefined : null,
-      ...audienceWhere(audience),
-    },
+    where,
     orderBy: { name: "asc" },
     include: topicSourceInclude,
   });
@@ -1308,22 +1317,23 @@ export async function getCourseTopic(courseId: string, topicId: string, includeD
   });
 }
 
-/** One topic, carrying the bounded source projection (#1624). */
+/** One topic, carrying the bounded source projection (#1624) — none for learners (#1962). */
 export async function getCourseTopicWithSources(
   courseId: string,
   topicId: string,
   includeDeleted = false,
   audience: TopicAudience = "staff",
-) {
-  const topic = await prisma.courseTopic.findFirst({
-    where: {
-      id: topicId,
-      courseId,
-      deletedAt: includeDeleted ? undefined : null,
-      ...audienceWhere(audience),
-    },
-    include: topicSourceInclude,
-  });
+): Promise<ServedCourseTopic | null> {
+  const where: Prisma.CourseTopicWhereInput = {
+    id: topicId,
+    courseId,
+    deletedAt: includeDeleted ? undefined : null,
+    ...audienceWhere(audience),
+  };
+  if (audience === "learner") {
+    return prisma.courseTopic.findFirst({ where });
+  }
+  const topic = await prisma.courseTopic.findFirst({ where, include: topicSourceInclude });
   return topic ? withSourceProjection(topic) : null;
 }
 

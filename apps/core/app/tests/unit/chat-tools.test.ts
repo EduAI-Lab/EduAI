@@ -105,3 +105,61 @@ describe("buildChatToolRegistry", () => {
     });
   });
 });
+
+describe("buildChatToolRegistry — onMaterialsRetrieved (#1963)", () => {
+  it("hands every search to the hook and returns its learner hits instead", async () => {
+    const hits = [
+      { content: "Lab 14 is due.", similarity: 0.9, materialTitle: "L14.pdf", materialId: "m14" },
+    ];
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({ relevantContent: hits, count: 1 });
+    const onMaterialsRetrieved = vi
+      .fn()
+      .mockResolvedValue([{ content: "Lab 14 is due.", similarity: 0.9, topics: ["Labs"] }]);
+    const registry = buildChatToolRegistry({
+      effectiveCourseId: "course-1",
+      webToolsEnabled: false,
+      restrictToStudentVisible: true,
+      onMaterialsRetrieved,
+    });
+
+    const result = await registry.getInformation.execute(
+      { question: "When is Lab 14 due?" },
+      {} as never,
+    );
+
+    expect(onMaterialsRetrieved).toHaveBeenCalledWith(hits);
+    expect(result).toEqual({
+      relevantContent: [{ content: "Lab 14 is due.", similarity: 0.9, topics: ["Labs"] }],
+      count: 1,
+    });
+  });
+
+  it("keeps the result as it is when the hook returns null (staff)", async () => {
+    const hits = [{ content: "c", similarity: 0.9, materialTitle: "L14.pdf", materialId: "m14" }];
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({ relevantContent: hits, count: 1 });
+    const registry = buildChatToolRegistry({
+      effectiveCourseId: "course-1",
+      webToolsEnabled: false,
+      onMaterialsRetrieved: vi.fn().mockResolvedValue(null),
+    });
+
+    const result = await registry.getInformation.execute({ question: "q" }, {} as never);
+
+    expect(result).toEqual({ relevantContent: hits, count: 1 });
+  });
+
+  it("does not call the hook when the search failed", async () => {
+    vi.mocked(runCourseMaterialSearchTool).mockResolvedValue({ error: "Failed" });
+    const onMaterialsRetrieved = vi.fn();
+    const registry = buildChatToolRegistry({
+      effectiveCourseId: "course-1",
+      webToolsEnabled: false,
+      onMaterialsRetrieved,
+    });
+
+    const result = await registry.getInformation.execute({ question: "q" }, {} as never);
+
+    expect(result).toEqual({ error: "Failed" });
+    expect(onMaterialsRetrieved).not.toHaveBeenCalled();
+  });
+});

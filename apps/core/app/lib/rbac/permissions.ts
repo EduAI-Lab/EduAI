@@ -40,10 +40,9 @@ export function canUploadMaterial(access: CourseAccess): boolean {
   return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
-export function canViewMaterial(access: CourseAccess, isPublished: boolean): boolean {
-  if (!access) return false;
-  if (access === "student") return isPublished;
-  return true;
+// Course files are staff-only; students reach a course through course chat (#1962).
+export function canViewMaterial(access: CourseAccess): boolean {
+  return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
 // TA can only delete their own uploads; instructor/admin/unit can delete any.

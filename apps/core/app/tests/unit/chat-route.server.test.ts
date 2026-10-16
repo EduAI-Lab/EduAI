@@ -6,6 +6,10 @@ vi.mock("~/lib/chat-history/server", () => ({
   getChatMessages: vi.fn(),
 }));
 
+vi.mock("~/lib/chat/learner-sources.server", () => ({
+  readerSeesMaterialFiles: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
@@ -32,6 +36,7 @@ vi.mock("~/lib/assist-model-settings.server", () => ({
 }));
 
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
+import { readerSeesMaterialFiles } from "~/lib/chat/learner-sources.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
@@ -293,6 +298,51 @@ describe("loadChatBaseDataForUser", () => {
 describe("loadChatTranscript", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("serves a student owner their transcript without file names (#1963)", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue(CHAT_ACCESS);
+    vi.mocked(readerSeesMaterialFiles).mockResolvedValueOnce(false);
+    vi.mocked(getChatMessages).mockResolvedValue([
+      {
+        messageId: "a1",
+        role: "assistant",
+        content: {
+          id: "a1",
+          role: "assistant",
+          content: "Answer",
+          metadata: { ragSources: ["L14.pdf"], ragTopics: ["Labs"] },
+        },
+      },
+    ]);
+
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
+
+    expect(result?.messages[0].metadata).toEqual({ ragTopics: ["Labs"] });
+    expect(readerSeesMaterialFiles).toHaveBeenCalledWith(
+      { id: "owner-1", role: "STUDENT" },
+      CHAT_ACCESS,
+    );
+  });
+
+  it("keeps file names for a reader who may see them (#1963)", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue(CHAT_ACCESS);
+    vi.mocked(getChatMessages).mockResolvedValue([
+      {
+        messageId: "a1",
+        role: "assistant",
+        content: {
+          id: "a1",
+          role: "assistant",
+          content: "Answer",
+          metadata: { ragSources: ["L14.pdf"] },
+        },
+      },
+    ]);
+
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
+
+    expect(result?.messages[0].metadata).toEqual({ ragSources: ["L14.pdf"] });
   });
 
   it("returns null when the viewer may not read the chat", async () => {

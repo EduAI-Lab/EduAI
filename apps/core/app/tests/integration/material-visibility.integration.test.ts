@@ -12,6 +12,11 @@
 // assertion's failure output, not just divergence between a path and the
 // oracle.
 //
+// #1962: the REST route no longer serves students at all — an enrolled
+// student gets a flat 403 there, before any material-level check — so for
+// student rows only the two RAG paths still carry the student visibility rule.
+// Staff rows still require all three paths to agree.
+//
 // Real Postgres + pgvector. Only the embedding provider network call is
 // mocked, with a fixed vector reused for both the seeded chunk and every
 // query — cosine similarity is always 1, so the RAG assertions test the SQL
@@ -240,8 +245,10 @@ describe.each(rows.map((row, index) => ({ row: row as MaterialVisibilityRow, ind
           path === "rest" ? await observeRest(row, seeded) : await observeRag(row, seeded, path);
       }
       const expectedVisible = materialVisibilityOracle(row).outcome === "visible";
+      // #1962: REST refuses an enrolled student outright, so for those rows it
+      // follows its own adapter; the two RAG paths still carry the verdict.
       expect(observed).toEqual({
-        rest: expectedVisible,
+        rest: expectedRestStatus(row) === 200,
         "rag-hybrid": expectedVisible,
         "rag-sql": expectedVisible,
       });

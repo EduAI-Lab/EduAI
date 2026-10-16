@@ -218,12 +218,12 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 | Operation | ADMIN | UNIT_ADMIN | INSTRUCTOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Upload material | ✓ | D | C | C | — |
-| View / download material | ✓ | D | C | C | C (published course, active enrollment) |
+| View / download material | ✓ | D | C | C | — |
 | Delete material | ✓ | D | C | O | — |
 
 **Notes:**
 - TAs can only delete materials they personally uploaded (`CourseMaterial.uploadedBy === user.id`). Instructors can delete any material in their course.
-- Students cannot upload materials.
+- Students cannot upload, list, preview or download materials (#1962). Course chat is their way into a course.
 
 ---
 
@@ -581,8 +581,8 @@ Enforcement in `app/routes/api/courses.materials.$.ts`.
 
 | Operation | Target | Current | Notes |
 |---|---|---|---|
-| Upload material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Instructor OR TA OR enrolled student | **Students can upload** — target says `—` for students |
-| View / download material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C), STUDENT(C, published + active) | Same as upload | No published-course gate checked |
+| Upload material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target (TA behind `tas.canManageMaterials`) | Students refused on every materials path (#1962) |
+| View / download material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target | Students refused on every materials path (#1962) |
 | Delete material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(O) | **Not implemented as a separate delete route** | No DELETE /materials endpoint found |
 
 ---

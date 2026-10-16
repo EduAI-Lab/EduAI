@@ -1219,7 +1219,11 @@ export async function findRelevantContent(
   similarityThreshold?: number,
   restrictToStudentVisible: boolean = false,
   requestOptions?: EmbeddingRequestOptions,
-): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
+): Promise<
+  // `materialId` is always set; it is typed optional so the many hand-built hits
+  // that mock this function stay valid (#1963).
+  Array<{ content: string; similarity: number; materialTitle: string; materialId?: string }>
+> {
   // Fetch per-course RAG overrides; both fields are nullable — null means "use default".
   const courseSettings = await getCourseRagSettings(courseId);
   const effectiveLimit = courseSettings?.ragTopK ?? limit;
@@ -1297,12 +1301,15 @@ export async function findRelevantContent(
     // to the resulting candidate set.
     const [, hybridResults] = await prisma.$transaction([
       prisma.$executeRaw(applyIvfflatSettings),
-      prisma.$queryRaw<Array<{ content: string; score: number; material_title: string }>>`
+      prisma.$queryRaw<
+        Array<{ content: string; score: number; material_title: string; material_id: string }>
+      >`
         WITH vector_candidates AS MATERIALIZED (
           SELECT
             mc.content,
             mc.content_tsv,
             cm.title AS material_title,
+            cm.id AS material_id,
             me.embedding <=> ${queryEmbedding}::vector AS distance
           FROM material_embeddings me
           JOIN material_chunks mc ON me."chunkId" = mc.id
@@ -1318,6 +1325,7 @@ export async function findRelevantContent(
             mc.content,
             mc.content_tsv,
             cm.title AS material_title,
+            cm.id AS material_id,
             me.embedding <=> ${queryEmbedding}::vector AS distance
           FROM material_chunks mc
           JOIN material_embeddings me ON me."chunkId" = mc.id
@@ -1330,16 +1338,17 @@ export async function findRelevantContent(
           ORDER BY ts_rank(mc.content_tsv, plainto_tsquery('english', ${userQuery})) DESC
           LIMIT ${lexicalCandidateLimit}
         ), candidate_chunks AS (
-          SELECT content, content_tsv, material_title, distance
+          SELECT content, content_tsv, material_title, material_id, distance
           FROM vector_candidates
           WHERE 1 - distance > ${threshold}
           UNION
-          SELECT content, content_tsv, material_title, distance
+          SELECT content, content_tsv, material_title, material_id, distance
           FROM lexical_candidates
         )
         SELECT
           content,
           material_title,
+          material_id,
           (1 - distance) * ${alpha} +
           COALESCE(
             ts_rank(
@@ -1360,6 +1369,7 @@ export async function findRelevantContent(
       content: r.content,
       similarity: Number(r.score),
       materialTitle: r.material_title,
+      materialId: r.material_id,
     }));
   }
 
@@ -1370,12 +1380,14 @@ export async function findRelevantContent(
         content: string;
         similarity: number;
         material_title: string;
+        material_id: string;
       }>
     >`
       WITH vector_candidates AS MATERIALIZED (
         SELECT
           mc.content,
           cm.title AS material_title,
+          cm.id AS material_id,
           me.embedding <=> ${queryEmbedding}::vector AS distance
         FROM material_embeddings me
         JOIN material_chunks mc ON me."chunkId" = mc.id
@@ -1390,7 +1402,8 @@ export async function findRelevantContent(
       SELECT
         content,
         1 - distance AS similarity,
-        material_title
+        material_title,
+        material_id
       FROM vector_candidates
       WHERE 1 - distance > ${threshold}
       ORDER BY distance ASC
@@ -1402,6 +1415,7 @@ export async function findRelevantContent(
     content: result.content,
     similarity: result.similarity,
     materialTitle: result.material_title,
+    materialId: result.material_id,
   }));
 }
 

@@ -8,10 +8,10 @@
  * - An invalid hint degrades the WHOLE context to none — a crafted value never
  *   reaches the content machinery even partially trusted. An empty hint means
  *   "nothing published yet", never "default to everything".
- * - Course access, the student publish gate, the `students.canViewMaterials`
- *   policy and the per-material visibility filters are the SAME rules the
- *   materials API applies (`readMaterialForViewer`, `materialGateFor`,
- *   `findRelevantContent`'s student filter) — one rule, not a second copy.
+ * - Course access and the per-material read are the SAME rules the materials
+ *   API applies (`canViewMaterial`, `readMaterialForViewer`) — one rule, not a
+ *   second copy. Students never see a course's files (#1962), so no student gets
+ *   material context here either; course chat is their way into a course.
  * - A course whose instructor opted it out of the assistant contributes nothing.
  * - {@link buildMaterialContext} never throws: any failure degrades to "this
  *   material contributed nothing", so an unreadable material can never be the
@@ -33,7 +33,7 @@ import {
 } from "~/lib/assistant/context-caps";
 import { resolveCourseAccessGate, type AccessLevel } from "~/lib/auth/course-access.server";
 import { previewExcerpt, readMaterialForViewer } from "~/lib/materials/viewable-material.server";
-import { getPolicy } from "~/lib/policy.server";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import prisma from "~/lib/prisma.server";
 
 /** What the page says the reader is looking at. A hint, never an authorization. */
@@ -89,16 +89,13 @@ export async function resolveCourseContext(input: {
     id: string;
     code: string;
     name: string;
-    isPublished: boolean;
     aiAssistantEnabled: boolean;
   };
   access: AccessLevel | null;
 }): Promise<ResolvedPageContext> {
   const { course, access } = input;
-  let canView = access !== null;
-  if (canView && access?.level === "student") {
-    canView = course.isPublished && (await getPolicy("students.canViewMaterials"));
-  }
+  // #1962: the materials API's staff allow-list, so a student is refused here too.
+  const canView = access !== null && canViewMaterial(access.level);
   return {
     kind: "resolved",
     courseId: course.id,
