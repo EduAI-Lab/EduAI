@@ -104,9 +104,11 @@ function completed(job: Partial<NonNullable<TopicAnalysisStatus["job"]>>): Topic
       usedSource: null,
       matched: null,
       unmatched: null,
+      mode: "match",
       ...job,
     },
     pendingSuggestions: 0,
+    unfiledMaterials: 0,
   };
 }
 

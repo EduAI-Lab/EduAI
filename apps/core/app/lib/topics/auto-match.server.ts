@@ -1,9 +1,7 @@
-import { listCanvasCourseModules } from "~/lib/canvas/client.server";
-import { requireCanvasCredentials } from "~/lib/canvas/courses.server";
 import prisma from "~/lib/prisma.server";
 import { looseTopicKey, MAX_TOPICS_PER_MATERIAL } from "~/lib/topics/candidates";
 import { MATERIAL_TOPIC_WHERE } from "~/lib/topics/material-topics.server";
-import { extractCanvasModuleCandidates } from "~/lib/topics/canvas-modules";
+import { canvasModuleNamesByMaterial } from "~/lib/topics/canvas-module-names.server";
 import { extractHeadingCandidates } from "~/lib/topics/headings";
 import {
   buildTopicMatchPrompt,
@@ -155,45 +153,6 @@ function structureNames(material: MatchMaterial, canvasNames: Map<string, string
   const [heading] = extractHeadingCandidates(material.id, material.rawText);
   if (heading) names.push(heading.name);
   return names;
-}
-
-/**
- * Canvas module names per material, or an empty map when the course is not
- * Canvas linked, the user has no stored credentials, or Canvas is unreachable.
- *
- * A Canvas failure must not fail the job: the heading and model paths still work.
- */
-async function canvasModuleNamesByMaterial(
-  args: MatchArgs,
-  materials: MatchMaterial[],
-): Promise<Map<string, string[]>> {
-  const byMaterial = new Map<string, string[]>();
-  if (!args.canvasCourseId) return byMaterial;
-
-  const materialIdByCanvasFileId = new Map<string, string>();
-  for (const material of materials) {
-    if (material.externalSource === "canvas" && material.externalId) {
-      materialIdByCanvasFileId.set(material.externalId, material.id);
-    }
-  }
-  if (materialIdByCanvasFileId.size === 0) return byMaterial;
-
-  try {
-    const credentials = await requireCanvasCredentials(args.userId);
-    const modules = await listCanvasCourseModules(
-      credentials,
-      args.canvasCourseId,
-      args.fetchImpl ?? fetch,
-    );
-    for (const candidate of extractCanvasModuleCandidates(modules, materialIdByCanvasFileId)) {
-      for (const materialId of candidate.materialIds) {
-        byMaterial.set(materialId, [...(byMaterial.get(materialId) ?? []), candidate.name]);
-      }
-    }
-  } catch (error) {
-    console.error("[topic-match] Canvas module read failed; continuing without it", error);
-  }
-  return byMaterial;
 }
 
 /**

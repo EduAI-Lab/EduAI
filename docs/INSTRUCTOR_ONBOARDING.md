@@ -113,6 +113,7 @@ Each file can have up to three topics, shown as tags under its name on the **Mat
 
 - **Automatic:** once a file finishes processing, EduAI files it under the existing topic that fits it best. It only uses topics you have approved, and it never creates a topic by itself. A file that fits nothing shows **No topic**.
 - **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
+- **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Suggestions are hidden from students until you approve them. Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
 
 ### Enrollments
 

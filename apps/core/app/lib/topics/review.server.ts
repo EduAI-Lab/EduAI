@@ -3,11 +3,14 @@ import type { JsonValue } from "@eduai/types";
 import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
+import { MAX_TOPICS_PER_MATERIAL } from "~/lib/topics/candidates";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
+import { MATERIAL_TOPIC_WHERE } from "~/lib/topics/material-topics.server";
 import {
   recordTopicAnalysisJobs,
   resumeStaleTopicAnalysisJobs,
   runTopicAnalysisJob,
+  startTopicSuggestion,
 } from "~/lib/topics/job.server";
 
 /** Shape returned by the topic-analysis status endpoint. */
@@ -24,9 +27,13 @@ export type TopicAnalysisStatus = {
     matched: number | null;
     /** Files that fit no existing topic (#1965); null on rows from before matching. */
     unmatched: number | null;
+    /** `suggest` for an on-demand Suggest run (#1966); `match` for an upload batch. */
+    mode: "match" | "suggest";
   } | null;
   /** How many generated topics are still awaiting review. */
   pendingSuggestions: number;
+  /** Processed materials with no accepted topic, which Suggest is most useful for (#1966). */
+  unfiledMaterials: number;
 };
 
 type ReviewOutcome =
@@ -55,6 +62,12 @@ type JobRow = {
 function batchKeyOf(row: JobRow): string | null {
   const input = asJsonObject(asJsonObject(row.payload)?.input);
   return asPresentText(input?.batchKey);
+}
+
+/** Whether a row is an on-demand Suggest run (#1966) rather than an upload batch. */
+function isSuggestRun(row: JobRow): boolean {
+  const input = asJsonObject(asJsonObject(row.payload)?.input);
+  return asText(input?.mode) === "suggest";
 }
 
 type ChunkResult = {
@@ -149,6 +162,7 @@ function aggregateBatch(chunks: JobRow[], newest: JobRow) {
     usedSource: usedSource ?? null,
     matched: sumOf(chunks, "matched"),
     unmatched: sumOf(chunks, "unmatched"),
+    mode: isSuggestRun(newest) ? ("suggest" as const) : ("match" as const),
   };
 }
 
@@ -168,7 +182,7 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
   // never disturbed.
   await resumeStaleTopicAnalysisJobs(courseId);
 
-  const [rows, pendingSuggestions] = await Promise.all([
+  const [rows, pendingSuggestions, unfiledMaterials] = await Promise.all([
     prisma.aiJob.findMany({
       where: { courseId, kind: "topic-analysis" },
       orderBy: { createdAt: "desc" },
@@ -186,17 +200,25 @@ export async function latestTopicAnalysisForCourse(courseId: string): Promise<To
     prisma.courseTopic.count({
       where: { courseId, deletedAt: null, reviewStatus: "SUGGESTED" },
     }),
+    prisma.courseMaterial.count({
+      where: {
+        courseId,
+        status: "READY",
+        deletedAt: null,
+        derivedTopics: { none: { topic: MATERIAL_TOPIC_WHERE } },
+      },
+    }),
   ]);
 
   const newest = rows[0];
-  if (!newest) return { job: null, pendingSuggestions };
+  if (!newest) return { job: null, pendingSuggestions, unfiledMaterials };
 
   // Group by the newest row's batch. A row with no `batchKey` predates chunking
   // and stands alone, which is exactly the old single-row behaviour.
   const batchKey = batchKeyOf(newest);
   const chunks = batchKey ? rows.filter((row) => batchKeyOf(row) === batchKey) : [newest];
 
-  return { job: aggregateBatch(chunks, newest), pendingSuggestions };
+  return { job: aggregateBatch(chunks, newest), pendingSuggestions, unfiledMaterials };
 }
 
 /**
@@ -222,10 +244,16 @@ export async function approveGeneratedTopic(
   const topic = await findSuggestion(courseId, topicId);
   if (!topic) return { status: "404", error: "TOPIC_NOT_FOUND" };
 
-  const updated = await prisma.courseTopic.update({
-    where: { id: topic.id },
-    data: { reviewStatus: "ACCEPTED" },
-    select: { id: true, name: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const accepted = await tx.courseTopic.update({
+      where: { id: topic.id },
+      data: { reviewStatus: "ACCEPTED" },
+      select: { id: true, name: true },
+    });
+    // #1966: the suggestion's source links become the materials' topics now,
+    // within each material's cap.
+    await fileSourcesUnder(tx, topic.id, topic.id);
+    return accepted;
   });
   // Course chat only lists accepted topics (#1936), so an approval changes what
   // the next turn's prompt should carry.
@@ -307,6 +335,10 @@ export async function mergeGeneratedTopic(
 
     await repointSecondaryLinks(tx, topic.id, target.id);
 
+    // #1966: the files the suggestion covered move to the target too, within
+    // each material's cap, so merging doesn't lose them.
+    await fileSourcesUnder(tx, topic.id, target.id);
+
     await tx.courseTopic.update({
       where: { id: topic.id },
       data: { deletedAt: new Date(), deletedBy: userId },
@@ -318,6 +350,57 @@ export async function mergeGeneratedTopic(
 
 /** The transactional client `mergeGeneratedTopic` hands to its helpers. */
 type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * File the materials a suggestion came from under `targetId`, which is the
+ * suggestion itself on approval or the merge target (#1966).
+ *
+ * A material already at `MAX_TOPICS_PER_MATERIAL` accepted topics is skipped:
+ * nothing it has is removed to make room. On approval the suggestion's link to
+ * such a material is deleted, since it would otherwise count as a fourth topic.
+ * Every material is eligible otherwise, including one whose topics an
+ * instructor set — approving a card that names the file is their choice too.
+ */
+async function fileSourcesUnder(
+  tx: TopicTransaction,
+  suggestionId: string,
+  targetId: string,
+): Promise<void> {
+  const sources = await tx.courseTopicSource.findMany({
+    where: { topicId: suggestionId, material: { deletedAt: null } },
+    select: { materialId: true },
+  });
+
+  for (const { materialId } of sources) {
+    const filed = await tx.courseTopicSource.findMany({
+      where: { materialId, topicId: { not: suggestionId }, topic: MATERIAL_TOPIC_WHERE },
+      select: { topicId: true, position: true },
+    });
+    const alreadyFiled = filed.some((link) => link.topicId === targetId);
+    const full = filed.length >= MAX_TOPICS_PER_MATERIAL;
+
+    if (targetId === suggestionId) {
+      if (full) {
+        await tx.courseTopicSource.deleteMany({ where: { topicId: suggestionId, materialId } });
+      } else {
+        const position = filed.reduce((max, link) => Math.max(max, link.position + 1), 0);
+        await tx.courseTopicSource.updateMany({
+          where: { topicId: suggestionId, materialId },
+          data: { position },
+        });
+      }
+      continue;
+    }
+
+    if (alreadyFiled || full) continue;
+    const position = filed.reduce((max, link) => Math.max(max, link.position + 1), 0);
+    await tx.courseTopicSource.upsert({
+      where: { topicId_materialId: { topicId: targetId, materialId } },
+      create: { topicId: targetId, materialId, position },
+      update: { position },
+    });
+  }
+}
 
 /**
  * Move every secondary tag off the source topic and onto the target.
@@ -390,6 +473,16 @@ export async function retryTopicAnalysis(
   courseId: string,
   userId: string,
 ): Promise<{ jobId: string } | null> {
+  // #1966: a failed Suggest run is retried as a Suggest run, not as filing.
+  const newest = await prisma.aiJob.findFirst({
+    where: { courseId, kind: "topic-analysis" },
+    orderBy: { createdAt: "desc" },
+    select: { payload: true },
+  });
+  if (newest && asText(asJsonObject(asJsonObject(newest.payload)?.input)?.mode) === "suggest") {
+    return startTopicSuggestion({ courseId, userId });
+  }
+
   const materials = await prisma.courseMaterial.findMany({
     where: { courseId, status: "READY", deletedAt: null },
     select: { id: true },

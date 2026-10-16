@@ -94,6 +94,7 @@ import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
 import { useTopicAnalysis } from "~/hooks/api/use-topic-analysis";
+import { SuggestTopicsBar } from "~/components/courses/suggest-topics-bar";
 import { TopicAnalysisBanner } from "~/components/courses/topic-analysis-banner";
 import {
   isSuggestion,
@@ -408,6 +409,8 @@ export function CourseDetailManagerView({
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    suggestTopics,
+    inFlight: topicAnalysisInFlight,
     refetch: refetchTopicAnalysis,
     // `courseId` is optional on this component; without one there is nothing to
     // poll, so the hook stays idle rather than fetching `/api/courses//…`.
@@ -1622,6 +1625,13 @@ export function CourseDetailManagerView({
           <div className="flex flex-col gap-4">
             {/* #1624: persistent status for automatic topic provisioning. Reads
                 the durable job row, so it survives a reload. */}
+            {canReviewTopicSuggestions && (
+              <SuggestTopicsBar
+                unfiledMaterials={topicAnalysis.unfiledMaterials}
+                busy={topicAnalysisInFlight}
+                onSuggest={suggestTopics}
+              />
+            )}
             <TopicAnalysisBanner
               status={topicAnalysis}
               retrying={retryingAnalysis}
