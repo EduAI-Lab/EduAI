@@ -69,7 +69,10 @@ function tidyName(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
 
-type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+export type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** A chosen topic was dismissed or deleted after the request read it. */
+class TopicGoneError extends Error {}
 
 /**
  * File the materials a suggestion came from under `targetId`, which is the
@@ -79,7 +82,8 @@ type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
  * nothing it has is removed to make room. On approval the suggestion's link to
  * such a material is deleted, since it would otherwise count as a fourth topic.
  * Every material is eligible otherwise, including one whose topics an
- * instructor set — approving a card that names the file is their choice too.
+ * instructor set — approving a card that names the file is their choice too —
+ * and a deleted one, so restoring it cannot bring back a fourth topic.
  *
  * `exceptMaterialId` is the file whose topics the caller is writing itself:
  * naming a suggestion in a file's picker approves it (#1988 review), and the
@@ -94,7 +98,6 @@ export async function fileSourcesUnder(
   const sources = await tx.courseTopicSource.findMany({
     where: {
       topicId: suggestionId,
-      material: { deletedAt: null },
       // Prisma ignores an undefined `not`, so with no exception every file is read.
       materialId: { not: exceptMaterialId },
     },
@@ -219,6 +222,7 @@ export async function setMaterialTopics(
     const outcome = await prisma.$transaction(async (tx) => {
       const topics: MaterialTopic[] = [];
       const createdTopics: MaterialTopic[] = [];
+      const approved: string[] = [];
 
       for (const entry of resolved) {
         if (entry.kind === "new") {
@@ -235,23 +239,30 @@ export async function setMaterialTopics(
           topics.push(topic);
           createdTopics.push(topic);
         } else {
+          // The topics were read before this transaction, so check again here:
+          // another instructor may have dismissed or approved it meanwhile.
           if (entry.topic.reviewStatus !== "ACCEPTED") {
-            await tx.courseTopic.update({
-              where: { id: entry.topic.id },
+            const { count } = await tx.courseTopic.updateMany({
+              where: { id: entry.topic.id, deletedAt: null, reviewStatus: { not: "ACCEPTED" } },
               data: { reviewStatus: "ACCEPTED" },
             });
+            if (count === 1) approved.push(entry.topic.id);
           }
+          const live = await tx.courseTopic.findFirst({
+            where: { id: entry.topic.id, deletedAt: null, reviewStatus: "ACCEPTED" },
+            select: { id: true },
+          });
+          if (!live) throw new TopicGoneError();
           topics.push({ id: entry.topic.id, name: entry.topic.name });
         }
       }
 
       // Naming a pending suggestion approves it for the whole course, which turns
       // its links to other files into their topics too (#1988 review); file
-      // those within each file's cap, as the review card's Approve does.
-      for (const entry of resolved) {
-        if (entry.kind === "existing" && entry.topic.reviewStatus !== "ACCEPTED") {
-          await fileSourcesUnder(tx, entry.topic.id, entry.topic.id, args.materialId);
-        }
+      // those within each file's cap, as the review card's Approve does. Only the
+      // request that approved it does this, so a concurrent approval runs it once.
+      for (const topicId of approved) {
+        await fileSourcesUnder(tx, topicId, topicId, args.materialId);
       }
 
       const keepIds = topics.map((topic) => topic.id);
@@ -281,6 +292,7 @@ export async function setMaterialTopics(
     if (needsCreate) invalidateCourseTopicNamesCache(args.courseId);
     return { status: "200", ...outcome };
   } catch (error) {
+    if (error instanceof TopicGoneError) return { status: "404", error: "TOPIC_NOT_FOUND" };
     // A new name that exactly matches a deleted topic (a dismissed suggestion or
     // a removed topic), or one a concurrent request just created.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

@@ -4,7 +4,11 @@ import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
-import { fileSourcesUnder, MATERIAL_TOPIC_WHERE } from "~/lib/topics/material-topics.server";
+import {
+  fileSourcesUnder,
+  MATERIAL_TOPIC_WHERE,
+  type TopicTransaction,
+} from "~/lib/topics/material-topics.server";
 import {
   recordTopicAnalysisJobs,
   resumeStaleTopicAnalysisJobs,
@@ -348,7 +352,6 @@ export async function mergeGeneratedTopic(
 }
 
 /** The transactional client `mergeGeneratedTopic` hands to its helpers. */
-type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /**
  * Move every secondary tag off the source topic and onto the target.

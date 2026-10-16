@@ -1129,6 +1129,100 @@ describe("instructors choosing a material's topics (#1965)", () => {
     expect(await materialTopicNames(roomy.id)).toEqual(["D topic", "Graphs"]);
   });
 
+  // #1988 re-review: a deleted file is checked against the cap too, so restoring
+  // it cannot bring back a fourth topic.
+  it("keeps a deleted file within the cap when its suggestion is approved", async () => {
+    const edited = await seedMaterial({ checksum: "c-del-edited", rawText: "x" });
+    const deleted = await seedMaterial({ checksum: "c-del-full", rawText: "x" });
+    for (const [position, name] of ["E topic", "F topic", "G topic"].entries()) {
+      const topic = await acceptedTopic(name);
+      await prisma.courseTopicSource.create({
+        data: { topicId: topic.id, materialId: deleted.id, position },
+      });
+    }
+    await prisma.courseTopic.create({
+      data: {
+        courseId,
+        name: "Heaps",
+        origin: "AI",
+        reviewStatus: "SUGGESTED",
+        sources: { create: [edited, deleted].map((m) => ({ materialId: m.id })) },
+      },
+    });
+    await prisma.courseMaterial.update({
+      where: { id: deleted.id },
+      data: { deletedAt: new Date() },
+    });
+
+    expect(await choose(edited.id, [{ name: "heaps" }])).toMatchObject({ status: "200" });
+
+    await prisma.courseMaterial.update({ where: { id: deleted.id }, data: { deletedAt: null } });
+    expect(await materialTopicNames(deleted.id)).toEqual(["E topic", "F topic", "G topic"]);
+  });
+
+  // #1988 re-review: the topics are read before the transaction, so a suggestion
+  // dismissed in between must not come back as an accepted topic.
+  it("refuses a suggestion that was dismissed after the request read it", async () => {
+    const material = await seedMaterial({ checksum: "c-race-dismiss", rawText: "x" });
+    const suggestion = await prisma.courseTopic.create({
+      data: { courseId, name: "Tries", origin: "AI", reviewStatus: "SUGGESTED" },
+    });
+    // What the request read, before another instructor dismissed it.
+    const stale = [{ id: suggestion.id, name: "Tries", reviewStatus: "SUGGESTED" as const }];
+    await prisma.courseTopic.update({
+      where: { id: suggestion.id },
+      data: { deletedAt: new Date() },
+    });
+    const spy = vi.spyOn(prisma.courseTopic, "findMany").mockResolvedValueOnce(stale as never);
+
+    try {
+      expect(await choose(material.id, [{ name: "tries" }])).toEqual({
+        status: "404",
+        error: "TOPIC_NOT_FOUND",
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    const after = await prisma.courseTopic.findUniqueOrThrow({ where: { id: suggestion.id } });
+    expect(after).toMatchObject({ reviewStatus: "SUGGESTED" });
+    expect(after.deletedAt).not.toBeNull();
+    expect(await materialTopicNames(material.id)).toEqual([]);
+  });
+
+  it("files a suggestion's other materials once when it was approved meanwhile", async () => {
+    const edited = await seedMaterial({ checksum: "c-race-approve", rawText: "x" });
+    const other = await seedMaterial({ checksum: "c-race-other", rawText: "x" });
+    const suggestion = await prisma.courseTopic.create({
+      data: {
+        courseId,
+        name: "Graphs II",
+        origin: "AI",
+        reviewStatus: "SUGGESTED",
+        sources: { create: [edited, other].map((m) => ({ materialId: m.id })) },
+      },
+    });
+    const stale = [{ id: suggestion.id, name: "Graphs II", reviewStatus: "SUGGESTED" as const }];
+    // The review card approved it first and filed `other` at position 0.
+    await approveGeneratedTopic(courseId, suggestion.id);
+    await prisma.courseTopicSource.update({
+      where: { topicId_materialId: { topicId: suggestion.id, materialId: other.id } },
+      data: { position: 7 },
+    });
+    const spy = vi.spyOn(prisma.courseTopic, "findMany").mockResolvedValueOnce(stale as never);
+
+    try {
+      expect(await choose(edited.id, [{ name: "graphs ii" }])).toMatchObject({ status: "200" });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await materialTopicNames(edited.id)).toEqual(["Graphs II"]);
+    // Not filed a second time: the position the first approval left is untouched.
+    const link = await prisma.courseTopicSource.findUniqueOrThrow({
+      where: { topicId_materialId: { topicId: suggestion.id, materialId: other.id } },
+    });
+    expect(link.position).toBe(7);
+  });
+
   it("refuses more than three topics and changes nothing", async () => {
     const material = await seedMaterial({ checksum: "c-cap", rawText: "x" });
 
