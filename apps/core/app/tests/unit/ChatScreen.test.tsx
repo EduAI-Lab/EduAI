@@ -69,7 +69,12 @@ const DEFAULT_COURSES = [
 // Mutable so the not-enrolled tests can replay the in-flight fetch a remount
 // starts with (#1517); `resetCoursesState` restores it between tests.
 const coursesState = vi.hoisted(() => ({
-  courses: [] as Array<{ id: string; code: string; name: string }>,
+  courses: [] as Array<{
+    id: string;
+    code: string;
+    name: string;
+    callerEnrollmentRole?: string | null;
+  }>,
   loading: false,
 }));
 
@@ -1357,5 +1362,56 @@ describe("ChatScreen — not-enrolled overlay gating (#1517)", () => {
     renderChatScreen();
 
     expect(captureCourseViewProps.mock.lastCall?.[0].disabledReason).toBeUndefined();
+  });
+});
+
+describe("ChatScreen — student course chat (#1963)", () => {
+  it("marks the chat as a learner view when the user is a student in the selected course", () => {
+    coursesState.courses = [
+      { id: "c1", code: "COSC 101", name: "Intro to CS", callerEnrollmentRole: "STUDENT" },
+    ];
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.calls.at(-1)?.[0].learnerView).toBe(true);
+  });
+
+  it("is not a learner view for a TA in that course", () => {
+    coursesState.courses = [
+      { id: "c1", code: "COSC 101", name: "Intro to CS", callerEnrollmentRole: "TA" },
+    ];
+    renderChatScreen();
+
+    expect(captureCourseViewProps.mock.calls.at(-1)?.[0].learnerView).toBe(false);
+  });
+
+  it("hydrates each stored turn's topics", () => {
+    const transcript: ChatTranscript = {
+      chat: {
+        id: "chat-1",
+        title: "Stored chat",
+        systemPrompt: null,
+        adhdAssist: false,
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        ownerId: "user-1",
+        ownerName: "Test User",
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Answer",
+          metadata: { ragTopics: ["Labs"] },
+        },
+      ],
+      canEdit: true,
+    };
+    renderChatScreen(transcript);
+
+    expect(captureCourseViewProps.mock.calls.at(-1)?.[0].ragTopicsByMessageId).toEqual({
+      "assistant-1": ["Labs"],
+    });
   });
 });

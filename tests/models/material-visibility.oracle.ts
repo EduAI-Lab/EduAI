@@ -14,7 +14,9 @@
  *     Canvas-unpublished clause — a material staff can read directly must
  *     never be invisible to that same staff member in RAG.
  *   - An enrolled STUDENT is additionally gated by VisibleToStudents,
- *     AvailableAt, and Unpublished (Canvas sync, #777).
+ *     AvailableAt, and Unpublished (Canvas sync, #777). Since #1962 that gate
+ *     only shapes RAG: the REST path refuses students outright (see
+ *     `expectedRestStatus`).
  *
  * This file is intentionally app-agnostic (no imports from apps/core) — the
  * verdict is a semantic fact about the visibility rule, not about any one
@@ -80,8 +82,14 @@ export function materialVisibilityOracle(row: MaterialVisibilityRow): Verdict {
 /**
  * REST adapter: the exact HTTP status `routes/api/courses.materials.$.ts`
  * returns for `GET /api/courses/:courseId/materials/:materialId`.
+ *
+ * #1962: course files are staff-only, so the REST path refuses an enrolled
+ * student outright — before any material-level check, whatever the verdict.
+ * The verdict still governs RAG, where a student's chat answers draw only on
+ * the material visible to them.
  */
 export function expectedRestStatus(row: MaterialVisibilityRow): number {
+  if (row.Role === "STUDENT" && hasCourseAccess(row)) return 403;
   const verdict = materialVisibilityOracle(row);
   switch (verdict.outcome) {
     case "visible":

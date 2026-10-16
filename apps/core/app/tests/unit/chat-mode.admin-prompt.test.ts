@@ -129,13 +129,14 @@ describe("buildLearningAssistantSystemPrompt", () => {
 
   it("includes the citation closing line when citeMaterials is true", () => {
     const prompt = buildLearningAssistantSystemPrompt({ citeMaterials: true });
-    expect(prompt).toContain("cite the course materials");
+    expect(prompt).toContain("ground your answer in the course materials");
+    expect(prompt).toContain("do not write file names or a Sources line");
   });
 
   it("uses the plain closing line when citeMaterials is false (default)", () => {
     const prompt = buildLearningAssistantSystemPrompt({});
     expect(prompt).toContain("Be helpful, conversational, and accurate.");
-    expect(prompt).not.toContain("cite the course materials");
+    expect(prompt).not.toContain("ground your answer in the course materials");
   });
 
   it("includes the course context line when a courseCode is given", () => {
@@ -164,6 +165,9 @@ describe("buildLearningSystemPrompt", () => {
     expect(prompt).toContain("webSearch");
     expect(prompt).toContain("fetchPage");
     expect(prompt).toContain("Current course context: COSC 101 (UBCO)");
+    // #1963: never ask the model to name course files.
+    expect(prompt).not.toContain("mention course material titles");
+    expect(prompt).toContain("Do not write course material titles or file names");
   });
 
   it("omits the course context line when no courseCode is given", () => {

@@ -3,8 +3,10 @@ import { describe, it, expect } from "vitest";
 import {
   adhdAssistFromMessage,
   ragSourcesFromMessage,
+  ragTopicsFromMessage,
   withAdhdAssistMetadata,
   withRagSourcesMetadata,
+  withRagTopicsMetadata,
   withResolvedModelMetadata,
 } from "~/lib/chat/chat-message-metadata";
 
@@ -62,5 +64,24 @@ describe("ragSourcesFromMessage / withRagSourcesMetadata (#1936)", () => {
 
   it("ignores a malformed stored value", () => {
     expect(ragSourcesFromMessage({ metadata: { ragSources: "301_1_Intro" } })).toBeUndefined();
+  });
+});
+
+describe("ragTopicsFromMessage / withRagTopicsMetadata (#1963)", () => {
+  it("is undefined when a turn recorded no topics", () => {
+    expect(ragTopicsFromMessage({})).toBeUndefined();
+  });
+
+  it("round-trips the topics next to the file titles", () => {
+    const message = withRagTopicsMetadata({ id: "a", metadata: { ragSources: ["L14.pdf"] } }, [
+      "Labs",
+    ]);
+
+    expect(ragTopicsFromMessage(message)).toEqual(["Labs"]);
+    expect(message.metadata.ragSources).toEqual(["L14.pdf"]);
+  });
+
+  it("ignores a malformed stored value", () => {
+    expect(ragTopicsFromMessage({ metadata: { ragTopics: "Labs" } })).toBeUndefined();
   });
 });

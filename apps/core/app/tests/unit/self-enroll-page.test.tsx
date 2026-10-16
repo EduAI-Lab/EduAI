@@ -64,3 +64,18 @@ describe("self-enroll page — a link the student can't use", () => {
     expect(screen.queryByRole("link", { name: "Go to dashboard" })).toBeNull();
   });
 });
+
+describe("self-enroll page — a usable link (#1962)", () => {
+  it("promises course chat, not the course's files, which students never see", async () => {
+    renderWithLoaderData({
+      ok: true,
+      token: "t",
+      courseId: "c1",
+      courseCode: "DATA 301",
+      courseName: "Intro to Data Analytics",
+    });
+
+    expect(await screen.findByText(/ask about this course in course chat/i)).toBeInTheDocument();
+    expect(screen.queryByText(/materials/i)).toBeNull();
+  });
+});

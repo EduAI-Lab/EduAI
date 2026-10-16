@@ -19,18 +19,18 @@ vi.mock("~/lib/rbac/resolve-course-access.server", () => ({ resolveCourseAccess:
 
 const course1 = { id: "course-1", name: "Intro", code: "CS100", department: "CPSC" };
 
-/** `access` as an object falls through to the student view; "instructor" picks the manager view. */
+/** The page picks the role view from `access`; "instructor" renders the manager view (#1962: the student view takes no upload props). */
 interface LoaderFixture {
   course: typeof course1;
   user: { id: string; role: string };
-  access: string | { level: string; rank: number };
+  access: string;
   instructors: never[];
 }
 
 const loaderData: LoaderFixture = {
   course: course1,
   user: { id: "user-1", role: "INSTRUCTOR" },
-  access: { level: "instructor", rank: 2 },
+  access: "instructor",
   instructors: [],
 };
 
@@ -311,7 +311,7 @@ describe("CourseDetailPage batch upload (#1748)", () => {
   beforeEach(() => {
     materialsState.materials = [];
     loaderData.course = course1;
-    loaderData.access = { level: "instructor", rank: 2 };
+    loaderData.access = "instructor";
     uploadMaterial.mockReset();
   });
 

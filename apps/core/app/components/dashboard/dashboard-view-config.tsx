@@ -240,9 +240,10 @@ export const DASHBOARD_CONFIG = {
         label: "AI sessions / week",
         value: statsLoading ? "—" : String(stats?.chatCountWeek ?? 0),
       },
+      // #1962: students see topics, never course files.
       {
-        label: "Materials available",
-        value: statsLoading ? "—" : String(stats?.materialCount ?? 0),
+        label: "Topics to explore",
+        value: statsLoading ? "—" : String(stats?.topicCount ?? 0),
       },
       { label: "Total sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
     ],

@@ -32,9 +32,20 @@ export type ToolProps = {
   displayName?: string;
   defaultOpen?: boolean;
   className?: string;
+  /**
+   * `false` renders only the status row, with nothing to expand. Used where the
+   * input and output must not be shown, e.g. a student's course-material search (#1963).
+   */
+  collapsible?: boolean;
 };
 
-const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolProps) => {
+const Tool = ({
+  toolPart,
+  displayName,
+  defaultOpen = false,
+  className,
+  collapsible = true,
+}: ToolProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const { state, input, output, toolCallId } = toolPart;
@@ -132,6 +143,18 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
     }
     return String(value);
   };
+
+  if (!collapsible) {
+    return (
+      <div className={cn("border-border mt-3 overflow-hidden rounded-lg border", className)}>
+        <div className="bg-background flex items-center gap-2 px-3 py-2">
+          {getStateIcon()}
+          <span className="font-mono text-sm font-medium">{displayName ?? toolPart.type}</span>
+          {getStateBadge()}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("border-border mt-3 overflow-hidden rounded-lg border", className)}>

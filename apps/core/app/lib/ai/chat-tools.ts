@@ -1,13 +1,21 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
-import { runCourseMaterialSearchTool } from "~/lib/chat-rag";
+import { runCourseMaterialSearchTool, type HybridRagHit } from "~/lib/chat-rag";
+import type { LearnerRagHit } from "~/lib/chat/learner-sources.server";
 
 export function buildChatToolRegistry(options: {
   effectiveCourseId: string | null;
   webToolsEnabled: boolean;
   /** #839: when true (student caller), exclude hidden/scheduled materials from RAG. */
   restrictToStudentVisible?: boolean;
+  /**
+   * Sees every successful getInformation search's hits before the result goes
+   * anywhere. Returning learner hits replaces the result (#1963): a student's tool
+   * result reaches both the model and their browser, so it names topics, never
+   * files. Return null to keep the result unchanged.
+   */
+  onMaterialsRetrieved?: (hits: HybridRagHit[]) => Promise<LearnerRagHit[] | null>;
 }) {
   const registry = {
     getInformation: tool({
@@ -21,11 +29,14 @@ export function buildChatToolRegistry(options: {
           return { error: "No course selected for RAG search" };
         }
 
-        return runCourseMaterialSearchTool(
+        const result = await runCourseMaterialSearchTool(
           question,
           options.effectiveCourseId,
           options.restrictToStudentVisible,
         );
+        if ("error" in result || !options.onMaterialsRetrieved) return result;
+        const learnerHits = await options.onMaterialsRetrieved(result.relevantContent);
+        return learnerHits ? { relevantContent: learnerHits, count: learnerHits.length } : result;
       },
     }),
   };

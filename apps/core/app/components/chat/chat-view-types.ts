@@ -22,6 +22,8 @@ export type ChatCourseOption = {
    * section) is — #1659 review). Falls back to `code` when absent.
    */
   label?: string;
+  /** True when the caller is enrolled as a student in this course: the chat shows topics, never files (#1963). */
+  isLearner?: boolean;
 };
 
 /** Minimal message shape for live chat + in-flight tool/progress detection. */
@@ -110,6 +112,10 @@ export type ChatViewSharedProps = {
    * (#1936). Shown as the message's sources instead of model-written citations.
    */
   ragSourcesByMessageId?: Record<string, string[]>;
+  /** Topics a student's turn shows in place of file titles, keyed by message id (#1963). */
+  ragTopicsByMessageId?: Record<string, string[]>;
+  /** The user is a student in this chat's course: course-material tool output is not shown (#1963). */
+  learnerView?: boolean;
 
   /**
    * The failure to surface inline in the conversation when the latest turn

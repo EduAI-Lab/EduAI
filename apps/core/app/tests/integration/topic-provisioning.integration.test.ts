@@ -757,6 +757,36 @@ describe("unreviewed suggestions stay with staff and their materials (#1937)", (
     ]);
   });
 
+  // #1962: a topic's sources are course files, which students never see.
+  it("gives learners topics without the files they came from, staff keep them", async () => {
+    const material = await seedMaterial({ checksum: "sum-provenance", rawText: "Chapter 3" });
+    const accepted = await prisma.courseTopic.create({
+      data: {
+        courseId,
+        name: "Integrals",
+        origin: "MATERIAL_HEADING",
+        reviewStatus: "ACCEPTED",
+        sources: { create: [{ materialId: material.id }] },
+      },
+    });
+
+    const [learnerTopic] = await getCourseTopicsWithSources(courseId, false, "learner");
+    expect(learnerTopic.name).toBe("Integrals");
+    expect(learnerTopic).not.toHaveProperty("sources");
+    expect(learnerTopic).not.toHaveProperty("sourceCount");
+
+    const learnerOne = await getCourseTopicWithSources(courseId, accepted.id, false, "learner");
+    expect(learnerOne).not.toBeNull();
+    expect(learnerOne).not.toHaveProperty("sources");
+    expect(learnerOne).not.toHaveProperty("sourceCount");
+
+    const [staffTopic] = await getCourseTopicsWithSources(courseId, false, "staff");
+    expect(staffTopic).toMatchObject({
+      sources: [{ materialId: material.id, title: material.title }],
+      sourceCount: 1,
+    });
+  });
+
   it("gives course chat only accepted topic names", async () => {
     await seedMixedTopics();
     invalidateCourseTopicNamesCache(courseId);

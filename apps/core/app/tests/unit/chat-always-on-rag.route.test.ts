@@ -87,6 +87,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     chatMessage: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
+    courseTopicSource: { findMany: vi.fn().mockResolvedValue([]) },
     systemConfig: { findUnique: vi.fn() },
   },
 }));
@@ -123,7 +124,8 @@ function makeRequest(body: RouteRequestBody) {
   } as any;
 }
 
-function mockStream() {
+/** `assistantId` must differ from the user message's id for the reply to be persisted. */
+function mockStream(assistantId = "msg-1") {
   vi.mocked(streamText).mockResolvedValue({
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve("The answer."),
@@ -133,7 +135,7 @@ function mockStream() {
     reasoning: Promise.resolve(undefined),
     response: Promise.resolve({
       id: "resp-1",
-      messages: [{ id: "msg-1", role: "assistant", content: "The answer." }],
+      messages: [{ id: assistantId, role: "assistant", content: "The answer." }],
     }),
   } as never);
 }
@@ -228,6 +230,12 @@ beforeEach(() => {
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+  vi.mocked(prisma.courseTopicSource.findMany).mockResolvedValue([] as never);
+  // A test may switch the caller to staff; every other test runs as a student.
+  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    course: { id: "course-1", isPublished: true, code: "COSC101" },
+    access: { level: "student" },
+  } as never);
 });
 
 describe("Smart course RAG gate (#484)", () => {
@@ -356,7 +364,8 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.content).toBe(COURSE_MATERIALS_NO_COVERAGE_REPLY);
-      expect(body.ragSources).toEqual([]);
+      expect(body.ragTopics).toEqual([]);
+      expect(body).not.toHaveProperty("ragSources");
       expect(streamText).not.toHaveBeenCalled();
     });
 
@@ -393,18 +402,29 @@ describe("Smart course RAG gate (#484)", () => {
         );
       const assistant = persisted.find((row) => row.role === "assistant");
       expect(assistant?.content.metadata?.ragSources).toEqual([]);
+      expect(assistant?.content.metadata?.ragTopics).toEqual([]);
     });
 
-    it("answers a question the excerpts cover and reports the retrieved materials (#1936)", async () => {
+    it("answers a student with topics, never file names, in the reply and the prompt (#1963)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([
         {
           content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
           similarity: 0.72,
           materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+          materialId: "m14",
         },
-        { content: "iClicker Questions: 5%", similarity: 0.6, materialTitle: "301_1_Intro" },
+        {
+          content: "iClicker Questions: 5%",
+          similarity: 0.6,
+          materialTitle: "301_1_Intro",
+          materialId: "m1",
+        },
       ]);
-      mockStream();
+      vi.mocked(prisma.courseTopicSource.findMany).mockResolvedValue([
+        { materialId: "m14", topic: { name: "Data cleaning" } },
+      ] as never);
+      mockStream("asst-1");
+
       const res = await action(
         makeRequest(
           baseBody({
@@ -412,15 +432,58 @@ describe("Smart course RAG gate (#484)", () => {
           }),
         ),
       );
+
       expect(res.status).toBe(200);
-      expect(streamText).toHaveBeenCalled();
-      expect((await res.json()).ragSources).toEqual([
-        "ZZ-TEST-DATA301-L14-Data-Cleaning",
-        "301_1_Intro",
-      ]);
+      const body = await res.json();
+      expect(body.ragTopics).toEqual(["Data cleaning"]);
+      expect(body).not.toHaveProperty("ragSources");
+      const system = String(lastStreamConfig().system);
+      expect(system).toContain("**Topics**: Data cleaning");
+      expect(system).toContain("**Source**: Course material");
+      expect(system).not.toMatch(/ZZ-TEST-DATA301|301_1_Intro/);
+      // Staff oversight keeps the file titles on the stored turn.
+      const stored = JSON.stringify(vi.mocked(prisma.chatMessage.createMany).mock.calls);
+      expect(stored).toContain("ZZ-TEST-DATA301-L14-Data-Cleaning");
+      expect(stored).toContain("Data cleaning");
     });
 
-    it("streams the retrieved materials as the ragSources annotation the chat UI reads (PR #1946 review)", async () => {
+    it("still reports file titles to staff (#1936)", async () => {
+      vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+        course: { id: "course-1", isPublished: true, code: "COSC101" },
+        access: { level: "instructor" },
+      } as never);
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
+          similarity: 0.72,
+          materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+          materialId: "m14",
+        },
+        {
+          content: "iClicker Questions: 5%",
+          similarity: 0.6,
+          materialTitle: "301_1_Intro",
+          materialId: "m1",
+        },
+      ]);
+      mockStream();
+
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "When is Lab 14 due?" }],
+          }),
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ragSources).toEqual(["ZZ-TEST-DATA301-L14-Data-Cleaning", "301_1_Intro"]);
+      expect(body).not.toHaveProperty("ragTopics");
+      expect(prisma.courseTopicSource.findMany).not.toHaveBeenCalled();
+    });
+
+    it("streams a student's topics as the ragTopics annotation, with no file names (#1963)", async () => {
       // The e2e stack has no chat LLM, so the grounded-chat spec mocks this
       // annotation. Here the route's real StreamData is the response body, so
       // the server's half of that contract is checked in its wire encoding.
@@ -429,8 +492,12 @@ describe("Smart course RAG gate (#484)", () => {
           content: "Lab 14 is due Nov 20. Late penalty 7%/day.",
           similarity: 0.72,
           materialTitle: "ZZ-TEST-DATA301-L14-Data-Cleaning",
+          materialId: "m14",
         },
       ]);
+      vi.mocked(prisma.courseTopicSource.findMany).mockResolvedValue([
+        { materialId: "m14", topic: { name: "Data cleaning" } },
+      ] as never);
       type FinishEvent = {
         text: string;
         usage: { promptTokens: number; completionTokens: number };
@@ -463,10 +530,12 @@ describe("Smart course RAG gate (#484)", () => {
       const annotations = (await res.text())
         .split("\n")
         .filter((line) => line.startsWith("8:"))
-        .flatMap((line) => JSON.parse(line.slice(2)) as Array<{ ragSources?: string[] }>);
-      expect(annotations.map((annotation) => annotation.ragSources)).toEqual([
-        ["ZZ-TEST-DATA301-L14-Data-Cleaning"],
-      ]);
+        .flatMap(
+          (line) =>
+            JSON.parse(line.slice(2)) as Array<{ ragSources?: string[]; ragTopics?: string[] }>,
+        );
+      expect(annotations.map((annotation) => annotation.ragTopics)).toEqual([["Data cleaning"]]);
+      expect(annotations.some((annotation) => "ragSources" in annotation)).toBe(false);
     });
 
     it("still replies with fixed text when a student has saved a system prompt (PR #1946 review)", async () => {
@@ -785,6 +854,34 @@ describe("Smart course RAG gate (#484)", () => {
       expect(body.code).toBe("RAG_DIMENSION_MISMATCH");
       expect(streamText).not.toHaveBeenCalled();
     });
+
+    it("relabels a student's getInformation result before the model or browser sees it (#1963)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        {
+          content: "Lab 14 is due.",
+          similarity: 0.9,
+          materialTitle: "L14-secret.pdf",
+          materialId: "m14",
+        },
+      ]);
+      vi.mocked(prisma.courseTopicSource.findMany).mockResolvedValue([
+        { materialId: "m14", topic: { name: "Labs" } },
+      ] as never);
+      mockStream();
+
+      await action(
+        makeRequest(
+          baseBody({ messages: [{ id: "msg-1", role: "user", content: "When is Lab 14 due?" }] }),
+        ),
+      );
+
+      const config = vi.mocked(streamText).mock.calls.at(-1)?.[0] as {
+        tools?: { getInformation?: { execute: (args: { question: string }) => Promise<object> } };
+      };
+      const result = await config.tools!.getInformation!.execute({ question: "Lab 14" });
+      expect(JSON.stringify(result)).not.toMatch(/L14-secret|materialTitle|materialId/);
+      expect(JSON.stringify(result)).toContain("Labs");
+    });
   });
 
   describe("ADHD Assist citation telemetry from hybrid/preloaded RAG (#722 review)", () => {
@@ -914,5 +1011,55 @@ describe("token-budget context window — pre-digest omissions and fail-closed f
     const body = await res.json();
     expect(body).toMatchObject({ code: "CONTEXT_TOO_LARGE" });
     expect(streamText).not.toHaveBeenCalled();
+  });
+});
+
+describe("a student's history goes back to the model without file citations (#1963)", () => {
+  const CITED_REPLY = "Trees are hierarchical.\n\nSource: Secret_Notes.pdf";
+
+  function historyText() {
+    return JSON.stringify(lastStreamMessages());
+  }
+
+  it("strips the citation an older reply wrote before the model sees it again", async () => {
+    // A long thread, so older turns also reach the model through the digest.
+    vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+      storedRecord("stored-1", "assistant", CITED_REPLY),
+      storedRecord("stored-0", "user", "What are trees?"),
+    ] as never);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream("asst-1");
+
+    await action(
+      makeRequest(
+        baseBody({ messages: [{ id: "incoming-1", role: "user", content: "And graphs?" }] }),
+      ),
+    );
+
+    expect(historyText()).toContain("Trees are hierarchical.");
+    expect(historyText()).not.toContain("Secret_Notes.pdf");
+  });
+
+  it("leaves staff history as it was", async () => {
+    vi.mocked(prisma.chatMessage.count).mockResolvedValue(250);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "course-1", isPublished: true, code: "COSC101" },
+      access: { level: "instructor" },
+    } as never);
+    vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+      storedRecord("stored-1", "assistant", CITED_REPLY),
+      storedRecord("stored-0", "user", "What are trees?"),
+    ] as never);
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream("asst-1");
+
+    await action(
+      makeRequest(
+        baseBody({ messages: [{ id: "incoming-1", role: "user", content: "And graphs?" }] }),
+      ),
+    );
+
+    expect(historyText()).toContain("Secret_Notes.pdf");
   });
 });
