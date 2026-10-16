@@ -4,7 +4,9 @@
  * Built for the full-page layout; uses @eduai/ui primitives + CSS vars only.
  */
 import { useState } from "react";
-import { Label, Input, Button, Combobox, MultiSelect } from "@eduai/ui";
+import { Link } from "react-router";
+import { Label, Input, Button, Combobox, HelpHint, MultiSelect } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 
 import type { QuestionDifficulty, ReasoningLevel } from "../../types/question";
 import type { Topic } from "../../types/topic";
@@ -115,9 +117,12 @@ export function ComposerMetadataFields({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Primary topic <span className="text-destructive">*</span>
-        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Primary topic <span className="text-destructive">*</span>
+          </Label>
+          <HelpHint {...QUESTION_MAKER_HELP.topics} LinkComponent={Link} />
+        </div>
         {primaryTopicReadOnly ? (
           <p className="py-2.5 text-sm text-muted-foreground">
             {primaryTopicName ?? `Topic ${value.primaryTopicId}`}

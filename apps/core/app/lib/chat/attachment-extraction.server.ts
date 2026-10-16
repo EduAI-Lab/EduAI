@@ -8,14 +8,20 @@
  * files are decoded as strict UTF-8; a NUL byte or invalid sequence means the
  * extension lied and the file is rejected rather than shown to the model.
  *
+ * Images (#1742) are checked by magic bytes and transcribed by the campus
+ * vision model, so the chat only ever receives their text.
+ *
  * Dispatch is by extension, not declared MIME: browsers report `""` or
  * vendor types for `.R`/`.sql`/`.md`.
  */
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import {
   PDF_NO_TEXT_LAYER_MESSAGE,
   extractDocxText,
   extractPdfText,
   extractPptxText,
+  extractXlsxText,
+  isZipContainer,
   readFileAsText,
   sanitizeTextContent,
   validateFileSignature,
@@ -32,28 +38,37 @@ export type ChatAttachmentErrorCode =
   | "ATTACHMENT_ENCODING_UNSUPPORTED"
   | "ATTACHMENT_TOO_LARGE"
   | "ATTACHMENT_EMPTY"
+  | "ATTACHMENT_IMAGE_UNREADABLE"
+  | "ATTACHMENT_BUSY"
   | "ATTACHMENT_EXTRACT_FAILED";
+
+type ChatAttachmentErrorStatus = 400 | 413 | 422 | 503;
 
 const STATUS = {
   ATTACHMENT_TYPE_UNSUPPORTED: 400,
   ATTACHMENT_ENCODING_UNSUPPORTED: 400,
   ATTACHMENT_TOO_LARGE: 413,
   ATTACHMENT_EMPTY: 422,
+  ATTACHMENT_IMAGE_UNREADABLE: 422,
+  ATTACHMENT_BUSY: 503,
   ATTACHMENT_EXTRACT_FAILED: 422,
-} as const satisfies Record<ChatAttachmentErrorCode, 400 | 413 | 422>;
+} as const satisfies Record<ChatAttachmentErrorCode, ChatAttachmentErrorStatus>;
 
 const MESSAGES = {
   ATTACHMENT_TYPE_UNSUPPORTED:
-    "This file type can't be attached. Try a PDF, Word, PowerPoint, text, or code file.",
+    "This file type can't be attached. Try a PDF, Word, PowerPoint, Excel, text, code, or image (PNG, JPG, WebP) file.",
   ATTACHMENT_ENCODING_UNSUPPORTED:
     "This file isn't UTF-8 text. Re-save it as UTF-8 and attach it again.",
   ATTACHMENT_TOO_LARGE: "This file is too large to attach.",
   ATTACHMENT_EMPTY: "This file has no readable text. A scanned document needs OCR first.",
+  ATTACHMENT_IMAGE_UNREADABLE:
+    "We couldn't make out anything in this image. Try a clearer or larger screenshot.",
+  ATTACHMENT_BUSY: "The image reader is busy right now. Try again in a moment.",
   ATTACHMENT_EXTRACT_FAILED: "We couldn't read this file. Try again, or attach a different copy.",
 } as const satisfies Record<ChatAttachmentErrorCode, string>;
 
 export class ChatAttachmentError extends Error {
-  readonly status: 400 | 413 | 422;
+  readonly status: ChatAttachmentErrorStatus;
 
   constructor(
     readonly code: ChatAttachmentErrorCode,
@@ -126,6 +141,60 @@ async function extractDocument(file: File, mimeType: string): Promise<string> {
   }
 }
 
+async function extractSpreadsheet(file: File): Promise<string> {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!isZipContainer(bytes.subarray(0, 8))) {
+      throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
+    }
+    const typed = new File([bytes], file.name, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    return (await extractXlsxText(typed)).content;
+  } catch (error) {
+    if (error instanceof ChatAttachmentError) throw error;
+    if (error instanceof ExtractionBusyError) {
+      throw new ChatAttachmentError("ATTACHMENT_BUSY", { cause: error });
+    }
+    throw readFailure(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+/** Tells the chat model what it is reading, since it never sees the image itself. */
+export const IMAGE_TRANSCRIPT_PREFIX =
+  "[An image the student attached, transcribed and described by a vision model. You cannot see the image itself.]";
+
+async function extractImage(file: File, mimeType: string): Promise<string> {
+  let bytes: Uint8Array;
+  try {
+    const typed = new File([await file.arrayBuffer()], file.name, { type: mimeType });
+    const signature = await validateFileSignature(typed);
+    if (!signature.isValid) throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
+    bytes = new Uint8Array(await typed.arrayBuffer());
+  } catch (error) {
+    if (error instanceof ChatAttachmentError) throw error;
+    throw readFailure(error instanceof Error ? error : new Error(String(error)));
+  }
+  // Dynamic import keeps the AI SDK and fleet code off the text-only paths.
+  const { extractImageText, IMAGE_NO_CONTENT_MESSAGE } =
+    await import("~/lib/ai/image-text-extraction.server");
+  let content: string;
+  try {
+    content = (await extractImageText(bytes, mimeType, "chat")).content;
+  } catch (error) {
+    if (error instanceof ExtractionBusyError) {
+      throw new ChatAttachmentError("ATTACHMENT_BUSY", { cause: error });
+    }
+    if (error instanceof Error && error.message === IMAGE_NO_CONTENT_MESSAGE) {
+      throw new ChatAttachmentError("ATTACHMENT_IMAGE_UNREADABLE", { cause: error });
+    }
+    throw readFailure(error instanceof Error ? error : new Error(String(error)));
+  }
+  const clean = sanitizeTextContent(content);
+  if (clean.length === 0) throw new ChatAttachmentError("ATTACHMENT_IMAGE_UNREADABLE");
+  return `${IMAGE_TRANSCRIPT_PREFIX}\n\n${clean}`;
+}
+
 const STRICT_TEXT_MIME_TYPES: readonly string[] = ["text/plain", "text/markdown"];
 
 export async function extractChatAttachment(
@@ -136,8 +205,12 @@ export async function extractChatAttachment(
   if (!kind) throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
   if (file.size > limits.maxBytes) throw new ChatAttachmentError("ATTACHMENT_TOO_LARGE");
 
-  const strict = kind.kind === "text" || STRICT_TEXT_MIME_TYPES.includes(kind.mimeType);
-  const raw = strict ? await decodeStrictText(file) : await extractDocument(file, kind.mimeType);
+  let raw: string;
+  if (kind.kind === "image") raw = await extractImage(file, kind.mimeType);
+  else if (kind.kind === "spreadsheet") raw = await extractSpreadsheet(file);
+  else if (kind.kind === "text" || STRICT_TEXT_MIME_TYPES.includes(kind.mimeType))
+    raw = await decodeStrictText(file);
+  else raw = await extractDocument(file, kind.mimeType);
   const clean = sanitizeTextContent(raw);
   if (clean.length === 0) throw new ChatAttachmentError("ATTACHMENT_EMPTY");
 

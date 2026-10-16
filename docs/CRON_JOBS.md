@@ -62,6 +62,27 @@ All EduAI production jobs run in UTC (enforced by the Core scheduler via `{ time
 
 ---
 
+## Disk usage alerts (#1869)
+
+`disk-usage-check` is a Core-handler job that runs every 30 minutes in the cron worker. It reads disk usage on the **host the worker runs on**, so each server (s378, s348) watches its own disk. It needs no shell script and no host `mail`: alerts go out through Core's SMTP mailer, because the hosts can't send mail (#1874).
+
+| Usage | What happens |
+|---|---|
+| Below **Warn at** (default 85%) | Nothing. The run message shows the current usage. |
+| At or above Warn at | An Admin → Logs entry (`HOST`, `DISK_USAGE_WARNING`) and an email to every active admin, at most once a day. |
+| At or above **Critical at** (default 95%) | A `DISK_USAGE_CRITICAL` entry and email right away, even if a warning went out today. The run also shows as **Error** until space is freed. |
+
+**Delivery rules** (#1992 review):
+- The "already alerted today" record is the Admin → Logs entry, and it is written only **after** at least one email was delivered. Until then every run tries again.
+- If **sending fails** (SMTP down, bad credentials), the run is marked **Error** and retried every 30 minutes, but the failure is logged as one `DISK_USAGE_ALERT_UNDELIVERED` entry a day, not one per recipient per run, so an outage does not fill the disk being watched.
+- If **mail is not set up** (no `SMTP_HOST`, or no active admin and no `DISK_ALERT_EMAILS`), one `DISK_USAGE_ALERT_UNSENT` entry is logged a day and the run is **not** failed, because only configuring mail fixes it. A critical disk still fails the run.
+- Postgres sits on the same disk, so on a full disk these entries may not be writable. The process that runs the check also remembers them in memory, so admins still get at most one email a day. A worker restart, or a **Run now** served by a different process, starts without that memory and can send one more email while the disk is full. A state file would not help, since it could not be written either.
+- **Warn at** is capped at **Critical at** if it is set higher.
+
+Both thresholds are settings on the job in Admin → Cron Jobs. To test it on a server, lower **Warn at** below the current usage, click **Run now**, check the email and Admin → Logs, then reset the setting. `DISK_ALERT_PATHS` and `DISK_ALERT_EMAILS` are in `docs/ENVIRONMENT.md`.
+
+---
+
 ## Viewing job status
 
 Go to **Admin → Cron Jobs**. The panel shows:
@@ -246,6 +267,7 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Core handler (`execution: "CORE"`) | Email users whose provider API keys expire in 7 days |
 | `notify-invitation-expiry` | `30 4 * * *` (04:30 UTC) | Core handler (`execution: "CORE"`) | Email pending invitees before their invitation expires; lead time derived from `INVITE_EXPIRY_HOURS` |
 | `purge-deleted-materials` | `0 5 * * *` (05:00 UTC) | Core handler (`execution: "CORE"`) | Permanently delete course materials soft-deleted more than `retainDays` days ago (default 90, admin-editable), with their chunks and embeddings, skipping rows under a live extraction lease or updated within the last hour (a Canvas re-sync restore in flight); one `MATERIAL_PURGED` audit entry per material, written in the same transaction as its delete so a failed audit write rolls the delete back and fails the run |
+| `help-docs-reindex` | `30 5 * * *` (05:30 UTC) | Core handler (`execution: "CORE"`) | Re-embed the help assistant's user-guide corpus (`help_doc_chunks`) when the corpus hash changed — a guide edit shipped in a deploy, or a different embedding provider/model/dimension. A no-op otherwise. The first question after a deploy also builds an empty index on demand, so this job only keeps a stale index from lingering (#1819) |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 

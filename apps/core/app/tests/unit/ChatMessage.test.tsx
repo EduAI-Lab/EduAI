@@ -413,3 +413,92 @@ describe("ChatMessage — course-material sources", () => {
     expect(screen.queryByText(/^Sources:/)).not.toBeInTheDocument();
   });
 });
+
+describe("ChatMessage — a student's course turn (#1963)", () => {
+  const citedMessage: Message = {
+    id: "5",
+    role: "assistant",
+    content: "Lab 14 is due Nov 20.\n\n*(Source: ZZ-TEST-DATA301-L14-Data-Cleaning)*",
+    createdAt: new Date(),
+  };
+
+  it("lists topics, and strips the model's own file citation", () => {
+    render(<ChatMessage message={citedMessage} materialTopics={["Data cleaning", "Labs"]} />);
+
+    expect(screen.getByText("Topics: Data cleaning, Labs")).toBeInTheDocument();
+    expect(screen.queryByText(/ZZ-TEST-DATA301/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Sources:/)).not.toBeInTheDocument();
+  });
+
+  it("shows no Topics line when no topic is known, still without the citation", () => {
+    render(<ChatMessage message={citedMessage} materialTopics={[]} />);
+
+    expect(screen.queryByText(/^Topics:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ZZ-TEST-DATA301/)).not.toBeInTheDocument();
+  });
+
+  it("hides the model's file citation while a student's reply is still streaming", () => {
+    // ragTopics arrives with the finish annotation; until then only learnerView says
+    // this is a student turn.
+    render(<ChatMessage message={citedMessage} isStreaming learnerView />);
+
+    expect(screen.getByText("Lab 14 is due Nov 20.")).toBeInTheDocument();
+    expect(screen.queryByText(/ZZ-TEST-DATA301/)).not.toBeInTheDocument();
+  });
+
+  it("shows a student's course-material search as a chip with nothing to expand", () => {
+    const withTool = {
+      id: "6",
+      role: "assistant",
+      content: "Answer.",
+      createdAt: new Date(),
+      parts: [
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "call-1",
+            toolName: "getInformation",
+            state: "result",
+            args: { question: "Lab 14" },
+            result: { relevantContent: [{ content: "Lab 14 is due.", topics: ["Labs"] }] },
+          },
+        },
+        { type: "text", text: "Answer." },
+      ],
+    } as Message;
+
+    render(<ChatMessage message={withTool} learnerView />);
+
+    expect(screen.getByText("Searching course materials…")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Searching course materials/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Lab 14 is due\./)).not.toBeInTheDocument();
+  });
+
+  it("keeps the expandable search panel for staff", () => {
+    const withTool = {
+      id: "7",
+      role: "assistant",
+      content: "Answer.",
+      createdAt: new Date(),
+      parts: [
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "call-2",
+            toolName: "getInformation",
+            state: "result",
+            args: { question: "Lab 14" },
+            result: { relevantContent: [{ content: "Lab 14 is due.", materialTitle: "L14.pdf" }] },
+          },
+        },
+        { type: "text", text: "Answer." },
+      ],
+    } as Message;
+
+    render(<ChatMessage message={withTool} />);
+
+    expect(screen.getByRole("button", { name: /Searching course materials/ })).toBeInTheDocument();
+  });
+});

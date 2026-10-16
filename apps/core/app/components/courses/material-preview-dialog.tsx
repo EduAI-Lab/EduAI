@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { IconLoader } from "@tabler/icons-react";
+import { IconLoader, IconSparkles } from "@tabler/icons-react";
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   ScrollArea,
 } from "@eduai/ui";
+
+import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
 
 type PreviewResponse = {
   material: {
@@ -28,6 +32,12 @@ interface MaterialPreviewDialogProps {
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * #1821: hand this material to the help assistant. The assistant's panel sits
+   * under the modal layer, so the button closes the preview and opens it with
+   * this material as its scope. Omitted when the assistant can't answer here.
+   */
+  onAskAssistant?: () => void;
 }
 
 export function MaterialPreviewDialog({
@@ -36,6 +46,7 @@ export function MaterialPreviewDialog({
   title,
   open,
   onOpenChange,
+  onAskAssistant,
 }: MaterialPreviewDialogProps) {
   const [excerpt, setExcerpt] = useState("");
   const [truncated, setTruncated] = useState(false);
@@ -103,6 +114,14 @@ export function MaterialPreviewDialog({
             )}
           </ScrollArea>
         )}
+        {onAskAssistant && !isLoading && !error ? (
+          <DialogFooter>
+            <Button type="button" variant="outline" size="sm" onClick={onAskAssistant}>
+              <IconSparkles className="size-4" aria-hidden />
+              Ask {ASSISTANT_DISPLAY_NAME} about this
+            </Button>
+          </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

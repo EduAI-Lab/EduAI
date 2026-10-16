@@ -8,8 +8,7 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 
 - **Question bank**: CRUD for questions and variants, AI-assisted generation and OCR extraction, MCQ/SA/LA
   types with difficulty and reasoning-level tagging
-- **Assessments**: sections, ordered questions, and equivalent-form variant assembly (round-robin picks
-  from the question bank)
+- **Assessments**: sections, ordered questions, equivalent-form variant assembly (round-robin picks from the question bank), and optional topic scope (`blueprintConfig.primaryTopicIds`) enforced on section adds, variant create/update and primary-topic changes
 - **Course sync**: courses/topics mirror EduAI Core (the source of truth) and stay linked via `coreCourseId`
 - **Canvas LMS integration**: connect a Canvas account, import quizzes as questions, export assessments as
   Canvas quizzes
@@ -54,7 +53,8 @@ src/
 │                             # eduai, canvas, topics, auth, bug-reports, internal
 ├── services/                 # Business logic — one service per domain: questionService/questionMutationFence
 │                              # (advisory-lock fence around every question mutation), assessmentService,
-│                              # assessmentSectionService, assessmentVariantService (variant workflow assembly),
+│                              # assessmentSectionService, assessmentTopicScope (topic-limited assessment parsing +
+│                              # on-topic checks), assessmentVariantService (variant workflow assembly),
 │                              # canvasService (proxies Canvas LMS via Core), coreApiService (thin Core HTTP client),
 │                              # coreWiringService (pushes an approved variant to Core as a Question),
 │                              # variant-publish.js / variant-push-gate.js (publish-to-Core orchestration),

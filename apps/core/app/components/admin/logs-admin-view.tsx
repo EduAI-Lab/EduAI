@@ -81,7 +81,17 @@ const AUDIT_CATEGORIES = [
 
 const OUTCOMES = ["SUCCESS", "FAILURE", "DENIED"] as const;
 const SYSTEM_LEVELS = ["ERROR", "WARN", "INFO"] as const;
-const SYSTEM_SOURCES = ["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "DB", "SSR", "API"] as const;
+const SYSTEM_SOURCES = [
+  "ROUTE",
+  "AUTH",
+  "AI",
+  "CANVAS",
+  "MAIL",
+  "DB",
+  "SSR",
+  "API",
+  "HOST",
+] as const;
 
 // Keys whose empty string is a meaningful value ("All time" for datePreset),
 // not "absent" — buildQueryString must be able to preserve/set "" for these

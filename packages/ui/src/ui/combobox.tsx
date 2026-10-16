@@ -199,6 +199,10 @@ export function Combobox({
 }
 
 export interface MultiSelectProps {
+  /** Forwarded to the trigger so a `<Label htmlFor>` can point at it. */
+  id?: string;
+  /** Accessible name for the trigger; its visible text is the current selection. */
+  "aria-label"?: string;
   options: ComboboxOption[];
   value: string[];
   onValueChange: (value: string[]) => void;
@@ -219,6 +223,8 @@ export interface MultiSelectProps {
 }
 
 export function MultiSelect({
+  id,
+  "aria-label": ariaLabel,
   options,
   value,
   onValueChange,
@@ -291,6 +297,8 @@ export function MultiSelect({
         <Button
           type="button"
           variant="outline"
+          id={id}
+          aria-label={ariaLabel}
           role="combobox"
           aria-expanded={open}
           disabled={disabled}

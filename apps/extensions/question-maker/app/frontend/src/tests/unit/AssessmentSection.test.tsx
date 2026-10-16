@@ -208,13 +208,15 @@ describe("AssessmentSection", () => {
     expect(onAddAssessment).toHaveBeenCalledWith({ name: "New one" });
   });
 
-  it("shows a save error when blueprint creation fails", async () => {
-    const onAddAssessment = vi.fn().mockRejectedValue({ response: { data: { error: "oops" } } });
+  it("rethrows a failed blueprint creation so the modal stays open to show it", async () => {
+    const failure = { response: { data: { error: "oops" } } };
+    const onAddAssessment = vi.fn().mockRejectedValue(failure);
     renderSection({ onAddAssessment });
     fireEvent.click(screen.getByText("New assessment"));
     await waitFor(() => expect(screen.getByText("generate-assessment-modal")).toBeInTheDocument());
-    await lastGenerateModalProps.onGenerate({ name: "New one" });
-    await waitFor(() => expect(screen.getByText("oops")).toBeInTheDocument());
+    await expect(lastGenerateModalProps.onGenerate({ name: "New one" })).rejects.toBe(failure);
+    expect(screen.getByText("generate-assessment-modal")).toBeInTheDocument();
+    expect(screen.queryByText("oops")).not.toBeInTheDocument();
   });
 
   it("renders an Import from Canvas button and calls the handler", () => {

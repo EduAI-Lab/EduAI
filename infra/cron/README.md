@@ -30,6 +30,10 @@ worker.
 | `dry-run-local.sh` | Run local backup exercises without installing a service |
 | `lib.sh` | Shared configuration, logging, alerts, and lease/audit handling |
 
+Disk-usage alerts (#1869) are not a script here: `disk-usage-check` is a Core-handler
+job that emails the admins through Core's mailer when a disk passes 85% or 95%. See
+[`docs/CRON_JOBS.md`](../../docs/CRON_JOBS.md#disk-usage-alerts-1869).
+
 Every production script records a lifecycle row in Core's `cron_job_runs` table.
 Standalone invocation creates and owns a finite lease; the Core scheduler passes
 its own run context. This prevents overlapping runs from being treated as

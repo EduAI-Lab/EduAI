@@ -91,6 +91,36 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
+    name: "disk-usage-check",
+    description:
+      "Email the admins and log a warning when this server's disk is nearly full (#1869)",
+    schedule: "*/30 * * * *",
+    scheduleLabel: "Every 30 minutes",
+    script: "Core handler",
+    execution: "CORE",
+    settings: [
+      {
+        key: "warnPercent",
+        label: "Warn at (% full)",
+        description: "Admins get one email a day while any checked disk is at least this full.",
+        type: "int",
+        min: 50,
+        max: 99,
+        default: 85,
+      },
+      {
+        key: "criticalPercent",
+        label: "Critical at (% full)",
+        description:
+          "Alerts at once, even after a warning today, and marks the run as failed until space is freed.",
+        type: "int",
+        min: 50,
+        max: 100,
+        default: 95,
+      },
+    ],
+  },
+  {
     name: "backup-nightly",
     description: "Full pg_dump of all three EduAI databases",
     schedule: "0 2 * * *",
@@ -154,6 +184,15 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
         default: 90,
       },
     ],
+  },
+  {
+    name: "help-docs-reindex",
+    description:
+      "Re-embed the help assistant's user-guide corpus when a guide or the embedding model changed",
+    schedule: "30 5 * * *",
+    scheduleLabel: "Daily at 05:30 UTC",
+    script: "Core handler",
+    execution: "CORE",
   },
   {
     name: "ai-tutor-reconcile",
@@ -642,6 +681,32 @@ const CORE_JOB_HANDLERS = {
     return async (signal) => ({
       message: formatPurgeMessage(await purgeDeletedMaterials(new Date(), signal)),
     });
+  },
+  "help-docs-reindex": async () => {
+    const { reindexHelpDocsIfStale } = await import("~/lib/assistant/help-docs/index.server");
+    return async (signal) => {
+      const result = await reindexHelpDocsIfStale(signal);
+      return {
+        message: result.rebuilt
+          ? `Re-indexed ${result.pages} guide page(s) as ${result.chunks} chunk(s)`
+          : "Help docs index already current",
+      };
+    };
+  },
+  "disk-usage-check": async () => {
+    const { checkDiskUsage, formatDiskUsageMessage } = await import("~/lib/cron-disk-usage.server");
+    return async () => {
+      const result = await checkDiskUsage();
+      const message = formatDiskUsageMessage(result);
+      // A critical disk fails the run so Admin → Cron Jobs shows it red, and so
+      // does an alert a configured mailer failed to send, so the next run
+      // retries it. Mail that is not set up is logged but does not fail the
+      // run: only configuring mail fixes that (#1992 review).
+      if (result.level === "CRITICAL" || result.notSent === "undelivered") {
+        throw new Error(message);
+      }
+      return { message };
+    };
   },
   "ai-status-probe": async () => {
     const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");

@@ -85,8 +85,33 @@ describe("GET /api/user-provider-settings", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual([
-      { providerName: "openai", isEnabled: true, hasKey: true, baseUrl: null },
+      // #1818: a 7-character key is too short to show a tail, so it is fully masked.
+      {
+        providerName: "openai",
+        isEnabled: true,
+        hasKey: true,
+        maskedKey: "••••••••",
+        baseUrl: null,
+      },
     ]);
+  });
+
+  it("asks the decrypt helper, not row existence: an undecryptable key reads as no key", async () => {
+    withSession();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Matches the encrypted-blob format but cannot be decrypted with this ENCRYPTION_KEY.
+    const blob = [
+      Buffer.alloc(64, 1).toString("base64"),
+      Buffer.alloc(16, 2).toString("base64"),
+      Buffer.alloc(16, 3).toString("base64"),
+      Buffer.from("ciphertext").toString("base64"),
+    ].join(":");
+    prismaMock.userProviderSettings.findMany.mockResolvedValue([
+      { id: "row-1", isEnabled: true, apiKey: blob, baseUrl: null, provider: { name: "openai" } },
+    ]);
+    const res = await loader(getReq());
+    expect(res.status).toBe(200);
+    expect((await res.json())[0]).toMatchObject({ hasKey: false, maskedKey: null });
   });
 
   it("never exposes the raw or encrypted API key in the response", async () => {

@@ -18,6 +18,8 @@ export interface CourseDetail extends Omit<Course, "aiInstructions"> {
   responseStyleTags?: string[];
   /** Instructor-facing course-scope classifier toggle; hidden from students. */
   courseScopeGuardrailEnabled?: boolean;
+  /** #1821: the help assistant may answer from this course's materials; staff-only. */
+  aiAssistantEnabled?: boolean;
   /** Set by the course detail loader for students — raw aiInstructions are staff-only. */
   hasAiConfig?: boolean;
   /** #1841: `email` is null for students, like every entry in `instructors`. */

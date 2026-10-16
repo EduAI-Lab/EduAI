@@ -85,6 +85,7 @@ export function ChatTranscriptViewer({
               key={message.id || `msg-${index}`}
               message={message}
               materialSources={message.metadata?.ragSources}
+              materialTopics={message.metadata?.ragTopics}
             />
           ))}
         </div>

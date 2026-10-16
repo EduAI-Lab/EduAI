@@ -669,3 +669,18 @@ describe("ChatConversationLayout — inline chat error banner (#1510)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("The AI model isn't responding");
   });
 });
+
+describe("ChatConversationLayout — student turn topics (#1963)", () => {
+  it("passes each message's topics through to the message", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "a1", role: "assistant", content: "Answer" }]}
+        ragTopicsByMessageId={{ a1: ["Labs"] }}
+        learnerView
+      />,
+    );
+
+    expect(screen.getByText("Topics: Labs")).toBeInTheDocument();
+  });
+});

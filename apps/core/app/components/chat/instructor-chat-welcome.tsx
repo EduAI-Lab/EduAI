@@ -1,5 +1,8 @@
 import { IconChalkboardTeacher } from "@tabler/icons-react";
-import { PromptSuggestion } from "@eduai/ui";
+import { Link } from "react-router";
+import { HelpHint, PromptSuggestion } from "@eduai/ui";
+
+import { CORE_HELP } from "~/components/help/help-hints";
 
 export interface InstructorChatWelcomeProps {
   selectedModelInfo?: {
@@ -47,7 +50,12 @@ export function InstructorChatWelcome({
           </div>
 
           <div className="space-y-4">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground">Course Assistant</h1>
+            <div className="flex items-center justify-center gap-2">
+              <h1 className="text-4xl font-bold tracking-tight text-foreground">
+                Course Assistant
+              </h1>
+              <HelpHint {...CORE_HELP.chatScope} LinkComponent={Link} side="bottom" />
+            </div>
             {selectedModelInfo && (
               <p className="text-lg text-muted-foreground">Powered by {selectedModelInfo.name}</p>
             )}

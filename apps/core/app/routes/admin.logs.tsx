@@ -54,7 +54,17 @@ const AUDIT_FILTER_CATEGORIES = new Set([
 ]);
 const OUTCOME_VALUES = new Set(["SUCCESS", "FAILURE", "DENIED"]);
 const SYSTEM_LEVEL_VALUES = new Set(["ERROR", "WARN", "INFO"]);
-const SYSTEM_SOURCE_VALUES = new Set(["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "DB", "SSR", "API"]);
+const SYSTEM_SOURCE_VALUES = new Set([
+  "ROUTE",
+  "AUTH",
+  "AI",
+  "CANVAS",
+  "MAIL",
+  "DB",
+  "SSR",
+  "API",
+  "HOST",
+]);
 // Must match the dropdown's numeric preset values in logs-admin-view.tsx
 // (DATE_RANGE_PRESETS). A bare /^\d+$/ check would accept any digit string
 // (including "0", or an arbitrarily large value from a hand-built URL),

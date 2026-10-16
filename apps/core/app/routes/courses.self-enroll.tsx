@@ -175,8 +175,7 @@ export default function SelfEnrollPage() {
                 <p className="text-sm text-muted-foreground">{data.courseName}</p>
               </div>
               <p className="text-sm text-muted-foreground">
-                You&apos;ll be enrolled as a student and will be able to see this course&apos;s
-                materials and chat.
+                You&apos;ll be enrolled as a student and can ask about this course in course chat.
               </p>
               <Form method="post">
                 <input type="hidden" name="token" value={data.token} />

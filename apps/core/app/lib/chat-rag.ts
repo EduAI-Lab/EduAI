@@ -11,7 +11,20 @@ import { isImageAttachment } from "~/lib/chat/chat-attachments";
 // reach for them via `~/lib/chat-rag` keep working after the extraction (#260).
 export { resolveToolResultMaxChars, truncateToMaxChars, TOOL_RAG_MAX_CHARS_PER_CHUNK };
 
-export type HybridRagHit = { content: string; similarity: number; materialTitle: string };
+export type HybridRagHit = {
+  content: string;
+  similarity: number;
+  materialTitle: string;
+  /**
+   * The material the excerpt came from (#1963). `findRelevantContent` always
+   * sets it; it is optional so hand-built hits stay valid. A hit without it maps
+   * to no topic, so it can never surface a file name in a student's chat.
+   */
+  materialId?: string;
+};
+
+/** The header line written above one excerpt in the prompt. */
+export type RagExcerptHeader = (hit: HybridRagHit) => string;
 
 /** Opening line when course excerpts are injected into the system prompt. */
 export const RAG_COURSE_GROUNDING_INSTRUCTION =
@@ -801,17 +814,21 @@ function ragExcerptHeader(hit: HybridRagHit): string {
  * chunk count and char budget, the last one possibly truncated. Exported so the
  * coverage check and the turn's source list (#1936) see exactly what the model
  * sees — a course's `ragTopK` can return more hits than make it in.
+ *
+ * `excerptHeader` must be the same function the context is built with, so
+ * selection budgets the header the model actually sees (#1963).
  */
 export function selectCappedRagExcerpts(
   hits: HybridRagHit[],
   maxChunks: number,
   maxChars: number,
+  excerptHeader: RagExcerptHeader = ragExcerptHeader,
 ): HybridRagHit[] {
   const excerpts: HybridRagHit[] = [];
   let total = 0;
 
   for (const item of hits.slice(0, maxChunks)) {
-    const header = ragExcerptHeader(item);
+    const header = excerptHeader(item);
     const overhead = excerpts.length === 0 ? 0 : RAG_EXCERPT_SEPARATOR.length;
     const fullLen = header.length + item.content.length;
 
@@ -836,9 +853,10 @@ export function buildCappedRagContextText(
   hits: HybridRagHit[],
   maxChunks: number,
   maxChars: number,
+  excerptHeader: RagExcerptHeader = ragExcerptHeader,
 ): string {
-  const joined = selectCappedRagExcerpts(hits, maxChunks, maxChars)
-    .map((excerpt) => ragExcerptHeader(excerpt) + excerpt.content)
+  const joined = selectCappedRagExcerpts(hits, maxChunks, maxChars, excerptHeader)
+    .map((excerpt) => excerptHeader(excerpt) + excerpt.content)
     .join(RAG_EXCERPT_SEPARATOR);
   return joined ? wrapUntrustedReferenceContent(joined) : joined;
 }

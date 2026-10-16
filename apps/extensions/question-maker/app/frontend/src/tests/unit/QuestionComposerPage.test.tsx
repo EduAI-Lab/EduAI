@@ -46,6 +46,7 @@ const {
       getQuestion: vi.fn(),
       updateVariant: vi.fn(),
       updateQuestion: vi.fn(),
+      checkQuestionTopicChange: vi.fn(),
       createVariant: vi.fn(),
       createQuestion: vi.fn(),
     },
@@ -69,6 +70,7 @@ const {
 });
 
 vi.mock("react-router", () => ({
+  Link: ({ children, to }: any) => <a href={to}>{children}</a>,
   useNavigate: () => navigateMock,
   useParams: () => routeParams.current,
   useSearchParams: () => [searchParamsBox.current, vi.fn()],
@@ -90,6 +92,7 @@ vi.mock("@/services/eduaiService", () => ({ default: eduaiService }));
 vi.mock("@/services/apiKeyStorage", () => ({ apiKeyStorage }));
 
 vi.mock("@eduai/ui", () => ({
+  HelpHint: ({ title }: any) => <button type="button" aria-label={`About ${title}`} />,
   Button: ({ children, onClick, disabled, ...rest }: any) => (
     <button onClick={onClick} disabled={disabled} {...rest}>
       {children}
@@ -115,6 +118,9 @@ vi.mock("@/components/questions/QuestionAIControls", () => ({
       <button onClick={props.onSaveProviderApiKey}>save-key</button>
       <span data-testid="api-key-state">{props.apiKeySaveState}</span>
       <span data-testid="ai-status">{props.status}</span>
+      <button onClick={() => props.onQuestionCountChange?.(3)}>set-count-3</button>
+      <span data-testid="has-count">{String(Boolean(props.onQuestionCountChange))}</span>
+      <span data-testid="ai-disabled">{String(Boolean(props.disabled))}</span>
     </div>
   ),
 }));
@@ -122,6 +128,7 @@ vi.mock("@/components/questions/QuestionAIControls", () => ({
 vi.mock("@/components/questions/QuestionOutputPanel", () => ({
   QuestionOutputPanel: (props: any) => (
     <div data-testid="output-panel">
+      <span data-testid="question-text">{props.variantText}</span>
       <button onClick={() => props.onVariantTextChange("What is 2+2?")}>set-text</button>
       <button onClick={() => props.onVariantAnswerChange("A")}>set-answer</button>
       <button
@@ -509,6 +516,78 @@ describe("QuestionComposerPage edit mode", () => {
     expect(toastFn).toHaveBeenCalledWith("Saved — reopened for review", expect.anything());
   });
 
+  const approvedOnTopicT0 = {
+    id: 7,
+    type: "MCQ",
+    description: "desc",
+    primaryTopicId: "t0",
+    variants: [
+      {
+        id: 70,
+        questionText: "Base text",
+        difficulty: "easy",
+        answer: "A",
+        choices: [
+          { letter: "A", text: "x" },
+          { letter: "B", text: "y" },
+        ],
+        isDraft: false,
+      },
+    ],
+  };
+
+  it("checks a topic change before reopening an approved variant (#1974)", async () => {
+    questionService.getQuestion.mockResolvedValue(approvedOnTopicT0);
+    questionService.checkQuestionTopicChange.mockResolvedValue(undefined);
+    questionService.updateVariant.mockResolvedValue({});
+    questionService.updateQuestion.mockResolvedValue({});
+    render(<QuestionComposerPage />);
+    await screen.findByText("Edit question");
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() =>
+      expect(questionService.updateQuestion).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ primaryTopicId: "t1" }),
+      ),
+    );
+    expect(questionService.checkQuestionTopicChange).toHaveBeenCalledWith(7, "t1");
+    expect(questionService.checkQuestionTopicChange.mock.invocationCallOrder[0]).toBeLessThan(
+      questionService.updateVariant.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("leaves an approved variant untouched when the topic change is refused (#1974)", async () => {
+    questionService.getQuestion.mockResolvedValue(approvedOnTopicT0);
+    questionService.checkQuestionTopicChange.mockRejectedValue({
+      response: {
+        data: { error: "This question is in an assessment that doesn't cover the new topic" },
+      },
+    });
+    render(<QuestionComposerPage />);
+    await screen.findByText("Edit question");
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() =>
+      expect(toastFn.error).toHaveBeenCalledWith("Save failed", {
+        description: "This question is in an assessment that doesn't cover the new topic",
+      }),
+    );
+    expect(questionService.updateVariant).not.toHaveBeenCalled();
+    expect(questionService.updateQuestion).not.toHaveBeenCalled();
+  });
+
+  it("skips the topic check when the topic is unchanged", async () => {
+    questionService.getQuestion.mockResolvedValue({ ...approvedOnTopicT0, primaryTopicId: "t1" });
+    questionService.updateVariant.mockResolvedValue({});
+    questionService.updateQuestion.mockResolvedValue({});
+    render(<QuestionComposerPage />);
+    await screen.findByText("Edit question");
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalled());
+    expect(questionService.checkQuestionTopicChange).not.toHaveBeenCalled();
+  });
+
   it("lists other variants when more than one exists", async () => {
     questionService.getQuestion.mockResolvedValue({
       id: 7,
@@ -593,5 +672,180 @@ describe("QuestionComposerPage AI generation", () => {
     fireEvent.click(screen.getByText("save-key"));
     await waitFor(() => expect(apiKeyStorage.setApiKey).toHaveBeenCalledWith("openai", "sk-test"));
     await waitFor(() => expect(screen.getByTestId("api-key-state")).toHaveTextContent("saved"));
+  });
+});
+
+const mcq = (content: string) => ({
+  type: "MCQ",
+  difficulty: "medium",
+  content,
+  choices: [
+    { letter: "A", text: "x" },
+    { letter: "B", text: "y" },
+  ],
+  answer: "A",
+  primary_topic_id: "t1",
+});
+
+describe("QuestionComposerPage batch generation (#1973)", () => {
+  async function generateBatch(contents: string[], count = 3) {
+    eduaiService.generateQuestions.mockResolvedValue({ data: { questions: contents.map(mcq) } });
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("set-prompt"));
+    if (count === 3) fireEvent.click(screen.getByText("set-count-3"));
+    fireEvent.click(screen.getByText("generate"));
+    await waitFor(() => expect(eduaiService.generateQuestions).toHaveBeenCalled());
+  }
+
+  it("keeps N = 1 requests and labels unchanged", async () => {
+    await generateBatch(["Only?"], 1);
+    expect(eduaiService.generateQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        numQuestions: 1,
+        difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId("question-text")).toHaveTextContent("Only?"));
+    expect(screen.queryByRole("navigation", { name: "Generated drafts" })).toBeNull();
+    expect(screen.getByRole("button", { name: /save question/i })).toBeInTheDocument();
+  });
+
+  it("requests N questions with a matching difficulty count and loads draft 1", async () => {
+    await generateBatch(["Q1?", "Q2?", "Q3?"]);
+    expect(eduaiService.generateQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        numQuestions: 3,
+        difficultyDistribution: { easy: 0, medium: 3, hard: 0 },
+      }),
+    );
+    expect(await screen.findByText("Draft 1 of 3")).toBeInTheDocument();
+    expect(screen.getByTestId("question-text")).toHaveTextContent("Q1?");
+  });
+
+  it("only offers the count control in create mode", async () => {
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    expect(screen.getByTestId("has-count")).toHaveTextContent("true");
+  });
+
+  it("saves each draft, advances, and returns to the bank after the last", async () => {
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    await generateBatch(["Q1?", "Q2?", "Q3?"]);
+    await screen.findByText("Draft 1 of 3");
+    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    expect(await screen.findByText("Draft 2 of 3")).toBeInTheDocument();
+    expect(screen.getByTestId("question-text")).toHaveTextContent("Q2?");
+    expect(navigateMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /discard draft/i }));
+    expect(await screen.findByText("Draft 3 of 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/courses/5?tab=questions"));
+    expect(questionService.createQuestion).toHaveBeenCalledTimes(2);
+    expect(toastFn).toHaveBeenCalledWith("Saved 2 of 3 questions", expect.anything());
+  });
+
+  it("keeps edits when switching between drafts", async () => {
+    await generateBatch(["Q1?", "Q2?", "Q3?"]);
+    await screen.findByText("Draft 1 of 3");
+    fireEvent.click(screen.getByText("set-text"));
+    fireEvent.click(screen.getByRole("button", { name: "Draft 2, pending" }));
+    expect(screen.getByTestId("question-text")).toHaveTextContent("Q2?");
+    fireEvent.click(screen.getByRole("button", { name: "Draft 1, pending" }));
+    expect(screen.getByTestId("question-text")).toHaveTextContent("What is 2+2?");
+  });
+
+  it("stays on a draft whose save fails", async () => {
+    questionService.createQuestion.mockRejectedValue(new Error("boom"));
+    await generateBatch(["Q1?", "Q2?", "Q3?"]);
+    await screen.findByText("Draft 1 of 3");
+    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    expect(await screen.findByText("boom")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Draft 1, current" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Draft 2, pending" })).toBeEnabled();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("handles a partial result", async () => {
+    await generateBatch(["Q1?", "Q2?"]);
+    expect(await screen.findByText("Draft 1 of 2")).toBeInTheDocument();
+    expect(toastFn).toHaveBeenCalledWith("Generated 2 of 3 questions", expect.anything());
+  });
+
+  it("treats a single result from a batch like N = 1", async () => {
+    await generateBatch(["Q1?"]);
+    await waitFor(() =>
+      expect(toastFn).toHaveBeenCalledWith("Generated 1 of 3 questions", expect.anything()),
+    );
+    expect(screen.queryByRole("navigation", { name: "Generated drafts" })).toBeNull();
+    expect(screen.getByRole("button", { name: /save question/i })).toBeInTheDocument();
+  });
+
+  it("confirms before cancelling or regenerating with pending drafts", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await generateBatch(["Q1?", "Q2?", "Q3?"]);
+    await screen.findByText("Draft 1 of 3");
+    // The header back arrow and the footer button are both named "Cancel".
+    for (const cancel of screen.getAllByRole("button", { name: /^cancel$/i })) {
+      fireEvent.click(cancel);
+    }
+    expect(navigateMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("generate"));
+    expect(eduaiService.generateQuestions).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Draft 1 of 3")).toBeInTheDocument();
+    expect(confirmSpy).toHaveBeenCalledTimes(3);
+    confirmSpy.mockRestore();
+  });
+
+  it("builds drafts from topics that finish loading while generation runs", async () => {
+    let resolveTopics: (topics: Array<{ id: string; name: string }>) => void = () => {};
+    courseService.getCourseTopics.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTopics = resolve;
+      }),
+    );
+    let resolveGeneration: (value: {
+      data: { questions: ReturnType<typeof mcq>[] };
+    }) => void = () => {};
+    eduaiService.generateQuestions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeneration = resolve;
+      }),
+    );
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("set-prompt"));
+    fireEvent.click(screen.getByText("set-count-3"));
+    fireEvent.click(screen.getByText("generate"));
+    await waitFor(() => expect(eduaiService.generateQuestions).toHaveBeenCalled());
+
+    resolveTopics([{ id: "t1", name: "Topic 1" }]);
+    await waitFor(() => expect(screen.getByText("set-primary-topic")).toBeInTheDocument());
+    resolveGeneration({ data: { questions: ["Q1?", "Q2?", "Q3?"].map(mcq) } });
+    await screen.findByText("Draft 1 of 3");
+
+    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    await waitFor(() =>
+      expect(questionService.createQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({ primaryTopicId: "t1" }),
+      ),
+    );
+  });
+
+  it("keeps Generate disabled until the course topics have loaded", async () => {
+    let resolveTopics: (topics: Array<{ id: string; name: string }>) => void = () => {};
+    courseService.getCourseTopics.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTopics = resolve;
+      }),
+    );
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    expect(screen.getByTestId("ai-disabled")).toHaveTextContent("true");
+    resolveTopics([{ id: "t1", name: "Topic 1" }]);
+    await waitFor(() => expect(screen.getByTestId("ai-disabled")).toHaveTextContent("false"));
   });
 });

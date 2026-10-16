@@ -33,13 +33,43 @@ import type {
 } from "~/components/course-materials-upload";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
-import type { RbacUser } from "~/lib/rbac";
+import type { CourseAccess, RbacUser } from "~/lib/rbac";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { setCoursePublished } from "~/lib/courses/set-course-published";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { describeUploadFailure } from "~/lib/material-failure-notice";
+import {
+  loadAssistantAvailability,
+  materialSourceAvailable,
+} from "~/lib/assistant/assistant-gate.server";
+import { resolveCourseContext } from "~/lib/assistant/material-context.server";
+import { accessLevelFor } from "~/lib/auth/course-access.server";
+import { usePublishAssistantContext } from "~/components/assistant/assistant-events";
+
+/**
+ * #1821/#1822: whether the help assistant may ground answers in THIS course for
+ * this reader — the same gate `POST /api/assistant/ask` re-checks per question.
+ * The page publishes it so the bubble's visibility and the endpoint can't drift.
+ * Built from the course and access the loader already resolved, not re-queried.
+ * A failure here only hides the course half; it never fails the page.
+ */
+async function resolveAssistantMaterialScope(
+  course: Parameters<typeof resolveCourseContext>[0]["course"],
+  access: CourseAccess,
+): Promise<boolean> {
+  try {
+    const [availability, resolution] = await Promise.all([
+      loadAssistantAvailability(),
+      resolveCourseContext({ course, access: access ? accessLevelFor(access) : null }),
+    ]);
+    return materialSourceAvailable(availability, resolution);
+  } catch {
+    return false;
+  }
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -122,7 +152,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // #1841: every active instructor, so the detail header stops rendering one of
   // three. The serializer redacts their emails for the student audience.
-  const instructorSummaries = (await getCourseInstructors([course.id])).get(course.id) ?? [];
+  const [instructorSummaries, assistantMaterialScope] = await Promise.all([
+    getCourseInstructors([course.id]).then((byCourse) => byCourse.get(course.id) ?? []),
+    resolveAssistantMaterialScope(course, access),
+  ]);
 
   return {
     // SAFETY: the serializer adds audience-specific fields on top of the
@@ -138,6 +171,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     user,
     access,
     courseInstructors,
+    assistantMaterialScope,
   };
 }
 
@@ -167,6 +201,7 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
     duplicateOfId: m.duplicateOfId ?? null,
     hasExtractedText: m.hasExtractedText,
     failureCode: m.failureCode ?? null,
+    topics: m.topics,
   };
 }
 
@@ -180,8 +215,17 @@ const UPLOAD_PROCESSING_MESSAGE =
   "Upload accepted. Processing is taking a while — the list will update when it finishes.";
 
 export default function CourseDetailPage() {
-  const { course, user, access, courseInstructors } = useLoaderData<typeof loader>();
+  const { course, user, access, courseInstructors, assistantMaterialScope } =
+    useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
+  // The course as a whole, published to the shell-mounted assistant. No view here
+  // narrows it to one material: students never open a file (#1962).
+  usePublishAssistantContext({
+    courseId: course.id,
+    materialId: null,
+    label: `${course.code} — ${course.name}`,
+    materialScope: assistantMaterialScope,
+  });
   const {
     topics,
     createTopic,
@@ -204,16 +248,19 @@ export default function CourseDetailPage() {
     course.id,
     access === "admin" || access === "unit" || access === "instructor",
   );
+  // #1962: a student's page never shows the course's files, and the API
+  // refuses anyone `canViewMaterial` does not name, so it never asks for them.
   const {
     materials,
     uploadMaterial,
     deleteMaterial,
     reprocessMaterial,
+    setMaterialTopics,
     hasMore: hasMoreMaterials,
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
     refetch: refetchMaterials,
-  } = useCourseMaterials(course.id);
+  } = useCourseMaterials(course.id, canViewMaterial(access));
   const { tas, addTA, removeTA } = useCourseTAs(course.id);
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);
@@ -409,7 +456,9 @@ export default function CourseDetailPage() {
       const batchNames = new Map<string, string>();
       setUploads([...results]);
       const settle = (i: number, item: UploadResult) => {
-        results[i] = { ...item, name: files[i].name };
+        // Keep the material id once known, so the file's topic picker (#1965)
+        // stays attached as its status moves on.
+        results[i] = { materialId: results[i].materialId, ...item, name: files[i].name };
         if (isCurrent()) setUploads([...results]);
       };
 
@@ -422,7 +471,10 @@ export default function CourseDetailPage() {
             // The upload endpoint returns 202 and processes in the background (#949),
             // so the outcome arrives from polling rather than from the POST status.
             const outcome = await uploadMaterial(files[i], {
-              onAccepted: (id) => batchNames.set(id, files[i].name),
+              onAccepted: (id) => {
+                batchNames.set(id, files[i].name);
+                settle(i, { status: "uploading", materialId: id });
+              },
             });
             settle(i, describeUpload(outcome, batchNames));
           } catch (e) {
@@ -541,6 +593,7 @@ export default function CourseDetailPage() {
               onRefreshMaterials={refetchMaterials}
               onDeleteMaterial={deleteMaterial}
               onReprocessMaterial={reprocessMaterial}
+              onSetMaterialTopics={setMaterialTopics}
               onPublishChange={handlePublishChange}
               courseId={course.id}
               currentUserId={user.id}
@@ -578,20 +631,7 @@ export default function CourseDetailPage() {
               }}
             />
           ) : (
-            <CourseDetailStudentView
-              course={course}
-              materials={uploadMaterials}
-              hasMoreMaterials={hasMoreMaterials}
-              materialsLoadingMore={materialsLoadingMore}
-              onLoadMoreMaterials={loadMoreMaterials}
-              topics={topics}
-              tas={tas}
-              isUploading={isUploading}
-              materialsError={materialsError}
-              materialsSuccess={materialsSuccess}
-              uploads={uploads}
-              onFilesSelect={handleFilesSelect}
-            />
+            <CourseDetailStudentView course={course} topics={topics} tas={tas} />
           )}
         </div>
       </div>

@@ -232,6 +232,11 @@ export function ChatInput({
                   selectedCourseLabel ? `Ask about ${selectedCourseLabel}…` : "Ask anything…"
                 }
                 disabled={isLoading || assistBusy || !!disabledReason}
+                onPaste={(e) => {
+                  // Same gate as a drop: pasting an image or file attaches it.
+                  if (!attachmentsEnabled || controlsDisabled || isLoading) return;
+                  if (attachments.paste(e.clipboardData)) e.preventDefault();
+                }}
                 className="max-h-[120px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-[15px] text-foreground placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
               />
             </PromptInput>

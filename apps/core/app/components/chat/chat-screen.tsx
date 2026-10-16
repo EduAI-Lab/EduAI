@@ -46,6 +46,7 @@ import {
   wasAutoRoutedFromMessage,
   adhdAssistFromMessage,
   ragSourcesFromMessage,
+  ragTopicsFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 
 type LongOutputMessageMetadata = {
@@ -90,6 +91,7 @@ function useChatCourseSelection({
     id: course.id,
     name: course.name,
     code: course.code,
+    isLearner: course.callerEnrollmentRole === "STUDENT",
   }));
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(
     editableTranscript?.chat.courseId ?? searchParams.get("courseId") ?? null,
@@ -98,6 +100,8 @@ function useChatCourseSelection({
     editableTranscript?.chat.courseCode ?? searchParams.get("courseCode") ?? lastCourseCode,
   );
   const selectedCourse = availableCourses.find((course) => course.id === selectedCourseId);
+  // #1963: a student in this course sees topics and a status-only search chip.
+  const learnerView = selectedCourse?.isLearner === true;
   const selectedCourseCode = selectedCourse?.code ?? editableTranscript?.chat.courseCode ?? null;
   const courseParamApplied = useRef(false);
 
@@ -133,6 +137,7 @@ function useChatCourseSelection({
     selectedCourseId,
     setSelectedCourseId,
     selectedCourseCode,
+    learnerView,
   };
 }
 
@@ -154,6 +159,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     selectedCourseId,
     setSelectedCourseId,
     selectedCourseCode,
+    learnerView,
   } = useChatCourseSelection({
     editableTranscript,
     lastCourseCode,
@@ -274,6 +280,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       return hydrated;
     },
   );
+  /** Topics each student turn shows in place of file titles, keyed by message id (#1963). */
+  const [ragTopicsByMessageId, setRagTopicsByMessageId] = useState<Record<string, string[]>>(() => {
+    const hydrated: Record<string, string[]> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id = asPresentText(message.id);
+      const ragTopics = ragTopicsFromMessage(message);
+      if (id && ragTopics) hydrated[id] = ragTopics;
+    }
+    return hydrated;
+  });
   /** Id of the assistant message currently being re-generated for a toggled Assist mode (#1246). */
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   /**
@@ -509,6 +525,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       if (ragSources) {
         setRagSourcesByMessageId((prev) => ({ ...prev, [message.id]: ragSources }));
       }
+      const ragTopics =
+        message.role === "assistant"
+          ? message.annotations
+              ?.map((annotation) => ragTopicsFromMessage({ metadata: annotation }))
+              .find((topics) => topics !== undefined)
+          : undefined;
+      if (ragTopics) {
+        setRagTopicsByMessageId((prev) => ({ ...prev, [message.id]: ragTopics }));
+      }
 
       if (hitLongOutputCap) {
         setCappedMessageIds((current) => {
@@ -636,6 +661,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               setRagSourcesByMessageId((prev) => ({
                 ...prev,
                 [lastMessage.id]: regeneratedSources,
+              }));
+            }
+            const regeneratedTopics = ragTopicsFromMessage({ metadata: data });
+            if (regeneratedTopics) {
+              setRagTopicsByMessageId((prev) => ({
+                ...prev,
+                [lastMessage.id]: regeneratedTopics,
               }));
             }
             const rawContent = asText(data.content);
@@ -1016,6 +1048,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssistByMessageId,
     streamingAdhdAssist,
     ragSourcesByMessageId,
+    ragTopicsByMessageId,
+    learnerView,
     chatError,
     onRetryChat: canRetryChat ? handleRetryChat : undefined,
   };

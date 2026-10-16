@@ -4,6 +4,7 @@ import {
   cleanTopicName,
   dedupeCandidates,
   isUsableTopicName,
+  looseTopicKey,
   normalizeTopicName,
   rejectExistingCandidates,
   ORIGIN_CONFIDENCE,
@@ -130,5 +131,25 @@ describe("rejectExistingCandidates", () => {
   it("returns every candidate when the course has no topics", () => {
     const candidates = [candidate({ name: "Chapter 1 — Intro" })];
     expect(rejectExistingCandidates(candidates, [])).toEqual(candidates);
+  });
+});
+
+describe("looseTopicKey (#1965)", () => {
+  it("treats simple plurals as the same topic", () => {
+    expect(looseTopicKey("Loops")).toBe(looseTopicKey("loop"));
+    expect(looseTopicKey("Classes")).toBe(looseTopicKey("Class"));
+    expect(looseTopicKey("Branches")).toBe(looseTopicKey("Branch"));
+    expect(looseTopicKey("Hash Tables")).toBe(looseTopicKey("hash-table"));
+  });
+
+  it("leaves words that only look plural alone", () => {
+    expect(looseTopicKey("Analysis")).toBe("analysis");
+    expect(looseTopicKey("Calculus")).toBe("calculus");
+    expect(looseTopicKey("Access")).toBe("access");
+  });
+
+  it("keeps short words and numbers distinct", () => {
+    expect(looseTopicKey("Chapter 3")).not.toBe(looseTopicKey("Chapter 4"));
+    expect(looseTopicKey("OS")).toBe("os");
   });
 });
