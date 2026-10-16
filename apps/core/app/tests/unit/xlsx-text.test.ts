@@ -176,8 +176,79 @@ describe("shared formulas", () => {
     );
   });
 
+  // #1990 re-review: sheet names are not references, and whole rows/columns move.
+  const filledDown = (anchorFormula: string) =>
+    xlsxToText(
+      workbook([
+        {
+          name: "S",
+          xml:
+            `<row r="2"><c r="A2"><f t="shared" ref="A2:A3" si="0">${anchorFormula}</f><v>1</v></c></row>` +
+            '<row r="3"><c r="A3"><f t="shared" si="0"/><v>2</v></c></row>',
+        },
+      ]),
+    ).content.split("\n")[2];
+  const filledRight = (anchorFormula: string) =>
+    xlsxToText(
+      workbook([
+        {
+          name: "S",
+          xml:
+            `<row r="1"><c r="A1"><f t="shared" ref="A1:B1" si="0">${anchorFormula}</f><v>1</v></c>` +
+            '<c r="B1"><f t="shared" si="0"/><v>2</v></c></row>',
+        },
+      ]),
+    ).content.split(" | ")[1];
+
+  it.each([
+    ["a quoted sheet name that looks like a cell", "&apos;Q1&apos;!B2", "2 (='Q1'!B3)"],
+    ["an unquoted sheet name that looks like a cell", "Q1!B2", "2 (=Q1!B3)"],
+    ["a quoted sheet name with spaces", "&apos;Lab Q1&apos;!B2*2", "2 (='Lab Q1'!B3*2)"],
+    ["a whole-row range", "SUM(3:3)", "2 (=SUM(4:4))"],
+    ["an anchored whole-row range", "SUM($3:3)", "2 (=SUM($3:4))"],
+  ])("filled down, shifts %s correctly", (_label, formula, expected) => {
+    expect(filledDown(formula)).toBe(expected);
+  });
+
+  it.each([
+    ["a whole-column range", "SUM(A:A)", "2 (=SUM(B:B))"],
+    ["an anchored whole-column range", "SUM($A:A)", "2 (=SUM($A:B))"],
+    ["a sheet-qualified whole column", "SUM(Q1!A:A)", "2 (=SUM(Q1!B:B))"],
+  ])("filled right, shifts %s correctly", (_label, formula, expected) => {
+    expect(filledRight(formula)).toBe(expected);
+  });
+
+  it("collects an anchor in the same pass as the rows, before the cells that share it", () => {
+    const xml =
+      '<row r="1"><c r="A1"><v>head</v></c></row>' +
+      '<row r="2"><c r="B2"><f t="shared" ref="B2:B3" si="4">A2+1</f><v>2</v></c></row>' +
+      '<row r="3"><c r="B3"><f t="shared" si="4"/><v>3</v></c></row>';
+    expect(xlsxToText(workbook([{ name: "S", xml }])).content).toBe(
+      "--- Sheet: S ---\nhead\n | 2 (=A2+1)\n | 3 (=A3+1)",
+    );
+  });
+
   it("shows only the value when the anchor is missing", () => {
     const xml = '<row r="3"><c r="C3"><f t="shared" si="9"/><v>12</v></c></row>';
     expect(xlsxToText(workbook([{ name: "S", xml }])).content).toBe("--- Sheet: S ---\n |  | 12");
+  });
+});
+
+// #1990 re-review: a whole-workbook character budget bounds the worker's output.
+describe("character budget", () => {
+  it("stops when the budget is reached and says the rest was left out", () => {
+    const row = (n: number) => `<row r="${n}"><c r="A${n}"><v>${"x".repeat(40)}</v></c></row>`;
+    const many = Array.from({ length: 50 }, (_, i) => row(i + 1)).join("");
+    const parts = workbook([
+      { name: "First", xml: many },
+      { name: "Second", xml: row(1) },
+    ]);
+    const { content } = render(parts, { ...XLSX_LIMITS, maxChars: 500 });
+    expect(content).toContain("--- Sheet: First ---");
+    expect(content).not.toContain("--- Sheet: Second ---");
+    expect(content).toMatch(
+      /\[Stopped after 500 characters; the rest of the workbook was left out\.\]$/u,
+    );
+    expect(content.length).toBeLessThan(700);
   });
 });

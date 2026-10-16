@@ -16,10 +16,19 @@ export type XlsxParts = {
 
 export type XlsxText = { content: string; sheetCount: number };
 
-/** Rows and columns read per sheet; past these the sheet says it was cut. */
-export type XlsxLimits = { maxRows: number; maxColumns: number };
+/**
+ * Rows and columns read per sheet, and characters for the whole workbook; past
+ * these the text says it was cut. The character budget bounds what the worker
+ * sends back however many sheets or long cells there are (#1990 review); the
+ * chat attachment cap trims it further.
+ */
+export type XlsxLimits = { maxRows: number; maxColumns: number; maxChars: number };
 
-export const XLSX_LIMITS = { maxRows: 2000, maxColumns: 60 } satisfies XlsxLimits;
+export const XLSX_LIMITS = {
+  maxRows: 2000,
+  maxColumns: 60,
+  maxChars: 200_000,
+} satisfies XlsxLimits;
 
 /**
  * The workbook as text.
@@ -55,8 +64,15 @@ export function xlsxToText(parts: XlsxParts, limits: XlsxLimits): XlsxText {
     return decode(runs.map((run) => run.replace(/<[^>]*>/gu, "")).join(""));
   }
 
+  // One pattern per attribute name, built once: this runs for every cell.
+  const attributePatterns = new Map<string, RegExp>();
   function attribute(tag: string, name: string): string | null {
-    const match = new RegExp(`\\s${name}="([^"]*)"`, "u").exec(tag);
+    let pattern = attributePatterns.get(name);
+    if (!pattern) {
+      pattern = new RegExp(`\\s${name}="([^"]*)"`, "u");
+      attributePatterns.set(name, pattern);
+    }
+    const match = pattern.exec(tag);
     return match ? decode(match[1]!) : null;
   }
 
@@ -80,25 +96,49 @@ export function xlsxToText(parts: XlsxParts, limits: XlsxLimits): XlsxText {
     return match ? { column: columnIndex(match[1]!), row: Number(match[2]) } : null;
   }
 
+  function shiftColumn(anchor: string, letters: string, columns: number): string | null {
+    if (anchor) return letters;
+    const column = columnIndex(letters) + columns;
+    return column < 0 ? null : columnLetters(column);
+  }
+
+  function shiftRow(anchor: string, row: string, rows: number): string | null {
+    if (anchor) return row;
+    const shifted = Number(row) + rows;
+    return shifted < 1 ? null : String(shifted);
+  }
+
   /**
-   * A shared formula as it reads in another cell of its range: relative references
-   * move with the cell, `$`-anchored parts stay, and quoted text is left alone.
+   * A shared formula as it reads in another cell of its range: relative
+   * references move with the cell, `$`-anchored parts stay. Text in `"…"`,
+   * quoted sheet names in `'…'`, and an unquoted sheet name before `!` are
+   * never references, so they are left alone; whole-column (`A:A`) and
+   * whole-row (`3:3`) ranges move like cells (#1990 re-review).
    */
   function shiftFormula(formula: string, rows: number, columns: number): string {
+    const reference =
+      /(?<![A-Za-z0-9_.$])(?:(\$?)([A-Z]{1,3})(\$?)(\d+)|(\$?)([A-Z]{1,3}):(\$?)([A-Z]{1,3})|(\$?)(\d+):(\$?)(\d+))(?![A-Za-z0-9_(!])/gu;
     return formula
-      .split(/("(?:[^"]|"")*")/u)
+      .split(/("(?:[^"]|"")*"|'(?:[^']|'')*')/u)
       .map((segment, index) =>
         index % 2 === 1
           ? segment
-          : segment.replace(
-              /(?<![A-Za-z0-9_.])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/gu,
-              (whole, colAnchor: string, letters: string, rowAnchor: string, row: string) => {
-                const column = colAnchor ? columnIndex(letters) : columnIndex(letters) + columns;
-                const newRow = rowAnchor ? Number(row) : Number(row) + rows;
-                if (column < 0 || newRow < 1) return whole;
-                return `${colAnchor}${columnLetters(column)}${rowAnchor}${newRow}`;
-              },
-            ),
+          : segment.replace(reference, (whole, ...groups: Array<string | undefined>) => {
+              const [ca, cl, ra, rn, c1a, c1, c2a, c2, r1a, r1, r2a, r2] = groups as string[];
+              if (cl !== undefined) {
+                const column = shiftColumn(ca!, cl, columns);
+                const row = shiftRow(ra!, rn!, rows);
+                return column && row ? `${ca}${column}${ra}${row}` : whole;
+              }
+              if (c1 !== undefined) {
+                const from = shiftColumn(c1a!, c1, columns);
+                const to = shiftColumn(c2a!, c2!, columns);
+                return from && to ? `${c1a}${from}:${c2a}${to}` : whole;
+              }
+              const from = shiftRow(r1a!, r1!, rows);
+              const to = shiftRow(r2a!, r2!, rows);
+              return from && to ? `${r1a}${from}:${r2a}${to}` : whole;
+            }),
       )
       .join("");
   }
@@ -129,25 +169,29 @@ export function xlsxToText(parts: XlsxParts, limits: XlsxLimits): XlsxText {
   }
 
   const blocks: string[] = [];
+  let used = 0;
+  let outOfBudget = false;
   for (const sheet of sheets) {
+    if (outOfBudget) break;
     const xml = parts.sheets[sheet.path] ?? "";
     const cellPattern = /<c\b[^>]*\/>|<c\b[^>]*>[\s\S]*?<\/c>/gu;
 
     // A filled-down formula is stored once, in its anchor cell; the rest of the
-    // range carries only `<f t="shared" si="n"/>` (#1990 review).
+    // range carries only `<f t="shared" si="n"/>` (#1990 review). The anchor is
+    // the range's top-left cell, so it is always read before the cells that
+    // share it, and anchors are collected as the capped pass reaches them.
     const anchors = new Map<string, { formula: string; column: number; row: number }>();
-    for (const cellXml of xml.match(cellPattern) ?? []) {
-      const f = /<f\b([^>]*)>([\s\S]*?)<\/f>/u.exec(cellXml);
-      const at = position(attribute(/^<c\b[^>]*>/u.exec(cellXml)?.[0] ?? "", "r") ?? "");
-      const index = f ? attribute(` ${f[1]}`, "si") : null;
-      if (f && at && index !== null && attribute(` ${f[1]}`, "t") === "shared" && f[2]!.trim()) {
-        anchors.set(index, { formula: decode(f[2]!).trim(), ...at });
-      }
-    }
 
     function formulaOf(cellXml: string, at: { column: number; row: number } | null): string | null {
-      const full = /<f\b[^>]*>([\s\S]*?)<\/f>/u.exec(cellXml);
-      if (full && full[1]!.trim()) return decode(full[1]!).trim();
+      const full = /<f\b([^>]*)>([\s\S]*?)<\/f>/u.exec(cellXml);
+      if (full && full[2]!.trim()) {
+        const formula = decode(full[2]!).trim();
+        const index = attribute(` ${full[1]}`, "si");
+        if (at && index !== null && attribute(` ${full[1]}`, "t") === "shared") {
+          anchors.set(index, { formula, ...at });
+        }
+        return formula;
+      }
       const sharedTag = /<f\b([^>]*)\/>|<f\b([^>]*)><\/f>/u.exec(cellXml);
       if (!sharedTag) return null;
       const index = attribute(` ${sharedTag[1] ?? sharedTag[2] ?? ""}`, "si");
@@ -196,13 +240,24 @@ export function xlsxToText(parts: XlsxParts, limits: XlsxLimits): XlsxText {
         cut = true;
         break;
       }
-      rows.push(cells.join(" | "));
+      const line = cells.join(" | ");
+      if (used + line.length + 1 > limits.maxChars) {
+        outOfBudget = true;
+        break;
+      }
+      used += line.length + 1;
+      rows.push(line);
     }
     if (rows.length === 0) continue;
     const note = cut
       ? `\n[Only the first ${limits.maxRows} rows and ${limits.maxColumns} columns of this sheet were included.]`
       : "";
     blocks.push(`--- Sheet: ${sheet.name} ---\n${rows.join("\n")}${note}`);
+  }
+  if (outOfBudget) {
+    blocks.push(
+      `[Stopped after ${limits.maxChars.toLocaleString("en-US")} characters; the rest of the workbook was left out.]`,
+    );
   }
   return { content: blocks.join("\n\n"), sheetCount: sheets.length };
 }
