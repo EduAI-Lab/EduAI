@@ -3,6 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
 import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
+import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
@@ -17,6 +18,15 @@ import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import {
+  redeemPendingSelfEnrollments,
+  rememberPendingSelfEnrollmentForEmail,
+} from "~/lib/courses/pending-self-enrollment.server";
+import {
+  describeSelfEnrollmentLinkForVisitor,
+  SELF_ENROLL_COMPLETE_PATH,
+  selfEnrollmentTokenFromRedirect,
+} from "~/lib/courses/self-enrollment.server";
 
 const authErrorSchema = z.object({
   code: z.string().optional(),
@@ -102,6 +112,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+  // #1961: a signed-out visitor from a course join link. Name the course, and keep
+  // the link through Sign up so an account created there still joins it.
+  const joinToken = selfEnrollmentTokenFromRedirect(redirectTo);
+  const joining = joinToken ? await describeSelfEnrollmentLinkForVisitor(joinToken) : null;
+  const registerHref = joinToken
+    ? `/auth/register?redirect=${encodeURIComponent(redirectTo)}`
+    : "/auth/register";
   let demoPassword: string | null = null;
   if (isLocalDemoEnabled()) {
     try {
@@ -115,7 +132,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     redirectTo,
     allowRegistration,
+    joining,
+    registerHref,
     forceReauth,
+    registrationSubmitted: url.searchParams.get("registered") === "1",
     // Demo credentials are available only for an explicitly configured local
     // deployment with a caller-supplied seed password. This is evaluated on the
     // server so production never renders the controls or receives the password.
@@ -136,6 +156,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const values = Object.fromEntries(formData);
   const redirectTo = validateRedirectUrl(String(values.redirectTo || ""));
+  // #1961: signing in on the way to a course join link.
+  const joinToken = selfEnrollmentTokenFromRedirect(redirectTo);
   const input = {
     email: String(values.email || ""),
     password: String(values.password || ""),
@@ -161,7 +183,11 @@ export async function action({ request }: ActionFunctionArgs) {
       body: JSON.stringify({
         email: input.email,
         password: input.password,
-        callbackURL: "/onboarding/student-id",
+        // Where the verification email Better Auth sends an unverified account
+        // lands: the page that reports a course join waiting on this account
+        // (#1961) and otherwise carries on to onboarding. A join started from an
+        // earlier link may be waiting even when this sign-in did not start one.
+        callbackURL: SELF_ENROLL_COMPLETE_PATH,
       }),
     });
 
@@ -185,6 +211,11 @@ export async function action({ request }: ActionFunctionArgs) {
         }),
       );
       if (errorData.code === "EMAIL_NOT_VERIFIED") {
+        if (joinToken) {
+          // Better Auth checks the password before it answers this, so the
+          // caller owns the account: remember the join for when they verify.
+          await rememberPendingSelfEnrollmentForEmail({ email: input.email, token: joinToken });
+        }
         return redirect("/auth/verify-email");
       }
       return {
@@ -240,6 +271,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
+    // #1961: a join this account started before it was activated, finished here
+    // when no verification hook did (for example where verification is off).
+    // Its outcome page replaces only the default destination: someone signing in
+    // on the way somewhere (another join link, say) still gets there.
+    if (signedInUser) {
+      const finished = await redeemPendingSelfEnrollments(signedInUser, request);
+      if (finished.length > 0 && redirectTo === "/dashboard") {
+        return redirect(SELF_ENROLL_COMPLETE_PATH, { headers });
+      }
+    }
+
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
     const message = messageFromCause(err, "Sign in failed");
@@ -265,14 +307,25 @@ export default function LoginPage() {
         formError?: string;
       }
     | undefined;
-  const { redirectTo, allowRegistration, forceReauth, showDemoLogin, demoPassword } =
-    useLoaderData() as {
-      redirectTo: string;
-      allowRegistration: boolean;
-      forceReauth: boolean;
-      showDemoLogin: boolean;
-      demoPassword: string | null;
-    };
+  const {
+    redirectTo,
+    allowRegistration,
+    joining,
+    registerHref,
+    forceReauth,
+    showDemoLogin,
+    demoPassword,
+    registrationSubmitted,
+  } = useLoaderData() as {
+    redirectTo: string;
+    allowRegistration: boolean;
+    joining: { courseCode: string; courseName: string } | null;
+    registerHref: string;
+    forceReauth: boolean;
+    registrationSubmitted: boolean;
+    showDemoLogin: boolean;
+    demoPassword: string | null;
+  };
 
   return (
     <div
@@ -314,6 +367,15 @@ export default function LoginPage() {
         className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg"
         style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
       >
+        {joining && (
+          <JoinCourseNotice {...joining} action="sign-in" canRegister={allowRegistration} />
+        )}
+        {registrationSubmitted && (
+          <p role="status" className="text-sm text-muted-foreground mb-4">
+            Check your inbox for a verification email if needed, then sign in to continue joining
+            your course.
+          </p>
+        )}
         {forceReauth && (
           <p className="text-sm text-muted-foreground mb-4 text-center">
             Sign in again so your session works across EduAI apps on this server.
@@ -334,6 +396,7 @@ export default function LoginPage() {
             fieldErrors={actionData?.fieldErrors}
             isLoading={false}
             allowRegistration={allowRegistration}
+            registerHref={registerHref}
           />
         </form>
         {/* #1728: outside the form — a GET link must not submit the credentials. */}

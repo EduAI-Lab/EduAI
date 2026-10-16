@@ -7,6 +7,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 import { auth } from "~/lib/auth/server";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import { SELF_ENROLL_COMPLETE_PATH } from "~/lib/courses/self-enrollment.server";
 
 const VERIFICATION_CALLBACK_URL = "/onboarding/student-id";
 
@@ -49,7 +50,10 @@ export async function action({ request }: ActionFunctionArgs) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email: result.data.email,
-      callbackURL: VERIFICATION_CALLBACK_URL,
+      // #1961: the landing page reports a course join that waited for this
+      // verification and otherwise carries on to onboarding, so it suits a
+      // resend for any sign-up. This page cannot tell which kind it is.
+      callbackURL: SELF_ENROLL_COMPLETE_PATH,
     }),
   });
 
