@@ -35,6 +35,7 @@ import { CoreTourProvider } from "~/components/tour/core-tour-provider";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
 import { hasValidServiceKey } from "~/lib/auth/guards.server";
+import { loadAssistantGateSnapshot } from "~/lib/assistant/assistant-gate.server";
 
 /**
  * Parse a URL-like value to its origin, skipping invalid or opaque (`null`)
@@ -197,6 +198,9 @@ const GUEST_ROOT_PREFERENCES = {
   // role once so shared app launchers can expose Question Maker without also
   // exposing it to ordinary students.
   hasTeachingAssistantEnrollment: false,
+  // #1822: the help assistant's render condition, decided server-side through the
+  // same gate `POST /api/assistant/ask` uses. Guests never get the widget.
+  assistant: { mounted: false, docs: false },
 } as const;
 
 /**
@@ -257,15 +261,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
           select: { id: true },
         });
   taEnrollmentPromise.catch(() => {});
+  // Never rejects: a gate read failure hides the assistant instead of failing the page.
+  const assistantPromise = loadAssistantGateSnapshot(session.user.role);
 
   if (!isExempt) {
     const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
     if (expiredRedirect) return expiredRedirect;
   }
-  const [row, courseAssistantCourses, taEnrollment] = await Promise.all([
+  const [row, courseAssistantCourses, taEnrollment, assistant] = await Promise.all([
     preferencePromise,
     courseAssistantCoursesPromise,
     taEnrollmentPromise,
+    assistantPromise,
   ]);
   const canUseCourseAssistant = courseAssistantCourses.length > 0;
   const hasTeachingAssistantEnrollment = taEnrollment !== null;
@@ -283,6 +290,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     canInvite,
     canUseCourseAssistant,
     hasTeachingAssistantEnrollment,
+    assistant,
     policies,
   };
 }

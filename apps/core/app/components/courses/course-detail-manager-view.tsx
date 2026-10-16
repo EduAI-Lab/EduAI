@@ -104,6 +104,7 @@ import {
 import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
+import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
 
 /**
  * One active INSTRUCTOR enrollment, as the course loader projects it (#1840).
@@ -339,6 +340,7 @@ function instructorErrorMessage(code: string, fallback: string): string {
 /** The body of `PATCH /api/courses/:id/rag-settings`. */
 type RagSettingsPatch = {
   courseScopeGuardrailEnabled: boolean;
+  aiAssistantEnabled: boolean;
   ragTopK: number | null;
   ragSimilarityThreshold: number | null;
 };
@@ -437,6 +439,7 @@ export function CourseDetailManagerView({
   const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] = useState(
     course.courseScopeGuardrailEnabled,
   );
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(course.aiAssistantEnabled !== false);
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -926,6 +929,7 @@ export function CourseDetailManagerView({
       // both are always sent rather than omitted when blank.
       const payload: RagSettingsPatch = {
         courseScopeGuardrailEnabled,
+        aiAssistantEnabled,
         ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
         ragSimilarityThreshold: ragThreshold === "" ? null : parseFloat(ragThreshold),
       };
@@ -2204,6 +2208,24 @@ export function CourseDetailManagerView({
                       checked={courseScopeGuardrailEnabled}
                       onCheckedChange={setCourseScopeGuardrailEnabled}
                       aria-label="Restrict Course Chat to this course"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="course-ai-assistant">
+                        Let {ASSISTANT_DISPLAY_NAME} answer from this course
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        The help assistant can answer questions about this course&apos;s materials
+                        for people who can see them. Turn off to keep this course&apos;s content out
+                        of the assistant entirely.
+                      </p>
+                    </div>
+                    <Switch
+                      id="course-ai-assistant"
+                      checked={aiAssistantEnabled}
+                      onCheckedChange={setAiAssistantEnabled}
+                      aria-label={`Let ${ASSISTANT_DISPLAY_NAME} answer from this course`}
                     />
                   </div>
                   <div className="grid gap-2">
