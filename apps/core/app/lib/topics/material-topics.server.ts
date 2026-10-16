@@ -69,6 +69,69 @@ function tidyName(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
 
+type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * File the materials a suggestion came from under `targetId`, which is the
+ * suggestion itself on approval or the merge target (#1966).
+ *
+ * A material already at `MAX_TOPICS_PER_MATERIAL` accepted topics is skipped:
+ * nothing it has is removed to make room. On approval the suggestion's link to
+ * such a material is deleted, since it would otherwise count as a fourth topic.
+ * Every material is eligible otherwise, including one whose topics an
+ * instructor set — approving a card that names the file is their choice too.
+ *
+ * `exceptMaterialId` is the file whose topics the caller is writing itself:
+ * naming a suggestion in a file's picker approves it (#1988 review), and the
+ * other files it was suggested for get it here, within their cap.
+ */
+export async function fileSourcesUnder(
+  tx: TopicTransaction,
+  suggestionId: string,
+  targetId: string,
+  exceptMaterialId?: string,
+): Promise<void> {
+  const sources = await tx.courseTopicSource.findMany({
+    where: {
+      topicId: suggestionId,
+      material: { deletedAt: null },
+      // Prisma ignores an undefined `not`, so with no exception every file is read.
+      materialId: { not: exceptMaterialId },
+    },
+    select: { materialId: true },
+  });
+
+  for (const { materialId } of sources) {
+    const filed = await tx.courseTopicSource.findMany({
+      where: { materialId, topicId: { not: suggestionId }, topic: MATERIAL_TOPIC_WHERE },
+      select: { topicId: true, position: true },
+    });
+    const alreadyFiled = filed.some((link) => link.topicId === targetId);
+    const full = filed.length >= MAX_TOPICS_PER_MATERIAL;
+
+    if (targetId === suggestionId) {
+      if (full) {
+        await tx.courseTopicSource.deleteMany({ where: { topicId: suggestionId, materialId } });
+      } else {
+        const position = filed.reduce((max, link) => Math.max(max, link.position + 1), 0);
+        await tx.courseTopicSource.updateMany({
+          where: { topicId: suggestionId, materialId },
+          data: { position },
+        });
+      }
+      continue;
+    }
+
+    if (alreadyFiled || full) continue;
+    const position = filed.reduce((max, link) => Math.max(max, link.position + 1), 0);
+    await tx.courseTopicSource.upsert({
+      where: { topicId_materialId: { topicId: targetId, materialId } },
+      create: { topicId: targetId, materialId, position },
+      update: { position },
+    });
+  }
+}
+
 /**
  * Replace a material's topics with the given ordered list, as a person's choice
  * (#1965). The first entry becomes the main topic.
@@ -179,6 +242,15 @@ export async function setMaterialTopics(
             });
           }
           topics.push({ id: entry.topic.id, name: entry.topic.name });
+        }
+      }
+
+      // Naming a pending suggestion approves it for the whole course, which turns
+      // its links to other files into their topics too (#1988 review); file
+      // those within each file's cap, as the review card's Approve does.
+      for (const entry of resolved) {
+        if (entry.kind === "existing" && entry.topic.reviewStatus !== "ACCEPTED") {
+          await fileSourcesUnder(tx, entry.topic.id, entry.topic.id, args.materialId);
         }
       }
 

@@ -3,9 +3,8 @@ import type { JsonValue } from "@eduai/types";
 import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { asFiniteNumber, asJsonObject, asPresentText, asText } from "~/lib/json-value";
 import prisma from "~/lib/prisma.server";
-import { MAX_TOPICS_PER_MATERIAL } from "~/lib/topics/candidates";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
-import { MATERIAL_TOPIC_WHERE } from "~/lib/topics/material-topics.server";
+import { fileSourcesUnder, MATERIAL_TOPIC_WHERE } from "~/lib/topics/material-topics.server";
 import {
   recordTopicAnalysisJobs,
   resumeStaleTopicAnalysisJobs,
@@ -350,57 +349,6 @@ export async function mergeGeneratedTopic(
 
 /** The transactional client `mergeGeneratedTopic` hands to its helpers. */
 type TopicTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
-
-/**
- * File the materials a suggestion came from under `targetId`, which is the
- * suggestion itself on approval or the merge target (#1966).
- *
- * A material already at `MAX_TOPICS_PER_MATERIAL` accepted topics is skipped:
- * nothing it has is removed to make room. On approval the suggestion's link to
- * such a material is deleted, since it would otherwise count as a fourth topic.
- * Every material is eligible otherwise, including one whose topics an
- * instructor set — approving a card that names the file is their choice too.
- */
-async function fileSourcesUnder(
-  tx: TopicTransaction,
-  suggestionId: string,
-  targetId: string,
-): Promise<void> {
-  const sources = await tx.courseTopicSource.findMany({
-    where: { topicId: suggestionId, material: { deletedAt: null } },
-    select: { materialId: true },
-  });
-
-  for (const { materialId } of sources) {
-    const filed = await tx.courseTopicSource.findMany({
-      where: { materialId, topicId: { not: suggestionId }, topic: MATERIAL_TOPIC_WHERE },
-      select: { topicId: true, position: true },
-    });
-    const alreadyFiled = filed.some((link) => link.topicId === targetId);
-    const full = filed.length >= MAX_TOPICS_PER_MATERIAL;
-
-    if (targetId === suggestionId) {
-      if (full) {
-        await tx.courseTopicSource.deleteMany({ where: { topicId: suggestionId, materialId } });
-      } else {
-        const position = filed.reduce((max, link) => Math.max(max, link.position + 1), 0);
-        await tx.courseTopicSource.updateMany({
-          where: { topicId: suggestionId, materialId },
-          data: { position },
-        });
-      }
-      continue;
-    }
-
-    if (alreadyFiled || full) continue;
-    const position = filed.reduce((max, link) => Math.max(max, link.position + 1), 0);
-    await tx.courseTopicSource.upsert({
-      where: { topicId_materialId: { topicId: targetId, materialId } },
-      create: { topicId: targetId, materialId, position },
-      update: { position },
-    });
-  }
-}
 
 /**
  * Move every secondary tag off the source topic and onto the target.

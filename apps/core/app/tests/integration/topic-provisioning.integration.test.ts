@@ -1094,6 +1094,41 @@ describe("instructors choosing a material's topics (#1965)", () => {
     expect(await materialTopicNames(material.id)).toEqual(["Graphs"]);
   });
 
+  // #1988 review: naming a suggestion approves it for the course, which turns its
+  // links to other files into their topics too. Those must respect the cap.
+  it("approving a suggestion by name never gives another file a fourth topic", async () => {
+    const edited = await seedMaterial({ checksum: "c-name-edited", rawText: "x" });
+    const full = await seedMaterial({ checksum: "c-name-full", rawText: "x" });
+    const roomy = await seedMaterial({ checksum: "c-name-roomy", rawText: "x" });
+    for (const [position, name] of ["A topic", "B topic", "C topic"].entries()) {
+      const topic = await acceptedTopic(name);
+      await prisma.courseTopicSource.create({
+        data: { topicId: topic.id, materialId: full.id, position },
+      });
+    }
+    const roomyTopic = await acceptedTopic("D topic");
+    await prisma.courseTopicSource.create({
+      data: { topicId: roomyTopic.id, materialId: roomy.id, position: 0 },
+    });
+    await prisma.courseTopic.create({
+      data: {
+        courseId,
+        name: "Graphs",
+        origin: "AI",
+        reviewStatus: "SUGGESTED",
+        sources: {
+          create: [edited, full, roomy].map((material) => ({ materialId: material.id })),
+        },
+      },
+    });
+
+    expect(await choose(edited.id, [{ name: "graphs" }])).toMatchObject({ status: "200" });
+
+    expect(await materialTopicNames(edited.id)).toEqual(["Graphs"]);
+    expect(await materialTopicNames(full.id)).toEqual(["A topic", "B topic", "C topic"]);
+    expect(await materialTopicNames(roomy.id)).toEqual(["D topic", "Graphs"]);
+  });
+
   it("refuses more than three topics and changes nothing", async () => {
     const material = await seedMaterial({ checksum: "c-cap", rawText: "x" });
 
