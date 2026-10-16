@@ -118,16 +118,36 @@ async function alertRecipients(): Promise<string[]> {
   return [...new Set([...admins.map((a) => a.email), ...extra])];
 }
 
+/**
+ * When this worker last delivered an alert, per host and level. The once-a-day
+ * limit is normally the Admin → Logs row, but Postgres shares the disk being
+ * watched: when it is full that row cannot be written, and without this every
+ * admin would be emailed every 30 minutes (#1992 review). A worker restart
+ * forgets it, which costs at most one extra email.
+ */
+const lastDeliveredAt = new Map<string, number>();
+
+export function resetDiskAlertMemoryForTests(): void {
+  lastDeliveredAt.clear();
+}
+
 async function alertedRecently(level: DiskAlertLevel, host: string, now: Date): Promise<boolean> {
-  const recent = await prisma.systemLog.findFirst({
-    where: {
-      code: ALERT_CODE[level],
-      createdAt: { gte: new Date(now.getTime() - REALERT_MS) },
-      details: { path: ["host"], equals: host },
-    },
-    select: { id: true },
-  });
-  return recent !== null;
+  const sentAt = lastDeliveredAt.get(`${host}:${level}`);
+  if (sentAt !== undefined && now.getTime() - sentAt < REALERT_MS) return true;
+  try {
+    const recent = await prisma.systemLog.findFirst({
+      where: {
+        code: ALERT_CODE[level],
+        createdAt: { gte: new Date(now.getTime() - REALERT_MS) },
+        details: { path: ["host"], equals: host },
+      },
+      select: { id: true },
+    });
+    return recent !== null;
+  } catch (error) {
+    console.error("[disk-usage-check] could not read earlier alerts; relying on memory", error);
+    return false;
+  }
 }
 
 export type DiskUsageCheckResult = {
@@ -135,23 +155,32 @@ export type DiskUsageCheckResult = {
   lines: DiskAlertLine[];
   missing: string[];
   emailed: number;
+  /** An alert was due but no email could be delivered; the run fails so the next one retries. */
+  undelivered: boolean;
 };
 
 /**
  * Check disk usage on the host the cron worker runs on (#1869).
  *
- * At the warning or critical threshold this writes an Admin → Logs entry and
- * emails the admins through Core's mailer (the hosts have no working `mail`,
- * #1874), at most once a day per level, so crossing from warning to critical
- * still alerts at once.
+ * At the warning or critical threshold this emails the admins through Core's
+ * mailer (the hosts have no working `mail`, #1874) and writes an Admin → Logs
+ * entry, at most once a day per level, so crossing from warning to critical
+ * still alerts at once. The entry is the record that the alert went out, so it
+ * is written only after an email was delivered: when none is, nothing is
+ * suppressed, a `DISK_USAGE_ALERT_UNDELIVERED` entry says so, and the run
+ * fails so the next one tries again (#1992 review).
  */
 export async function checkDiskUsage(
   options: { now?: Date; reader?: DiskReader; host?: string } = {},
 ): Promise<DiskUsageCheckResult> {
   const now = options.now ?? new Date();
   const host = options.host ?? os.hostname();
-  const warnPercent = await getCronJobSetting(DISK_USAGE_CHECK_JOB, "warnPercent");
   const criticalPercent = await getCronJobSetting(DISK_USAGE_CHECK_JOB, "criticalPercent");
+  // The two settings are validated separately; a warning above critical makes no sense.
+  const warnPercent = Math.min(
+    await getCronJobSetting(DISK_USAGE_CHECK_JOB, "warnPercent"),
+    criticalPercent,
+  );
 
   const { usage, missing } = await readDiskUsage(diskAlertPaths(), options.reader);
   const lines: DiskAlertLine[] = usage.map((u) => ({
@@ -168,27 +197,17 @@ export async function checkDiskUsage(
       : "OK";
 
   if (level === "OK" || (await alertedRecently(level, host, now))) {
-    return { level, lines, missing, emailed: 0 };
+    return { level, lines, missing, emailed: 0, undelivered: false };
   }
 
-  await createSystemLog({
-    level: level === "CRITICAL" ? "ERROR" : "WARN",
-    source: "HOST",
-    code: ALERT_CODE[level],
-    message: `Disk usage ${level.toLowerCase()} on ${host}: ${lines
-      .filter((l) => l.level !== "OK")
-      .map((l) => `${l.path} ${l.usedPercent}%`)
-      .join(", ")}`,
-    details: { host, warnPercent, criticalPercent, disks: lines },
-  });
-
+  const recipients = await alertRecipients();
   let emailed = 0;
-  for (const to of await alertRecipients()) {
+  for (const to of recipients) {
     try {
-      await sendEmail(
+      const { delivered } = await sendEmail(
         buildDiskUsageAlertEmail({ to, host, level, lines, warnPercent, criticalPercent }),
       );
-      emailed += 1;
+      if (delivered) emailed += 1;
     } catch (error) {
       fireAndForget(
         logSystemError({
@@ -200,7 +219,31 @@ export async function checkDiskUsage(
       );
     }
   }
-  return { level, lines, missing, emailed };
+
+  const summary = lines
+    .filter((l) => l.level !== "OK")
+    .map((l) => `${l.path} ${l.usedPercent}%`)
+    .join(", ");
+  if (emailed === 0) {
+    await createSystemLog({
+      level: "ERROR",
+      source: "HOST",
+      code: "DISK_USAGE_ALERT_UNDELIVERED",
+      message: `Disk usage ${level.toLowerCase()} on ${host} (${summary}), but no alert email was delivered to ${recipients.length} recipient(s)`,
+      details: { host, level, warnPercent, criticalPercent, disks: lines },
+    });
+    return { level, lines, missing, emailed, undelivered: true };
+  }
+
+  lastDeliveredAt.set(`${host}:${level}`, now.getTime());
+  await createSystemLog({
+    level: level === "CRITICAL" ? "ERROR" : "WARN",
+    source: "HOST",
+    code: ALERT_CODE[level],
+    message: `Disk usage ${level.toLowerCase()} on ${host}: ${summary}`,
+    details: { host, warnPercent, criticalPercent, disks: lines },
+  });
+  return { level, lines, missing, emailed, undelivered: false };
 }
 
 /** The run message shown in Admin → Cron Jobs. */
@@ -210,6 +253,7 @@ export function formatDiskUsageMessage(result: DiskUsageCheckResult): string {
     .join("; ");
   const parts = [`${result.level}: ${disks || "no disks read"}`];
   if (result.emailed > 0) parts.push(`alert emailed to ${result.emailed} recipient(s)`);
+  if (result.undelivered) parts.push("alert due but no email could be delivered");
   if (result.missing.length > 0) parts.push(`could not read ${result.missing.join(", ")}`);
   return parts.join(" — ");
 }

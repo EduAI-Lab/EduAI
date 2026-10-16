@@ -698,8 +698,9 @@ const CORE_JOB_HANDLERS = {
     return async () => {
       const result = await checkDiskUsage();
       const message = formatDiskUsageMessage(result);
-      // A critical disk fails the run so Admin → Cron Jobs shows it red.
-      if (result.level === "CRITICAL") throw new Error(message);
+      // A critical disk fails the run so Admin → Cron Jobs shows it red, and so
+      // does an alert nobody received, so the next run retries it (#1992 review).
+      if (result.level === "CRITICAL" || result.undelivered) throw new Error(message);
       return { message };
     };
   },

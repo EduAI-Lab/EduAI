@@ -36,6 +36,7 @@ const {
   formatBytes,
   formatDiskUsageMessage,
   readDiskUsage,
+  resetDiskAlertMemoryForTests,
   DISK_USAGE_CHECK_JOB,
 } = await import("~/lib/cron-disk-usage.server");
 
@@ -71,6 +72,7 @@ const prodToday = fakeDisks({ "/": { device: 1, totalGb: 27, usedGb: 23, reserve
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetDiskAlertMemoryForTests();
   process.env = { ...savedEnv };
   delete process.env.DISK_ALERT_PATHS;
   delete process.env.DISK_ALERT_EMAILS;
@@ -134,7 +136,7 @@ describe("checkDiskUsage", () => {
 
   it("does nothing below the warning threshold", async () => {
     const result = await run(fakeDisks({ "/": { device: 1, totalGb: 100, usedGb: 68 } }));
-    expect(result).toMatchObject({ level: "OK", emailed: 0 });
+    expect(result).toMatchObject({ level: "OK", emailed: 0, undelivered: false });
     expect(mocks.createSystemLog).not.toHaveBeenCalled();
     expect(mocks.sendEmail).not.toHaveBeenCalled();
   });
@@ -203,6 +205,79 @@ describe("checkDiskUsage", () => {
     expect(mocks.sendEmail.mock.calls.map(([m]) => m.to)).toEqual(["admin@ubc.ca", "ops@ubc.ca"]);
   });
 
+  // #1992 review: the once-a-day record is written only once an email went out.
+  it("emails before recording the alert", async () => {
+    const order: string[] = [];
+    mocks.sendEmail.mockImplementation(async () => {
+      order.push("email");
+      return { delivered: true };
+    });
+    mocks.createSystemLog.mockImplementation(async () => void order.push("log"));
+    await run();
+    expect(order).toEqual(["email", "log"]);
+  });
+
+  it("when no email is delivered, records nothing that suppresses the next try and fails the run", async () => {
+    mocks.sendEmail.mockRejectedValue(new Error("SMTP down"));
+
+    const result = await run();
+
+    expect(result).toMatchObject({ level: "WARNING", emailed: 0, undelivered: true });
+    expect(mocks.createSystemLog).toHaveBeenCalledTimes(1);
+    expect(mocks.createSystemLog).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "ERROR", code: "DISK_USAGE_ALERT_UNDELIVERED" }),
+    );
+    expect(formatDiskUsageMessage(result)).toContain("no email could be delivered");
+
+    // The next run tries again.
+    mocks.sendEmail.mockResolvedValue({ delivered: true });
+    expect(await run()).toMatchObject({ emailed: 1, undelivered: false });
+  });
+
+  it("counts a send the mailer skipped (no SMTP) as not delivered", async () => {
+    mocks.sendEmail.mockResolvedValue({ delivered: false });
+    expect(await run()).toMatchObject({ emailed: 0, undelivered: true });
+  });
+
+  it("treats no recipients at all as undelivered", async () => {
+    mocks.userFindMany.mockResolvedValue([]);
+    expect(await run()).toMatchObject({ emailed: 0, undelivered: true });
+  });
+
+  it("still sends once a day when the log row cannot be written (Postgres on a full disk)", async () => {
+    // createSystemLog swallows its own write failures, so the row is simply never found.
+    mocks.systemLogFindFirst.mockResolvedValue(null);
+    expect((await run()).emailed).toBe(1);
+    expect((await run()).emailed).toBe(0);
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+
+    const tomorrow = new Date(NOW.getTime() + 24 * 60 * 60 * 1000 + 1);
+    const later = await checkDiskUsage({
+      now: tomorrow,
+      reader: prodToday,
+      host: "s348.ok.ubc.ca",
+    });
+    expect(later.emailed).toBe(1);
+  });
+
+  it("still alerts when earlier alerts cannot be read", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.systemLogFindFirst.mockRejectedValue(new Error("db down"));
+    expect((await run()).emailed).toBe(1);
+    spy.mockRestore();
+  });
+
+  it("caps a warning threshold set above the critical one", async () => {
+    mocks.getCronJobSetting.mockImplementation(async (_job: string, key: string) =>
+      key === "warnPercent" ? 98 : 90,
+    );
+    const result = await run(); // 89%: below both once warn is capped at 90
+    expect(result.level).toBe("OK");
+    const at92 = await run(fakeDisks({ "/": { device: 1, totalGb: 100, usedGb: 92 } }));
+    expect(at92.level).toBe("CRITICAL");
+    expect(mocks.sendEmail.mock.calls[0]![0].text).toContain("warning at 90%, critical at 90%");
+  });
+
   it("keeps going when one email fails, and logs the failure", async () => {
     mocks.userFindMany.mockResolvedValue([{ email: "a@ubc.ca" }, { email: "b@ubc.ca" }]);
     mocks.sendEmail.mockRejectedValueOnce(new Error("SMTP down"));
@@ -226,7 +301,13 @@ describe("formatDiskUsageMessage", () => {
 
   it("mentions a path it could not read", () => {
     expect(
-      formatDiskUsageMessage({ level: "OK", lines: [], missing: ["/mnt/gone"], emailed: 0 }),
+      formatDiskUsageMessage({
+        level: "OK",
+        lines: [],
+        missing: ["/mnt/gone"],
+        emailed: 0,
+        undelivered: false,
+      }),
     ).toBe("OK: no disks read — could not read /mnt/gone");
   });
 });

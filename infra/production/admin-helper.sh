@@ -35,6 +35,9 @@ readonly CRON_UNIT_SOURCE="$TEMPLATE_DIR/eduai-cron-worker.service"
 readonly CRON_SCRIPT_DIR="/opt/eduai/cron"
 readonly TARGET_ROOT="/srv/www/eduai-production"
 readonly WEB_USER="www-data"
+readonly PROC_ROOT="/proc"
+# Units that run from a release; each resolves `current` once, when it starts.
+readonly RELEASE_UNITS=(eduai-core eduai-aitutor-server eduai-qm-backend eduai-cron-worker)
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
 assert_no_symlink_components() {
@@ -86,12 +89,33 @@ validate_release() {
 }
 # Each release is ~1.9 GB, almost all node_modules, and s348's disk is 27 GB
 # (#1869). Only the live release and the one before it (the rollback target)
-# are needed, so older releases are removed. A release newer than the live one
+# are needed, so older releases are removed, except one a running service
+# still uses (see `releases_in_use`). A release newer than the live one
 # is kept too: it is a build waiting to be activated. `previous` is recorded by
 # activate-release; before the first activation that records it, the newest
 # release older than the live one stands in for it.
+# The release each running EduAI unit was started from, one per line (#1992
+# review). A unit resolves `current` when it starts, so after a release that
+# restarted only Core, AI Tutor and Question Maker still run from the one
+# before. Fails when it cannot tell, so the caller removes nothing.
+releases_in_use() {
+  local unit pid cwd rel
+  command -v systemctl >/dev/null 2>&1 || return 1
+  for unit in "${RELEASE_UNITS[@]}"; do
+    pid=$(systemctl show -p MainPID --value "$unit" 2>/dev/null) || return 1
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    [ "$pid" -eq 0 ] && continue # not running (or not installed)
+    cwd=$(readlink -f -- "$PROC_ROOT/$pid/cwd" 2>/dev/null) || return 1
+    case "$cwd" in
+      "$TARGET_ROOT/releases/"*)
+        rel=${cwd#"$TARGET_ROOT/releases/"}
+        printf '%s\n' "$TARGET_ROOT/releases/${rel%%/*}"
+        ;;
+    esac
+  done
+}
 prune_releases() {
-  local current previous dir id kept=() removed=0
+  local current previous dir id in_use kept=() removed=0
   current=$(readlink -f -- "$TARGET_ROOT/current" 2>/dev/null) || die "no current release; refusing to prune"
   [ -d "$current" ] || die "current release is missing: $current; refusing to prune"
   assert_safe_release "$current"
@@ -110,9 +134,14 @@ prune_releases() {
       break
     done
   fi
+  if ! in_use=$(releases_in_use); then
+    echo "Could not tell which release each running service uses; no release was removed."
+    return 0
+  fi
   for dir in "$TARGET_ROOT/releases"/*; do
     [ -d "$dir" ] || continue
-    if [ "$dir" = "$current" ] || [ "$dir" = "$previous" ] || [ "$dir" -nt "$current" ]; then
+    if [ "$dir" = "$current" ] || [ "$dir" = "$previous" ] || [ "$dir" -nt "$current" ] ||
+      grep -qxF -- "$dir" <<<"$in_use"; then
       kept+=("$(basename "$dir")")
       continue
     fi

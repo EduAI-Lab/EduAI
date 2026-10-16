@@ -72,6 +72,12 @@ All EduAI production jobs run in UTC (enforced by the Core scheduler via `{ time
 | At or above Warn at | An Admin → Logs entry (`HOST`, `DISK_USAGE_WARNING`) and an email to every active admin, at most once a day. |
 | At or above **Critical at** (default 95%) | A `DISK_USAGE_CRITICAL` entry and email right away, even if a warning went out today. The run also shows as **Error** until space is freed. |
 
+**Delivery rules** (#1992 review):
+- The "already alerted today" record is the Admin → Logs entry, and it is written only **after** at least one email was delivered.
+- If no email goes out (SMTP down, bad credentials, no recipients), a `DISK_USAGE_ALERT_UNDELIVERED` error is logged, the run is marked **Error**, and the next run tries again. Until mail works, that means one error entry every 30 minutes.
+- Postgres sits on the same disk, so on a full disk the log entry may not be writable. The worker also remembers in memory when it last delivered each level, so admins still get at most one email a day. A worker restart forgets this, which costs at most one extra email.
+- **Warn at** is capped at **Critical at** if it is set higher.
+
 Both thresholds are settings on the job in Admin → Cron Jobs. To test it on a server, lower **Warn at** below the current usage, click **Run now**, check the email and Admin → Logs, then reset the setting. `DISK_ALERT_PATHS` and `DISK_ALERT_EMAILS` are in `docs/ENVIRONMENT.md`.
 
 ---
