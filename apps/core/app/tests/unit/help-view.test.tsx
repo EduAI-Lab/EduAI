@@ -67,11 +67,63 @@ describe("HelpView", () => {
     expect(screen.queryByRole("heading", { name: "Administration" })).not.toBeInTheDocument();
   });
 
+  it("shows the material status and publishing topics to staff, not students", () => {
+    const { unmount } = renderHelp("INSTRUCTOR");
+    expect(screen.getByRole("heading", { name: "Material status" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Publishing and visibility" })).toBeInTheDocument();
+    unmount();
+
+    renderHelp("STUDENT");
+    expect(screen.queryByRole("heading", { name: "Material status" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Publishing and visibility" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the chat-scope topic to everyone", () => {
+    renderHelp("STUDENT");
+    expect(
+      screen.getByRole("heading", { name: "Course chat vs. general chat" }),
+    ).toBeInTheDocument();
+  });
+
+  it("limits AI models and platform policies to platform ADMIN", () => {
+    renderHelp("UNIT_ADMIN");
+    expect(screen.getByRole("heading", { name: "Administration" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "AI providers and models" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Platform policies" })).not.toBeInTheDocument();
+  });
+
+  it("gives a TA material status but not publishing", () => {
+    render(
+      <MemoryRouter>
+        <HelpView role="STUDENT" isTA />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("heading", { name: "Material status" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Publishing and visibility" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("gives a course-level instructor the staff course topics", () => {
+    render(
+      <MemoryRouter>
+        <HelpView role="STUDENT" isCourseInstructor />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("heading", { name: "Course materials" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Publishing and visibility" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Administration" })).not.toBeInTheDocument();
+  });
+
   it("renders the jump-link rail with an anchor per visible topic", () => {
     renderHelp("ADMIN");
 
     const nav = screen.getByRole("navigation", { name: "Guide sections" });
-    expect(nav.querySelectorAll("a")).toHaveLength(6);
+    expect(nav.querySelectorAll("a")).toHaveLength(11);
     expect(screen.getByRole("link", { name: /Administration/ })).toHaveAttribute(
       "href",
       "#administration",

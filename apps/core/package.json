@@ -20,6 +20,7 @@
     "format:check": "oxfmt --check .",
     "typecheck": "react-router typegen && tsc",
     "db:generate": "node ../../scripts/prisma-generate.mjs",
+    "help-docs:generate": "node scripts/generate-help-guides.mjs",
     "db:migrate": "prisma migrate dev",
     "db:migrate:preflight": "node scripts/migration-preflight.mjs",
     "db:seed": "tsx prisma/seed.ts",

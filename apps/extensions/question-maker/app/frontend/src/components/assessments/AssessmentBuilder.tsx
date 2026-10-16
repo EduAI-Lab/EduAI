@@ -9,6 +9,8 @@ interface AssessmentBuilderProps {
   assessment: Assessment;
   questionBank: QuestionVariantEntry[];
   topics: Topic[];
+  allTopics?: Topic[];
+  topicLimited?: boolean;
   onAddSection: () => void;
   onUpdateSectionName: (sectionId: number, name: string) => void;
   onDeleteSection: (sectionId: number) => void;
@@ -25,6 +27,8 @@ export function AssessmentBuilder({
   assessment,
   questionBank,
   topics,
+  allTopics,
+  topicLimited,
   onAddSection,
   onUpdateSectionName,
   onDeleteSection,
@@ -156,6 +160,8 @@ export function AssessmentBuilder({
         questionBank={questionBank}
         excludeVariantIds={currentSectionVariantIds}
         topics={topics}
+        allTopics={allTopics}
+        topicLimited={topicLimited}
         onConfirm={(variantIds) => {
           if (!pickerSectionId) return;
           onAddQuestionsToSection(pickerSectionId, variantIds);

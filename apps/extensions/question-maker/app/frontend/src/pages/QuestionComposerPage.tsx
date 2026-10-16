@@ -11,10 +11,19 @@
  * @eduai/ui design system: two-column grid, sticky action bar, live QuestionCard preview,
  * AI assist panel. Tabler icons only.
  */
-import type { JsonValue } from "@eduai/types";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
-import { Button, Card, CardContent, CardHeader, CardTitle, Label, Separator } from "@eduai/ui";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  HelpHint,
+  Label,
+  Separator,
+} from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 import { ComposerSkeleton } from "@/components/shared/Skeletons";
 import {
   IconArrowLeft,
@@ -50,6 +59,14 @@ import {
 import type { Topic } from "@/types/topic";
 
 import { QuestionAIControls } from "@/components/questions/QuestionAIControls";
+import { DraftQueueStrip } from "@/components/questions/DraftQueueStrip";
+import { nextPendingIndex, type DraftStatus } from "@/lib/draftQueue";
+import {
+  DEFAULT_CHOICES,
+  applyGeneratedQuestion,
+  createDescriptionFromText,
+  inferGeneratedType,
+} from "@/lib/generatedQuestionDraft";
 import { isString } from "@eduai/ui/primitive-union";
 import { QuestionOutputPanel } from "@/components/questions/QuestionOutputPanel";
 import { QuestionTypeSelector } from "@/components/composer/QuestionTypeSelector";
@@ -59,13 +76,6 @@ import {
 } from "@/components/composer/ComposerMetadataFields";
 
 type ComposerMode = "create" | "variant" | "edit";
-
-const DEFAULT_CHOICES: MCQChoice[] = [
-  { letter: "A", text: "" },
-  { letter: "B", text: "" },
-  { letter: "C", text: "" },
-  { letter: "D", text: "" },
-];
 
 import { FALLBACK_GENERATION_MODEL, pickConfiguredGenerationModel } from "../utils/aiModels";
 import { toast } from "sonner";
@@ -89,6 +99,12 @@ interface FormState {
   generationModel: string;
 }
 
+/** One AI-generated draft waiting for review in a batch (#1973). */
+interface QueuedDraft {
+  form: FormState;
+  status: DraftStatus;
+}
+
 const createInitialForm = (): FormState => ({
   questionType: "MCQ",
   questionText: "",
@@ -104,16 +120,6 @@ const createInitialForm = (): FormState => ({
   generationPrompt: "",
   generationModel: DEFAULT_MODEL,
 });
-
-const createDescriptionFromText = (text: string) => {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
-  const sentenceMatch = normalized.match(/[^.!?]+[.!?]?/);
-  const base = (sentenceMatch ? sentenceMatch[0] : normalized).trim();
-  const words = base.split(" ");
-  if (words.length <= 12) return base;
-  return `${words.slice(0, 12).join(" ")}…`;
-};
 
 /** Pads MCQ choices copied from a source up to 4 rows (matches AddQuestionDialog prefill). */
 const padChoices = (choices: MCQChoice[] | null | undefined): MCQChoice[] => {
@@ -182,6 +188,12 @@ export function QuestionComposerPage() {
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [attemptedSave, setAttemptedSave] = useState(false);
+  // Batch generation (#1973): drafts are reviewed one at a time in the form below.
+  const [questionCount, setQuestionCount] = useState(1);
+  const [drafts, setDrafts] = useState<QueuedDraft[]>([]);
+  const [currentDraftIndex, setCurrentDraftIndex] = useState(0);
+  const queueActive = drafts.length > 1;
+  const hasPendingDrafts = queueActive && drafts.some((d) => d.status === "pending");
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -191,8 +203,27 @@ export function QuestionComposerPage() {
     };
   }, []);
 
+  // Closing or reloading the tab would silently drop unsaved generated drafts.
+  useEffect(() => {
+    if (!hasPendingDrafts) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasPendingDrafts]);
+
+  const confirmDiscardDrafts = () =>
+    !hasPendingDrafts ||
+    window.confirm("You have generated drafts that are not saved yet. Discard them?");
+
   // Keep a ref to the latest save handler so the global shortcut never goes stale.
   const saveRef = useRef<() => void>(() => {});
+  // Generation is awaited for up to a minute; drafts must be built from the form and
+  // topics as they are when it returns (topics may load and default the primary topic).
+  const latestRef = useRef({ form, topics });
+  latestRef.current = { form, topics };
 
   // ── Load course (for code + contextual title) ────────────────────────────
   useEffect(() => {
@@ -445,6 +476,9 @@ export function QuestionComposerPage() {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
     }
+    if (!confirmDiscardDrafts()) return;
+    // Variants and edits stay single-question; only a new question can be batched.
+    const requestedCount = mode === "create" ? questionCount : 1;
     let processingToast: string | number | undefined;
     try {
       setIsGenerating(true);
@@ -458,9 +492,9 @@ export function QuestionComposerPage() {
       );
 
       const difficultyDistribution = {
-        easy: form.difficulty === "easy" ? 1 : 0,
-        medium: form.difficulty === "medium" ? 1 : 0,
-        hard: form.difficulty === "hard" ? 1 : 0,
+        easy: form.difficulty === "easy" ? requestedCount : 0,
+        medium: form.difficulty === "medium" ? requestedCount : 0,
+        hard: form.difficulty === "hard" ? requestedCount : 0,
       };
       const reasoningDistribution = {
         factual: form.reasoningLevel === "factual" ? 100 : 0,
@@ -532,7 +566,7 @@ export function QuestionComposerPage() {
         courseId: validCourseId,
         courseCode: code || undefined,
         model: form.generationModel,
-        numQuestions: 1,
+        numQuestions: requestedCount,
         difficultyDistribution,
         reasoningDistribution,
         apiKeys,
@@ -543,22 +577,12 @@ export function QuestionComposerPage() {
       }
       const response = await eduaiService.generateQuestions(generateParams);
 
-      const generated = response?.data?.questions?.[0];
+      const generatedList = response?.data?.questions ?? [];
+      const generated = generatedList[0];
       if (!generated)
         throw new Error("AI service did not return a question. Try a different prompt.");
 
-      const inferredType: QuestionType =
-        generated.type === "SA" || generated.type === "MCQ" || generated.type === "LA"
-          ? generated.type
-          : "MCQ";
-      const inferredDifficulty: QuestionDifficulty =
-        generated.difficulty === "easy" || generated.difficulty === "hard"
-          ? generated.difficulty
-          : "medium";
-      const inferredReasoningLevel: ReasoningLevel =
-        generated.reasoning_level === "analytical" || generated.reasoning_level === "application"
-          ? generated.reasoning_level
-          : "factual";
+      const inferredType = inferGeneratedType(generated);
 
       if (
         variantMcqRequiredCount != null &&
@@ -571,82 +595,41 @@ export function QuestionComposerPage() {
         );
       }
 
-      setForm((prev) => {
-        const topicIdSet = new Set(topics.map((t) => String(t.id)));
-        const primaryCandidate =
-          generated.primary_topic_id != null ? String(generated.primary_topic_id).trim() : "";
-        const primaryTopicId =
-          primaryCandidate && topicIdSet.has(primaryCandidate) ? primaryCandidate : null;
-        const resolvedSecondary = Array.isArray(generated.secondary_topic_ids)
-          ? Array.from(
-              new Set(
-                generated.secondary_topic_ids
-                  .map((v: JsonValue) => String(v).trim())
-                  .filter((v) => v !== "" && topicIdSet.has(v) && v !== primaryTopicId),
-              ),
-            )
-          : [];
-        const resolvedAnswer =
-          isString(generated.answer) && generated.answer.trim().length > 0
-            ? generated.answer.trim()
-            : "";
-
-        let resolvedChoices: MCQChoice[] = prev.choices;
-        if (
-          inferredType === "MCQ" &&
-          Array.isArray(generated.choices) &&
-          generated.choices.length > 0
-        ) {
-          resolvedChoices = generated.choices
-            .map((c: { letter?: string; text?: string }) => ({
-              letter: isString(c.letter) ? c.letter.toUpperCase() : String(c.letter ?? ""),
-              text: isString(c.text) ? c.text.trim() : String(c.text ?? ""),
-            }))
-            .filter((c: MCQChoice) => c.text.length > 0);
-          if (resolvedChoices.length < 2) resolvedChoices = prev.choices;
-        } else if (inferredType !== "MCQ") {
-          resolvedChoices = DEFAULT_CHOICES.map((c) => ({ ...c }));
-        }
-
-        if (mode === "variant") {
-          return {
-            ...prev,
-            questionText: generated.content ?? prev.questionText,
-            difficulty: inferredDifficulty,
-            reasoningLevel: inferredReasoningLevel,
-            answer: resolvedAnswer || prev.answer,
-            choices: resolvedChoices,
-            secondaryTopicIds:
-              resolvedSecondary.length > 0 ? resolvedSecondary : prev.secondaryTopicIds,
-          };
-        }
-
-        const resolvedPrimary = primaryTopicId !== null ? primaryTopicId : prev.primaryTopicId;
-        const resolvedDescription =
-          isString(generated.description) && generated.description.trim().length > 0
-            ? generated.description.trim()
-            : prev.description.trim() || createDescriptionFromText(generated.content ?? "");
-
-        return {
-          ...prev,
-          questionType: inferredType,
-          questionText: generated.content ?? prev.questionText,
-          difficulty: inferredDifficulty,
-          reasoningLevel: inferredReasoningLevel,
-          description: resolvedDescription,
-          answer: resolvedAnswer,
-          choices: resolvedChoices,
-          primaryTopicId: resolvedPrimary,
-          secondaryTopicIds:
-            resolvedSecondary.length > 0 ? resolvedSecondary : prev.secondaryTopicIds,
-        };
-      });
+      const latest = latestRef.current;
+      const topicIds = latest.topics.map((t) => String(t.id));
+      if (requestedCount > 1 && generatedList.length > 1) {
+        const built = generatedList.map((g) =>
+          applyGeneratedQuestion(latest.form, g, topicIds, "create"),
+        );
+        setDrafts(built.map((draftForm) => ({ form: draftForm, status: "pending" })));
+        setCurrentDraftIndex(0);
+        setForm(built[0]);
+        setAttemptedSave(false);
+      } else {
+        setDrafts([]);
+        setForm((prev) =>
+          applyGeneratedQuestion(
+            prev,
+            generated,
+            topicIds,
+            mode === "variant" ? "variant" : "create",
+          ),
+        );
+      }
 
       setIsAiGenerated(true);
       if (mountedRef.current) setQuestionGenerationPhase("review");
       else setQuestionGenerationPhase(null);
       if (processingToast !== undefined) toast.dismiss(processingToast);
-      toast(mode === "variant" ? "Variant generated" : "Question generated", {
+      const generatedTitle =
+        mode === "variant"
+          ? "Variant generated"
+          : requestedCount === 1
+            ? "Question generated"
+            : generatedList.length < requestedCount
+              ? `Generated ${generatedList.length} of ${requestedCount} questions`
+              : `Generated ${requestedCount} questions`;
+      toast(generatedTitle, {
         description: "Review the generated text and adjust any details before saving.",
       });
     } catch (generateError: unknown) {
@@ -678,6 +661,48 @@ export function QuestionComposerPage() {
   // ── Save (create / variant / edit) ───────────────────────────────────────
   const navigateBackToQuestions = () => {
     navigate(`/courses/${validCourseId}?tab=questions`);
+  };
+
+  const handleCancel = () => {
+    if (confirmDiscardDrafts()) navigateBackToQuestions();
+  };
+
+  // Loads a queued draft into the form, keeping the prompt and model typed in the AI panel.
+  const loadDraft = (index: number, list: QueuedDraft[]) => {
+    setForm((prev) => ({
+      ...list[index].form,
+      generationPrompt: prev.generationPrompt,
+      generationModel: prev.generationModel,
+    }));
+    setCurrentDraftIndex(index);
+    setAttemptedSave(false);
+    setError(null);
+  };
+
+  const selectDraft = (index: number) => {
+    const updated = drafts.map((d, i) => (i === currentDraftIndex ? { ...d, form } : d));
+    setDrafts(updated);
+    loadDraft(index, updated);
+  };
+
+  // Marks the current draft saved or discarded, then moves on or returns to the bank.
+  const finishDraft = (status: Exclude<DraftStatus, "pending">) => {
+    const updated = drafts.map((d, i) => (i === currentDraftIndex ? { form, status } : d));
+    const next = nextPendingIndex(
+      updated.map((d) => d.status),
+      currentDraftIndex,
+    );
+    if (next === -1) {
+      const saved = updated.filter((d) => d.status === "saved").length;
+      setDrafts([]);
+      toast(saved > 0 ? `Saved ${saved} of ${updated.length} questions` : "No questions saved", {
+        description: "All generated drafts have been reviewed.",
+      });
+      navigateBackToQuestions();
+      return;
+    }
+    setDrafts(updated);
+    loadDraft(next, updated);
   };
 
   const buildVariantChoices = (): MCQChoice[] | null => {
@@ -731,6 +756,22 @@ export function QuestionComposerPage() {
         // reviewed.
         const wasApproved = sourceVariant.isDraft === false;
         const nextIsDraft = wasApproved ? true : approveOnSave ? false : undefined;
+        // Only send type/primaryTopicId when they actually changed: a question can have
+        // more than one variant, and reverting `sourceVariant` below doesn't unlock a
+        // *sibling* variant that's still reviewed — resending the unchanged value would
+        // otherwise 409 on an edit that never touched these fields (e.g. description-only).
+        const typeChanged = form.questionType !== sourceQuestion?.type;
+        const primaryTopicChanged =
+          form.primaryTopicId.trim() !== (sourceQuestion?.primaryTopicId ?? "");
+        // #1974: a topic change can be refused by a topic-limited assessment the question
+        // is in. Check that before the variant write, which may already have reopened an
+        // approved question as a draft by the time the metadata update 409s.
+        if (primaryTopicChanged) {
+          await questionService.checkQuestionTopicChange(
+            sourceQuestionId,
+            form.primaryTopicId.trim(),
+          );
+        }
         // Revert (if approved) + save the variant content …
         await questionService.updateVariant(sourceVariant.id, {
           questionText: form.questionText.trim(),
@@ -750,13 +791,6 @@ export function QuestionComposerPage() {
           ...(nextIsDraft === false && { shareWithExtensions: shareOnSave }),
         });
         // … then the question metadata (description, topic, type), now unlocked.
-        // Only send type/primaryTopicId when they actually changed: a question can have
-        // more than one variant, and reverting `sourceVariant` above doesn't unlock a
-        // *sibling* variant that's still reviewed — resending the unchanged value would
-        // otherwise 409 on an edit that never touched these fields (e.g. description-only).
-        const typeChanged = form.questionType !== sourceQuestion?.type;
-        const primaryTopicChanged =
-          form.primaryTopicId.trim() !== (sourceQuestion?.primaryTopicId ?? "");
         await questionService.updateQuestion(sourceQuestionId, {
           description:
             form.description.trim() || createDescriptionFromText(form.questionText) || null,
@@ -819,6 +853,13 @@ export function QuestionComposerPage() {
         isDraft: !approveOnSave,
         shareWithExtensions: shareOnSave,
       });
+      if (queueActive) {
+        toast("Question created", {
+          description: `Draft ${currentDraftIndex + 1} of ${drafts.length} saved.`,
+        });
+        finishDraft("saved");
+        return;
+      }
       toast("Question created", { description: "The question has been added to the bank." });
       navigateBackToQuestions();
     } catch (err: unknown) {
@@ -928,16 +969,42 @@ export function QuestionComposerPage() {
     <ComposerShell
       title={contextTitle}
       courseCode={course?.code ?? undefined}
-      onCancel={navigateBackToQuestions}
+      onCancel={handleCancel}
       onSave={handleSave}
       saving={isSubmitting}
       saveLabel={
-        mode === "variant" ? "Add variant" : mode === "edit" ? "Save changes" : "Save question"
+        mode === "variant"
+          ? "Add variant"
+          : mode === "edit"
+            ? "Save changes"
+            : queueActive
+              ? "Save & next"
+              : "Save question"
       }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         {/* LEFT: form */}
         <div className="flex flex-col gap-6">
+          {queueActive && (
+            <Card>
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+                <DraftQueueStrip
+                  statuses={drafts.map((d) => d.status)}
+                  currentIndex={currentDraftIndex}
+                  onSelect={selectDraft}
+                  disabled={isSubmitting || isGenerating}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => finishDraft("discarded")}
+                  disabled={isSubmitting}
+                >
+                  Discard draft
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2.5 text-base">
@@ -1060,6 +1127,8 @@ export function QuestionComposerPage() {
             onChange={(field, value) => setField(field, value)}
             onGenerate={handleGenerateWithAI}
             isGenerating={isGenerating}
+            questionCount={questionCount}
+            onQuestionCountChange={mode === "create" ? setQuestionCount : undefined}
             availableModels={availableModels}
             providerApiKey={providerApiKey}
             onProviderApiKeyChange={(value) => {
@@ -1093,7 +1162,8 @@ export function QuestionComposerPage() {
             questionGenerationPhase={eduaiStatus.questionGenerationPhase}
             courseWarningMessage={courseWarningMessage}
             mode={mode === "variant" ? "variant" : "new"}
-            disabled={isSubmitting}
+            // The prompt lists course topic IDs and drafts resolve against them, so wait for them.
+            disabled={isSubmitting || topicsLoading}
           />
 
           {mode === "edit" && sourceQuestion && (sourceQuestion.variants?.length ?? 0) > 1 && (
@@ -1148,6 +1218,7 @@ export function QuestionComposerPage() {
             Mark as reviewed{" "}
             <span className="text-muted-foreground">(otherwise saved as a draft)</span>
           </Label>
+          <HelpHint {...QUESTION_MAKER_HELP.draftVsReviewed} LinkComponent={Link} />
         </div>
         <div className="flex items-center gap-2">
           <input

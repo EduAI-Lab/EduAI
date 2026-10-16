@@ -37,6 +37,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconSparkles } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { Link } from "react-router";
 import {
   Button,
   Dialog,
@@ -45,6 +46,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  HelpHint,
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -67,6 +69,7 @@ import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { splitTitle } from "~/lib/course-title";
 import { accentForCourse } from "~/lib/course-display";
 import { KNOWLEDGE_LEVELS } from "~/lib/knowledge-levels";
+import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { cn } from "~/lib/utils";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 
@@ -820,9 +823,12 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
           {/* Knowledge Level */}
           <div className="space-y-3">
-            <p className="text-sm font-semibold text-foreground">
-              What&apos;s your knowledge level on this topic?
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-semibold text-foreground">
+                What&apos;s your knowledge level on this topic?
+              </p>
+              <HelpHint {...AI_TUTOR_HELP.knowledgeLevel} LinkComponent={Link} />
+            </div>
             <div className="grid grid-cols-3 gap-3">
               {KNOWLEDGE_LEVELS.map((level) => (
                 <button

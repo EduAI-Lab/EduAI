@@ -2,7 +2,9 @@
  * AI configuration block: status badge, prompt, model, difficulty/reasoning, API key, Generate button.
  * For use in AddQuestionDialog right column (prototype-style layout).
  */
-import { Label, Button, Input, Textarea } from "@eduai/ui";
+import { Link } from "react-router";
+import { Label, Button, HelpHint, Input, Textarea } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { AIServiceIndicators } from "../eduai/AIServiceIndicators";
@@ -11,6 +13,14 @@ import { IconSparkles, IconCircleCheck } from "@tabler/icons-react";
 import type { EduAIModelOption } from "../../services/eduaiService";
 import type { QuestionGenerationPhase } from "../../hooks/useEduAIStatus";
 import { isCampusModel } from "../../utils/aiModels";
+
+/** Most questions one composer generation may request (#1973). */
+export const MAX_BATCH_QUESTIONS = 10;
+
+const clampQuestionCount = (raw: string) => {
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.min(MAX_BATCH_QUESTIONS, Math.max(1, n)) : 1;
+};
 
 export interface QuestionAIControlsValue {
   generationPrompt: string;
@@ -43,6 +53,9 @@ interface QuestionAIControlsProps {
   courseWarningMessage: string | null;
   mode: "new" | "variant";
   disabled?: boolean;
+  /** Questions to generate in one request; the count control only shows when a handler is given. */
+  questionCount?: number;
+  onQuestionCountChange?: (count: number) => void;
 }
 
 export function QuestionAIControls({
@@ -65,6 +78,8 @@ export function QuestionAIControls({
   courseWarningMessage,
   mode,
   disabled = false,
+  questionCount = 1,
+  onQuestionCountChange,
 }: QuestionAIControlsProps) {
   const isUbcModel =
     value.generationModel.startsWith("ollama") || value.generationModel.startsWith("vllm");
@@ -108,12 +123,15 @@ export function QuestionAIControls({
 
       {/* AI Model selector — folded in from Advanced Options */}
       <div className="space-y-1.5" data-tour="aq-model-picker">
-        <Label
-          htmlFor="ai-model"
-          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-        >
-          AI Model
-        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label
+            htmlFor="ai-model"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            AI Model
+          </Label>
+          <HelpHint {...QUESTION_MAKER_HELP.aiModels} LinkComponent={Link} />
+        </div>
         <Select
           value={value.generationModel}
           onValueChange={(v) => onChange("generationModel", v)}
@@ -266,6 +284,27 @@ export function QuestionAIControls({
         </div>
       )}
 
+      {mode === "new" && onQuestionCountChange && (
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="ai-question-count"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Number of questions
+          </Label>
+          <Input
+            id="ai-question-count"
+            type="number"
+            min={1}
+            max={MAX_BATCH_QUESTIONS}
+            value={questionCount}
+            disabled={disabled || isGenerating}
+            className="h-9 w-24 text-xs"
+            onChange={(e) => onQuestionCountChange(clampQuestionCount(e.target.value))}
+          />
+        </div>
+      )}
+
       <Button
         type="button"
         onClick={onGenerate}
@@ -278,7 +317,9 @@ export function QuestionAIControls({
           ? "Generating…"
           : mode === "variant"
             ? "Generate variant"
-            : "Generate question"}
+            : questionCount > 1
+              ? `Generate ${questionCount} questions`
+              : "Generate question"}
       </Button>
     </div>
   );

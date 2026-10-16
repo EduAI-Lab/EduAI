@@ -53,6 +53,8 @@ COPY apps/core/package.json      ./apps/core/
 # Read by the cleanup-invitations integration test, which verifies the
 # script's own DELETE statement rather than a reimplementation of it.
 COPY infra/cron                  ./infra/cron/
+# help-docs.manifest.test.ts checks these against the generated guides module (#1819).
+COPY docs/USER_GUIDE.md docs/INSTRUCTOR_ONBOARDING.md ./docs/
 COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
