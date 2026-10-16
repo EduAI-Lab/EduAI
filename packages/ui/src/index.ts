@@ -21,6 +21,10 @@ export type {
   PageHelpTour,
 } from "./page-help";
 
+// ── Progressive contextual help ─────────────────────────────────────────────
+export { HelpHint } from "./help-hint";
+export type { HelpHintContent, HelpHintProps } from "./help-hint";
+
 // ── Guided tours ───────────────────────────────────────────────────────────
 export { TourProvider, useTour, useAutoStartTour } from "./tour/tour-provider";
 export type { TourContextValue, TourProviderProps } from "./tour/tour-provider";

@@ -108,7 +108,15 @@ export const errorHandler = (err, req, res, next) => {
   if (safeCode) logFields.code = safeCode;
   logger[logLevel](logFields, "Request error");
 
-  res.status(status).json({
+  const publicDetails =
+    err?.isPublic === true &&
+    err.details !== null &&
+    typeof err.details === "object" &&
+    !Array.isArray(err.details)
+      ? err.details
+      : undefined;
+
+  const body = {
     success: false,
     error: publicMessage,
     // `PaginationError`'s code surfaces so clients can branch on it. Gated on
@@ -118,5 +126,10 @@ export const errorHandler = (err, req, res, next) => {
     // infrastructure detail and clobber the semantic `body.error` code below.
     // JSON.stringify drops the undefined, so ungated errors send no `code`.
     code: safeCode || undefined,
-  });
+  };
+  // Structured context for a deliberate public error (e.g. the questions that
+  // block an assessment topic change, #1974). Never forwarded for anything
+  // else, since internal errors can carry request or SQL payloads.
+  if (publicDetails) body.details = publicDetails;
+  res.status(status).json(body);
 };

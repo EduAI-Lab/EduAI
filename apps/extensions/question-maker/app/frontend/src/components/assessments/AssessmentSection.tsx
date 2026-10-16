@@ -195,7 +195,6 @@ export const AssessmentSection = ({
   const canWriteInCourse = hasCourseAccess && !accessLoading;
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isSavingBlueprint, setIsSavingBlueprint] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [exportDialogAssessment, setExportDialogAssessment] = useState<Assessment | null>(null);
 
   const listedTotal = totalCount ?? assessments.length;
@@ -224,18 +223,16 @@ export const AssessmentSection = ({
 
   const handleOpenCreateModal = () => {
     if (!selectedCourseId) return;
-    setSaveError(null);
     setIsGenerateModalOpen(true);
   };
 
+  // #1974: a failed create propagates so GenerateAssessmentModal stays open with
+  // the topic selection intact and shows the error inline.
   const handleBlueprintSave = async (params: AssessmentGenerationParams) => {
     try {
       setIsSavingBlueprint(true);
-      setSaveError(null);
       await onAddAssessment(params);
       setIsGenerateModalOpen(false);
-    } catch (error: any) {
-      setSaveError(error?.response?.data?.error || "Failed to save assessment blueprint");
     } finally {
       setIsSavingBlueprint(false);
     }
@@ -541,8 +538,6 @@ export const AssessmentSection = ({
           courseId={selectedCourseId}
         />
       )}
-
-      {saveError && <p className="text-center text-sm text-destructive">{saveError}</p>}
     </div>
   );
 };

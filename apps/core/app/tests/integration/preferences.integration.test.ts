@@ -53,6 +53,10 @@ async function expectRootLoader(overrides: JsonObject) {
     // sidebar/command-palette Course Assistant link survives every route.
     canUseCourseAssistant: false,
     hasTeachingAssistantEnrollment: false,
+    // #1822: the help assistant's gate snapshot. Its value depends on which AI
+    // providers other suites left in the shared test DB, and the gate itself is
+    // covered by assistant-gate.test.ts — this suite only pins the shape.
+    assistant: { mounted: expect.any(Boolean), docs: expect.any(Boolean) },
     assistive: false,
     motionReduced: false,
     density: "comfortable",

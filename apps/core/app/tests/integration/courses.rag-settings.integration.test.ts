@@ -76,6 +76,7 @@ describe("GET /api/courses/:id/rag-settings", () => {
     // Defaulted off (was on) for easier testing
     expect(await res.json()).toEqual({
       courseScopeGuardrailEnabled: false,
+      aiAssistantEnabled: true,
       ragTopK: null,
       ragSimilarityThreshold: null,
     });
@@ -156,6 +157,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
     expect(await res.json()).toEqual({
       id: courseId,
       courseScopeGuardrailEnabled: false,
+      aiAssistantEnabled: true,
       ragTopK: 8,
       ragSimilarityThreshold: 0.65,
     });
@@ -178,9 +180,24 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
     const readBack = await loader(getArgs(courseId));
     expect(await readBack.json()).toEqual({
       courseScopeGuardrailEnabled: false,
+      aiAssistantEnabled: true,
       ragTopK: 8,
       ragSimilarityThreshold: 0.65,
     });
+  });
+
+  it("lets an instructor opt the course out of the help assistant (#1821)", async () => {
+    const res = await action(
+      patchArgs(courseId, { aiAssistantEnabled: false }, { id: instructorId, role: "INSTRUCTOR" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ aiAssistantEnabled: false });
+    const row = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { aiAssistantEnabled: true },
+    });
+    expect(row?.aiAssistantEnabled).toBe(false);
+    await prisma.course.update({ where: { id: courseId }, data: { aiAssistantEnabled: true } });
   });
 
   it("clears overrides when null is sent", async () => {

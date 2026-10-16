@@ -47,6 +47,7 @@ import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.ser
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
+import { previewExcerpt, readMaterialForViewer } from "~/lib/materials/viewable-material.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -739,14 +740,12 @@ async function uploadMaterial(
   });
 }
 
-const PREVIEW_EXCERPT_MAX = 4000;
-
 /**
  * Column set for every materials LIST response (#948). Deliberately an explicit
  * `select` rather than `include`, so `rawText` — the full extracted document
  * text, which can be megabytes per row — never reaches the JSON payload. The
  * single-material preview path selects `rawText` on its own and truncates it to
- * `PREVIEW_EXCERPT_MAX`; lists have no use for it at all.
+ * `PREVIEW_EXCERPT_MAX` (see `viewable-material.server.ts`); lists have no use for it at all.
  *
  * MAINTENANCE: this is an allow-list. A new column on `CourseMaterial` will NOT
  * appear in list responses until it is added here explicitly — add it (unless
@@ -916,38 +915,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       if (resolved.response) return resolved.response;
 
       // Students were refused in resolveMaterialsAccess (#1962), so every caller
-      // from here on is staff and reads every live material, unfiltered.
+      // from here on is staff and reads every live material, unfiltered. The
+      // single-material read is shared with the help assistant's material context
+      // (#1821), so both ask the identical question.
       if (materialId) {
-        const material = await prisma.courseMaterial.findFirst({
-          where: { id: materialId, courseId, deletedAt: null },
-          select: {
-            id: true,
-            title: true,
-            mimeType: true,
-            fileSize: true,
-            status: true,
-            createdAt: true,
-            rawText: true,
-          },
-        });
-
-        if (!material) {
+        const read = await readMaterialForViewer({ courseId, materialId, access: resolved.access });
+        // Only a student can be gated off a material that exists, and none get here.
+        if (read.status !== "ok") {
           return json(404, { error: "Material not found" });
         }
+        const { material } = read;
 
         if (material.status !== "READY") {
           return json(409, { error: "Material is not ready for preview" });
         }
 
-        const rawText = material.rawText ?? "";
-        const truncated = rawText.length > PREVIEW_EXCERPT_MAX;
-        const { rawText: _rawText, ...meta } = material;
-
-        return json(200, {
-          material: meta,
-          excerpt: truncated ? rawText.slice(0, PREVIEW_EXCERPT_MAX) : rawText,
-          truncated,
-        });
+        const { rawText, ...meta } = material;
+        return json(200, { material: meta, ...previewExcerpt(rawText) });
       }
 
       // A targeted re-read of rows the client already holds (#1795 review round

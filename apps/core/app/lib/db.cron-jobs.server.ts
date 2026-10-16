@@ -156,6 +156,15 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     ],
   },
   {
+    name: "help-docs-reindex",
+    description:
+      "Re-embed the help assistant's user-guide corpus when a guide or the embedding model changed",
+    schedule: "30 5 * * *",
+    scheduleLabel: "Daily at 05:30 UTC",
+    script: "Core handler",
+    execution: "CORE",
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
@@ -642,6 +651,17 @@ const CORE_JOB_HANDLERS = {
     return async (signal) => ({
       message: formatPurgeMessage(await purgeDeletedMaterials(new Date(), signal)),
     });
+  },
+  "help-docs-reindex": async () => {
+    const { reindexHelpDocsIfStale } = await import("~/lib/assistant/help-docs/index.server");
+    return async (signal) => {
+      const result = await reindexHelpDocsIfStale(signal);
+      return {
+        message: result.rebuilt
+          ? `Re-indexed ${result.pages} guide page(s) as ${result.chunks} chunk(s)`
+          : "Help docs index already current",
+      };
+    };
   },
   "ai-status-probe": async () => {
     const { runAiStatusProbe } = await import("~/lib/ai/status-probe.server");

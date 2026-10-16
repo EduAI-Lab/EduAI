@@ -6,7 +6,7 @@
  * spend a live provider request during CI.
  */
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { CORE_URL, QM_FRONTEND_URL } from "../../playwright.config";
+import { CORE_URL, QM_BACKEND_URL, QM_FRONTEND_URL } from "../../playwright.config";
 import {
   createAdmin,
   createInstructor,
@@ -183,6 +183,107 @@ test.describe("Question Maker authoring and AI workflows", () => {
       await expect(page.getByRole("textbox", { name: "Option A" })).toHaveValue("Queue");
       await expect(page.getByRole("checkbox", { name: /Mark as reviewed/ })).toBeVisible();
       await expect(page.getByRole("button", { name: "Save question" })).toBeEnabled();
+    } finally {
+      await instructorContext.dispose();
+    }
+  });
+
+  test("INSTRUCTOR generates several questions at once and every kept draft is saved (#1973)", async ({
+    page,
+    playwright,
+  }) => {
+    const instructorContext = await playwright.request.newContext();
+
+    try {
+      const instructor = await createInstructor(instructorContext, {
+        prefix: "qm-ui-batch",
+      });
+      const { qmCourseId } = await createQmCourseForInstructor(playwright, instructorContext, {
+        name: "QM Instructor Batch Workflow",
+        code: "QM-INSTR-BATCH",
+      });
+      // Saving needs a primary topic that belongs to the course.
+      const topicRes = await instructorContext.post(
+        `${QM_BACKEND_URL}/api/course/${qmCourseId}/topics`,
+        { data: { name: "Data structures" } },
+      );
+      expect(topicRes.status()).toBe(201);
+      const topicBody = await topicRes.json();
+      const topicId = (topicBody.data ?? topicBody).id;
+
+      const stems = [
+        "Which data structure uses FIFO ordering?",
+        "Which data structure uses LIFO ordering?",
+        "Which structure gives O(1) average lookup by key?",
+      ];
+      let requestedCount: number | undefined;
+      await page.route("**/api/eduai/generate-questions", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        requestedCount = route.request().postDataJSON().numQuestions;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            data: {
+              questions: stems.map((content, i) => ({
+                content,
+                description: `Batch question ${i + 1}`,
+                difficulty: "medium",
+                reasoning_level: "factual",
+                bloom_level: "remember",
+                type: "MCQ",
+                answer: "A",
+                choices: [
+                  { letter: "A", text: `Right ${i + 1}` },
+                  { letter: "B", text: `Wrong ${i + 1}` },
+                ],
+                primary_topic_id: topicId,
+              })),
+              count: stems.length,
+              course: {
+                id: qmCourseId,
+                name: "QM Instructor Batch Workflow",
+                code: "QM-INSTR-BATCH",
+              },
+            },
+          }),
+        });
+      });
+
+      await signInThroughPage(
+        page,
+        instructor,
+        `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`,
+      );
+      await page.getByRole("textbox", { name: "Prompt" }).fill("Basic data structures");
+      await page.getByLabel("Number of questions").fill("3");
+      await page.getByRole("button", { name: "Generate 3 questions" }).click();
+
+      await expect(page.getByText("Draft 1 of 3")).toBeVisible({ timeout: 15_000 });
+      expect(requestedCount).toBe(3);
+      await expect(page.locator("#composer-variant-text")).toHaveValue(stems[0]);
+
+      // Keep draft 1, discard draft 2, keep draft 3.
+      await page.getByRole("button", { name: "Save & next" }).click();
+      await expect(page.getByText("Draft 2 of 3")).toBeVisible();
+      await expect(page.locator("#composer-variant-text")).toHaveValue(stems[1]);
+      await page.getByRole("button", { name: "Discard draft" }).click();
+      await expect(page.getByText("Draft 3 of 3")).toBeVisible();
+      await expect(page.locator("#composer-variant-text")).toHaveValue(stems[2]);
+      await page.getByRole("button", { name: "Save & next" }).click();
+
+      await expect(page).toHaveURL(new RegExp(`/courses/${qmCourseId}\\?tab=questions`));
+
+      const listRes = await instructorContext.get(
+        `${QM_BACKEND_URL}/api/questions?courseId=${qmCourseId}&limit=50`,
+      );
+      expect(listRes.status()).toBe(200);
+      const { data } = await listRes.json();
+      const savedStems = (data.items as Array<{ variants: Array<{ questionText: string }> }>)
+        .flatMap((q) => q.variants.map((v) => v.questionText))
+        .sort();
+      expect(savedStems).toEqual([stems[0], stems[2]].sort());
     } finally {
       await instructorContext.dispose();
     }

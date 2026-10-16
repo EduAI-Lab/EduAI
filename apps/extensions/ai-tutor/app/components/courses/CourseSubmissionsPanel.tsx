@@ -30,9 +30,12 @@ import {
   SelectTrigger,
   SelectValue,
   StatCard,
+  HelpHint,
   cn,
 } from "@eduai/ui";
+import { Link } from "react-router";
 import { useAtPermissions } from "~/hooks/useAtPermissions";
+import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { canGradeSubmissions } from "~/lib/rbac/permissions";
 import api from "~/lib/api";
 import type { SubmissionRow } from "~/lib/types";
@@ -278,7 +281,10 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
       <Card>
         <CardHeader className="gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Submissions</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              Submissions
+              <HelpHint {...AI_TUTOR_HELP.grading} LinkComponent={Link} />
+            </CardTitle>
             <CardDescription>
               {stats.needsGrading > 0
                 ? `${stats.needsGrading} attempt${stats.needsGrading === 1 ? "" : "s"} waiting on a grade.`
