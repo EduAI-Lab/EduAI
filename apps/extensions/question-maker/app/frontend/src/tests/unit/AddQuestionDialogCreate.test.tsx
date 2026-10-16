@@ -159,6 +159,48 @@ describe("AddQuestionDialog create mode", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  describe("topic-limited assessments (#1974)", () => {
+    const assessmentRows = [
+      {
+        id: 5,
+        name: "Limited Quiz",
+        type: "Quiz",
+        courseId: 7,
+        blueprintConfig: { primaryTopicIds: ["t2"] },
+      },
+      {
+        id: 6,
+        name: "Open Quiz",
+        type: "Quiz",
+        courseId: 7,
+        blueprintConfig: { primaryTopicIds: [] },
+      },
+    ];
+
+    async function openAssessmentSelect() {
+      const trigger = document.getElementById("variant-assessment") as HTMLElement;
+      await waitFor(() => expect(trigger).not.toBeDisabled());
+      fireEvent.click(trigger);
+    }
+
+    it("only lists assessments that cover the chosen primary topic", async () => {
+      assessmentServiceDefault.getAssessments.mockResolvedValue(assessmentRows);
+      renderNew();
+      await selectPrimaryTopic("Topic One");
+      await openAssessmentSelect();
+      expect(await screen.findByRole("option", { name: /Open Quiz/ })).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /Limited Quiz/ })).not.toBeInTheDocument();
+    });
+
+    it("lists the limited assessment once its topic is chosen", async () => {
+      assessmentServiceDefault.getAssessments.mockResolvedValue(assessmentRows);
+      renderNew();
+      await selectPrimaryTopic("Topic Two");
+      await openAssessmentSelect();
+      expect(await screen.findByRole("option", { name: /Limited Quiz/ })).toBeInTheDocument();
+    });
+  });
+
   it("saves as a draft by default (Mark as reviewed unchecked)", async () => {
     questionService.createQuestion.mockResolvedValue({ id: 101 });
     questionService.createVariant.mockResolvedValue({ id: 201 });

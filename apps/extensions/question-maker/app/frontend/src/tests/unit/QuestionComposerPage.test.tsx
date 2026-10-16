@@ -46,6 +46,7 @@ const {
       getQuestion: vi.fn(),
       updateVariant: vi.fn(),
       updateQuestion: vi.fn(),
+      checkQuestionTopicChange: vi.fn(),
       createVariant: vi.fn(),
       createQuestion: vi.fn(),
     },
@@ -509,6 +510,78 @@ describe("QuestionComposerPage edit mode", () => {
       ),
     );
     expect(toastFn).toHaveBeenCalledWith("Saved — reopened for review", expect.anything());
+  });
+
+  const approvedOnTopicT0 = {
+    id: 7,
+    type: "MCQ",
+    description: "desc",
+    primaryTopicId: "t0",
+    variants: [
+      {
+        id: 70,
+        questionText: "Base text",
+        difficulty: "easy",
+        answer: "A",
+        choices: [
+          { letter: "A", text: "x" },
+          { letter: "B", text: "y" },
+        ],
+        isDraft: false,
+      },
+    ],
+  };
+
+  it("checks a topic change before reopening an approved variant (#1974)", async () => {
+    questionService.getQuestion.mockResolvedValue(approvedOnTopicT0);
+    questionService.checkQuestionTopicChange.mockResolvedValue(undefined);
+    questionService.updateVariant.mockResolvedValue({});
+    questionService.updateQuestion.mockResolvedValue({});
+    render(<QuestionComposerPage />);
+    await screen.findByText("Edit question");
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() =>
+      expect(questionService.updateQuestion).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ primaryTopicId: "t1" }),
+      ),
+    );
+    expect(questionService.checkQuestionTopicChange).toHaveBeenCalledWith(7, "t1");
+    expect(questionService.checkQuestionTopicChange.mock.invocationCallOrder[0]).toBeLessThan(
+      questionService.updateVariant.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("leaves an approved variant untouched when the topic change is refused (#1974)", async () => {
+    questionService.getQuestion.mockResolvedValue(approvedOnTopicT0);
+    questionService.checkQuestionTopicChange.mockRejectedValue({
+      response: {
+        data: { error: "This question is in an assessment that doesn't cover the new topic" },
+      },
+    });
+    render(<QuestionComposerPage />);
+    await screen.findByText("Edit question");
+    fireEvent.click(screen.getByText("set-primary-topic"));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() =>
+      expect(toastFn.error).toHaveBeenCalledWith("Save failed", {
+        description: "This question is in an assessment that doesn't cover the new topic",
+      }),
+    );
+    expect(questionService.updateVariant).not.toHaveBeenCalled();
+    expect(questionService.updateQuestion).not.toHaveBeenCalled();
+  });
+
+  it("skips the topic check when the topic is unchanged", async () => {
+    questionService.getQuestion.mockResolvedValue({ ...approvedOnTopicT0, primaryTopicId: "t1" });
+    questionService.updateVariant.mockResolvedValue({});
+    questionService.updateQuestion.mockResolvedValue({});
+    render(<QuestionComposerPage />);
+    await screen.findByText("Edit question");
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalled());
+    expect(questionService.checkQuestionTopicChange).not.toHaveBeenCalled();
   });
 
   it("lists other variants when more than one exists", async () => {

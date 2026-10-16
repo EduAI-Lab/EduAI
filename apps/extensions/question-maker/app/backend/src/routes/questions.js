@@ -27,6 +27,7 @@ import {
   enrichQuestionRows,
   getQuestionById,
   updateQuestion,
+  checkQuestionTopicChange,
   deleteQuestion,
   createMultipleQuestions,
   getQuestionStats,
@@ -567,6 +568,36 @@ router.put(
         message: "Question updated successfully",
         data: question,
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * POST /api/questions/:id/topic-check – #1974 preflight: 409s when moving the
+ * question to `primaryTopicId` would take it outside a topic-limited assessment
+ * it is in. Writes nothing; the composer runs it before the variant write.
+ */
+router.post(
+  "/:id/topic-check",
+  authenticateToken,
+  requireQuestionAccess({ min: "ta" }),
+  async (req, res, next) => {
+    try {
+      if (denyTaNotOwner(req, res)) return;
+
+      const resolvedTopicId = normalizePrimaryTopicId(req.body?.primaryTopicId);
+      if (!resolvedTopicId) {
+        return res.status(400).json({
+          success: false,
+          error: "Valid primaryTopicId is required",
+        });
+      }
+
+      await checkQuestionTopicChange(req.params.id, req.qmCourse.userId, resolvedTopicId);
+
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }

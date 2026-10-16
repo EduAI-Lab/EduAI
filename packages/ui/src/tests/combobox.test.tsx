@@ -74,6 +74,28 @@ describe("MultiSelect", () => {
     render(<MultiSelect options={options} value={[]} onValueChange={vi.fn()} disabled />);
     expect(screen.getByRole("combobox")).toBeDisabled();
   });
+
+  it("lets a label point at the trigger via id", () => {
+    render(
+      <>
+        <label htmlFor="topics">Topics</label>
+        <MultiSelect id="topics" options={options} value={[]} onValueChange={() => {}} />
+      </>,
+    );
+    expect(screen.getByLabelText("Topics")).toBe(screen.getByRole("combobox"));
+  });
+
+  it("names the trigger from aria-label rather than its selection text", () => {
+    render(
+      <MultiSelect
+        aria-label="Assessment topics"
+        options={options}
+        value={["u1"]}
+        onValueChange={() => {}}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "Assessment topics" })).toBeInTheDocument();
+  });
 });
 
 /**

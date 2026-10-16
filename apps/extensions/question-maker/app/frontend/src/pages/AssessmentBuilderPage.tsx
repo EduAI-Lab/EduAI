@@ -58,6 +58,7 @@ import {
   slugifyAssessmentBasename,
 } from "../utils/assessmentExport";
 import { difficultySolidVar, normalizeDifficulty } from "../lib/difficulty";
+import { getAssessmentTopicIds } from "../utils/assessmentTopicScope";
 import { toast } from "sonner";
 
 /** Coloured icon tones for the summary stat tiles — keeps the strip from going monotone. */
@@ -201,6 +202,17 @@ const AssessmentBuilderPage = () => {
     return map;
   }, [topics]);
 
+  // #1974: a topic-limited assessment only offers questions from its topics.
+  const assessmentTopicIds = useMemo(() => getAssessmentTopicIds(assessment), [assessment]);
+
+  const scopedTopics = useMemo(
+    () =>
+      assessmentTopicIds.length > 0
+        ? topics.filter((topic) => assessmentTopicIds.includes(topic.id))
+        : topics,
+    [topics, assessmentTopicIds],
+  );
+
   const questionVariantEntries = useMemo<QuestionVariantEntry[]>(() => {
     const resolveTopicName = (topicId: string) => topicById[topicId]?.name ?? `Topic ${topicId}`;
     return questions.flatMap((question) =>
@@ -229,6 +241,16 @@ const AssessmentBuilderPage = () => {
       }),
     );
   }, [questions, topicById]);
+
+  const scopedQuestionBank = useMemo(
+    () =>
+      assessmentTopicIds.length > 0
+        ? questionVariantEntries.filter((entry) =>
+            assessmentTopicIds.includes(String(entry.primaryTopicId)),
+          )
+        : questionVariantEntries,
+    [questionVariantEntries, assessmentTopicIds],
+  );
 
   const hasDraftQuestions = useMemo(() => {
     if (!assessment?.sections) return false;
@@ -363,18 +385,11 @@ const AssessmentBuilderPage = () => {
 
   const handleUpdateAssessmentBlueprint = async (params: AssessmentGenerationParams) => {
     if (!assessment) return;
-    try {
-      const updated = await assessmentService.updateAssessment(assessment.id, params);
-      setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
-      toast("Assessment updated", { description: "Blueprint details have been saved." });
-      setIsEditAssessmentOpen(false);
-    } catch (err: unknown) {
-      toast.error("Failed to update assessment", {
-        description:
-          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-          "Please try again.",
-      });
-    }
+    // Failures propagate: the edit modal stays open and shows the server's reason (#1974).
+    const updated = await assessmentService.updateAssessment(assessment.id, params);
+    setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
+    toast("Assessment updated", { description: "Blueprint details have been saved." });
+    setIsEditAssessmentOpen(false);
   };
 
   const handleDeleteAssessment = () => {
@@ -771,6 +786,21 @@ const AssessmentBuilderPage = () => {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Topics covered:</span>
+          {assessmentTopicIds.length === 0 ? (
+            <span>All topics</span>
+          ) : scopedTopics.length > 0 ? (
+            scopedTopics.map((topic) => (
+              <Badge key={topic.id} variant="secondary">
+                {topic.name}
+              </Badge>
+            ))
+          ) : (
+            <span>Selected topics are no longer available</span>
+          )}
+        </div>
+
         {/* Summary — at-a-glance stats + difficulty mix */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
@@ -808,8 +838,10 @@ const AssessmentBuilderPage = () => {
         <div className="rounded-[var(--radius-xl)] border border-border bg-card p-5 shadow-[var(--shadow-2xs)]">
           <AssessmentBuilder
             assessment={assessment}
-            questionBank={questionVariantEntries}
-            topics={topics}
+            questionBank={scopedQuestionBank}
+            topics={scopedTopics}
+            allTopics={topics}
+            topicLimited={assessmentTopicIds.length > 0}
             onAddSection={async () => {
               if (!assessment) return;
               const existing = assessment.sections ?? [];
