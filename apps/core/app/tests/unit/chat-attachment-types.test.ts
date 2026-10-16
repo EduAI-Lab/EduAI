@@ -37,13 +37,17 @@ describe("classifyAttachmentName", () => {
   it.each([
     "animation.gif",
     "phone.heic",
-    "book.xlsx",
+    "old.xls",
     "archive.zip",
     "noextension",
     "notebook.ipynb",
   ])("rejects %s", (name) => {
     expect(classifyAttachmentName(name)).toBeNull();
   });
+});
+
+it("routes an Excel workbook to the spreadsheet reader (#1742)", () => {
+  expect(classifyAttachmentName("Lab 4.XLSX")).toEqual({ kind: "spreadsheet" });
 });
 
 describe("CHAT_ATTACHMENT_ACCEPT", () => {
@@ -54,6 +58,7 @@ describe("CHAT_ATTACHMENT_ACCEPT", () => {
       ".pptx",
       ".txt",
       ".md",
+      ".xlsx",
       ...CHAT_ATTACHMENT_TEXT_EXTENSIONS,
     ]) {
       expect(CHAT_ATTACHMENT_ACCEPT.split(",")).toContain(ext);

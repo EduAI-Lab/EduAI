@@ -6,6 +6,7 @@
  * Documents reuse the course-material pipeline (`accepted-types.ts`); code and
  * data files are decoded as UTF-8. Images are transcribed by the campus vision
  * model and reach the chat as that text, never as image data (#1742, #1266).
+ * Excel workbooks become one text table per sheet, formulas included (#1742).
  */
 import {
   ACCEPTED_MATERIAL_TYPES,
@@ -27,6 +28,9 @@ export const CHAT_ATTACHMENT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
 export const CHAT_ATTACHMENT_MAX_CHARS_DEFAULT = 20_000;
 export const CHAT_MAX_ATTACHMENT_CHARS_DEFAULT = 60_000;
 
+/** Chat-only: course materials do not accept spreadsheets. */
+export const CHAT_SPREADSHEET_EXTENSION = ".xlsx";
+
 export const CHAT_ATTACHMENT_TEXT_EXTENSIONS: readonly string[] = [
   ".r",
   ".sql",
@@ -47,6 +51,7 @@ export const CHAT_ATTACHMENT_TEXT_EXTENSIONS: readonly string[] = [
 export type AttachmentKind =
   | { kind: "document"; mimeType: AcceptedMaterialMimeType }
   | { kind: "image"; mimeType: AcceptedMaterialMimeType }
+  | { kind: "spreadsheet" }
   | { kind: "text" };
 
 function extensionOf(name: string): string {
@@ -62,6 +67,7 @@ export function classifyAttachmentName(name: string): AttachmentKind | null {
   if (document) return { kind: "document", mimeType: document.mimeType };
   const image = CHAT_IMAGE_TYPES.find((type) => type.extension === extension);
   if (image) return { kind: "image", mimeType: image.mimeType };
+  if (extension === CHAT_SPREADSHEET_EXTENSION) return { kind: "spreadsheet" };
   return CHAT_ATTACHMENT_TEXT_EXTENSIONS.includes(extension) ? { kind: "text" } : null;
 }
 
@@ -69,6 +75,7 @@ export function classifyAttachmentName(name: string): AttachmentKind | null {
 export const CHAT_ATTACHMENT_ACCEPT = [
   ...CHAT_DOCUMENT_TYPES.map((type) => type.extension),
   ...CHAT_IMAGE_TYPES.map((type) => type.extension),
+  CHAT_SPREADSHEET_EXTENSION,
   ...CHAT_ATTACHMENT_TEXT_EXTENSIONS,
 ].join(",");
 

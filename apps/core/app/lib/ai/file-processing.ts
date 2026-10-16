@@ -1,3 +1,4 @@
+import { type XlsxParts, type XlsxText, xlsxToText } from "~/lib/ai/xlsx-text";
 import type { ValidationResult } from "~/lib/validation-result";
 import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import {
@@ -1143,7 +1144,7 @@ export type ExtractPdfTextIsolatedLimits = {
    */
   workerSource?: (maxOutputBytes: number) => string;
   /** Temp-file extension for the child's input; also names the temp dir. */
-  inputKind?: "pdf" | "docx" | "pptx";
+  inputKind?: "pdf" | "docx" | "pptx" | "xlsx";
 };
 
 /**
@@ -1156,15 +1157,34 @@ export type ExtractPdfTextIsolatedLimits = {
  * mammoth's and jszip's inflate/parse work off the request-serving event loop,
  * which is the part #949 was asked to move.
  */
-function buildOfficeExtractionWorkerSource(kind: "docx" | "pptx", maxOutputBytes: number): string {
+function buildOfficeExtractionWorkerSource(
+  kind: "docx" | "pptx" | "xlsx",
+  maxOutputBytes: number,
+): string {
   const body =
-    kind === "docx"
+    kind === "xlsx"
       ? `
+      const JSZip = require("jszip");
+      const zip = await JSZip.loadAsync(fs.readFileSync(inputPath));
+      const read = async (name) => (zip.files[name] ? await zip.files[name].async("text") : "");
+      const sheets = {};
+      for (const name of Object.keys(zip.files)) {
+        if (/^xl\\/worksheets\\/[^/]+\\.xml$/.test(name)) sheets[name] = await read(name);
+      }
+      return {
+        workbook: await read("xl/workbook.xml"),
+        rels: await read("xl/_rels/workbook.xml.rels"),
+        sharedStrings: await read("xl/sharedStrings.xml"),
+        sheets: sheets,
+      };
+`
+      : kind === "docx"
+        ? `
       const mammoth = require("mammoth");
       const result = await mammoth.convertToHtml({ buffer: fs.readFileSync(inputPath) });
       return { html: result.value, messages: result.messages || [] };
 `
-      : `
+        : `
       const JSZip = require("jszip");
       const zip = await JSZip.loadAsync(fs.readFileSync(inputPath));
       // Sort by slide *number*, not lexically: "slide10.xml" sorts before
@@ -1497,6 +1517,33 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
       `Failed to extract text from DOCX: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
   }
+}
+
+/**
+ * Text of an .xlsx workbook, one block per sheet (#1742, chat attachments only).
+ * Same isolation as DOCX/PPTX: ZIP-bomb caps in the parent, inflation in the
+ * worker, and only the cheap XML pass here (see `xlsxToText`).
+ */
+export async function extractXlsxText(file: File): Promise<XlsxText> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    await loadZipWithLimits(arrayBuffer, "XLSX");
+    const parts = await extractPdfTextIsolated<XlsxParts>(Buffer.from(arrayBuffer), {
+      inputKind: "xlsx",
+      workerSource: (max) => buildOfficeExtractionWorkerSource("xlsx", max),
+    });
+    const { content, sheetCount } = xlsxToText(parts);
+    return { content: sanitizeTextContent(content), sheetCount };
+  } catch (error) {
+    throw new Error(
+      `Failed to extract text from XLSX: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
+}
+
+/** True when the bytes start like a ZIP container (DOCX, PPTX, XLSX). */
+export function isZipContainer(bytes: Uint8Array): boolean {
+  return looksLikeZipContainer(bytes);
 }
 
 /**

@@ -30,6 +30,26 @@ async function docx(text: string): Promise<File> {
   return new File([buffer], "notes.docx", { type: "" });
 }
 
+async function xlsx(rows: string): Promise<File> {
+  const zip = new JSZip();
+  const ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  zip.file(
+    "xl/workbook.xml",
+    `<workbook ${ns} xmlns:r="r"><sheets><sheet name="Lab" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+  );
+  zip.file(
+    "xl/_rels/workbook.xml.rels",
+    '<Relationships><Relationship Id="rId1" Type="ws" Target="worksheets/sheet1.xml"/></Relationships>',
+  );
+  zip.file("xl/sharedStrings.xml", `<sst ${ns}><si><t>Total</t></si></sst>`);
+  zip.file(
+    "xl/worksheets/sheet1.xml",
+    `<worksheet ${ns}><sheetData>${rows}</sheetData></worksheet>`,
+  );
+  const buffer = await zip.generateAsync({ type: "arraybuffer" });
+  return new File([buffer], "lab.xlsx", { type: "" });
+}
+
 async function expectCode(promise: Promise<unknown>, code: string) {
   await expect(promise).rejects.toBeInstanceOf(ChatAttachmentError);
   await expect(promise).rejects.toMatchObject({ code });
@@ -240,5 +260,40 @@ describe("extractChatAttachment images (#1742)", () => {
     });
     expect(result.truncated).toBe(true);
     expect(result.text.length).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe("extractChatAttachment spreadsheets (#1742)", () => {
+  const ROOMY = { maxBytes: 1024 * 1024, maxChars: 20_000 };
+
+  it("reads a real .xlsx through the isolated worker, formulas included", async () => {
+    const file = await xlsx(
+      '<row r="1"><c r="A1"><v>4</v></c><c r="B1"><v>6</v></c></row>' +
+        '<row r="2"><c r="A2" t="s"><v>0</v></c><c r="B2"><f>SUM(A1:B1)</f><v>10</v></c></row>',
+    );
+    const result = await extractChatAttachment(file, ROOMY);
+    expect(result).toMatchObject({ name: "lab.xlsx", contentType: "text/plain", truncated: false });
+    expect(result.text).toBe("--- Sheet: Lab ---\n4 | 6\nTotal | 10 (=SUM(A1:B1))");
+  });
+
+  it("rejects a non-ZIP file named .xlsx", async () => {
+    await expectCode(
+      extractChatAttachment(new File(["a,b\n1,2"], "fake.xlsx"), ROOMY),
+      "ATTACHMENT_TYPE_UNSUPPORTED",
+    );
+  });
+
+  it("rejects a workbook with no values as empty", async () => {
+    await expectCode(extractChatAttachment(await xlsx(""), ROOMY), "ATTACHMENT_EMPTY");
+  });
+
+  it("maps a corrupt workbook to ATTACHMENT_EXTRACT_FAILED", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+    await expectCode(
+      extractChatAttachment(new File([bytes], "broken.xlsx"), ROOMY),
+      "ATTACHMENT_EXTRACT_FAILED",
+    );
+    spy.mockRestore();
   });
 });

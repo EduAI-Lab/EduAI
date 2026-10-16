@@ -23,7 +23,7 @@ const failureSchema = z.object({ error: z.string() });
 const FALLBACK_ERROR = "We couldn't read this file. Try again, or attach a different copy.";
 const NETWORK_ERROR = "Couldn't upload this file. Check your connection and try again.";
 const UNSUPPORTED_ERROR =
-  "This file type can't be attached. Try a PDF, Word, PowerPoint, text, code, or image (PNG, JPG, WebP) file.";
+  "This file type can't be attached. Try a PDF, Word, PowerPoint, Excel, text, code, or image (PNG, JPG, WebP) file.";
 
 /**
  * The files a paste should attach, or `[]` to let it through as text.

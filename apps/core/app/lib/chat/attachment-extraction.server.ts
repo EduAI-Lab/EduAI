@@ -20,6 +20,8 @@ import {
   extractDocxText,
   extractPdfText,
   extractPptxText,
+  extractXlsxText,
+  isZipContainer,
   readFileAsText,
   sanitizeTextContent,
   validateFileSignature,
@@ -54,7 +56,7 @@ const STATUS = {
 
 const MESSAGES = {
   ATTACHMENT_TYPE_UNSUPPORTED:
-    "This file type can't be attached. Try a PDF, Word, PowerPoint, text, code, or image (PNG, JPG, WebP) file.",
+    "This file type can't be attached. Try a PDF, Word, PowerPoint, Excel, text, code, or image (PNG, JPG, WebP) file.",
   ATTACHMENT_ENCODING_UNSUPPORTED:
     "This file isn't UTF-8 text. Re-save it as UTF-8 and attach it again.",
   ATTACHMENT_TOO_LARGE: "This file is too large to attach.",
@@ -139,6 +141,22 @@ async function extractDocument(file: File, mimeType: string): Promise<string> {
   }
 }
 
+async function extractSpreadsheet(file: File): Promise<string> {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!isZipContainer(bytes.subarray(0, 8))) {
+      throw new ChatAttachmentError("ATTACHMENT_TYPE_UNSUPPORTED");
+    }
+    const typed = new File([bytes], file.name, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    return (await extractXlsxText(typed)).content;
+  } catch (error) {
+    if (error instanceof ChatAttachmentError) throw error;
+    throw readFailure(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
 /** Tells the chat model what it is reading, since it never sees the image itself. */
 export const IMAGE_TRANSCRIPT_PREFIX =
   "[An image the student attached, transcribed and described by a vision model. You cannot see the image itself.]";
@@ -186,6 +204,7 @@ export async function extractChatAttachment(
 
   let raw: string;
   if (kind.kind === "image") raw = await extractImage(file, kind.mimeType);
+  else if (kind.kind === "spreadsheet") raw = await extractSpreadsheet(file);
   else if (kind.kind === "text" || STRICT_TEXT_MIME_TYPES.includes(kind.mimeType))
     raw = await decodeStrictText(file);
   else raw = await extractDocument(file, kind.mimeType);
