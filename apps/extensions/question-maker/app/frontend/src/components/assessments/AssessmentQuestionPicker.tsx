@@ -36,6 +36,10 @@ interface AssessmentQuestionPickerProps {
   questionBank: QuestionVariantEntry[];
   excludeVariantIds: number[];
   topics: Topic[];
+  /** Full course topic list for the secondary-topic filter; defaults to `topics`. */
+  allTopics?: Topic[];
+  /** The assessment is limited to chosen topics, so an empty bank isn't the course's fault. */
+  topicLimited?: boolean;
   onConfirm: (variantIds: number[]) => void;
 }
 
@@ -70,6 +74,8 @@ export function AssessmentQuestionPicker({
   questionBank,
   excludeVariantIds,
   topics,
+  allTopics,
+  topicLimited = false,
   onConfirm,
 }: AssessmentQuestionPickerProps) {
   const [filter, setFilter] = useState<PickerFilter>(EMPTY_FILTER);
@@ -161,10 +167,16 @@ export function AssessmentQuestionPicker({
     [topics],
   );
 
+  // #1974: secondary topics aren't scope-restricted, so they may come from the full course list.
+  const secondaryPool = allTopics ?? topics;
+
   // Secondary topics can't include the chosen primary topic.
   const secondaryTopicOptions = useMemo(
-    () => topicOptions.filter((o) => o.value !== filter.primaryTopicId),
-    [topicOptions, filter.primaryTopicId],
+    () =>
+      secondaryPool
+        .map((t) => ({ value: t.id.toString(), label: t.name }))
+        .filter((o) => o.value !== filter.primaryTopicId),
+    [secondaryPool, filter.primaryTopicId],
   );
 
   return (
@@ -349,7 +361,9 @@ export function AssessmentQuestionPicker({
                       ? "Try clearing or loosening the filters."
                       : availableQuestions.length === 0 && questionBank.length > 0
                         ? "No more questions. Add more in the question library."
-                        : "This course has no questions yet. Add some in the question library."}
+                        : topicLimited
+                          ? "No questions in this assessment's topics yet."
+                          : "This course has no questions yet. Add some in the question library."}
                   </p>
                   {hasActiveFilters && availableQuestions.length > 0 && (
                     <Button

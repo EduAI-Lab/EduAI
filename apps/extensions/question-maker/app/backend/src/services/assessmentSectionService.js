@@ -3,6 +3,7 @@
  * Ensures sections belong to the requesting user and keeps variant/assessment relationships consistent.
  */
 import { prisma } from "../config/database.js";
+import { assertQuestionInAssessmentTopics } from "./assessmentTopicScope.js";
 
 /** Loads an assessment scoped to a user or throws if it is missing. */
 const findAssessmentForUser = async (assessmentId, userId) => {
@@ -27,7 +28,7 @@ const findSectionForUser = async (sectionId, userId, courseId = null) => {
   const section = await prisma.assessmentSections.findFirst({
     where: { id: sectionId, assessment: { course: { userId } } },
     include: {
-      assessment: { select: { id: true, courseId: true } },
+      assessment: { select: { id: true, courseId: true, blueprintConfig: true } },
     },
   });
 
@@ -247,7 +248,7 @@ const verifyVariantOwnership = async (variantId, userId, courseId = null) => {
   const variant = await prisma.variants.findFirst({
     where: { id: variantId, questionMetadata: { course: { userId } } },
     include: {
-      questionMetadata: { select: { id: true, courseId: true } },
+      questionMetadata: { select: { id: true, courseId: true, primaryTopicId: true } },
     },
   });
 
@@ -274,6 +275,9 @@ export const addVariantToSection = async (
   variantId = Number(variantId);
   const section = await findSectionForUser(sectionId, userId, courseId);
   const variant = await verifyVariantOwnership(variantId, userId, courseId);
+
+  // #1974: a topic-limited assessment only takes questions from its topics.
+  assertQuestionInAssessmentTopics(section.assessment, variant.questionMetadata.primaryTopicId);
 
   const displayOrder =
     options.displayOrder ?? (await prisma.sectionVariants.count({ where: { sectionId } }));

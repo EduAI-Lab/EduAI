@@ -46,6 +46,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  HelpHint,
   Input,
   Label,
   MultiSelect,
@@ -57,7 +58,9 @@ import {
   SelectValue,
   Textarea,
 } from "@eduai/ui";
+import { Link } from "react-router";
 import { cn } from "~/lib/utils";
+import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import api, { ApiHttpError } from "../lib/api";
 import { useCourseTopicsContext } from "../hooks/useCourseTopics";
 import { AI_MODE_REQUIRED, ANSWER_REQUIRED, buildMcqSubmission } from "~/lib/activityForm";
@@ -740,10 +743,13 @@ export default function AddActivityPanel({
           {/* Right column: tagging + AI assistance. */}
           <div className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="new-activity-main-topic" className="flex items-center gap-1.5">
-                <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
-                Main topic
-              </Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="new-activity-main-topic" className="flex items-center gap-1.5">
+                  <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+                  Main topic
+                </Label>
+                <HelpHint {...AI_TUTOR_HELP.topicSync} LinkComponent={Link} />
+              </div>
               <Select
                 key={selectedMainTopicId === "" ? "empty" : "selected"}
                 value={selectedMainTopicId || undefined}
@@ -878,6 +884,7 @@ export default function AddActivityPanel({
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   AI study buddy
                 </span>
+                <HelpHint {...AI_TUTOR_HELP.authoringModes} LinkComponent={Link} />
               </div>
               <p className="text-xs text-muted-foreground">
                 Choose which AI assistance modes students can use for this activity.

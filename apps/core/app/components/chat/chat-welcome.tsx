@@ -1,4 +1,7 @@
-import { cn } from "@eduai/ui";
+import { Link } from "react-router";
+import { HelpHint, cn } from "@eduai/ui";
+
+import { CORE_HELP } from "~/components/help/help-hints";
 
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { SuggestedPrompts } from "./suggested-prompts";
@@ -24,9 +27,12 @@ export function ChatWelcome({
   return (
     <div className="flex w-full flex-col items-center justify-center px-4 py-10 text-center md:py-16">
       <ScrollReveal index={0} parallax={false}>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-[1.75rem]">
-          Course Chat
-        </h1>
+        <div className="flex items-center justify-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-[1.75rem]">
+            Course Chat
+          </h1>
+          <HelpHint {...CORE_HELP.chatScope} LinkComponent={Link} side="bottom" />
+        </div>
       </ScrollReveal>
 
       <ScrollReveal index={1} parallax={false}>

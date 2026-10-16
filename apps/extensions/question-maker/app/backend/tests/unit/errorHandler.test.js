@@ -193,6 +193,39 @@ describe("errorHandler middleware", () => {
     expect(res._body.stack).toBeUndefined();
   });
 
+  it("forwards details for a public error (#1974)", () => {
+    const res = makeRes();
+    const err = Object.assign(new Error("Blocked"), {
+      status: 409,
+      code: "QM_ASSESSMENT_TOPIC_CONFLICT",
+      isPublic: true,
+      details: { questions: [{ id: 1, description: "Q1" }] },
+    });
+    errorHandler(err, makeReq(), res, () => {});
+    expect(res._status).toBe(409);
+    expect(res._body).toEqual(
+      expect.objectContaining({
+        error: "Blocked",
+        code: "QM_ASSESSMENT_TOPIC_CONFLICT",
+        details: { questions: [{ id: 1, description: "Q1" }] },
+      }),
+    );
+  });
+
+  it("never forwards details from a non-public error", () => {
+    const res = makeRes();
+    const err = Object.assign(new Error("secret"), { status: 500, details: { sql: "x" } });
+    errorHandler(err, makeReq(), res, () => {});
+    expect(res._body).not.toHaveProperty("details");
+  });
+
+  it("drops array details even on a public error", () => {
+    const res = makeRes();
+    const err = Object.assign(new Error("x"), { status: 400, isPublic: true, details: [1] });
+    errorHandler(err, makeReq(), res, () => {});
+    expect(res._body).not.toHaveProperty("details");
+  });
+
   it("always includes success: false in the response body", () => {
     const res = makeRes();
     errorHandler(new Error("anything"), makeReq(), res, () => {});

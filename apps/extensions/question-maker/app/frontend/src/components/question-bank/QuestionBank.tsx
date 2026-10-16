@@ -6,7 +6,9 @@
  * hides variants of a matched question that fail variant-level filters.
  */
 import { useMemo, useState } from "react";
-import { Button, cn, EmptyState } from "@eduai/ui";
+import { Link } from "react-router";
+import { Button, cn, EmptyState, HelpHint } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 import {
   IconStack2,
   IconInfoCircle,
@@ -131,7 +133,10 @@ export const QuestionBank = ({
       {/* Header: count + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Questions</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-lg font-semibold text-foreground">Questions</h2>
+            <HelpHint {...QUESTION_MAKER_HELP.questionVsVariant} LinkComponent={Link} />
+          </div>
           <p className="text-sm text-muted-foreground">
             {hasFilters
               ? `${total} matching`

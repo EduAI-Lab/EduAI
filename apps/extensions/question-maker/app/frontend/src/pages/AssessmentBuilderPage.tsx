@@ -10,14 +10,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  HelpHint,
   StackedBar,
   cn,
 } from "@eduai/ui";
+import { QUESTION_MAKER_HELP } from "@/lib/helpHints";
 import { PermissionGate } from "@eduai/ui";
 import { ConfirmDialog } from "@eduai/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import {
   IconArrowLeft,
   IconAlertTriangle,
@@ -56,6 +58,7 @@ import {
   slugifyAssessmentBasename,
 } from "../utils/assessmentExport";
 import { difficultySolidVar, normalizeDifficulty } from "../lib/difficulty";
+import { getAssessmentTopicIds } from "../utils/assessmentTopicScope";
 import { toast } from "sonner";
 
 /** Coloured icon tones for the summary stat tiles — keeps the strip from going monotone. */
@@ -199,6 +202,17 @@ const AssessmentBuilderPage = () => {
     return map;
   }, [topics]);
 
+  // #1974: a topic-limited assessment only offers questions from its topics.
+  const assessmentTopicIds = useMemo(() => getAssessmentTopicIds(assessment), [assessment]);
+
+  const scopedTopics = useMemo(
+    () =>
+      assessmentTopicIds.length > 0
+        ? topics.filter((topic) => assessmentTopicIds.includes(topic.id))
+        : topics,
+    [topics, assessmentTopicIds],
+  );
+
   const questionVariantEntries = useMemo<QuestionVariantEntry[]>(() => {
     const resolveTopicName = (topicId: string) => topicById[topicId]?.name ?? `Topic ${topicId}`;
     return questions.flatMap((question) =>
@@ -227,6 +241,16 @@ const AssessmentBuilderPage = () => {
       }),
     );
   }, [questions, topicById]);
+
+  const scopedQuestionBank = useMemo(
+    () =>
+      assessmentTopicIds.length > 0
+        ? questionVariantEntries.filter((entry) =>
+            assessmentTopicIds.includes(String(entry.primaryTopicId)),
+          )
+        : questionVariantEntries,
+    [questionVariantEntries, assessmentTopicIds],
+  );
 
   const hasDraftQuestions = useMemo(() => {
     if (!assessment?.sections) return false;
@@ -361,18 +385,11 @@ const AssessmentBuilderPage = () => {
 
   const handleUpdateAssessmentBlueprint = async (params: AssessmentGenerationParams) => {
     if (!assessment) return;
-    try {
-      const updated = await assessmentService.updateAssessment(assessment.id, params);
-      setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
-      toast("Assessment updated", { description: "Blueprint details have been saved." });
-      setIsEditAssessmentOpen(false);
-    } catch (err: unknown) {
-      toast.error("Failed to update assessment", {
-        description:
-          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-          "Please try again.",
-      });
-    }
+    // Failures propagate: the edit modal stays open and shows the server's reason (#1974).
+    const updated = await assessmentService.updateAssessment(assessment.id, params);
+    setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
+    toast("Assessment updated", { description: "Blueprint details have been saved." });
+    setIsEditAssessmentOpen(false);
   };
 
   const handleDeleteAssessment = () => {
@@ -648,7 +665,7 @@ const AssessmentBuilderPage = () => {
            *  - Everything that manages the assessment itself (rename/retype, delete) lives
            *    together under a single labelled "Manage" menu — no lone kebab, no jargon.
            */}
-          <div className="flex shrink-0 flex-nowrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-nowrap">
             <PermissionGate allow={canUseVariantWorkflow}>
               {variantsHref &&
                 (noQuestions ? (
@@ -679,51 +696,59 @@ const AssessmentBuilderPage = () => {
             </PermissionGate>
 
             <PermissionGate allow={canExportAssessment}>
-              {exportBlockedReason ? (
-                <Tooltip content={exportBlockedReason} side="bottom">
-                  <span className="inline-flex">
-                    <Button type="button" disabled className="gap-1.5 opacity-60">
-                      <IconShare2 className="size-4" />
-                      Export
-                      <IconChevronDown className="size-3.5" />
-                    </Button>
-                  </span>
-                </Tooltip>
-              ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" className="gap-1.5" data-tour="export-assessment-btn">
-                      <IconShare2 className="size-4" />
-                      Export
-                      <IconChevronDown className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      data-tour="export-canvas-btn"
-                      onSelect={() => setTimeout(() => setIsCanvasExportOpen(true), 0)}
-                    >
-                      <IconUpload className="size-4" /> Send to Canvas
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      data-tour="export-word-btn"
-                      disabled={isWordExporting}
-                      onSelect={() => void handleExportWord()}
-                    >
-                      <IconFileTypeDocx className="size-4" />
-                      {isWordExporting ? "Preparing…" : "Download as Word (.docx)"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      data-tour="export-txt-btn"
-                      disabled={isTxtExporting}
-                      onSelect={handleExportTxt}
-                    >
-                      <IconFileText className="size-4" />
-                      {isTxtExporting ? "Preparing…" : "Download as text (.txt)"}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              <div className="flex items-center gap-2">
+                {exportBlockedReason ? (
+                  <Tooltip content={exportBlockedReason} side="bottom">
+                    <span className="inline-flex">
+                      <Button type="button" disabled className="gap-1.5 opacity-60">
+                        <IconShare2 className="size-4" />
+                        Export
+                        <IconChevronDown className="size-3.5" />
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" className="gap-1.5" data-tour="export-assessment-btn">
+                        <IconShare2 className="size-4" />
+                        Export
+                        <IconChevronDown className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        data-tour="export-canvas-btn"
+                        onSelect={() => setTimeout(() => setIsCanvasExportOpen(true), 0)}
+                      >
+                        <IconUpload className="size-4" /> Send to Canvas
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        data-tour="export-word-btn"
+                        disabled={isWordExporting}
+                        onSelect={() => void handleExportWord()}
+                      >
+                        <IconFileTypeDocx className="size-4" />
+                        {isWordExporting ? "Preparing…" : "Download as Word (.docx)"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        data-tour="export-txt-btn"
+                        disabled={isTxtExporting}
+                        onSelect={handleExportTxt}
+                      >
+                        <IconFileText className="size-4" />
+                        {isTxtExporting ? "Preparing…" : "Download as text (.txt)"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <HelpHint
+                  {...QUESTION_MAKER_HELP.exportReadiness}
+                  LinkComponent={Link}
+                  side="bottom"
+                  align="end"
+                />
+              </div>
             </PermissionGate>
 
             <PermissionGate allow={canManageAssessment}>
@@ -759,6 +784,21 @@ const AssessmentBuilderPage = () => {
               </DropdownMenu>
             </PermissionGate>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Topics covered:</span>
+          {assessmentTopicIds.length === 0 ? (
+            <span>All topics</span>
+          ) : scopedTopics.length > 0 ? (
+            scopedTopics.map((topic) => (
+              <Badge key={topic.id} variant="secondary">
+                {topic.name}
+              </Badge>
+            ))
+          ) : (
+            <span>Selected topics are no longer available</span>
+          )}
         </div>
 
         {/* Summary — at-a-glance stats + difficulty mix */}
@@ -798,8 +838,10 @@ const AssessmentBuilderPage = () => {
         <div className="rounded-[var(--radius-xl)] border border-border bg-card p-5 shadow-[var(--shadow-2xs)]">
           <AssessmentBuilder
             assessment={assessment}
-            questionBank={questionVariantEntries}
-            topics={topics}
+            questionBank={scopedQuestionBank}
+            topics={scopedTopics}
+            allTopics={topics}
+            topicLimited={assessmentTopicIds.length > 0}
             onAddSection={async () => {
               if (!assessment) return;
               const existing = assessment.sections ?? [];
