@@ -699,8 +699,12 @@ const CORE_JOB_HANDLERS = {
       const result = await checkDiskUsage();
       const message = formatDiskUsageMessage(result);
       // A critical disk fails the run so Admin → Cron Jobs shows it red, and so
-      // does an alert nobody received, so the next run retries it (#1992 review).
-      if (result.level === "CRITICAL" || result.undelivered) throw new Error(message);
+      // does an alert a configured mailer failed to send, so the next run
+      // retries it. Mail that is not set up is logged but does not fail the
+      // run: only configuring mail fixes that (#1992 review).
+      if (result.level === "CRITICAL" || result.notSent === "undelivered") {
+        throw new Error(message);
+      }
       return { message };
     };
   },

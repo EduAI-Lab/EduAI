@@ -9,7 +9,6 @@ import {
   type DiskAlertLevel,
   type DiskAlertLine,
 } from "~/lib/email/templates/disk-usage-alert";
-import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 
 export const DISK_USAGE_CHECK_JOB = "disk-usage-check";
@@ -118,26 +117,35 @@ async function alertRecipients(): Promise<string[]> {
   return [...new Set([...admins.map((a) => a.email), ...extra])];
 }
 
+/** Logged once a day when an alert was due but mail is not set up (no SMTP, no recipients). */
+const UNSENT_CODE = "DISK_USAGE_ALERT_UNSENT";
+/** Logged once a day when a configured mailer failed to deliver any alert email. */
+const UNDELIVERED_CODE = "DISK_USAGE_ALERT_UNDELIVERED";
+
 /**
- * When this worker last delivered an alert, per host and level. The once-a-day
- * limit is normally the Admin → Logs row, but Postgres shares the disk being
- * watched: when it is full that row cannot be written, and without this every
- * admin would be emailed every 30 minutes (#1992 review). A worker restart
- * forgets it, which costs at most one extra email.
+ * When this process last wrote each once-a-day entry, per host and code. The
+ * limit is normally the Admin → Logs row itself, but Postgres shares the disk
+ * being watched: when it is full that row cannot be written, and without this
+ * every admin would be emailed every 30 minutes (#1992 review).
+ *
+ * It lives in the process that runs the check, so a worker restart, or an
+ * admin's "Run now" served by a different process, starts with it empty and
+ * can send one more email while the row cannot be written. A file would not do
+ * better: on a full disk it cannot be written either.
  */
-const lastDeliveredAt = new Map<string, number>();
+const lastRecordedAt = new Map<string, number>();
 
 export function resetDiskAlertMemoryForTests(): void {
-  lastDeliveredAt.clear();
+  lastRecordedAt.clear();
 }
 
-async function alertedRecently(level: DiskAlertLevel, host: string, now: Date): Promise<boolean> {
-  const sentAt = lastDeliveredAt.get(`${host}:${level}`);
-  if (sentAt !== undefined && now.getTime() - sentAt < REALERT_MS) return true;
+async function recordedRecently(code: string, host: string, now: Date): Promise<boolean> {
+  const at = lastRecordedAt.get(`${host}:${code}`);
+  if (at !== undefined && now.getTime() - at < REALERT_MS) return true;
   try {
     const recent = await prisma.systemLog.findFirst({
       where: {
-        code: ALERT_CODE[level],
+        code,
         createdAt: { gte: new Date(now.getTime() - REALERT_MS) },
         details: { path: ["host"], equals: host },
       },
@@ -145,9 +153,19 @@ async function alertedRecently(level: DiskAlertLevel, host: string, now: Date): 
     });
     return recent !== null;
   } catch (error) {
-    console.error("[disk-usage-check] could not read earlier alerts; relying on memory", error);
+    console.error("[disk-usage-check] could not read earlier entries; relying on memory", error);
     return false;
   }
+}
+
+/** Write a once-a-day entry and remember it here too, in case the row cannot be written. */
+async function recordOncePerDay(
+  host: string,
+  now: Date,
+  entry: Parameters<typeof createSystemLog>[0],
+): Promise<void> {
+  lastRecordedAt.set(`${host}:${entry.code}`, now.getTime());
+  await createSystemLog(entry);
 }
 
 export type DiskUsageCheckResult = {
@@ -155,8 +173,12 @@ export type DiskUsageCheckResult = {
   lines: DiskAlertLine[];
   missing: string[];
   emailed: number;
-  /** An alert was due but no email could be delivered; the run fails so the next one retries. */
-  undelivered: boolean;
+  /**
+   * Why a due alert reached nobody: mail is not set up (`unsent`: no SMTP or no
+   * recipients, which only configuration fixes, so the run is not failed), or a
+   * configured mailer failed (`undelivered`: the run fails and the next retries).
+   */
+  notSent: "unsent" | "undelivered" | null;
 };
 
 /**
@@ -166,9 +188,9 @@ export type DiskUsageCheckResult = {
  * mailer (the hosts have no working `mail`, #1874) and writes an Admin → Logs
  * entry, at most once a day per level, so crossing from warning to critical
  * still alerts at once. The entry is the record that the alert went out, so it
- * is written only after an email was delivered: when none is, nothing is
- * suppressed, a `DISK_USAGE_ALERT_UNDELIVERED` entry says so, and the run
- * fails so the next one tries again (#1992 review).
+ * is written only after an email was delivered; until then every run tries
+ * again (#1992 review). A failure is logged once a day too, as one entry, not
+ * one per recipient per run, so an outage does not fill the disk being watched.
  */
 export async function checkDiskUsage(
   options: { now?: Date; reader?: DiskReader; host?: string } = {},
@@ -196,12 +218,13 @@ export async function checkDiskUsage(
       ? "WARNING"
       : "OK";
 
-  if (level === "OK" || (await alertedRecently(level, host, now))) {
-    return { level, lines, missing, emailed: 0, undelivered: false };
+  if (level === "OK" || (await recordedRecently(ALERT_CODE[level], host, now))) {
+    return { level, lines, missing, emailed: 0, notSent: null };
   }
 
   const recipients = await alertRecipients();
   let emailed = 0;
+  const failures: string[] = [];
   for (const to of recipients) {
     try {
       const { delivered } = await sendEmail(
@@ -209,14 +232,7 @@ export async function checkDiskUsage(
       );
       if (delivered) emailed += 1;
     } catch (error) {
-      fireAndForget(
-        logSystemError({
-          source: "MAIL",
-          code: "DISK_USAGE_ALERT_EMAIL_FAILED",
-          message: "Failed to send a disk usage alert email",
-          error,
-        }),
-      );
+      failures.push(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -224,26 +240,39 @@ export async function checkDiskUsage(
     .filter((l) => l.level !== "OK")
     .map((l) => `${l.path} ${l.usedPercent}%`)
     .join(", ");
-  if (emailed === 0) {
-    await createSystemLog({
-      level: "ERROR",
+  if (emailed > 0) {
+    await recordOncePerDay(host, now, {
+      level: level === "CRITICAL" ? "ERROR" : "WARN",
       source: "HOST",
-      code: "DISK_USAGE_ALERT_UNDELIVERED",
-      message: `Disk usage ${level.toLowerCase()} on ${host} (${summary}), but no alert email was delivered to ${recipients.length} recipient(s)`,
-      details: { host, level, warnPercent, criticalPercent, disks: lines },
+      code: ALERT_CODE[level],
+      message: `Disk usage ${level.toLowerCase()} on ${host}: ${summary}${
+        failures.length > 0 ? ` (sending failed for ${failures.length} recipient(s))` : ""
+      }`,
+      details: { host, warnPercent, criticalPercent, disks: lines, failures: failures.slice(0, 5) },
     });
-    return { level, lines, missing, emailed, undelivered: true };
+    return { level, lines, missing, emailed, notSent: null };
   }
 
-  lastDeliveredAt.set(`${host}:${level}`, now.getTime());
-  await createSystemLog({
-    level: level === "CRITICAL" ? "ERROR" : "WARN",
-    source: "HOST",
-    code: ALERT_CODE[level],
-    message: `Disk usage ${level.toLowerCase()} on ${host}: ${summary}`,
-    details: { host, warnPercent, criticalPercent, disks: lines },
-  });
-  return { level, lines, missing, emailed, undelivered: false };
+  // Nothing went out. A thrown send means a configured mailer failed; otherwise
+  // there was nobody to send to, or the mailer skipped the send (no SMTP).
+  const notSent = failures.length > 0 ? "undelivered" : "unsent";
+  const code = notSent === "undelivered" ? UNDELIVERED_CODE : UNSENT_CODE;
+  if (!(await recordedRecently(code, host, now))) {
+    const why =
+      notSent === "undelivered"
+        ? `sending failed for all ${recipients.length} recipient(s): ${failures[0]}`
+        : recipients.length === 0
+          ? "there is no active admin or DISK_ALERT_EMAILS address to send it to"
+          : "email is not configured (no SMTP_HOST)";
+    await recordOncePerDay(host, now, {
+      level: "ERROR",
+      source: "HOST",
+      code,
+      message: `Disk usage ${level.toLowerCase()} on ${host} (${summary}), but no alert was sent: ${why}`,
+      details: { host, level, recipients: recipients.length, failures: failures.slice(0, 5) },
+    });
+  }
+  return { level, lines, missing, emailed, notSent };
 }
 
 /** The run message shown in Admin → Cron Jobs. */
@@ -253,7 +282,8 @@ export function formatDiskUsageMessage(result: DiskUsageCheckResult): string {
     .join("; ");
   const parts = [`${result.level}: ${disks || "no disks read"}`];
   if (result.emailed > 0) parts.push(`alert emailed to ${result.emailed} recipient(s)`);
-  if (result.undelivered) parts.push("alert due but no email could be delivered");
+  if (result.notSent === "undelivered") parts.push("alert due but every email failed to send");
+  if (result.notSent === "unsent") parts.push("alert due but email is not set up");
   if (result.missing.length > 0) parts.push(`could not read ${result.missing.join(", ")}`);
   return parts.join(" — ");
 }

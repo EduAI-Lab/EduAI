@@ -176,7 +176,8 @@ Use a new release directory for every production change:
    running unit, nothing is removed. Run
    `sudo -n /usr/local/sbin/eduai-production-admin prune-releases` after the
    restarts to free it, or **before** building when the disk is tight; it keeps
-   the same releases.
+   the same releases, and exits non-zero if it removed nothing because it could
+   not read what a running service uses (activation only warns).
 10. Reload systemd/Apache as needed, enable the intended units, and restart only
     the components included in the release.
 11. Run the local and public health checks below and record the release ID,

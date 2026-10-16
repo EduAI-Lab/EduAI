@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   getCronJobSetting: vi.fn(),
   createSystemLog: vi.fn(),
   sendEmail: vi.fn(),
-  logSystemError: vi.fn(),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -27,7 +26,6 @@ vi.mock("~/lib/db.systemlog.server", () => ({ createSystemLog: mocks.createSyste
 vi.mock("~/lib/email/mailer.server", () => ({ sendEmail: mocks.sendEmail }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: (p: Promise<unknown>) => void p,
-  logSystemError: mocks.logSystemError,
 }));
 
 const {
@@ -136,7 +134,7 @@ describe("checkDiskUsage", () => {
 
   it("does nothing below the warning threshold", async () => {
     const result = await run(fakeDisks({ "/": { device: 1, totalGb: 100, usedGb: 68 } }));
-    expect(result).toMatchObject({ level: "OK", emailed: 0, undelivered: false });
+    expect(result).toMatchObject({ level: "OK", emailed: 0, notSent: null });
     expect(mocks.createSystemLog).not.toHaveBeenCalled();
     expect(mocks.sendEmail).not.toHaveBeenCalled();
   });
@@ -217,31 +215,56 @@ describe("checkDiskUsage", () => {
     expect(order).toEqual(["email", "log"]);
   });
 
-  it("when no email is delivered, records nothing that suppresses the next try and fails the run", async () => {
+  // #1992 re-review: a configured mailer that fails is retried every run, but
+  // logged as one entry a day, not one per recipient per run.
+  it("when sending fails, retries each run but logs one entry a day", async () => {
+    mocks.userFindMany.mockResolvedValue([{ email: "a@ubc.ca" }, { email: "b@ubc.ca" }]);
     mocks.sendEmail.mockRejectedValue(new Error("SMTP down"));
 
-    const result = await run();
-
-    expect(result).toMatchObject({ level: "WARNING", emailed: 0, undelivered: true });
+    const first = await run();
+    expect(first).toMatchObject({ level: "WARNING", emailed: 0, notSent: "undelivered" });
     expect(mocks.createSystemLog).toHaveBeenCalledTimes(1);
     expect(mocks.createSystemLog).toHaveBeenCalledWith(
-      expect.objectContaining({ level: "ERROR", code: "DISK_USAGE_ALERT_UNDELIVERED" }),
+      expect.objectContaining({
+        level: "ERROR",
+        code: "DISK_USAGE_ALERT_UNDELIVERED",
+        message: expect.stringContaining("sending failed for all 2 recipient(s): SMTP down"),
+      }),
     );
-    expect(formatDiskUsageMessage(result)).toContain("no email could be delivered");
+    expect(formatDiskUsageMessage(first)).toContain("every email failed to send");
 
-    // The next run tries again.
+    // Retried on the next run, without a second log entry.
+    expect(await run()).toMatchObject({ notSent: "undelivered" });
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(4);
+    expect(mocks.createSystemLog).toHaveBeenCalledTimes(1);
+
+    // Once mail works again the alert goes out and is recorded.
     mocks.sendEmail.mockResolvedValue({ delivered: true });
-    expect(await run()).toMatchObject({ emailed: 1, undelivered: false });
+    expect(await run()).toMatchObject({ emailed: 2, notSent: null });
   });
 
-  it("counts a send the mailer skipped (no SMTP) as not delivered", async () => {
+  // #1992 re-review: mail that is not set up is not a failure to retry.
+  it("treats a mailer that skipped the send (no SMTP) as unsent, logged once a day", async () => {
     mocks.sendEmail.mockResolvedValue({ delivered: false });
-    expect(await run()).toMatchObject({ emailed: 0, undelivered: true });
+    const result = await run();
+    expect(result).toMatchObject({ emailed: 0, notSent: "unsent" });
+    expect(formatDiskUsageMessage(result)).toContain("email is not set up");
+    expect(mocks.createSystemLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "DISK_USAGE_ALERT_UNSENT",
+        message: expect.stringContaining("email is not configured"),
+      }),
+    );
+    await run();
+    expect(mocks.createSystemLog).toHaveBeenCalledTimes(1);
   });
 
-  it("treats no recipients at all as undelivered", async () => {
+  it("treats no recipients at all as unsent", async () => {
     mocks.userFindMany.mockResolvedValue([]);
-    expect(await run()).toMatchObject({ emailed: 0, undelivered: true });
+    expect(await run()).toMatchObject({ emailed: 0, notSent: "unsent" });
+    expect(mocks.createSystemLog).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("no active admin") }),
+    );
   });
 
   it("still sends once a day when the log row cannot be written (Postgres on a full disk)", async () => {
@@ -278,15 +301,20 @@ describe("checkDiskUsage", () => {
     expect(mocks.sendEmail.mock.calls[0]![0].text).toContain("warning at 90%, critical at 90%");
   });
 
-  it("keeps going when one email fails, and logs the failure", async () => {
+  it("keeps going when one email fails, and notes it on the day's alert entry", async () => {
     mocks.userFindMany.mockResolvedValue([{ email: "a@ubc.ca" }, { email: "b@ubc.ca" }]);
     mocks.sendEmail.mockRejectedValueOnce(new Error("SMTP down"));
 
     const result = await run();
 
-    expect(result.emailed).toBe(1);
-    expect(mocks.logSystemError).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "DISK_USAGE_ALERT_EMAIL_FAILED" }),
+    expect(result).toMatchObject({ emailed: 1, notSent: null });
+    expect(mocks.createSystemLog).toHaveBeenCalledTimes(1);
+    expect(mocks.createSystemLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "DISK_USAGE_WARNING",
+        message: expect.stringContaining("sending failed for 1 recipient(s)"),
+        details: expect.objectContaining({ failures: ["SMTP down"] }),
+      }),
     );
   });
 });
@@ -306,7 +334,7 @@ describe("formatDiskUsageMessage", () => {
         lines: [],
         missing: ["/mnt/gone"],
         emailed: 0,
-        undelivered: false,
+        notSent: null,
       }),
     ).toBe("OK: no disks read — could not read /mnt/gone");
   });

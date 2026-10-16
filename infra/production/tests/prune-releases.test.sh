@@ -134,8 +134,17 @@ echo 105 >"$TEST_DIR/units/eduai-qm-backend" # running, but no readable cwd
 #    (Activating 44444444 already freed 22222222, which nothing used any more.)
 make_release 55555555 60
 [[ "$(releases)" == "33333333 44444444 55555555 " ]] || fail "setup: $(releases)"
-out=$(helper prune-releases)
+#    An explicit prune says so and exits non-zero, so a script notices (#1992 re-review).
+status=0
+out=$(helper prune-releases 2>&1) || status=$?
+[[ "$status" -eq 2 ]] || fail "explicit prune that removed nothing exited $status"
 [[ "$out" == *"no release was removed"* ]] || fail "pruned without knowing what QM uses: $out"
 [[ "$(releases)" == "33333333 44444444 55555555 " ]] || fail "unknown state still deleted: $(releases)"
+
+#    Activation still succeeds and only warns.
+make_release 66666666 0
+out=$(helper activate-release 66666666 2>&1) || fail "activation failed because pruning could not run: $out"
+[[ "$out" == *"Activated"* && "$out" == *"were not pruned"* ]] || fail "activation did not warn: $out"
+[[ "$(readlink "$ROOT/current")" == "$ROOT/releases/66666666" ]] || fail "activation did not flip current"
 
 echo "PASS: prune-releases"

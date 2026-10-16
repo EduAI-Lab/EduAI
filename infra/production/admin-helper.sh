@@ -87,13 +87,6 @@ validate_release() {
     [ -f "$release/$relative" ] || die "release is incomplete; missing $release/$relative"
   done
 }
-# Each release is ~1.9 GB, almost all node_modules, and s348's disk is 27 GB
-# (#1869). Only the live release and the one before it (the rollback target)
-# are needed, so older releases are removed, except one a running service
-# still uses (see `releases_in_use`). A release newer than the live one
-# is kept too: it is a build waiting to be activated. `previous` is recorded by
-# activate-release; before the first activation that records it, the newest
-# release older than the live one stands in for it.
 # The release each running EduAI unit was started from, one per line (#1992
 # review). A unit resolves `current` when it starts, so after a release that
 # restarted only Core, AI Tutor and Question Maker still run from the one
@@ -114,6 +107,15 @@ releases_in_use() {
     esac
   done
 }
+# Each release is ~1.9 GB, almost all node_modules, and s348's disk is 27 GB
+# (#1869). Only the live release and the one before it (the rollback target)
+# are needed, so older releases are removed, except one a running service
+# still uses (see `releases_in_use`). A release newer than the live one
+# is kept too: it is a build waiting to be activated. `previous` is recorded by
+# activate-release; before the first activation that records it, the newest
+# release older than the live one stands in for it.
+# Returns 2 when it removed nothing because it could not tell what a running
+# unit uses, so an explicit `prune-releases` can fail loudly (#1992 re-review).
 prune_releases() {
   local current previous dir id in_use kept=() removed=0
   current=$(readlink -f -- "$TARGET_ROOT/current" 2>/dev/null) || die "no current release; refusing to prune"
@@ -134,9 +136,11 @@ prune_releases() {
       break
     done
   fi
-  if ! in_use=$(releases_in_use); then
-    echo "Could not tell which release each running service uses; no release was removed."
-    return 0
+  # A unit restarting between `systemctl show` and the /proc read looks like an
+  # unreadable one, so try once more before giving up.
+  if ! in_use=$(releases_in_use) && ! { sleep 2; in_use=$(releases_in_use); }; then
+    echo "Could not tell which release each running service uses; no release was removed." >&2
+    return 2
   fi
   for dir in "$TARGET_ROOT/releases"/*; do
     [ -d "$dir" ] || continue
@@ -437,7 +441,8 @@ case "${1:-}" in
       ln -sfn "$old" "$TARGET_ROOT/previous"
     fi
     echo "Activated $release"
-    prune_releases
+    # The release is live either way; a prune that could not run is only a warning here.
+    prune_releases || echo "Warning: old releases were not pruned; run prune-releases after the restarts." >&2
     ;;
   prune-releases)
     no_extra_args "$@"
