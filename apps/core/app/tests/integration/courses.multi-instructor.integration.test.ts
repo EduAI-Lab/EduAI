@@ -5,7 +5,7 @@
 // candidate picker's rank gate. Uses the test database configured in
 // apps/core/.env.test.
 
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import prisma from "~/lib/prisma.server";
 import { seedTestDisciplines } from "../helpers/disciplines";
@@ -24,6 +24,7 @@ import { getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
+import { loader as enrollmentsLoader } from "~/routes/api/courses.enrollments";
 import { auth } from "~/lib/auth/server";
 import { seedUser, mockSession, type SeededUser } from "../helpers/rbac";
 
@@ -468,6 +469,14 @@ describe("#1840 — the instructor candidate picker", () => {
 // #1964: the second instructor is a full instructor, not a lesser co-owner —
 // every check keys on their own enrollment, never on `Course.instructorId`.
 describe("#1964 — both instructors of one section get the same access", () => {
+  const SERVICE_KEY = "multi-instructor-service-key";
+  beforeEach(() => {
+    vi.stubEnv("EDUAI_API_KEY", SERVICE_KEY);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   async function courseWithTwoInstructors() {
     const course = await seedCourseWithInstructor(abdallah.id);
     await prisma.enrollment.create({
@@ -494,17 +503,45 @@ describe("#1964 — both instructors of one section get the same access", () => 
     }
   });
 
-  it("names both instructors, primary first", async () => {
+  // #1991 review: the primary is whoever `Course.instructorId` names, which need
+  // not be the first enrolled. Here the later-enrolled instructor is the primary,
+  // so the test can tell "longest-standing first" from "primary first".
+  it("names both instructors, longest-standing first, flagging the primary", async () => {
     const course = await courseWithTwoInstructors();
+    await prisma.course.update({ where: { id: course.id }, data: { instructorId: fahd.id } });
 
     const instructors = (await getCourseInstructors([course.id])).get(course.id) ?? [];
     expect(instructors.map((i) => [i.id, i.isPrimary])).toEqual([
-      [abdallah.id, true],
-      [fahd.id, false],
+      [abdallah.id, false],
+      [fahd.id, true],
     ]);
   });
 
-  it("returns both instructors in the full roster the extensions authorize against", async () => {
+  // #1991 review: AI Tutor and Question Maker authorize each request with the
+  // single-user lookup (`?userId=`), not the full roster, so that is what is
+  // checked for both instructors, through the route and the service key.
+  it("authorizes both instructors through the lookup the extensions call", async () => {
+    const course = await courseWithTwoInstructors();
+
+    for (const user of [abdallah, fahd]) {
+      const res = await enrollmentsLoader({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments?userId=${user.id}`,
+          { headers: { Authorization: `Bearer ${SERVICE_KEY}` } },
+        ),
+        params: { id: course.id },
+        context: {},
+      } as unknown as Parameters<typeof enrollmentsLoader>[0]);
+      expect(res.status).toBe(200);
+      expect((await res.json()).enrollment).toMatchObject({
+        studentId: user.id,
+        role: "INSTRUCTOR",
+        isActive: true,
+      });
+    }
+  });
+
+  it("includes both instructors in the sync roster for background callers", async () => {
     const course = await courseWithTwoInstructors();
 
     const instructors = (await getCourseEnrollments(course.id))
