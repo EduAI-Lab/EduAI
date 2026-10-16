@@ -70,7 +70,7 @@ export function buildLearningAssistantSystemPrompt({
   }
 
   const closing = citeMaterials
-    ? "Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting."
+    ? "Always be helpful and accurate, and ground your answer in the course materials when you use them, but do not write file names or a Sources line — the app lists them. Use markdown for formatting."
     : "Be helpful, conversational, and accurate. Use markdown for formatting.";
 
   return `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
@@ -101,7 +101,7 @@ When answering questions:
 2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the instructor name when known.
 3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
 4. You may call tools multiple times in sequence if needed to give a complete answer.
-5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
+5. Include URLs for web results. Do not write course material titles or file names; the app lists the materials used.
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 

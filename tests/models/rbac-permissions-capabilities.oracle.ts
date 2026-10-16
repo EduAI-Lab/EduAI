@@ -7,12 +7,12 @@
  *
  * Rules:
  *   §7 Course Materials
- *     - View: any course access; STUDENT only when the course is published
+ *     - View: staff only (ADMIN / UNIT_ADMIN / INSTRUCTOR / TA); STUDENT never (#1962)
  *     - Delete: ADMIN / UNIT_ADMIN / INSTRUCTOR any; TA own-upload only (O)
  *     - Rename: not a separate matrix row — same ownership rule as delete
  *
  *   §8 Course Topics
- *     - View: same published-course rule as materials
+ *     - View: any course access; STUDENT only when the course is published
  *     - Manage (create/edit/delete): ADMIN / UNIT_ADMIN / INSTRUCTOR only
  *       Product overlay: EnrollmentRole=TA may manage when the
  *       `tas.canManageTopics` policy flag is on (PolicyOn=yes). Base matrix
@@ -58,8 +58,10 @@ export function rbacPermissionsCapabilitiesOracle(
 
   switch (row.Capability) {
     case "view-material":
+      // §7 — staff only; students reach a course through course chat (#1962)
+      return { allowed: access !== null && access !== "student" };
     case "view-topics": {
-      // §7 / §8 — no access → deny; student needs published course
+      // §8 — no access → deny; student needs published course
       if (!access) return { allowed: false };
       if (access === "student") return { allowed: published };
       return { allowed: true };

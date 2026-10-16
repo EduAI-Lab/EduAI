@@ -6,7 +6,8 @@ import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
-import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
+import { reviveStoredMessage, toLearnerTranscript } from "~/lib/chat/revive-message.server";
+import { readerSeesMaterialFiles } from "~/lib/chat/learner-sources.server";
 import { withAutoChatModel } from "~/lib/chat-auto-model";
 import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import { getAssistModelId } from "~/lib/assist-model-settings.server";
@@ -133,7 +134,12 @@ export async function loadChatTranscript(
   if (!access) return null;
 
   const { chat, canEdit } = access;
-  const rows = await getChatMessages(chatId);
+  // #1963: a student reading their own course chat never receives file names.
+  const [rows, seesFiles] = await Promise.all([
+    getChatMessages(chatId),
+    readerSeesMaterialFiles(viewer, access),
+  ]);
+  const revived = rows.map(reviveStoredMessage);
 
   return {
     chat: {
@@ -149,7 +155,7 @@ export async function loadChatTranscript(
       updatedAt:
         chat.updatedAt instanceof Date ? chat.updatedAt.toISOString() : String(chat.updatedAt),
     },
-    messages: rows.map(reviveStoredMessage),
+    messages: seesFiles ? revived : toLearnerTranscript(revived),
     canEdit,
   };
 }

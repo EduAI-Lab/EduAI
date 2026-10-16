@@ -30,6 +30,7 @@ import {
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import type { Session } from "~/lib/auth/server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -46,11 +47,7 @@ import { removeOrphanedSuggestions } from "~/lib/topics/orphaned-suggestions.ser
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
-import {
-  materialGateFor,
-  previewExcerpt,
-  readMaterialForViewer,
-} from "~/lib/materials/viewable-material.server";
+import { previewExcerpt, readMaterialForViewer } from "~/lib/materials/viewable-material.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -75,24 +72,23 @@ type MaterialEditAuditDetails = {
 };
 
 /**
- * Staff (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) see every material so they can stage
- * and schedule content; only students are subject to the per-material
- * visibility gate. `access.level === 'student'` is the single student marker.
- */
-function isStaffAccess(access: AccessLevel): boolean {
-  return access.level !== "student";
-}
-
-/**
  * Shared auth resolution for all material routes: session + §7 course access.
  * Returns a Response on failure, or the session user + access on success.
+ *
+ * #1962: students never see a course's files — course chat is their way into a
+ * course — so a student is refused here, before any read or write, on every
+ * path this module serves: list, `?ids=` re-read, preview, upload, rename,
+ * delete and reprocess. `canViewMaterial` is an allow-list of staff levels, so
+ * a level added later is refused until it is named there. No student UI calls
+ * this API any more, so the refusal is audited like the policy denials it
+ * replaced: a student request here is a stale client or a probe.
  */
 async function resolveMaterialsAccess(
   request: Request,
   courseId: string,
 ): Promise<
-  | { response: Response; user?: never; access?: never; isPublished?: never }
-  | { response?: never; user: Session["user"]; access: AccessLevel; isPublished: boolean }
+  | { response: Response; user?: never; access?: never }
+  | { response?: never; user: Session["user"]; access: AccessLevel }
 > {
   const session = await getRequestSession(request);
   if (!session?.user) {
@@ -106,8 +102,23 @@ async function resolveMaterialsAccess(
   if (!access) {
     return { response: json(403, { error: "Forbidden" }) };
   }
+  if (!canViewMaterial(access.level)) {
+    const { fireAndForget, logSecurityEvent } = await import("~/lib/logging.server");
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(session.user),
+        ...getRequestContext(request),
+        actionCode: "MATERIALS_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Course",
+        entityId: courseId,
+        details: { level: access.level },
+      }),
+    );
+    return { response: json(403, { error: "Forbidden" }) };
+  }
 
-  return { user: session.user, access, isPublished: course.isPublished };
+  return { user: session.user, access };
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -120,7 +131,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const resolved = await resolveMaterialsAccess(request, courseId);
       if (resolved.response) return resolved.response;
-      const { user, access, isPublished } = resolved;
+      const { user, access } = resolved;
 
       const requestContext = getRequestContext(request);
 
@@ -146,29 +157,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
           // rewrites an existing row's RAG content rather than adding a new
           // row (#1795 review round 2).
 
-          // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
-          // Students cannot upload materials UNLESS the students.canUploadMaterials
-          // grant is explicitly enabled (off by default).
-          const studentUploadAllowed =
-            access.level === "student" && (await getPolicy("students.canUploadMaterials"));
-          if (access.rank < 1 && !studentUploadAllowed) {
-            return denyByPolicy({
-              request,
-              policyKey: "students.canUploadMaterials",
-              user,
-              action: "material.upload",
-              courseId,
-            });
-          }
-          // §7/§19: a student may upload only in a PUBLISHED course — mirror the
-          // list gate (loader 403s students in unpublished courses) so student
-          // content can't be seeded into a draft course's RAG corpus. Higher ranks
-          // legitimately work in unpublished courses. This is a publish-state gate,
-          // NOT a policy-flag denial: the `students.canUploadMaterials` grant may be
-          // on, so don't mislabel the audit trail with it — return a distinct 403.
-          if (access.level === "student" && !isPublished) {
-            return json(403, { error: "COURSE_NOT_PUBLISHED" });
-          }
+          // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C). Students
+          // were refused in resolveMaterialsAccess (#1962), so every caller here
+          // already has rank ≥ 1.
           // Gate: a TA is allowed by default; deny only when the gate is off.
           if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
             return denyByPolicy({
@@ -345,8 +336,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
               id: true,
               uploadedBy: true,
               title: true,
-              status: true,
-              duplicateOfId: true,
             },
           });
           if (!material) {
@@ -370,20 +359,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           // TA denied.
           const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
 
-          // #949/#1494 review: a late content-duplicate leaves the uploader a FAILED
-          // receipt row that the client reads and then deletes. Students may upload
-          // when `students.canUploadMaterials` is on, but rank 0 cannot delete — so
-          // without this carve-out every student duplicate leaves a dead receipt in
-          // the course's material list, one per retry. Scoped as narrowly as the
-          // receipt itself: the caller's own row, FAILED, and pointing at a winner.
-          // It grants nothing over real material, which is never FAILED with a
-          // `duplicateOfId`.
-          const isOwnDuplicateReceipt =
-            material.uploadedBy === user.id &&
-            material.status === "FAILED" &&
-            material.duplicateOfId !== null;
-
-          if (access.rank < 2 && !isOwnTa && !isOwnDuplicateReceipt) {
+          if (access.rank < 2 && !isOwnTa) {
             return json(403, { error: "Forbidden" });
           }
 
@@ -562,17 +538,12 @@ async function reprocessMaterial(
   }
 
   // §7: ownership, not the upload gate (#1795 review round 2). Reaching here
-  // means only that the caller may *upload* — rank ≥ 1, or a student with
-  // `students.canUploadMaterials` in a published course, or a TA with
-  // `tas.canManageMaterials`. But a retry re-embeds this row's chunk set with
-  // `replace: true`, which is the DELETE/PATCH blast radius rather than the
-  // upload one, so it takes the DELETE gate: instructor and above, plus the
-  // own-material carve-out. A null `uploadedBy` means no owner, so the
-  // carve-out cannot match it — same rule as the TA branches above.
-  //
-  // Students get no carve-out even for their own upload: a failed upload is
-  // still re-uploadable, so the retry is a convenience rather than the only
-  // way back, and widening a staff gate to deliver it is the wrong trade.
+  // means only that the caller may *upload* — instructor and above, or a TA
+  // while `tas.canManageMaterials` is on. But a retry re-embeds this row's
+  // chunk set with `replace: true`, which is the DELETE/PATCH blast radius
+  // rather than the upload one, so it takes the DELETE gate: instructor and
+  // above, plus the TA own-material carve-out. A null `uploadedBy` means no
+  // owner, so the carve-out cannot match it — same rule as the TA branches above.
   const isOwnMaterial = material.uploadedBy !== null && material.uploadedBy === userId;
   if (access.rank < 2 && !(access.level === "ta" && isOwnMaterial)) {
     return json(403, { error: "Forbidden" });
@@ -781,10 +752,9 @@ async function uploadMaterial(
  * it is another large text blob, in which case leave it out on purpose).
  *
  * `_count` is nested inside the select because Prisma rejects `include` and
- * `select` at the same level. Both list paths (the includeDeleted/admin path and
- * the student/staff loader path) share this const so they cannot drift; note
- * that `visibleToStudents`/`availableAt` MUST stay selected — the staff branch
- * destructures them off the row and would emit `undefined` without them.
+ * `select` at the same level. Every list path (the includeDeleted/admin path,
+ * the paged read and the `?ids=` re-read) shares this const so they cannot
+ * drift; `visibleToStudents`/`availableAt` stay selected because staff edit them.
  */
 /**
  * Which of these materials could still be retried without a re-upload (#1749).
@@ -829,30 +799,30 @@ function parseMaterialIdsParam(searchParams: URLSearchParams): string[] | null {
 }
 
 /**
- * The one shaping of a list row for a non-admin caller, shared by the paged
- * read and the `?ids=` re-read.
+ * The one shaping of a list row, shared by every list response: the ADMIN
+ * `includeDeleted` read, the paged read and the `?ids=` re-read.
  *
- * Shared rather than written twice on purpose: `hasExtractedText` is what
+ * Shared rather than written per path on purpose: `hasExtractedText` is what
  * decides whether the UI offers "Try again", and two copies of this mapping is
  * exactly how the list and the route came to disagree about retryability in the
- * first place (#1795 review rounds 1 and 2).
+ * first place (#1795 review rounds 1 and 2). Every caller is staff (#1962), so
+ * each row keeps its scheduling fields.
  */
 async function toMaterialListRows(
   rows: Array<Prisma.CourseMaterialGetPayload<{ select: typeof MATERIAL_LIST_SELECT }>>,
-  staff: boolean,
 ) {
   const retryableIds = await resolveRetryableMaterialIds(rows);
-  return rows.map(({ _count, visibleToStudents, availableAt, ...material }) => {
+  return rows.map(({ _count, ...material }) => {
     const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
       ...material,
       chunkCount: _count?.chunks ?? 0,
     };
-    // See the includeDeleted path above: failed rows only (#1749).
+    // Only meaningful for a failed row; left off entirely elsewhere rather
+    // than emitted as a misleading `false` (#1749).
     if (material.status === "FAILED") {
       row.hasExtractedText = retryableIds.has(material.id);
     }
-    if (!staff) return row;
-    return { ...row, visibleToStudents, availableAt };
+    return row;
   });
 }
 
@@ -907,23 +877,8 @@ async function materialsListResponse(
     ? await prisma.courseMaterial.findMany({ ...pageArgs, cursor: { id: cursor }, skip: 1 })
     : await prisma.courseMaterial.findMany(pageArgs);
   const { page, nextCursor } = splitPage(rows, limit);
-  const retryableIds = await resolveRetryableMaterialIds(page);
 
-  return json(200, {
-    materials: page.map(({ _count, ...material }) => {
-      const row: typeof material & { chunkCount: number; hasExtractedText?: boolean } = {
-        ...material,
-        chunkCount: _count?.chunks ?? 0,
-      };
-      // Only meaningful for a failed row; left off entirely elsewhere rather
-      // than emitted as a misleading `false` (#1749).
-      if (material.status === "FAILED") {
-        row.hasExtractedText = retryableIds.has(material.id);
-      }
-      return row;
-    }),
-    nextCursor,
-  });
+  return json(200, { materials: await toMaterialListRows(page), nextCursor });
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -958,35 +913,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
       const resolved = await resolveMaterialsAccess(request, courseId);
       if (resolved.response) return resolved.response;
-      const { user, access, isPublished } = resolved;
 
-      // §7/§19: students can view materials only in published courses.
-      if (access.level === "student" && !isPublished) {
-        return json(403, { error: "Forbidden" });
-      }
-
-      // Policy gate (students.canViewMaterials, default true): layers on top of the
-      // publish gate — off means students cannot list materials at all.
-      if (access.level === "student" && !(await getPolicy("students.canViewMaterials"))) {
-        return denyByPolicy({
-          request,
-          policyKey: "students.canViewMaterials",
-          user,
-          action: "material.list",
-          courseId,
-        });
-      }
-
-      // #1821: the student gate and the single-material read are shared with the
-      // help assistant's material context, so both ask the identical question.
+      // Students were refused in resolveMaterialsAccess (#1962), so every caller
+      // from here on is staff and reads every live material, unfiltered. The
+      // single-material read is shared with the help assistant's material context
+      // (#1821), so both ask the identical question.
       if (materialId) {
-        const read = await readMaterialForViewer({ courseId, materialId, access });
-        if (read.status === "hidden") {
-          // Hidden-but-real material reports 403, matching #1180's spec, instead
-          // of the indistinguishable 404 a folded WHERE clause would produce.
-          return json(403, { error: "Forbidden" });
-        }
-        if (read.status === "missing") {
+        const read = await readMaterialForViewer({ courseId, materialId, access: resolved.access });
+        // Only a student can be gated off a material that exists, and none get here.
+        if (read.status !== "ok") {
           return json(404, { error: "Material not found" });
         }
         const { material } = read;
@@ -999,37 +934,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         return json(200, { material: meta, ...previewExcerpt(rawText) });
       }
 
-      // After the single-material branch, which applies the same gate itself.
-      const studentGate = await materialGateFor(courseId, access);
-
-      // Staff receive the scheduling fields so the management UI can render and edit
-      // them; students never do (they only ever see already-visible materials).
-      const staff = isStaffAccess(access);
-
       // A targeted re-read of rows the client already holds (#1795 review round
       // 3), not a page: no cursor in, no cursor out, so merging the answer
-      // cannot disturb the pages the user loaded with "load more". Every gate
-      // above still applies — `studentGate` in particular, so asking by id is
-      // not a way past #839 scheduling.
+      // cannot disturb the pages the user loaded with "load more".
       const requestedIds = parseMaterialIdsParam(new URL(request.url).searchParams);
       if (requestedIds !== null) {
         if (requestedIds.length === 0) {
           return json(200, { materials: [], nextCursor: null });
         }
         const rows = await prisma.courseMaterial.findMany({
-          where: { courseId, deletedAt: null, ...studentGate, id: { in: requestedIds } },
+          where: { courseId, deletedAt: null, id: { in: requestedIds } },
           select: MATERIAL_LIST_SELECT,
           orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
         });
-        return json(200, {
-          materials: await toMaterialListRows(rows, staff),
-          nextCursor: null,
-        });
+        return json(200, { materials: await toMaterialListRows(rows), nextCursor: null });
       }
 
       const { cursor, limit } = cursorParams;
       const pageArgs = {
-        where: { courseId, deletedAt: null, ...studentGate },
+        where: { courseId, deletedAt: null },
         select: MATERIAL_LIST_SELECT,
         orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
         take: limit + 1,
@@ -1041,10 +964,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : await prisma.courseMaterial.findMany(pageArgs);
       const { page, nextCursor } = splitPage(rows, limit);
 
-      return json(200, {
-        materials: await toMaterialListRows(page, staff),
-        nextCursor,
-      });
+      return json(200, { materials: await toMaterialListRows(page), nextCursor });
     },
     { request },
   );

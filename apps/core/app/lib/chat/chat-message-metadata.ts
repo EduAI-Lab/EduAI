@@ -17,6 +17,7 @@ const chatMessageMetadataSchema = z.object({
   courseScopeRedirect: z.boolean().optional().catch(undefined),
   adhdAssist: z.boolean().optional().catch(undefined),
   ragSources: z.array(z.string()).optional().catch(undefined),
+  ragTopics: z.array(z.string()).optional().catch(undefined),
 });
 
 export type ChatMessageMetadata = z.infer<typeof chatMessageMetadataSchema>;
@@ -103,6 +104,15 @@ export function ragSourcesFromMessage(message: MessageWithMetadata): string[] | 
   return readMetadata(message).ragSources;
 }
 
+/**
+ * Read the topics a student's turn showed under the reply (#1963): the accepted
+ * topics its retrieved materials belong to, in place of file titles. Absent on
+ * staff turns and on turns from before #1963.
+ */
+export function ragTopicsFromMessage(message: MessageWithMetadata): string[] | undefined {
+  return readMetadata(message).ragTopics;
+}
+
 /** A message whose metadata slot now holds this module's fields alongside whatever it already carried. */
 type WithChatMessageMetadata<T> = T & { metadata: JsonObject & ChatMessageMetadata };
 
@@ -159,6 +169,20 @@ export function withRagSourcesMetadata<T extends object>(
     metadata: {
       ...existingMetadata(message),
       ragSources,
+    },
+  };
+}
+
+/** Attach the topics a student's turn shows in place of file titles (#1963). */
+export function withRagTopicsMetadata<T extends object>(
+  message: T,
+  ragTopics: string[],
+): WithChatMessageMetadata<T> {
+  return {
+    ...message,
+    metadata: {
+      ...existingMetadata(message),
+      ragTopics,
     },
   };
 }

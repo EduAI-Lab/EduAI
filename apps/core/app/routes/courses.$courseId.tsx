@@ -34,6 +34,7 @@ import type {
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { CourseAccess, RbacUser } from "~/lib/rbac";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getCourseInstructors } from "~/lib/courses/instructors.server";
 import { setCoursePublished } from "~/lib/courses/set-course-published";
@@ -216,16 +217,12 @@ export default function CourseDetailPage() {
   const { course, user, access, courseInstructors, assistantMaterialScope } =
     useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
-  // The material a student is previewing (or asked the assistant about); null
-  // means the course as a whole. Published to the shell-mounted assistant.
-  const [assistantMaterial, setAssistantMaterial] = useState<{ id: string; title: string } | null>(
-    null,
-  );
-  useEffect(() => setAssistantMaterial(null), [course.id]);
+  // The course as a whole, published to the shell-mounted assistant. No view here
+  // narrows it to one material: students never open a file (#1962).
   usePublishAssistantContext({
     courseId: course.id,
-    materialId: assistantMaterial?.id ?? null,
-    label: assistantMaterial ? assistantMaterial.title : `${course.code} — ${course.name}`,
+    materialId: null,
+    label: `${course.code} — ${course.name}`,
     materialScope: assistantMaterialScope,
   });
   const {
@@ -250,6 +247,8 @@ export default function CourseDetailPage() {
     course.id,
     access === "admin" || access === "unit" || access === "instructor",
   );
+  // #1962: a student's page never shows the course's files, and the API
+  // refuses anyone `canViewMaterial` does not name, so it never asks for them.
   const {
     materials,
     uploadMaterial,
@@ -259,7 +258,7 @@ export default function CourseDetailPage() {
     loadingMore: materialsLoadingMore,
     loadMore: loadMoreMaterials,
     refetch: refetchMaterials,
-  } = useCourseMaterials(course.id);
+  } = useCourseMaterials(course.id, canViewMaterial(access));
   const { tas, addTA, removeTA } = useCourseTAs(course.id);
   const [isUploading, setIsUploading] = useState(false);
   const [materialsError, setMaterialsError] = useState<string | null>(null);
@@ -624,22 +623,7 @@ export default function CourseDetailPage() {
               }}
             />
           ) : (
-            <CourseDetailStudentView
-              course={course}
-              materials={uploadMaterials}
-              hasMoreMaterials={hasMoreMaterials}
-              materialsLoadingMore={materialsLoadingMore}
-              onLoadMoreMaterials={loadMoreMaterials}
-              topics={topics}
-              tas={tas}
-              isUploading={isUploading}
-              materialsError={materialsError}
-              materialsSuccess={materialsSuccess}
-              uploads={uploads}
-              onFilesSelect={handleFilesSelect}
-              assistantMaterialScope={assistantMaterialScope}
-              onAssistantMaterialChange={setAssistantMaterial}
-            />
+            <CourseDetailStudentView course={course} topics={topics} tas={tas} />
           )}
         </div>
       </div>

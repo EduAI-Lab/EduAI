@@ -3,6 +3,11 @@
  * after an instructor uploads a material for this course — nothing is
  * pre-seeded for THIS student.
  *
+ * #1962: the course page shows a student no files. The spec checks there is no
+ * Materials tab and that the API refuses the list, then reaches chat through the
+ * page's "Chat about this course" action rather than a hand-typed /chat URL.
+ * #1963: the reply shows the material's topic, not its file name.
+ *
  * Setup mirrors `chat-code-block.spec.ts` (createAdmin / createInstructor /
  * registerUser / enroll / publish / injectSession).
  *
@@ -22,6 +27,7 @@ import { createAdmin, createInstructor, registerUser } from "../helpers/auth";
 
 const PLANTED_PHRASE = "QUOKKA_MIGRATION_WINDOW_17";
 const MATERIAL_TITLE = "Quokka Migration Policy";
+const MATERIAL_TOPIC = "Quokka relocation";
 const MATERIAL_FILENAME = "Quokka Migration Policy.txt";
 const MATERIAL_BODY = [
   "Quokka relocation policy for COSC.",
@@ -80,10 +86,10 @@ function coursePayload(instrId: string, code: string) {
  * annotation is mocked like the reply; chat-always-on-rag.route.test.ts checks
  * that the server streams it.
  */
-function buildMockStreamBody(text: string, ragSources: string[]): string {
+function buildMockStreamBody(text: string, ragTopics: string[]): string {
   return [
     `0:${JSON.stringify(text)}`,
-    `8:${JSON.stringify([{ ragSources }])}`,
+    `8:${JSON.stringify([{ ragTopics }])}`,
     `d:${JSON.stringify({ finishReason: "stop" })}`,
     "",
   ].join("\n");
@@ -148,7 +154,7 @@ async function waitUntilMaterialReady(
 }
 
 test.describe("Student from scratch → grounded course chat (#1786)", () => {
-  test("new student enrolls, sees a READY material, and can send a course-chat question", async ({
+  test("new student enrolls, opens course chat from the course page, and can send a question", async ({
     page,
     playwright,
   }) => {
@@ -214,17 +220,17 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
         window.localStorage.setItem("eduai:tour:dashboard:v1", "1");
       }, studentId);
 
+      // #1962: no files on a student's course page; course chat is its one action.
       await page.goto(`${CORE_URL}/courses/${courseId}`);
       await expect(page).not.toHaveURL(/\/auth\/login/);
-      await expect(page.getByRole("tab", { name: "Materials" })).toBeVisible({ timeout: 15_000 });
-      await page.getByRole("tab", { name: "Materials" }).click();
+      const openChat = page.getByRole("link", { name: "Chat about this course" });
+      await expect(openChat).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("tab", { name: "Materials" })).toHaveCount(0);
+      await expect(page.getByText(MATERIAL_TITLE, { exact: true })).toHaveCount(0);
 
-      // Student empty state (documented, not redesigned): title "No materials yet",
-      // description "Course materials will appear here once your instructor uploads them."
-      await expect(page.getByText("No materials yet")).toHaveCount(0);
-      await expect(page.getByText(MATERIAL_TITLE, { exact: true })).toBeVisible({
-        timeout: 15_000,
-      });
+      // Refused by the API too, not only hidden in the UI.
+      const studentList = await studentCtx.get(`${CORE_URL}/api/courses/${courseId}/materials`);
+      expect(studentList.status(), await studentList.text()).toBe(403);
 
       const mockedReply = [
         `**Source**: ${MATERIAL_TITLE}`,
@@ -247,25 +253,26 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
             "Content-Type": "text/plain; charset=utf-8",
             "X-Web-Tools-Enabled": "0",
           },
-          body: buildMockStreamBody(mockedReply, [MATERIAL_TITLE]),
+          body: buildMockStreamBody(mockedReply, [MATERIAL_TOPIC]),
         });
       });
 
-      await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent(courseCode)}`);
+      await openChat.click();
+      await expect(page).toHaveURL(/\/chat/);
       const input = page.locator("#chat-message-input");
       await expect(input).toBeEnabled({ timeout: 15_000 });
       await input.fill(STUDENT_QUESTION);
       await page.getByRole("button", { name: "Send message" }).click();
 
-      // #1936: the UI lists the ragSources annotation under the reply and hides the
-      // model's own "**Source**:" line. The annotation is mocked here (no chat LLM
-      // on this stack); the route test covers the server sending it. Exact match
-      // keeps the privacy banner's "official UBC sources" out of it.
-      await expect(page.getByText(`Sources: ${MATERIAL_TITLE}`, { exact: true })).toBeVisible({
+      // #1963: a student's turn names the topic its material belongs to, never the
+      // file, and the UI hides the model's own "**Source**:" line (#1936). The
+      // annotation is mocked here (no chat LLM on this stack); the route test pins
+      // the server sending `ragTopics` and no `ragSources` to a student.
+      await expect(page.getByText(`Topics: ${MATERIAL_TOPIC}`, { exact: true })).toBeVisible({
         timeout: 20_000,
       });
       await expect(page.getByText(PLANTED_PHRASE)).toBeVisible();
-      await expect(page.getByText(`Source: ${MATERIAL_TITLE}`, { exact: true })).toHaveCount(0);
+      await expect(page.getByText(MATERIAL_TITLE)).toHaveCount(0);
 
       // The mock proves nothing about scoping unless the request really carried this course.
       expect(chatBodies.length).toBeGreaterThan(0);

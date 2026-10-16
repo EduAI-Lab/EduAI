@@ -2,8 +2,8 @@
 /**
  * #1821: the course-material context source.
  * - an invalid hint degrades the WHOLE context, an empty hint means "nothing";
- * - access is re-derived from the database for this reader (publish gate,
- *   students.canViewMaterials, per-material visibility) — the hint widens nothing;
+ * - access is re-derived from the database for this reader — the hint widens
+ *   nothing, and a student gets no material at all (#1962);
  * - a course opted out of AI contributes nothing;
  * - secret-bearing fields of a real material row never reach the built block;
  * - nothing in this path throws.
@@ -19,12 +19,8 @@ vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
 const prismaMock = vi.hoisted(() => ({
   course: { findUnique: vi.fn() },
   courseMaterial: { findFirst: vi.fn() },
-  canvasMaterialExclusion: { findMany: vi.fn() },
 }));
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
-
-const policyMock = vi.hoisted(() => ({ getPolicy: vi.fn() }));
-vi.mock("~/lib/policy.server", () => ({ getPolicy: policyMock.getPolicy }));
 
 const embeddingMock = vi.hoisted(() => ({ findRelevantContent: vi.fn() }));
 vi.mock("~/lib/ai/embedding", () => ({ findRelevantContent: embeddingMock.findRelevantContent }));
@@ -40,6 +36,7 @@ import { materialSourceAvailable } from "~/lib/assistant/assistant-gate.server";
 import { defaultAssistantSettings } from "~/lib/assistant/assistant-settings";
 
 const student = { id: "u-student", role: "STUDENT" };
+const instructor = { id: "u-teacher", role: "INSTRUCTOR" };
 const COURSE = {
   id: "c1",
   department: "CS",
@@ -77,13 +74,12 @@ function setCourse(access: ReturnType<typeof accessLevelFor> | null, overrides =
   });
 }
 
-const settings = defaultAssistantSettings();
+// Penny on, so a `false` from the gate is this reader's rule, not Penny being off.
+const settings = { ...defaultAssistantSettings(), enableHelpAssistant: true };
 const availability = { hasEnabledProvider: true, catalogue: [], settings };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  policyMock.getPolicy.mockResolvedValue(true);
-  prismaMock.canvasMaterialExclusion.findMany.mockResolvedValue([]);
 });
 
 describe("parsePageContextHint", () => {
@@ -125,67 +121,61 @@ describe("resolvePageContext — re-derived for this reader", () => {
     expect(materialSourceAvailable(availability, resolution)).toBe(false);
   });
 
-  it("a student in an unpublished course gets no material", async () => {
-    setCourse(accessLevelFor("student"), { isPublished: false });
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: null });
-    expect(materialSourceAvailable(availability, resolution)).toBe(false);
+  it("a student gets no material, not even of a published course or a named file (#1962)", async () => {
+    setCourse(accessLevelFor("student"));
+    prismaMock.courseMaterial.findFirst.mockResolvedValue(MATERIAL_ROW);
+
+    for (const materialId of [null, "m1"]) {
+      const resolution = await resolvePageContext(student, { courseId: "c1", materialId });
+      expect(resolution).toMatchObject({ kind: "resolved", canView: false, material: null });
+      expect(materialSourceAvailable(availability, resolution)).toBe(false);
+    }
+    // The hint never reaches the material table for a student.
+    expect(prismaMock.courseMaterial.findFirst).not.toHaveBeenCalled();
   });
 
-  it("a student gets no material when students.canViewMaterials is off", async () => {
-    setCourse(accessLevelFor("student"));
-    policyMock.getPolicy.mockResolvedValue(false);
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: null });
-    expect(materialSourceAvailable(availability, resolution)).toBe(false);
+  it("course staff keep material, a TA included", async () => {
+    for (const level of ["ta", "instructor", "unit", "admin"] as const) {
+      setCourse(accessLevelFor(level));
+      const resolution = await resolvePageContext(instructor, { courseId: "c1", materialId: null });
+      expect(resolution).toMatchObject({ kind: "resolved", canView: true });
+      expect(materialSourceAvailable(availability, resolution)).toBe(true);
+    }
   });
 
   it("a course opted out of AI contributes no material", async () => {
-    setCourse(accessLevelFor("student"));
+    setCourse(accessLevelFor("instructor"));
     prismaMock.course.findUnique.mockResolvedValue({
       code: "CS101",
       name: "Intro to CS",
       aiAssistantEnabled: false,
     });
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: null });
-    expect(materialSourceAvailable(availability, resolution)).toBe(false);
-  });
-
-  it("a hidden material reports nothing to a student — the hint does not widen access", async () => {
-    setCourse(accessLevelFor("student"));
-    prismaMock.courseMaterial.findFirst
-      .mockResolvedValueOnce(null) // gated read
-      .mockResolvedValueOnce({ id: "m1" }); // existence check
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: "m1" });
-    expect(resolution).toMatchObject({ kind: "resolved", canView: false, material: null });
+    const resolution = await resolvePageContext(instructor, { courseId: "c1", materialId: null });
     expect(materialSourceAvailable(availability, resolution)).toBe(false);
   });
 
   it("a material that does not exist fails closed as missing", async () => {
-    setCourse(accessLevelFor("student"));
+    setCourse(accessLevelFor("instructor"));
     prismaMock.courseMaterial.findFirst.mockResolvedValue(null);
     await expect(
-      resolvePageContext(student, { courseId: "c1", materialId: "ghost" }),
+      resolvePageContext(instructor, { courseId: "c1", materialId: "ghost" }),
     ).resolves.toEqual({ kind: "missing" });
   });
 
-  it("applies the student visibility gate when reading the material", async () => {
-    setCourse(accessLevelFor("student"));
+  it("reads the named material of this course only", async () => {
+    setCourse(accessLevelFor("instructor"));
     prismaMock.courseMaterial.findFirst.mockResolvedValue(MATERIAL_ROW);
-    await resolvePageContext(student, { courseId: "c1", materialId: "m1" });
+    await resolvePageContext(instructor, { courseId: "c1", materialId: "m1" });
     const where = prismaMock.courseMaterial.findFirst.mock.calls[0][0].where;
-    expect(where).toMatchObject({
-      id: "m1",
-      courseId: "c1",
-      visibleToStudents: true,
-      unpublishedAt: null,
-    });
+    expect(where).toEqual({ id: "m1", courseId: "c1", deletedAt: null });
   });
 });
 
 describe("the built context", () => {
   it("contains the title and preview text and none of the row's secret-bearing fields", async () => {
-    setCourse(accessLevelFor("student"));
+    setCourse(accessLevelFor("instructor"));
     prismaMock.courseMaterial.findFirst.mockResolvedValue(MATERIAL_ROW);
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: "m1" });
+    const resolution = await resolvePageContext(instructor, { courseId: "c1", materialId: "m1" });
     if (resolution.kind !== "resolved") throw new Error("expected a resolved context");
     const context = await buildMaterialContext({ resolution, query: "what is recursion" });
 
@@ -210,24 +200,24 @@ describe("the built context", () => {
     expect(block).toContain("[truncated]");
   });
 
-  it("a course-level question uses the student-filtered course retrieval", async () => {
-    setCourse(accessLevelFor("student"));
+  it("a course-level question uses the course's unfiltered staff retrieval", async () => {
+    setCourse(accessLevelFor("instructor"));
     embeddingMock.findRelevantContent.mockResolvedValue([
       { content: "Lists are ordered.", similarity: 0.8, materialTitle: "Week 2" },
     ]);
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: null });
+    const resolution = await resolvePageContext(instructor, { courseId: "c1", materialId: null });
     if (resolution.kind !== "resolved") throw new Error("expected a resolved context");
     const context = await buildMaterialContext({ resolution, query: "lists" });
     expect(context.status).toBe("ok");
     // restrictToStudentVisible is the fifth argument.
-    expect(embeddingMock.findRelevantContent.mock.calls[0][4]).toBe(true);
+    expect(embeddingMock.findRelevantContent.mock.calls[0][4]).toBe(false);
   });
 
   it("never throws: an unreadable material degrades to 'failed'", async () => {
-    setCourse(accessLevelFor("student"));
+    setCourse(accessLevelFor("instructor"));
     embeddingMock.findRelevantContent.mockRejectedValue(new Error("vector dimension mismatch"));
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: null });
+    const resolution = await resolvePageContext(instructor, { courseId: "c1", materialId: null });
     if (resolution.kind !== "resolved") throw new Error("expected a resolved context");
     await expect(buildMaterialContext({ resolution, query: "q" })).resolves.toMatchObject({
       status: "failed",
