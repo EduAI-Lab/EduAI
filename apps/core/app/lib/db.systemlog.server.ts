@@ -17,7 +17,16 @@ import {
 export type SystemLogLevel = "ERROR" | "WARN" | "INFO";
 
 // Keep this union in lockstep with the SystemLogSource enum in prisma/schema.prisma.
-export type SystemLogSource = "ROUTE" | "AUTH" | "AI" | "CANVAS" | "MAIL" | "DB" | "SSR" | "API";
+export type SystemLogSource =
+  | "ROUTE"
+  | "AUTH"
+  | "AI"
+  | "CANVAS"
+  | "MAIL"
+  | "DB"
+  | "SSR"
+  | "API"
+  | "HOST";
 
 export type CreateSystemLogInput = {
   level: SystemLogLevel;
