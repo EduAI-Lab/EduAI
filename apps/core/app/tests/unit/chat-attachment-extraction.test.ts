@@ -1,10 +1,22 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import JSZip from "jszip";
+import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import {
   ChatAttachmentError,
+  IMAGE_TRANSCRIPT_PREFIX,
   extractChatAttachment,
 } from "~/lib/chat/attachment-extraction.server";
+
+const vision = vi.hoisted(() => ({ extractImageText: vi.fn() }));
+vi.mock("~/lib/ai/image-text-extraction.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/ai/image-text-extraction.server")>()),
+  extractImageText: vision.extractImageText,
+}));
+
+const PNG_HEADER = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const pngFile = (name = "shot.png") =>
+  new File([new Uint8Array([...PNG_HEADER, 0, 0, 0, 0])], name, { type: "image/png" });
 
 const LIMITS = { maxBytes: 1024 * 1024, maxChars: 50 };
 
@@ -89,7 +101,7 @@ describe("extractChatAttachment", () => {
 
   it("rejects an unsupported extension", async () => {
     await expectCode(
-      extractChatAttachment(new File(["x"], "photo.png", { type: "image/png" }), LIMITS),
+      extractChatAttachment(new File(["x"], "animation.gif", { type: "image/gif" }), LIMITS),
       "ATTACHMENT_TYPE_UNSUPPORTED",
     );
   });
@@ -166,5 +178,67 @@ describe("extractChatAttachment", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("extractChatAttachment images (#1742)", () => {
+  const ROOMY = { maxBytes: 1024 * 1024, maxChars: 20_000 };
+
+  it("returns the vision model's transcript, labelled as an image, as plain text", async () => {
+    vision.extractImageText.mockResolvedValueOnce({
+      content: "```\nError in lm(y ~ x): object 'y' not found\n```",
+      model: "qwen3.8-27b-instruct",
+    });
+    const result = await extractChatAttachment(pngFile(), ROOMY);
+    expect(result).toMatchObject({ name: "shot.png", contentType: "text/plain", truncated: false });
+    expect(result.text.startsWith(`${IMAGE_TRANSCRIPT_PREFIX}\n\n`)).toBe(true);
+    expect(result.text).toContain("object 'y' not found");
+  });
+
+  it("asks for the chat transcription, not the material one", async () => {
+    vision.extractImageText.mockResolvedValueOnce({ content: "text", model: "m" });
+    await extractChatAttachment(pngFile(), ROOMY);
+    const [bytes, mimeType, purpose] = vision.extractImageText.mock.lastCall ?? [];
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(mimeType).toBe("image/png");
+    expect(purpose).toBe("chat");
+  });
+
+  it("rejects a file whose bytes are not the image its name claims, without calling the model", async () => {
+    vision.extractImageText.mockClear();
+    await expectCode(
+      extractChatAttachment(new File(["not a png"], "fake.png"), ROOMY),
+      "ATTACHMENT_TYPE_UNSUPPORTED",
+    );
+    expect(vision.extractImageText).not.toHaveBeenCalled();
+  });
+
+  it("maps a busy vision host to ATTACHMENT_BUSY so the chip offers a retry", async () => {
+    vision.extractImageText.mockRejectedValueOnce(new ExtractionBusyError());
+    await expectCode(extractChatAttachment(pngFile(), ROOMY), "ATTACHMENT_BUSY");
+  });
+
+  it("maps an image with nothing to read to ATTACHMENT_IMAGE_UNREADABLE", async () => {
+    vision.extractImageText.mockRejectedValueOnce(
+      new Error("No readable text or description could be extracted from this image"),
+    );
+    await expectCode(extractChatAttachment(pngFile(), ROOMY), "ATTACHMENT_IMAGE_UNREADABLE");
+  });
+
+  it("maps any other vision failure to ATTACHMENT_EXTRACT_FAILED", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vision.extractImageText.mockRejectedValueOnce(new Error("Image text extraction failed: 400"));
+    await expectCode(extractChatAttachment(pngFile(), ROOMY), "ATTACHMENT_EXTRACT_FAILED");
+    spy.mockRestore();
+  });
+
+  it("truncates a long transcript like any other attachment", async () => {
+    vision.extractImageText.mockResolvedValueOnce({ content: "y".repeat(5000), model: "m" });
+    const result = await extractChatAttachment(pngFile(), {
+      maxBytes: 1024 * 1024,
+      maxChars: 1000,
+    });
+    expect(result.truncated).toBe(true);
+    expect(result.text.length).toBeLessThanOrEqual(1000);
   });
 });

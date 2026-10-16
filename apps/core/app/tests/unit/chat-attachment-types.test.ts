@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CHAT_ATTACHMENT_ACCEPT,
   CHAT_ATTACHMENT_TEXT_EXTENSIONS,
+  chatImageExtensionFor,
   classifyAttachmentName,
 } from "~/lib/chat/attachment-types";
 
@@ -23,11 +24,19 @@ describe("classifyAttachmentName", () => {
     },
   );
 
+  // #1742: images are transcribed by the vision model.
   it.each([
-    "photo.png",
-    "scan.jpg",
-    "scan.JPEG",
-    "diagram.webp",
+    ["photo.png", "image/png"],
+    ["scan.jpg", "image/jpeg"],
+    ["scan.JPEG", "image/jpeg"],
+    ["diagram.webp", "image/webp"],
+  ])("routes %s to the vision model as %s", (name, mimeType) => {
+    expect(classifyAttachmentName(name)).toEqual({ kind: "image", mimeType });
+  });
+
+  it.each([
+    "animation.gif",
+    "phone.heic",
     "book.xlsx",
     "archive.zip",
     "noextension",
@@ -51,10 +60,21 @@ describe("CHAT_ATTACHMENT_ACCEPT", () => {
     }
   });
 
-  // #1903 added image course materials to the shared list; chat stays text-only.
-  it("offers no image extension even though course materials accept images", () => {
+  it("offers the image extensions the vision model reads (#1742)", () => {
     for (const ext of [".png", ".jpg", ".jpeg", ".webp"]) {
-      expect(CHAT_ATTACHMENT_ACCEPT.split(",")).not.toContain(ext);
+      expect(CHAT_ATTACHMENT_ACCEPT.split(",")).toContain(ext);
     }
+  });
+});
+
+describe("chatImageExtensionFor", () => {
+  it.each([
+    ["image/png", ".png"],
+    ["image/jpeg", ".jpg"],
+    ["image/webp", ".webp"],
+    ["image/gif", null],
+    ["application/pdf", null],
+  ])("maps %s to %s", (mimeType, extension) => {
+    expect(chatImageExtensionFor(mimeType)).toBe(extension);
   });
 });
