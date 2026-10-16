@@ -15,11 +15,17 @@ vi.mock("~/lib/chat-history/server", () => ({
 
 vi.mock("~/lib/chat/revive-message.server", () => ({
   reviveStoredMessage: vi.fn(<T>(row: T) => row),
+  toLearnerTranscript: vi.fn(<T>(messages: T) => ({ learnerView: messages })),
+}));
+
+vi.mock("~/lib/chat/learner-sources.server", () => ({
+  readerSeesMaterialFiles: vi.fn().mockResolvedValue(true),
 }));
 
 import { loader } from "~/routes/api/chats.$chatId.messages";
 import { auth } from "~/lib/auth/server";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
+import { readerSeesMaterialFiles } from "~/lib/chat/learner-sources.server";
 
 function makeArgs(chatId?: string) {
   return {
@@ -99,5 +105,25 @@ describe("GET /api/chats/:chatId/messages", () => {
     const res = await loader(makeArgs());
     expect(res.status).toBe(500);
     consoleSpy.mockRestore();
+  });
+
+  it("serves a student reader the learner view of the transcript (#1963)", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue({
+      chat: {
+        id: "chat-1",
+        courseId: "course-1",
+        userId: "u1",
+        course: null,
+        user: { name: "S" },
+      },
+      isOwner: true,
+      canEdit: true,
+    } as never);
+    vi.mocked(getChatMessages).mockResolvedValue([{ messageId: "m1" }] as never);
+    vi.mocked(readerSeesMaterialFiles).mockResolvedValueOnce(false);
+
+    const body = await (await loader(makeArgs())).json();
+
+    expect(body.messages).toEqual({ learnerView: [{ messageId: "m1" }] });
   });
 });

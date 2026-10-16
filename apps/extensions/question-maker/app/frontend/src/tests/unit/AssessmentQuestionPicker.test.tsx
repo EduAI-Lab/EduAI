@@ -168,6 +168,25 @@ describe("AssessmentQuestionPicker", () => {
     expect(screen.getByText("No questions to add")).toBeInTheDocument();
   });
 
+  it("does not blame the course when a topic-limited assessment has no questions", () => {
+    renderPicker({ questionBank: [], topicLimited: true });
+    expect(screen.getByText("No questions in this assessment's topics yet.")).toBeInTheDocument();
+    expect(screen.queryByText(/This course has no questions yet/)).not.toBeInTheDocument();
+  });
+
+  it("offers every topic in the secondary filter when allTopics is given", () => {
+    renderPicker({
+      topics: [{ id: "t1", name: "Topic One" }] as any,
+      allTopics: [
+        { id: "t1", name: "Topic One" },
+        { id: "t2", name: "Topic Two" },
+      ] as any,
+    });
+    const [, secondaryPlaceholder] = screen.getAllByText("All topics");
+    fireEvent.click(secondaryPlaceholder.closest("button")!);
+    expect(screen.getByRole("option", { name: "Topic Two" })).toBeInTheDocument();
+  });
+
   it("shows a no-more-questions message when everything is excluded", () => {
     renderPicker({ excludeVariantIds: [1, 2] });
     expect(screen.getByText("No more questions")).toBeInTheDocument();

@@ -70,6 +70,8 @@ export function ChatConversationLayout({
   adhdAssistByMessageId = {},
   streamingAdhdAssist = false,
   ragSourcesByMessageId = {},
+  ragTopicsByMessageId = {},
+  learnerView = false,
   chatError = null,
   onRetryChat,
 }: ChatConversationLayoutProps) {
@@ -202,6 +204,8 @@ export function ChatConversationLayout({
                         webToolsEnabled={webToolsEnabled}
                         assistiveDisplay={messageAdhdAssist}
                         materialSources={ragSourcesByMessageId[message.id]}
+                        materialTopics={ragTopicsByMessageId[message.id]}
+                        learnerView={learnerView}
                         showContinue={cappedMessageIds?.has(message.id) ?? false}
                         onContinue={onContinue ? () => onContinue(message.id) : undefined}
                         continueDisabled={isLoading}

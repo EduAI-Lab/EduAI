@@ -5,10 +5,12 @@ import {
   adhdAssistFromMessage,
   courseScopeRedirectFromMessage,
   ragSourcesFromMessage,
+  ragTopicsFromMessage,
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
 import { decodeTextDataUrl } from "~/lib/chat/chat-attachments";
+import { stripModelSourceCitations } from "~/lib/chat/material-citations";
 import { asPresentText, asText, jsonObjectSchema, parseJsonText } from "~/lib/json-value";
 import type { JsonObject, JsonValue } from "~/lib/json-value";
 
@@ -20,6 +22,7 @@ export type StoredChatMessageMetadata = {
   courseScopeRedirect?: boolean;
   adhdAssist?: boolean;
   ragSources?: string[];
+  ragTopics?: string[];
 };
 
 /** The only attachment shape a restored message carries back to the client (#1902). */
@@ -140,6 +143,7 @@ export function reviveStoredMessage(record: {
   // dropped like the other flags below (#1671).
   const adhdAssist = role === "assistant" ? adhdAssistFromMessage(parsed) : undefined;
   const ragSources = role === "assistant" ? ragSourcesFromMessage(parsed) : undefined;
+  const ragTopics = role === "assistant" ? ragTopicsFromMessage(parsed) : undefined;
   // `hitLongOutputCap` is owned by this module rather than chat-message-metadata:
   // it is only ever read back out of a stored row, never written to a live turn.
   const hitLongOutputCap =
@@ -155,6 +159,7 @@ export function reviveStoredMessage(record: {
   if (courseScopeRedirect) metadata.courseScopeRedirect = true;
   if (adhdAssist !== undefined) metadata.adhdAssist = adhdAssist;
   if (ragSources !== undefined) metadata.ragSources = ragSources;
+  if (ragTopics !== undefined) metadata.ragTopics = ragTopics;
 
   const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
@@ -190,4 +195,53 @@ export function reviveStoredMessage(record: {
   }
 
   return revived;
+}
+
+/** The fields of a chat turn that carry its text, whichever envelope holds it. */
+type CitableMessage = { role?: string; content?: unknown; parts?: unknown };
+
+const textPartSchema = z.object({ type: z.literal("text"), text: z.string() }).passthrough();
+
+/**
+ * An assistant turn without the file citations its text carries (#1963). Replies
+ * written before #1963 (and before #1936) cite course files by name, so this one
+ * scrub serves both places such a reply reaches a student: the history their model
+ * is given back, and the transcript sent to their browser.
+ */
+export function withoutSourceCitations<M extends CitableMessage>(message: M): M {
+  if (message.role !== "assistant") return message;
+  let next = message;
+  const content = z.string().safeParse(message.content);
+  if (content.success) {
+    next = { ...next, content: stripModelSourceCitations(content.data) };
+  }
+  const parts = z.array(z.unknown()).safeParse(message.parts);
+  if (parts.success) {
+    next = {
+      ...next,
+      parts: parts.data.map((part) => {
+        const text = textPartSchema.safeParse(part);
+        return text.success
+          ? { ...text.data, text: stripModelSourceCitations(text.data.text) }
+          : part;
+      }),
+    };
+  }
+  return next;
+}
+
+/**
+ * A transcript as a student may read it (#1963): course file names never leave
+ * the server. The model's own citations are cut from every reply's text, since a
+ * pre-#1936 turn has no file list and names the file only there. A turn's topics
+ * stay; a pre-#1963 turn that recorded file names but no topics keeps an empty
+ * topic list, so the client still treats it as a course turn.
+ */
+export function toLearnerTranscript(messages: StoredChatMessage[]): StoredChatMessage[] {
+  return messages.map((message) => {
+    const scrubbed = withoutSourceCitations(message);
+    if (scrubbed.metadata?.ragSources === undefined) return scrubbed;
+    const { ragSources: _ragSources, ...rest } = scrubbed.metadata;
+    return { ...scrubbed, metadata: { ...rest, ragTopics: rest.ragTopics ?? [] } };
+  });
 }

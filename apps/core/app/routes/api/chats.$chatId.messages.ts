@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
-import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
+import { reviveStoredMessage, toLearnerTranscript } from "~/lib/chat/revive-message.server";
+import { readerSeesMaterialFiles } from "~/lib/chat/learner-sources.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withErrorResponse } from "~/lib/errors.server";
 
@@ -42,8 +43,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
 
       const { chat, canEdit } = access;
-      const rows = await getChatMessages(chatId);
-      const messages = rows.map(reviveStoredMessage);
+      // #1963: a student reading their own course chat never receives file names.
+      const [rows, seesFiles] = await Promise.all([
+        getChatMessages(chatId),
+        readerSeesMaterialFiles({ id: session.user.id, role: session.user.role }, access),
+      ]);
+      const revived = rows.map(reviveStoredMessage);
+      const messages = seesFiles ? revived : toLearnerTranscript(revived);
 
       return new Response(
         JSON.stringify({

@@ -187,18 +187,19 @@ test.describe("Student (student1) — UI walkthrough", () => {
     }
   });
 
-  test("materials visibility for an enrolled course", async ({ playwright }) => {
+  test("materials are staff-only: an enrolled student is refused (#1962)", async ({
+    playwright,
+  }) => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
-      const res = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/materials`);
-      expect(res.status(), "GET materials for enrolled course as STUDENT").toBe(200);
-      const body = await res.json();
-      const items = Array.isArray(body) ? body : (body.materials ?? body.data ?? []);
-      expect(Array.isArray(items), "materials payload should be a list").toBeTruthy();
-      expect(
-        items.every((m: { visibleToStudents?: boolean }) => m.visibleToStudents !== false),
-        "student materials list must not include staff-only rows",
-      ).toBeTruthy();
+      const list = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/materials`);
+      expect(list.status(), "GET materials list as enrolled STUDENT").toBe(403);
+      expect(await list.json()).toEqual({ error: "Forbidden" });
+
+      const preview = await ctx.get(
+        `${CORE_URL}/api/courses/${COURSES.cosc101}/materials/seed_material_cosc101_overview`,
+      );
+      expect(preview.status(), "GET material preview as enrolled STUDENT").toBe(403);
     } finally {
       await ctx.dispose();
     }

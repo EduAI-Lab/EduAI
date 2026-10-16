@@ -360,40 +360,30 @@ describe("CourseDetailTaView", () => {
   });
 });
 
-// Student view
+// Student view (#1962: no course files anywhere; course chat is the main action)
 describe("CourseDetailStudentView", () => {
   it("does NOT show Enrollments tab", () => {
-    wrap(<CourseDetailStudentView course={COURSE} materials={[]} topics={[]} />);
+    wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
     expect(screen.queryByRole("tab", { name: /enrollments/i })).not.toBeInTheDocument();
   });
 
-  it("does NOT render upload widget", () => {
-    wrap(<CourseDetailStudentView course={COURSE} materials={[]} topics={[]} />);
-    expect(screen.queryByTestId("upload-widget")).not.toBeInTheDocument();
-  });
-
-  it("does NOT render upload widget for students when upload policy is disabled even if onFilesSelect is provided", () => {
-    wrap(
-      <CourseDetailStudentView
-        course={COURSE}
-        materials={[]}
-        topics={[]}
-        onFilesSelect={onFilesSelect}
-      />,
-    );
-
-    expect(screen.queryByTestId("upload-widget")).not.toBeInTheDocument();
-  });
-
   it("does NOT have a Topics management tab", () => {
-    wrap(<CourseDetailStudentView course={COURSE} materials={[]} topics={[TOPIC]} />);
+    wrap(<CourseDetailStudentView course={COURSE} topics={[TOPIC]} />);
     expect(screen.queryByRole("tab", { name: /^topics$/i })).not.toBeInTheDocument();
-    // Topic names shown as badges in Overview
+    // Topic names shown as badges in the hero
     expect(screen.getByText("Variables")).toBeInTheDocument();
   });
 
-  it("shows materials read-only with preview for ready files", () => {
-    wrap(<CourseDetailStudentView course={COURSE} materials={[MATERIAL]} topics={[]} />);
-    expect(screen.getByRole("button", { name: "Lecture 1" })).toBeInTheDocument();
+  it("shows no materials anywhere: no tabs, no upload control, no material wording", () => {
+    wrap(<CourseDetailStudentView course={COURSE} topics={[TOPIC]} />);
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("upload-widget")).not.toBeInTheDocument();
+    expect(screen.queryByText(/material/i)).not.toBeInTheDocument();
+  });
+
+  it("makes course chat for this course the page's main action", () => {
+    wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
+    const chat = screen.getByRole("link", { name: /chat about this course/i });
+    expect(chat).toHaveAttribute("href", "/chat?courseId=c1");
   });
 });

@@ -3,6 +3,11 @@
  * at /help, Core had none). A static, role-aware written guide: a jump-link rail
  * on the left, stacked topic cards on the right. Admin-only topics are filtered
  * out for students/staff so the guide reads as complete for whoever opens it.
+ *
+ * This is the READ surface — browsable and curated. The help assistant is the ASK
+ * surface; the "Ask a question" hand-off below connects the two (#1824) for a
+ * reader who browsed here and did not find their answer. Role filtering goes
+ * through the same slice mapping the assistant's retrieval uses (#1819).
  */
 import { Link } from "react-router";
 import {
@@ -12,6 +17,7 @@ import {
   IconFileText,
   IconShieldLock,
   IconCommand,
+  IconSparkles,
   IconCpu,
   IconEye,
   IconMessages,
@@ -21,18 +27,19 @@ import {
 } from "@tabler/icons-react";
 import { Button, PageHeading, useTour } from "@eduai/ui";
 
+import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
+import { canReadHelpSlice, type HelpSlice } from "~/lib/help/role-slices";
+
 type HelpTopic = {
   id: string;
   title: string;
   icon: Icon;
-  /** Roles allowed to see this topic; omit to show it to everyone. */
-  roles?: string[];
+  /** The lowest documentation slice that may read this topic; omit for everyone. */
+  slice?: HelpSlice;
+  /** Narrows an admin-slice topic to platform ADMINs (UNIT_ADMINs can't manage these). */
+  platformAdminOnly?: boolean;
   points: React.ReactNode[];
 };
-
-const STAFF = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
-const ADMINS = ["ADMIN", "UNIT_ADMIN"];
-const PLATFORM_ADMINS = ["ADMIN"];
 
 const TOPICS: HelpTopic[] = [
   {
@@ -108,7 +115,7 @@ const TOPICS: HelpTopic[] = [
     id: "materials",
     title: "Course materials",
     icon: IconFileText,
-    roles: STAFF,
+    slice: "instructor",
     points: [
       "Upload materials on a course's Materials tab. Each file is processed so the chatbot can search and cite it.",
       "Control per-material visibility and scheduled availability so students only see what you've released.",
@@ -118,7 +125,7 @@ const TOPICS: HelpTopic[] = [
     id: "material-status",
     title: "Material status",
     icon: IconProgressCheck,
-    roles: STAFF,
+    slice: "instructor",
     points: [
       <>
         <strong>Processing</strong>: the file is being read and indexed. Large files can take a few
@@ -139,7 +146,7 @@ const TOPICS: HelpTopic[] = [
     id: "publishing",
     title: "Publishing and visibility",
     icon: IconEye,
-    roles: STAFF,
+    slice: "instructor",
     points: [
       "A new course starts as a draft. Only course staff and administrators can open a draft, and self-enrollment links won't let students join it.",
       "Publish the course from its Overview tab when it's ready. Unpublishing removes student access again without deleting anything.",
@@ -151,7 +158,7 @@ const TOPICS: HelpTopic[] = [
     id: "administration",
     title: "Administration",
     icon: IconShieldLock,
-    roles: ADMINS,
+    slice: "admin",
     points: [
       <>
         Manage platform accounts under{" "}
@@ -168,7 +175,8 @@ const TOPICS: HelpTopic[] = [
     id: "ai-models",
     title: "AI providers and models",
     icon: IconCpu,
-    roles: PLATFORM_ADMINS,
+    slice: "admin",
+    platformAdminOnly: true,
     points: [
       "A provider is a service EduAI connects to for AI, such as a cloud API or a campus-hosted server. It holds the endpoint and API key.",
       "A model belongs to one provider. Chat models appear in the chat model picker; embedding models turn course materials into searchable text.",
@@ -181,7 +189,8 @@ const TOPICS: HelpTopic[] = [
     id: "platform-policies",
     title: "Platform policies",
     icon: IconToggleRight,
-    roles: PLATFORM_ADMINS,
+    slice: "admin",
+    platformAdminOnly: true,
     points: [
       "Policies are switches on the admin Settings page that decide what each role (instructors, students, TAs, unit admins) may do.",
       "A switch applies to every course on the platform and takes effect as soon as you flip it. There is no save step.",
@@ -200,17 +209,25 @@ export function HelpView({
   role,
   isTA = false,
   isCourseInstructor = false,
+  onAskAssistant,
 }: {
   role?: string;
   isTA?: boolean;
   isCourseInstructor?: boolean;
+  /**
+   * Opens the help assistant with its input focused. Passed only when the
+   * assistant is visible — the route decides that with the same predicate the
+   * bubble uses, so this button never promises something that won't open.
+   */
+  onAskAssistant?: () => void;
 }) {
   const { startTour } = useTour();
   // TAs are platform STUDENTs (Enrollment.role carries TA), so their topics
-  // come from TA_TOPICS rather than session.user.role.
+  // come from TA_TOPICS rather than the role's slice.
   const topics = TOPICS.filter((t) => {
-    if (!t.roles) return true;
-    if (role && t.roles.includes(role)) return true;
+    if (!t.slice) return true;
+    if (t.platformAdminOnly) return role === "ADMIN";
+    if (canReadHelpSlice(role, t.slice)) return true;
     if (isCourseInstructor && COURSE_INSTRUCTOR_TOPICS.has(t.id)) return true;
     return isTA && TA_TOPICS.has(t.id);
   });
@@ -222,10 +239,18 @@ export function HelpView({
           heading="Help & guide"
           subheading="How to get around EduAI and make the most of it."
         />
-        <Button type="button" variant="outline" size="sm" onClick={() => startTour("dashboard")}>
-          <IconRocket className="size-4" aria-hidden />
-          Replay guided tour
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {onAskAssistant ? (
+            <Button type="button" size="sm" onClick={onAskAssistant}>
+              <IconSparkles className="size-4" aria-hidden />
+              Ask {ASSISTANT_DISPLAY_NAME} a question
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={() => startTour("dashboard")}>
+            <IconRocket className="size-4" aria-hidden />
+            Replay guided tour
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[200px_1fr] lg:items-start">

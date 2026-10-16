@@ -3,6 +3,8 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { HelpView } from "~/components/help/help-view";
+import { requestAssistantOpen } from "~/components/assistant/assistant-events";
+import { useAssistantVisibility } from "~/components/assistant/help-assistant";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import prisma from "~/lib/prisma.server";
 
@@ -31,10 +33,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function HelpPage() {
   const { user, isTA, isCourseInstructor } = useLoaderData<typeof loader>();
+  // Same predicate as the bubble (#1824): the hand-off shows exactly when the
+  // assistant does.
+  const { visible } = useAssistantVisibility();
 
   return (
     <CoreAppShell user={user} title="Help & guide">
-      <HelpView role={user.role ?? undefined} isTA={isTA} isCourseInstructor={isCourseInstructor} />
+      <HelpView
+        role={user.role ?? undefined}
+        isTA={isTA}
+        isCourseInstructor={isCourseInstructor}
+        onAskAssistant={visible ? () => requestAssistantOpen() : undefined}
+      />
     </CoreAppShell>
   );
 }

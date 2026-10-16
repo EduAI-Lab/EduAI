@@ -7,7 +7,7 @@
  * we can drive this page's own handlers directly.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const {
@@ -333,6 +333,22 @@ describe("AssessmentBuilderPage", () => {
     expect(assessmentService.updateAssessment).toHaveBeenCalledWith(1, { name: "Renamed" });
   });
 
+  it("rethrows an update failure so the modal can show it", async () => {
+    assessmentService.getAssessment.mockResolvedValue(baseAssessment);
+    assessmentService.updateAssessment.mockRejectedValue({
+      response: { data: { error: "conflict" } },
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Midterm")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Manage"));
+    fireEvent.click(screen.getByText("Edit details"));
+    await waitFor(() => expect(lastGenerateModalProps.open).toBe(true));
+    await expect(lastGenerateModalProps.onUpdate({ name: "X" })).rejects.toEqual({
+      response: { data: { error: "conflict" } },
+    });
+    expect(toastFn.error).not.toHaveBeenCalled();
+  });
+
   it("disables the export button with a tooltip when there are no questions", async () => {
     assessmentService.getAssessment.mockResolvedValue(baseAssessment);
     renderPage();
@@ -486,5 +502,61 @@ describe("AssessmentBuilderPage", () => {
     await waitFor(() => expect(lastCreateModalProps).toBeTruthy());
     lastCreateModalProps.onQuestionCreated({ id: 99 });
     await waitFor(() => expect(toastFn).toHaveBeenCalledWith("Question saved", expect.any(Object)));
+  });
+
+  describe("topic-limited assessments (#1974)", () => {
+    const topicsFixture = [
+      { id: "t1", name: "Alpha" },
+      { id: "t2", name: "Beta" },
+      { id: "t3", name: "Gamma" },
+    ];
+    const questionsFixture = [
+      { id: 1, primaryTopicId: "t1", type: "SA", variants: [{ id: 11, difficulty: "easy" }] },
+      { id: 2, primaryTopicId: "t3", type: "SA", variants: [{ id: 21, difficulty: "easy" }] },
+    ];
+
+    it("only offers questions and topic filters from the chosen topics", async () => {
+      assessmentService.getAssessment.mockResolvedValue({
+        ...baseAssessment,
+        blueprintConfig: { primaryTopicIds: ["t1", "t2"] },
+      });
+      courseService.getCourseTopics.mockResolvedValue(topicsFixture);
+      questionService.getQuestions.mockResolvedValue(questionsFixture);
+      renderPage();
+      await waitFor(() => expect(lastBuilderProps?.questionBank).toHaveLength(1));
+      expect(lastBuilderProps.questionBank[0].questionId).toBe(1);
+      expect(lastBuilderProps.topics.map((t: any) => t.id)).toEqual(["t1", "t2"]);
+      const row = screen.getByText("Topics covered:").parentElement as HTMLElement;
+      expect(within(row).getByText("Alpha")).toBeInTheDocument();
+      expect(within(row).getByText("Beta")).toBeInTheDocument();
+    });
+
+    it("offers everything and says so when the assessment is unrestricted", async () => {
+      assessmentService.getAssessment.mockResolvedValue({
+        ...baseAssessment,
+        blueprintConfig: null,
+      });
+      courseService.getCourseTopics.mockResolvedValue(topicsFixture);
+      questionService.getQuestions.mockResolvedValue(questionsFixture);
+      renderPage();
+      await waitFor(() => expect(lastBuilderProps?.questionBank).toHaveLength(2));
+      expect(lastBuilderProps.topics).toHaveLength(3);
+      const row = screen.getByText("Topics covered:").parentElement as HTMLElement;
+      expect(within(row).getByText("All topics")).toBeInTheDocument();
+    });
+
+    it("does not say all topics when the chosen topics no longer exist", async () => {
+      assessmentService.getAssessment.mockResolvedValue({
+        ...baseAssessment,
+        blueprintConfig: { primaryTopicIds: ["gone"] },
+      });
+      courseService.getCourseTopics.mockResolvedValue(topicsFixture);
+      questionService.getQuestions.mockResolvedValue(questionsFixture);
+      renderPage();
+      await waitFor(() => expect(lastBuilderProps?.questionBank).toHaveLength(0));
+      const row = screen.getByText("Topics covered:").parentElement as HTMLElement;
+      expect(within(row).queryByText("All topics")).not.toBeInTheDocument();
+      expect(within(row).getByText("Selected topics are no longer available")).toBeInTheDocument();
+    });
   });
 });

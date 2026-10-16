@@ -46,6 +46,10 @@ export interface ChatMessageProps {
    * Listed under the reply; undefined when the turn ran no course retrieval.
    */
   materialSources?: string[];
+  /** Topics this student turn shows in place of file titles (#1963); undefined on staff turns. */
+  materialTopics?: string[];
+  /** The user is a student in this chat's course: course-material searches show as a status chip (#1963). */
+  learnerView?: boolean;
 }
 
 /**
@@ -112,11 +116,17 @@ function ChatMessageBody({
   onContinue,
   continueDisabled = false,
   materialSources,
+  materialTopics,
+  learnerView = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   // Only turns the server tagged with retrieved sources (course retrieval ran)
   // lose model-written citations; admin and general chat keep their text as-is.
-  const stripsCitations = message.role === "assistant" && materialSources !== undefined;
+  // #1963: a student turn strips from the first streamed token — its topics only
+  // arrive with the finish annotation.
+  const stripsCitations =
+    message.role === "assistant" &&
+    (materialSources !== undefined || materialTopics !== undefined || learnerView);
 
   const handleCopy = async () => {
     // Extract text content from all text parts
@@ -261,11 +271,17 @@ function ChatMessageBody({
           {toolParts.map((part, index) => {
             const toolPart = convertToolPart(part);
             if (!toolPart) return null;
+            // #1963: a student's course-material search shows as a status chip —
+            // its result is course excerpts, not something to browse.
+            const hidesDetail = learnerView && toolPart.type === "getInformation";
 
             return (
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
-                toolPart={toolPart}
+                toolPart={
+                  hidesDetail ? { ...toolPart, input: undefined, output: undefined } : toolPart
+                }
+                collapsible={!hidesDetail}
                 displayName={
                   getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type
                 }
@@ -335,6 +351,12 @@ function ChatMessageBody({
             {materialSources && materialSources.length > 0 ? (
               <p className="text-xs text-muted-foreground px-1">
                 Sources: {materialSources.join(", ")}
+              </p>
+            ) : null}
+
+            {materialTopics && materialTopics.length > 0 ? (
+              <p className="text-xs text-muted-foreground px-1">
+                Topics: {materialTopics.join(", ")}
               </p>
             ) : null}
 

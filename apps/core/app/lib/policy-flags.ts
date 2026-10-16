@@ -49,12 +49,6 @@ export const POLICY_FLAGS = {
       "Allow users with the TA role to upload course materials, and delete materials they uploaded themselves. Instructors, unit admins, and admins are unaffected.",
     default: true,
   },
-  "students.canUploadMaterials": {
-    label: "Students can upload course materials",
-    description:
-      "Allow users with the STUDENT role to upload course materials in courses they are enrolled in.",
-    default: false,
-  },
   "chat.webToolsEnabled": {
     label: "Web search tools enabled",
     description:
@@ -71,12 +65,6 @@ export const POLICY_FLAGS = {
     label: "Unit admins can delete courses",
     description:
       "Allow users with the UNIT_ADMIN role to soft-delete courses in their units. ADMIN is always allowed.",
-    default: true,
-  },
-  "students.canViewMaterials": {
-    label: "Students can view course materials",
-    description:
-      "Allow students to view/list course materials. Layers on top of the publish gate; off means students cannot list materials at all.",
     default: true,
   },
   "tas.canSetAiInstructions": {
