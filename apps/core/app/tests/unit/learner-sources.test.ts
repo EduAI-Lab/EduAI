@@ -107,17 +107,32 @@ describe("loadLearnerTopicsByMaterial (#1963)", () => {
 });
 
 describe("readerSeesMaterialFiles (#1963)", () => {
-  const owned = (courseId: string | null) => ({ isOwner: true, chat: { courseId } });
+  // Whose chat it is no longer matters: every reader is checked in its course.
+  const chatIn = (courseId: string | null) => ({ chat: { courseId } });
 
-  it("lets admins and staff overseeing someone else's chat see files without a lookup", async () => {
-    expect(await readerSeesMaterialFiles({ id: "a", role: "ADMIN" }, owned("c1"))).toBe(true);
-    expect(
-      await readerSeesMaterialFiles(
-        { id: "i", role: "INSTRUCTOR" },
-        { isOwner: false, chat: { courseId: "c1" } },
-      ),
-    ).toBe(true);
+  it("lets an admin see files without a lookup", async () => {
+    expect(await readerSeesMaterialFiles({ id: "a", role: "ADMIN" }, chatIn("c1"))).toBe(true);
     expect(resolveCourseAccessGate).not.toHaveBeenCalled();
+  });
+
+  it("shows files to staff overseeing a student's chat in their course", async () => {
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+
+    expect(await readerSeesMaterialFiles({ id: "i", role: "INSTRUCTOR" }, chatIn("c1"))).toBe(true);
+  });
+
+  it("hides files from a non-owner who is a student in the chat's course", async () => {
+    // Oversight never lets a student read another's chat today; this pins that a
+    // future sharing rule could not show them file names either.
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "student", rank: 0 },
+    } as never);
+
+    expect(await readerSeesMaterialFiles({ id: "s2", role: "STUDENT" }, chatIn("c1"))).toBe(false);
   });
 
   it("hides files from an owner who is a student in the chat's course", async () => {
@@ -126,7 +141,7 @@ describe("readerSeesMaterialFiles (#1963)", () => {
       access: { level: "student", rank: 0 },
     } as never);
 
-    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, owned("c1"))).toBe(false);
+    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, chatIn("c1"))).toBe(false);
   });
 
   it("shows files to an owner who is staff in the chat's course (a TA's own chat)", async () => {
@@ -135,11 +150,11 @@ describe("readerSeesMaterialFiles (#1963)", () => {
       access: { level: "ta", rank: 1 },
     } as never);
 
-    expect(await readerSeesMaterialFiles({ id: "t", role: "STUDENT" }, owned("c1"))).toBe(true);
+    expect(await readerSeesMaterialFiles({ id: "t", role: "STUDENT" }, chatIn("c1"))).toBe(true);
   });
 
   it("hides files from an owner whose chat no longer has a course (course deleted)", async () => {
-    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, owned(null))).toBe(false);
+    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, chatIn(null))).toBe(false);
     expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
@@ -149,6 +164,6 @@ describe("readerSeesMaterialFiles (#1963)", () => {
       access: null,
     } as never);
 
-    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, owned("c1"))).toBe(false);
+    expect(await readerSeesMaterialFiles({ id: "s", role: "STUDENT" }, chatIn("c1"))).toBe(false);
   });
 });

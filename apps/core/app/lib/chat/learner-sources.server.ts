@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
+import { canViewMaterial } from "~/lib/rbac/permissions";
 import type { HybridRagHit, RagExcerptHeader } from "~/lib/chat-rag";
 import { LEARNER_TOPIC_WHERE } from "~/lib/topics/learner-view.server";
 
@@ -98,10 +99,13 @@ export function toLearnerRagHits(
 }
 
 /**
- * Whether a transcript reader may see course file names (#1963). Admins and staff
- * overseeing a student's chat do. An owner is checked against the chat's course,
- * because the same platform role can be a student in one course and a TA in
- * another; an owner who is a student there — or has lost access — does not.
+ * Whether a transcript reader may see course file names (#1963). Admins do. Every
+ * other reader, owner or not, is checked against the chat's course with the
+ * materials API's staff allow-list (`canViewMaterial`): the same platform role can
+ * be a student in one course and a TA in another, and a reader who is a student
+ * there, or has lost access, does not. Today only instructors and unit admins read
+ * someone else's chat (§5c oversight, `courseChatViewPolicyKey`), but the check
+ * does not lean on that, so a later sharing rule cannot show a student file names.
  *
  * Every turn of a chat runs in its course (chat.ts rejects a mismatched course),
  * so the chat's course decides. One with no course left — the course was deleted
@@ -109,10 +113,10 @@ export function toLearnerRagHits(
  */
 export async function readerSeesMaterialFiles(
   viewer: { id: string; role?: string | null },
-  access: { isOwner: boolean; chat: { courseId: string | null } },
+  access: { chat: { courseId: string | null } },
 ): Promise<boolean> {
-  if (viewer.role === "ADMIN" || !access.isOwner) return true;
+  if (viewer.role === "ADMIN") return true;
   if (!access.chat.courseId) return false;
   const { access: courseAccess } = await resolveCourseAccessGate(viewer, access.chat.courseId);
-  return courseAccess !== null && courseAccess.level !== "student";
+  return courseAccess !== null && canViewMaterial(courseAccess.level);
 }

@@ -1209,6 +1209,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`ChatConversationLayout.test.tsx`](apps/core/app/tests/unit/ChatConversationLayout.test.tsx) | (#1963) Each message's topics reach the message as its "Topics:" line. |
 | [`chat-mode.admin-prompt.test.ts`](apps/core/app/tests/unit/chat-mode.admin-prompt.test.ts) | (#1963) The learning prompts ground answers in course materials but tell the model not to write file names, titles or a Sources line. |
 | [`revive-stored-message.test.ts`](apps/core/app/tests/unit/revive-stored-message.test.ts) | (#1963 review) `toLearnerTranscript` cuts the model's own file citations from a student's transcript text, in both `content` and its text part, on a pre-#1936 turn with no file list as well as on a later one; a student's own message is left as written. |
+| [`learner-sources.test.ts`](apps/core/app/tests/unit/learner-sources.test.ts) | (#1963 review) `readerSeesMaterialFiles` checks every non-admin reader, owner or not, against the chat's course: staff overseeing a student's chat see files, and a non-owner who is a student there does not. |
 
 ## EduAI Integration Tests
 
