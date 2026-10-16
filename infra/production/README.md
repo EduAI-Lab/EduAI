@@ -167,6 +167,12 @@ Use a new release directory for every production change:
    ```bash
    sudo -n /usr/local/sbin/eduai-production-admin activate-release <release-id>
    ```
+   Activation records the release it replaced as `previous` (the rollback target)
+   and then removes every older release (#1869): each is ~1.9 GB, almost all
+   `node_modules`, and s348's disk is 27 GB. Releases newer than the live one are
+   never removed. To free space **before** building, when the disk is tight, run
+   `sudo -n /usr/local/sbin/eduai-production-admin prune-releases`, which keeps the
+   same releases.
 10. Reload systemd/Apache as needed, enable the intended units, and restart only
     the components included in the release.
 11. Run the local and public health checks below and record the release ID,
@@ -302,6 +308,7 @@ The release symlink is the rollback boundary:
 
 ```bash
 readlink -f /srv/www/eduai-production/current
+readlink -f /srv/www/eduai-production/previous   # the release to roll back to
 sudo -n /usr/local/sbin/eduai-production-admin activate-release <previous-release-id>
 sudo -n /usr/local/sbin/eduai-production-admin restart-core
 ```

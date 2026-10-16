@@ -84,6 +84,47 @@ validate_release() {
     [ -f "$release/$relative" ] || die "release is incomplete; missing $release/$relative"
   done
 }
+# Each release is ~1.9 GB, almost all node_modules, and s348's disk is 27 GB
+# (#1869). Only the live release and the one before it (the rollback target)
+# are needed, so older releases are removed. A release newer than the live one
+# is kept too: it is a build waiting to be activated. `previous` is recorded by
+# activate-release; before the first activation that records it, the newest
+# release older than the live one stands in for it.
+prune_releases() {
+  local current previous dir id kept=() removed=0
+  current=$(readlink -f -- "$TARGET_ROOT/current" 2>/dev/null) || die "no current release; refusing to prune"
+  [ -d "$current" ] || die "current release is missing: $current; refusing to prune"
+  assert_safe_release "$current"
+  previous=""
+  if [ -L "$TARGET_ROOT/previous" ]; then
+    previous=$(readlink -f -- "$TARGET_ROOT/previous" 2>/dev/null || true)
+  fi
+  if [ -z "$previous" ] || [ ! -d "$previous" ] || [ "$previous" = "$current" ]; then
+    previous=""
+    # Newest by modification time among those older than current.
+    for dir in $(ls -1dt "$TARGET_ROOT/releases"/*/ 2>/dev/null); do
+      dir=${dir%/}
+      [ "$dir" = "$current" ] && continue
+      [ "$dir" -nt "$current" ] && continue
+      previous=$dir
+      break
+    done
+  fi
+  for dir in "$TARGET_ROOT/releases"/*; do
+    [ -d "$dir" ] || continue
+    if [ "$dir" = "$current" ] || [ "$dir" = "$previous" ] || [ "$dir" -nt "$current" ]; then
+      kept+=("$(basename "$dir")")
+      continue
+    fi
+    id=$(basename "$dir")
+    [[ "$id" =~ ^[0-9a-f]{8,64}$ ]] || { echo "Skipping unexpected entry: $dir"; continue; }
+    assert_safe_release "$dir"
+    rm -rf -- "$dir"
+    echo "Removed release $id"
+    removed=$((removed + 1))
+  done
+  echo "Kept: ${kept[*]} (live $(basename "$current")${previous:+, rollback $(basename "$previous")}); removed $removed"
+}
 prepare_static_assets() {
   local release="$1" static_root parent
   command -v setfacl >/dev/null 2>&1 || die "setfacl is required to grant Apache access to release assets"
@@ -361,8 +402,17 @@ case "${1:-}" in
     release=$(release_arg "$@")
     validate_release "$release"
     prepare_static_assets "$release"
+    old=$(readlink -f -- "$TARGET_ROOT/current" 2>/dev/null || true)
     ln -sfn "$release" "$TARGET_ROOT/current"
+    if [ -n "$old" ] && [ "$old" != "$release" ] && [ -d "$old" ]; then
+      ln -sfn "$old" "$TARGET_ROOT/previous"
+    fi
     echo "Activated $release"
+    prune_releases
+    ;;
+  prune-releases)
+    no_extra_args "$@"
+    prune_releases
     ;;
   validate-release)
     release=$(release_arg "$@")
@@ -378,5 +428,5 @@ case "${1:-}" in
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, install-cron-worker, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-cron-worker, restart-cron-worker, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, install-cron-worker, validate-release, activate-release, prune-releases, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-cron-worker, restart-cron-worker, enable-core, restart-core, reload-apache" ;;
 esac
