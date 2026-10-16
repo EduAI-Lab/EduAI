@@ -1233,6 +1233,7 @@ enum SystemLogSource {
   DB
   SSR
   API
+  HOST
 }
 
 model AuditLog {

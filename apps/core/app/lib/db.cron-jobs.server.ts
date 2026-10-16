@@ -91,6 +91,36 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
+    name: "disk-usage-check",
+    description:
+      "Email the admins and log a warning when this server's disk is nearly full (#1869)",
+    schedule: "*/30 * * * *",
+    scheduleLabel: "Every 30 minutes",
+    script: "Core handler",
+    execution: "CORE",
+    settings: [
+      {
+        key: "warnPercent",
+        label: "Warn at (% full)",
+        description: "Admins get one email a day while any checked disk is at least this full.",
+        type: "int",
+        min: 50,
+        max: 99,
+        default: 85,
+      },
+      {
+        key: "criticalPercent",
+        label: "Critical at (% full)",
+        description:
+          "Alerts at once, even after a warning today, and marks the run as failed until space is freed.",
+        type: "int",
+        min: 50,
+        max: 100,
+        default: 95,
+      },
+    ],
+  },
+  {
     name: "backup-nightly",
     description: "Full pg_dump of all three EduAI databases",
     schedule: "0 2 * * *",
@@ -661,6 +691,16 @@ const CORE_JOB_HANDLERS = {
           ? `Re-indexed ${result.pages} guide page(s) as ${result.chunks} chunk(s)`
           : "Help docs index already current",
       };
+    };
+  },
+  "disk-usage-check": async () => {
+    const { checkDiskUsage, formatDiskUsageMessage } = await import("~/lib/cron-disk-usage.server");
+    return async () => {
+      const result = await checkDiskUsage();
+      const message = formatDiskUsageMessage(result);
+      // A critical disk fails the run so Admin → Cron Jobs shows it red.
+      if (result.level === "CRITICAL") throw new Error(message);
+      return { message };
     };
   },
   "ai-status-probe": async () => {

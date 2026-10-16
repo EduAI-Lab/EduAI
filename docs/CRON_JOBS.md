@@ -62,6 +62,20 @@ All EduAI production jobs run in UTC (enforced by the Core scheduler via `{ time
 
 ---
 
+## Disk usage alerts (#1869)
+
+`disk-usage-check` is a Core-handler job that runs every 30 minutes in the cron worker. It reads disk usage on the **host the worker runs on**, so each server (s378, s348) watches its own disk. It needs no shell script and no host `mail`: alerts go out through Core's SMTP mailer, because the hosts can't send mail (#1874).
+
+| Usage | What happens |
+|---|---|
+| Below **Warn at** (default 85%) | Nothing. The run message shows the current usage. |
+| At or above Warn at | An Admin → Logs entry (`HOST`, `DISK_USAGE_WARNING`) and an email to every active admin, at most once a day. |
+| At or above **Critical at** (default 95%) | A `DISK_USAGE_CRITICAL` entry and email right away, even if a warning went out today. The run also shows as **Error** until space is freed. |
+
+Both thresholds are settings on the job in Admin → Cron Jobs. To test it on a server, lower **Warn at** below the current usage, click **Run now**, check the email and Admin → Logs, then reset the setting. `DISK_ALERT_PATHS` and `DISK_ALERT_EMAILS` are in `docs/ENVIRONMENT.md`.
+
+---
+
 ## Viewing job status
 
 Go to **Admin → Cron Jobs**. The panel shows:
