@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => ({
   courseMaterial: { findMany: vi.fn() },
+  course: { findUnique: vi.fn() },
   courseTopic: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
   aiJob: {
     create: vi.fn(),
@@ -13,10 +14,12 @@ const prismaMock = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
 }));
-const provisionCourseTopics = vi.hoisted(() => vi.fn());
+const matchMaterialsToTopics = vi.hoisted(() => vi.fn());
+const suggestCourseTopics = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
-vi.mock("~/lib/topics/provision.server", () => ({ provisionCourseTopics }));
+vi.mock("~/lib/topics/auto-match.server", () => ({ matchMaterialsToTopics }));
+vi.mock("~/lib/topics/suggest.server", () => ({ suggestCourseTopics }));
 vi.mock("~/lib/topics/completion.server", () => ({ runTopicAnalysisCompletion: vi.fn() }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
@@ -31,6 +34,7 @@ const {
   resumeStaleTopicAnalysisJobs,
   runTopicAnalysisJob,
   startTopicAnalysis,
+  startTopicSuggestion,
   MAX_MATERIALS_PER_JOB,
   TOPIC_ANALYSIS_LEASE_MS,
   TOPIC_ANALYSIS_QUEUE_NAME,
@@ -57,12 +61,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "existing-topic" });
   prismaMock.aiJob.update.mockResolvedValue({});
-  provisionCourseTopics.mockResolvedValue({
-    created: 2,
-    createdNames: ["Chapter 1", "Chapter 2"],
-    usedSource: "material-headings",
-    duplicatesSkipped: 0,
-  });
+  matchMaterialsToTopics.mockResolvedValue({ matched: 2, unmatched: 1 });
 });
 
 describe("topicAnalysisIdempotencyKey", () => {
@@ -439,7 +438,7 @@ describe("resumeStaleTopicAnalysisJobs", () => {
 });
 
 describe("runTopicAnalysisJob", () => {
-  it("claims, provisions, and completes with a readable result", async () => {
+  it("claims, matches, and completes with a readable result", async () => {
     prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
 
@@ -447,10 +446,26 @@ describe("runTopicAnalysisJob", () => {
 
     const completion = prismaMock.aiJob.update.mock.calls.at(-1)?.[0].data;
     expect(completion).toMatchObject({ status: "COMPLETED" });
-    expect(completion.result).toMatchObject({
-      created: 2,
-      usedSource: "material-headings",
-      createdNames: ["Chapter 1", "Chapter 2"],
+    expect(completion.result).toEqual({
+      kind: "topic-analysis",
+      mode: "match",
+      matched: 2,
+      unmatched: 1,
+    });
+  });
+
+  it("renews its lease after each material, so a long batch is not reclaimed", async () => {
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
+
+    await runTopicAnalysisJob("job-1", vi.fn());
+    const { heartbeat } = matchMaterialsToTopics.mock.calls[0][0];
+    prismaMock.aiJob.updateMany.mockClear();
+    await heartbeat();
+
+    expect(prismaMock.aiJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job-1", status: "RUNNING" },
+      data: { startedAt: expect.any(Date) },
     });
   });
 
@@ -459,7 +474,7 @@ describe("runTopicAnalysisJob", () => {
 
     await runTopicAnalysisJob("job-1", vi.fn());
 
-    expect(provisionCourseTopics).not.toHaveBeenCalled();
+    expect(matchMaterialsToTopics).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.update).not.toHaveBeenCalled();
   });
 
@@ -485,7 +500,7 @@ describe("runTopicAnalysisJob", () => {
   it("records a failure on the row rather than throwing", async () => {
     prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
-    provisionCourseTopics.mockRejectedValue(new Error("model unreachable"));
+    matchMaterialsToTopics.mockRejectedValue(new Error("model unreachable"));
 
     await expect(runTopicAnalysisJob("job-1", vi.fn())).resolves.toBeUndefined();
 
@@ -500,7 +515,7 @@ describe("runTopicAnalysisJob", () => {
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
     prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     prismaMock.courseTopic.create.mockResolvedValue({ id: "fallback" });
-    provisionCourseTopics.mockRejectedValue(new Error("boom"));
+    matchMaterialsToTopics.mockRejectedValue(new Error("boom"));
 
     await runTopicAnalysisJob("job-1", vi.fn());
 
@@ -515,12 +530,7 @@ describe("runTopicAnalysisJob", () => {
     prismaMock.aiJob.findUnique.mockResolvedValue({ payload: payload(), userId: "user-1" });
     prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     prismaMock.courseTopic.create.mockResolvedValue({ id: "fallback" });
-    provisionCourseTopics.mockResolvedValue({
-      created: 0,
-      createdNames: [],
-      usedSource: "none",
-      duplicatesSkipped: 0,
-    });
+    matchMaterialsToTopics.mockResolvedValue({ matched: 0, unmatched: 0 });
 
     await runTopicAnalysisJob("job-1", vi.fn());
 
@@ -535,6 +545,92 @@ describe("runTopicAnalysisJob", () => {
     await runTopicAnalysisJob("job-1", vi.fn());
 
     expect(prismaMock.aiJob.update.mock.calls.at(-1)?.[0].data.status).toBe("FAILED");
-    expect(provisionCourseTopics).not.toHaveBeenCalled();
+    expect(matchMaterialsToTopics).not.toHaveBeenCalled();
+  });
+});
+
+// #1966: on-demand Suggest runs share the job pipeline under `mode: "suggest"`.
+describe("startTopicSuggestion", () => {
+  it("records a suggest-mode job over the course's materials and runs it", async () => {
+    prismaMock.aiJob.findFirst.mockResolvedValue(null);
+    prismaMock.courseMaterial.findMany.mockResolvedValue([{ id: "m2" }, { id: "m1" }]);
+    prismaMock.course.findUnique.mockResolvedValue({
+      externalId: "canvas-9",
+      externalSource: "canvas",
+    });
+    prismaMock.aiJob.create.mockResolvedValue({ id: "job-s" });
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 0 });
+
+    expect(await startTopicSuggestion({ courseId: "course-1", userId: "user-1" })).toEqual({
+      jobId: "job-s",
+    });
+
+    const data = prismaMock.aiJob.create.mock.calls[0][0].data;
+    expect(data.bullJobId).toMatch(/^topic-suggest:course-1:/);
+    expect(data.payload.input).toMatchObject({
+      mode: "suggest",
+      materialIds: ["m2", "m1"],
+      canvasCourseId: "canvas-9",
+      batchKey: data.bullJobId,
+    });
+    await vi.waitFor(() => expect(prismaMock.aiJob.updateMany).toHaveBeenCalled());
+  });
+
+  it("reuses a run already in flight instead of asking the model twice", async () => {
+    prismaMock.aiJob.findFirst.mockResolvedValue({ id: "job-running" });
+
+    expect(await startTopicSuggestion({ courseId: "course-1", userId: "user-1" })).toEqual({
+      jobId: "job-running",
+    });
+    expect(prismaMock.aiJob.findFirst.mock.calls[0][0].where).toMatchObject({
+      status: { in: ["PENDING", "RUNNING"] },
+      payload: { path: ["input", "mode"], equals: "suggest" },
+    });
+    expect(prismaMock.aiJob.create).not.toHaveBeenCalled();
+  });
+
+  it("returns null for a course with no processed materials", async () => {
+    prismaMock.aiJob.findFirst.mockResolvedValue(null);
+    prismaMock.courseMaterial.findMany.mockResolvedValue([]);
+    prismaMock.course.findUnique.mockResolvedValue(null);
+
+    expect(await startTopicSuggestion({ courseId: "course-1", userId: "user-1" })).toBeNull();
+    expect(prismaMock.aiJob.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("runTopicAnalysisJob in suggest mode", () => {
+  it("suggests instead of matching and records the suggestion counts", async () => {
+    const suggestPayload = payload();
+    suggestPayload.input = {
+      ...suggestPayload.input,
+      mode: "suggest",
+    } as typeof suggestPayload.input;
+    prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.aiJob.findUnique.mockResolvedValue({ payload: suggestPayload, userId: "user-1" });
+    suggestCourseTopics.mockResolvedValue({
+      created: 2,
+      createdNames: ["Graphs", "Trees"],
+      duplicatesSkipped: 1,
+    });
+
+    await runTopicAnalysisJob("job-s", vi.fn());
+
+    expect(matchMaterialsToTopics).not.toHaveBeenCalled();
+    expect(suggestCourseTopics.mock.calls[0][0]).toMatchObject({
+      courseId: "course-1",
+      userId: "user-1",
+      jobId: "job-s",
+    });
+    expect(prismaMock.aiJob.update.mock.calls.at(-1)?.[0].data).toMatchObject({
+      status: "COMPLETED",
+      result: {
+        kind: "topic-analysis",
+        mode: "suggest",
+        created: 2,
+        createdNames: ["Graphs", "Trees"],
+        duplicatesSkipped: 1,
+      },
+    });
   });
 });

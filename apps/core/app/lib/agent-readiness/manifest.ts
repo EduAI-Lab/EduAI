@@ -532,6 +532,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     routeFile: "routes/api/courses.materials.$.ts",
   }),
+  // #1965: sets a material's topics (up to 3, first is the main topic). No admin
+  // chat tool — filing course content is an instructor action on the course page.
+  entry({
+    method: "PUT",
+    path: "/api/courses/:courseId/materials/:materialId/topics",
+    readiness: "ready",
+    routeFile: "routes/api/courses.materials.topics.ts",
+  }),
 
   // ── Canvas materials & embedding infra ──────────────────────────────────────
   entry({

@@ -49,6 +49,10 @@ export default [
     "routes/api/courses.materials.$.ts",
     { id: "routes/api/courses.materials.$:materialId.reprocess" },
   ),
+  route(
+    "/api/courses/:courseId/materials/:materialId/topics",
+    "routes/api/courses.materials.topics.ts",
+  ),
   route("/api/courses/:courseId/materials/:materialId", "routes/api/courses.materials.$.ts", {
     id: "routes/api/courses.materials.$:materialId",
   }),

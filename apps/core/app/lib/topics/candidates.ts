@@ -49,6 +49,28 @@ export function normalizeTopicName(name: string): string {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * A looser comparison key that also treats simple plurals as the same topic
+ * (#1965): "Loops" and "Loop", "Classes" and "Class". It strips a trailing
+ * "es"/"s" from each word longer than three letters, which is crude English but
+ * errs toward reusing an existing topic rather than creating a near-duplicate.
+ * Rewordings ("OOP" vs "Object-Oriented Programming") are left to the model.
+ */
+export function looseTopicKey(name: string): string {
+  return normalizeTopicName(name)
+    .split(" ")
+    .map((word) => {
+      if (word.length <= 3 || /\d/.test(word)) return word;
+      if (/(ss|us|is)$/.test(word)) return word;
+      if (/(ches|shes|sses|xes|zes)$/.test(word)) return word.slice(0, -2);
+      return word.endsWith("s") ? word.slice(0, -1) : word;
+    })
+    .join(" ");
+}
+
+/** Most live topics one material may be filed under (#1965). The first is its main topic. */
+export const MAX_TOPICS_PER_MATERIAL = 3;
+
 /** Collapse whitespace and trim the punctuation Canvas titles tend to trail. */
 export function cleanTopicName(raw: string): string {
   return raw
