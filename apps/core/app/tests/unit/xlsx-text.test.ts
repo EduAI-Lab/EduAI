@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  XLSX_MAX_COLUMNS,
-  XLSX_MAX_ROWS_PER_SHEET,
-  columnIndex,
-  decodeXmlText,
-  parseSharedStrings,
-  xlsxToText,
-  type XlsxParts,
-} from "~/lib/ai/xlsx-text";
+import { XLSX_LIMITS, xlsxToText as render, type XlsxParts } from "~/lib/ai/xlsx-text";
+
+const XLSX_MAX_ROWS_PER_SHEET = XLSX_LIMITS.maxRows;
+const xlsxToText = (parts: XlsxParts) => render(parts, XLSX_LIMITS);
 
 const NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
 
@@ -106,10 +101,10 @@ describe("xlsxToText (#1742)", () => {
     );
 
     const wide = `<row r="1"><c r="A1"><v>a</v></c><c r="CZ1"><v>far</v></c></row>`;
-    expect(columnIndex("CZ1")).toBeGreaterThanOrEqual(XLSX_MAX_COLUMNS);
-    expect(xlsxToText(workbook([{ name: "Wide", xml: wide }])).content).toContain(
-      "[Only the first",
-    );
+    // CZ is column 104, past the 60-column limit.
+    const cutWide = xlsxToText(workbook([{ name: "Wide", xml: wide }])).content;
+    expect(cutWide).toContain("[Only the first");
+    expect(cutWide).not.toContain("far");
   });
 
   it("falls back to the worksheet files when the relationships are unreadable", () => {
@@ -119,21 +114,70 @@ describe("xlsxToText (#1742)", () => {
   });
 });
 
-describe("helpers", () => {
+describe("cell positions and characters", () => {
+  const oneCell = (ref: string, inner: string) =>
+    xlsxToText(workbook([{ name: "S", xml: `<row r="1"><c r="${ref}"${inner}</c></row>` }]))
+      .content;
+
   it.each([
     ["A1", 0],
-    ["Z9", 25],
+    ["Z1", 25],
     ["AA1", 26],
-    ["AZ3", 51],
-  ])("columnIndex(%s) is %i", (ref, index) => {
-    expect(columnIndex(ref)).toBe(index);
+    ["AZ1", 51],
+  ])("places %s in column %i", (ref, index) => {
+    expect(oneCell(ref, "><v>x</v>")).toBe(`--- Sheet: S ---\n${" | ".repeat(index)}x`);
   });
 
   it("decodes named and numeric entities", () => {
-    expect(decodeXmlText("&quot;a&apos; &#233; &#x263A; &bogus;")).toBe("\"a' é ☺ &bogus;");
+    expect(
+      oneCell("A1", ' t="inlineStr"><is><t>&quot;a&apos; &#233; &#x263A; &bogus;</t></is>'),
+    ).toBe("--- Sheet: S ---\n\"a' é ☺ &bogus;");
   });
 
-  it("parses an empty shared string", () => {
-    expect(parseSharedStrings("<sst><si/><si><t>x</t></si></sst>")).toEqual(["", "x"]);
+  // #1990 review: fromCodePoint throws past U+10FFFF, which used to fail the whole file.
+  it("leaves a character reference past Unicode's range as written", () => {
+    expect(oneCell("A1", ' t="inlineStr"><is><t>a &#x110000; &#99999999999; b</t></is>')).toBe(
+      "--- Sheet: S ---\na &#x110000; &#99999999999; b",
+    );
+  });
+
+  it("reads an empty shared string", () => {
+    const parts = workbook(
+      [
+        {
+          name: "S",
+          xml: '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>',
+        },
+      ],
+      "<si/><si><t>x</t></si>",
+    );
+    expect(xlsxToText(parts).content).toBe("--- Sheet: S ---\n | x");
+  });
+});
+
+// #1990 review: a filled-down formula is stored once, in its anchor cell.
+describe("shared formulas", () => {
+  it("shows each filled-down cell's own formula, shifted from the anchor", () => {
+    const xml =
+      '<row r="2"><c r="C2"><f t="shared" ref="C2:C4" si="0">A2*B2</f><v>6</v></c></row>' +
+      '<row r="3"><c r="C3"><f t="shared" si="0"/><v>12</v></c></row>' +
+      '<row r="4"><c r="C4"><f t="shared" si="0"/><v>20</v></c></row>';
+    expect(xlsxToText(workbook([{ name: "S", xml }])).content).toBe(
+      "--- Sheet: S ---\n |  | 6 (=A2*B2)\n |  | 12 (=A3*B3)\n |  | 20 (=A4*B4)",
+    );
+  });
+
+  it("keeps $-anchored parts, shifts across columns, and leaves functions and text alone", () => {
+    const xml =
+      '<row r="1"><c r="B1"><f t="shared" ref="B1:C1" si="3">SUM($A1:A1)+LOG10(A$1)&amp;"A1"</f><v>1</v></c>' +
+      '<c r="C1"><f t="shared" si="3"/><v>2</v></c></row>';
+    expect(xlsxToText(workbook([{ name: "S", xml }])).content).toBe(
+      '--- Sheet: S ---\n | 1 (=SUM($A1:A1)+LOG10(A$1)&"A1") | 2 (=SUM($A1:B1)+LOG10(B$1)&"A1")',
+    );
+  });
+
+  it("shows only the value when the anchor is missing", () => {
+    const xml = '<row r="3"><c r="C3"><f t="shared" si="9"/><v>12</v></c></row>';
+    expect(xlsxToText(workbook([{ name: "S", xml }])).content).toBe("--- Sheet: S ---\n |  | 12");
   });
 });

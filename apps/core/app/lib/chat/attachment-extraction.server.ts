@@ -153,6 +153,9 @@ async function extractSpreadsheet(file: File): Promise<string> {
     return (await extractXlsxText(typed)).content;
   } catch (error) {
     if (error instanceof ChatAttachmentError) throw error;
+    if (error instanceof ExtractionBusyError) {
+      throw new ChatAttachmentError("ATTACHMENT_BUSY", { cause: error });
+    }
     throw readFailure(error instanceof Error ? error : new Error(String(error)));
   }
 }

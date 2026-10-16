@@ -276,6 +276,24 @@ describe("extractChatAttachment spreadsheets (#1742)", () => {
     expect(result.text).toBe("--- Sheet: Lab ---\n4 | 6\nTotal | 10 (=SUM(A1:B1))");
   });
 
+  it("reads a filled-down column's formulas through the worker (#1990 review)", async () => {
+    const file = await xlsx(
+      '<row r="1"><c r="A1"><v>2</v></c><c r="B1"><f t="shared" ref="B1:B2" si="0">A1*10</f><v>20</v></c></row>' +
+        '<row r="2"><c r="A2"><v>3</v></c><c r="B2"><f t="shared" si="0"/><v>30</v></c></row>',
+    );
+    const result = await extractChatAttachment(file, ROOMY);
+    expect(result.text).toBe("--- Sheet: Lab ---\n2 | 20 (=A1*10)\n3 | 30 (=A2*10)");
+  });
+
+  it("maps a full extraction pool to ATTACHMENT_BUSY, not a broken file (#1990 review)", async () => {
+    const processing = await import("~/lib/ai/file-processing");
+    const spy = vi
+      .spyOn(processing, "extractXlsxText")
+      .mockRejectedValueOnce(new ExtractionBusyError("pool full"));
+    await expectCode(extractChatAttachment(await xlsx(""), ROOMY), "ATTACHMENT_BUSY");
+    spy.mockRestore();
+  });
+
   it("rejects a non-ZIP file named .xlsx", async () => {
     await expectCode(
       extractChatAttachment(new File(["a,b\n1,2"], "fake.xlsx"), ROOMY),

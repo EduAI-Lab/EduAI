@@ -1,4 +1,4 @@
-import { type XlsxParts, type XlsxText, xlsxToText } from "~/lib/ai/xlsx-text";
+import { XLSX_LIMITS, type XlsxText, xlsxToText } from "~/lib/ai/xlsx-text";
 import type { ValidationResult } from "~/lib/validation-result";
 import { ExtractionBusyError } from "~/lib/ai/extraction-busy-error";
 import {
@@ -1171,12 +1171,19 @@ function buildOfficeExtractionWorkerSource(
       for (const name of Object.keys(zip.files)) {
         if (/^xl\\/worksheets\\/[^/]+\\.xml$/.test(name)) sheets[name] = await read(name);
       }
-      return {
-        workbook: await read("xl/workbook.xml"),
-        rels: await read("xl/_rels/workbook.xml.rels"),
-        sharedStrings: await read("xl/sharedStrings.xml"),
-        sheets: sheets,
-      };
+      // Rendered here, so only the capped text crosses back to the server
+      // (#1990 review). \`__name\` covers a build that keeps function names.
+      const __name = (fn) => fn;
+      const xlsxToText = ${xlsxToText.toString()};
+      return xlsxToText(
+        {
+          workbook: await read("xl/workbook.xml"),
+          rels: await read("xl/_rels/workbook.xml.rels"),
+          sharedStrings: await read("xl/sharedStrings.xml"),
+          sheets: sheets,
+        },
+        ${JSON.stringify(XLSX_LIMITS)},
+      );
 `
       : kind === "docx"
         ? `
@@ -1521,20 +1528,24 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
 
 /**
  * Text of an .xlsx workbook, one block per sheet (#1742, chat attachments only).
- * Same isolation as DOCX/PPTX: ZIP-bomb caps in the parent, inflation in the
- * worker, and only the cheap XML pass here (see `xlsxToText`).
+ * Same isolation as DOCX/PPTX: ZIP-bomb caps in the parent; inflation and the
+ * XML pass (`xlsxToText`) in the worker, which returns only the capped text.
  */
 export async function extractXlsxText(file: File): Promise<XlsxText> {
   try {
     const arrayBuffer = await file.arrayBuffer();
     await loadZipWithLimits(arrayBuffer, "XLSX");
-    const parts = await extractPdfTextIsolated<XlsxParts>(Buffer.from(arrayBuffer), {
-      inputKind: "xlsx",
-      workerSource: (max) => buildOfficeExtractionWorkerSource("xlsx", max),
-    });
-    const { content, sheetCount } = xlsxToText(parts);
+    const { content, sheetCount } = await extractPdfTextIsolated<XlsxText>(
+      Buffer.from(arrayBuffer),
+      {
+        inputKind: "xlsx",
+        workerSource: (max) => buildOfficeExtractionWorkerSource("xlsx", max),
+      },
+    );
     return { content: sanitizeTextContent(content), sheetCount };
   } catch (error) {
+    // A full worker pool means "try again", not "this file is broken" (#1990 review).
+    if (error instanceof ExtractionBusyError) throw error;
     throw new Error(
       `Failed to extract text from XLSX: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
