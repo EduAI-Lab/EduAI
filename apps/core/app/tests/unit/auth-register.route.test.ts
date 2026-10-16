@@ -326,24 +326,30 @@ describe("join signup review regressions", () => {
     confirmPassword: STRONG_PASSWORD,
     redirectTo: "/courses/self-enroll?token=tok-1",
   };
-  it("redeems immediately and forwards all cookies when signup creates a session", async () => {
-    const headers = new Headers();
-    headers.append("Set-Cookie", "better-auth.session_token=session; Path=/; HttpOnly");
-    headers.append("Set-Cookie", "better-auth.session_data=data; Path=/; HttpOnly");
-    vi.mocked(auth.handler).mockResolvedValue(
-      new Response(
-        JSON.stringify({ token: "session", user: { id: "new-user", role: "STUDENT" } }),
-        { headers },
-      ),
-    );
-    const res = (await action(makeActionArgs(form))) as Response;
-    expect(res.headers.get("Location")).toBe("/courses/self-enroll/complete");
-    expect(res.headers.getSetCookie()).toHaveLength(2);
-    expect(redeemPendingSelfEnrollments).toHaveBeenCalledWith(
-      { id: "new-user", role: "STUDENT" },
-      expect.any(Request),
-    );
-  });
+  it.each([true, false])(
+    "preserves the join and all session cookies with pending join saved=%s",
+    async (remembered) => {
+      vi.mocked(rememberPendingSelfEnrollmentForSignUp).mockResolvedValue(remembered);
+      const headers = new Headers();
+      headers.append("Set-Cookie", "better-auth.session_token=session; Path=/; HttpOnly");
+      headers.append("Set-Cookie", "better-auth.session_data=data; Path=/; HttpOnly");
+      vi.mocked(auth.handler).mockResolvedValue(
+        new Response(
+          JSON.stringify({ token: "session", user: { id: "new-user", role: "STUDENT" } }),
+          { headers },
+        ),
+      );
+      const res = (await action(makeActionArgs(form))) as Response;
+      expect(res.headers.get("Location")).toBe(
+        remembered ? "/courses/self-enroll/complete" : "/courses/self-enroll?token=tok-1",
+      );
+      expect(res.headers.getSetCookie()).toEqual([
+        "better-auth.session_token=session; Path=/; HttpOnly",
+        "better-auth.session_data=data; Path=/; HttpOnly",
+      ]);
+      expect(redeemPendingSelfEnrollments).not.toHaveBeenCalled();
+    },
+  );
   it.each([true, false])(
     "preserves the join through sign-in without exposing whether signup created an account: %s",
     async (remembered) => {

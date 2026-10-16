@@ -14,10 +14,7 @@ import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
-import {
-  redeemPendingSelfEnrollments,
-  rememberPendingSelfEnrollmentForSignUp,
-} from "~/lib/courses/pending-self-enrollment.server";
+import { rememberPendingSelfEnrollmentForSignUp } from "~/lib/courses/pending-self-enrollment.server";
 import {
   describeSelfEnrollmentLinkForVisitor,
   SELF_ENROLL_COMPLETE_PATH,
@@ -128,25 +125,25 @@ export async function action({ request }: ActionFunctionArgs) {
       // Remembered against the new account and redeemed when the email is
       // verified, so the link need not survive the trip through the inbox.
       const signedUp = signUpResponseSchema.safeParse(await response.json().catch(() => null));
+      const joinPath = `/courses/self-enroll?token=${encodeURIComponent(joinToken)}`;
       if (signedUp.success) {
-        await rememberPendingSelfEnrollmentForSignUp({
+        const remembered = await rememberPendingSelfEnrollmentForSignUp({
           userId: signedUp.data.user.id,
           email: input.email,
           token: joinToken,
         });
         if (signedUp.data.token) {
-          // Verification is disabled: signup already created a session. Redeem
-          // now and forward every auth cookie before the completion loader runs.
-          await redeemPendingSelfEnrollments(signedUp.data.user, request);
+          // The completion loader redeems a saved join. If remembering failed,
+          // keep the token in the normal signed-in Join flow so the student
+          // can still join or see why the link is unusable.
           const headers = new Headers();
           appendAuthSetCookies(response, headers);
-          return redirect(SELF_ENROLL_COMPLETE_PATH, { headers });
+          return redirect(remembered ? SELF_ENROLL_COMPLETE_PATH : joinPath, { headers });
         }
       }
       // Keep the link for both new accounts and Better Auth's stand-in response.
       // The same destination and notice preserve email anti-enumeration; only a
       // password-checked sign-in may attach this join to an existing account.
-      const joinPath = `/courses/self-enroll?token=${encodeURIComponent(joinToken)}`;
       return redirect(`/auth/login?registered=1&redirect=${encodeURIComponent(joinPath)}`);
     }
 
