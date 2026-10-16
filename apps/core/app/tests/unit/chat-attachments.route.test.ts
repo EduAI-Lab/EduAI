@@ -99,6 +99,8 @@ describe("POST /api/chat/attachments", () => {
     ["ATTACHMENT_ENCODING_UNSUPPORTED", 400],
     ["ATTACHMENT_TOO_LARGE", 413],
     ["ATTACHMENT_EMPTY", 422],
+    ["ATTACHMENT_IMAGE_UNREADABLE", 422],
+    ["ATTACHMENT_BUSY", 503],
     ["ATTACHMENT_EXTRACT_FAILED", 422],
   ] as const)("maps %s to %i with a human sentence", async (code, status) => {
     vi.mocked(extractChatAttachment).mockRejectedValue(new ChatAttachmentError(code));

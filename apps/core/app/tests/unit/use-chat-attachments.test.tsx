@@ -2,9 +2,23 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeTextDataUrl } from "~/lib/chat/chat-attachments";
-import { uploadChatAttachment, useChatAttachments } from "~/components/chat/use-chat-attachments";
+import {
+  filesFromPaste,
+  uploadChatAttachment,
+  useChatAttachments,
+} from "~/components/chat/use-chat-attachments";
 
 const file = (name: string) => new File(["x"], name);
+
+/** Just the parts of a clipboard `filesFromPaste` reads. */
+function clipboard(files: File[], text: Record<string, string> = {}): DataTransfer {
+  const types = [...Object.keys(text), ...(files.length > 0 ? ["Files"] : [])];
+  // SAFETY: test double for the three DataTransfer members the code reads.
+  return { files, types, getData: (type: string) => text[type] ?? "" } as unknown as DataTransfer;
+}
+
+const screenshot = () => new File(["png"], "image.png", { type: "image/png" });
+const pastedFiles = (data: DataTransfer, soFar: number) => filesFromPaste(data, soFar).files;
 
 describe("useChatAttachments", () => {
   it("goes pending → ready and exposes a text/plain attachment", async () => {
@@ -39,7 +53,7 @@ describe("useChatAttachments", () => {
   it("rejects an unsupported extension without uploading", () => {
     const upload = vi.fn();
     const { result } = renderHook(() => useChatAttachments({ upload }));
-    act(() => result.current.add([file("photo.png")]));
+    act(() => result.current.add([file("animation.gif")]));
     expect(upload).not.toHaveBeenCalled();
     expect(result.current.items[0]).toMatchObject({ status: "failed", retryable: false });
   });
@@ -105,7 +119,7 @@ describe("useChatAttachments", () => {
   it("retry on an unsupported file is a no-op", () => {
     const upload = vi.fn();
     const { result } = renderHook(() => useChatAttachments({ upload }));
-    act(() => result.current.add([file("photo.png")]));
+    act(() => result.current.add([file("animation.gif")]));
     act(() => result.current.retry(result.current.items[0]!.id));
     expect(upload).not.toHaveBeenCalled();
     expect(result.current.items[0]?.status).toBe("failed");
@@ -139,5 +153,130 @@ describe("uploadChatAttachment", () => {
         ),
     );
     await expect(uploadChatAttachment(file("a.txt"))).rejects.toThrow("No readable text.");
+  });
+});
+
+describe("filesFromPaste (#1742)", () => {
+  it("attaches a pasted screenshot under a numbered name", () => {
+    const [pasted] = pastedFiles(clipboard([screenshot()]), 0);
+    expect(pasted?.name).toBe("Pasted image 1.png");
+    expect(pasted?.type).toBe("image/png");
+  });
+
+  it("numbers on from the images already pasted", () => {
+    const pasted = pastedFiles(clipboard([screenshot(), screenshot()]), 2);
+    expect(pasted.map((f) => f.name)).toEqual(["Pasted image 3.png", "Pasted image 4.png"]);
+  });
+
+  it("uses the extension of the pasted type", () => {
+    const jpeg = new File(["j"], "image.jpeg", { type: "image/jpeg" });
+    expect(pastedFiles(clipboard([jpeg]), 0)[0]?.name).toBe("Pasted image 1.jpg");
+  });
+
+  it("keeps the real name of a file copied in Finder", () => {
+    const copied = new File(["p"], "lab3-output.png", { type: "image/png" });
+    const notes = new File(["n"], "notes.pdf", { type: "application/pdf" });
+    const pasted = pastedFiles(clipboard([copied, notes], { "text/plain": "lab3-output.png" }), 0);
+    expect(pasted.map((f) => f.name)).toEqual(["lab3-output.png", "notes.pdf"]);
+  });
+
+  it("lets cells copied from Excel or Word paste as text, not as their picture", () => {
+    const data = clipboard([screenshot()], { "text/plain": "a\tb", "text/html": "<table>" });
+    expect(pastedFiles(data, 0)).toEqual([]);
+  });
+
+  it('attaches a web page\'s "Copy image", which carries HTML but no text', () => {
+    const data = clipboard([screenshot()], { "text/html": '<img src="x">' });
+    expect(pastedFiles(data, 0)).toHaveLength(1);
+  });
+
+  it("leaves a plain text paste alone", () => {
+    expect(pastedFiles(clipboard([], { "text/plain": "hello" }), 0)).toEqual([]);
+  });
+
+  it("reports which files it renamed", () => {
+    const copied = new File(["p"], "Pasted image 9.png", { type: "image/png" });
+    expect(filesFromPaste(clipboard([screenshot(), copied]), 0).renamed).toEqual([true, false]);
+  });
+
+  it("keeps an unsupported image's name so its chip says why", () => {
+    const gif = new File(["g"], "image.gif", { type: "image/gif" });
+    expect(pastedFiles(clipboard([gif]), 0)[0]?.name).toBe("image.gif");
+  });
+});
+
+describe("useChatAttachments paste (#1742)", () => {
+  it("uploads a pasted screenshot and reports the paste as taken", () => {
+    const upload = vi.fn().mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    let taken = false;
+    act(() => {
+      taken = result.current.paste(clipboard([screenshot()]));
+    });
+    expect(taken).toBe(true);
+    expect(upload).toHaveBeenCalledOnce();
+    expect(result.current.items[0]).toMatchObject({
+      name: "Pasted image 1.png",
+      status: "pending",
+    });
+  });
+
+  it("keeps counting across pastes", () => {
+    const upload = vi.fn().mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    act(() => void result.current.paste(clipboard([screenshot()])));
+    act(() => void result.current.paste(clipboard([screenshot()])));
+    expect(result.current.items.map((i) => i.name)).toEqual([
+      "Pasted image 1.png",
+      "Pasted image 2.png",
+    ]);
+  });
+
+  it("returns false for a text paste so the textbox gets it", () => {
+    const upload = vi.fn();
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    let taken = true;
+    act(() => {
+      taken = result.current.paste(clipboard([], { "text/plain": "hello" }));
+    });
+    expect(taken).toBe(false);
+    expect(result.current.items).toEqual([]);
+  });
+
+  // #1990 review: numbering restarts with each message and has no gaps.
+  it("restarts numbering after the message is sent", () => {
+    const upload = vi.fn().mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    act(() => void result.current.paste(clipboard([screenshot()])));
+    act(() => result.current.clear());
+    act(() => void result.current.paste(clipboard([screenshot()])));
+    expect(result.current.items.map((i) => i.name)).toEqual(["Pasted image 1.png"]);
+  });
+
+  it("uses no number for a screenshot the file limit refused", () => {
+    const upload = vi.fn().mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    act(() => result.current.add([file("a.txt"), file("b.txt")]));
+    act(() => void result.current.paste(clipboard([screenshot(), screenshot()])));
+    expect(result.current.limitError).toMatch(/up to 3 files/u);
+    act(() => result.current.remove(result.current.items[0]!.id));
+    act(() => void result.current.paste(clipboard([screenshot()])));
+    expect(result.current.items.map((i) => i.name)).toEqual([
+      "b.txt",
+      "Pasted image 1.png",
+      "Pasted image 2.png",
+    ]);
+  });
+
+  it('does not count a real file already named "Pasted image"', () => {
+    const upload = vi.fn().mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChatAttachments({ upload }));
+    const named = new File(["p"], "Pasted image 7.png", { type: "image/png" });
+    act(() => void result.current.paste(clipboard([named])));
+    act(() => void result.current.paste(clipboard([screenshot()])));
+    expect(result.current.items.map((i) => i.name)).toEqual([
+      "Pasted image 7.png",
+      "Pasted image 1.png",
+    ]);
   });
 });
