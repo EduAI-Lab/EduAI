@@ -20,8 +20,10 @@ import {
   getCourseEnrollmentsFromCore,
   getCourseFromCore,
   getMyProfileFromCore,
+  listCoursesFromCore,
 } from "../services/coreApiService.js";
 import { assertQmAiDeadline } from "./aiAdmission.js";
+import { QM_AUTHORIZED } from "./roles.js";
 
 /** Resolved access levels and their numeric ranks (shared contract §3). */
 export const LEVELS = {
@@ -265,4 +267,32 @@ export function requireOptionalCourseAccess({ min, getCourseId, attachAs = "targ
       next(error);
     }
   };
+}
+
+/**
+ * Admit a QM-authorized role, or a platform STUDENT who is a live TA in at
+ * least one Core course (Core represents a course TA as platform STUDENT).
+ * For routes with no single course to check, such as the AI status probe, the
+ * model catalog and bug reports (#2013). Fails closed when Core is unreachable.
+ */
+export async function requireQmAuthoringOrLiveTa(req, res, next) {
+  if (QM_AUTHORIZED.includes(req.user?.role)) return next();
+  if (req.user?.role !== "STUDENT") {
+    return res.status(403).json({
+      success: false,
+      error: "Question Maker authoring access required",
+    });
+  }
+
+  try {
+    const coreCourses = await listCoursesFromCore(req.headers.cookie ?? "", { all: true });
+    if (coreCourses.some((course) => course?.callerEnrollmentRole === "TA")) return next();
+  } catch {
+    // Fail closed when the live Core course snapshot is unavailable.
+  }
+
+  return res.status(403).json({
+    success: false,
+    error: "Question Maker authoring access required",
+  });
 }
