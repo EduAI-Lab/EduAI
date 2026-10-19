@@ -47,7 +47,7 @@ EduAI/
 ├── docker-compose.dev.yml           # Dev-only Postgres + Redis containers (apps run on the host)
 ├── docker-compose.test.yml          # Containerized unit/integration suites
 ├── docker-compose.e2e.yml           # Containerized end-to-end stack
-├── CHANGELOG.md                     # Unified changelog across all apps
+├── docs/deprecated/CHANGELOG.md     # Historical changelog (archived)
 ├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
 ```
@@ -133,7 +133,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 
 ## Changelog
 
-All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
+Current changes are recorded in linked issues and pull requests. The [historical changelog](docs/deprecated/CHANGELOG.md) is archived.
 
 ## Chat latency benchmarking (EduAI Core)
 
@@ -556,3 +556,7 @@ git commit --no-verify        # bypass it for one commit
 ```
 
 > The legacy per-app hooks in `apps/extensions/ai-tutor/.githooks/` are superseded by the root lefthook config and are not installed by anything.
+
+### Onboarding and documentation
+
+Each application’s dashboard has a five-task checklist, with account-specific progress in the current browser. Fifteen key pages across the apps have a ▶ page-tour button, and on the Core and Question Maker dashboards it plays the existing dashboard tour; no tour starts automatically. Tour copy is generated from [docs/ONBOARDING.md](docs/ONBOARDING.md): run `npm run onboarding:generate` after editing and `npm run onboarding:check` to detect drift. Product instructions live in the [user guide](docs/USER_GUIDE.md) and [instructor onboarding](docs/INSTRUCTOR_ONBOARDING.md). Run `npm run help-docs:generate -w edu-ai` after changing either guide so Penny uses the same text.

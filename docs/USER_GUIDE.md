@@ -29,7 +29,8 @@ You remain signed in because Core provides the shared session for all three appl
 - Use the **application switcher** in the sidebar footer to open Core, AI Tutor, or Question Maker.
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
 - Open the **profile menu** in the sidebar footer for Settings and Log out.
-- Use **Help** for the in-product guide.
+- Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
+- Each app's dashboard has a five-task **Getting started** checklist, and its five main pages have a ▶ **Page tour** button in the header (see [Getting started](ONBOARDING.md)). Tours start only when you choose them. On the Core and Question Maker dashboards, ▶ plays the dashboard tour.
 - Use **Report a bug** in the header when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
@@ -38,7 +39,7 @@ You remain signed in because Core provides the shared session for all three appl
 
 When an administrator has turned it on, **Penny** sits in the bottom-right corner of every Core page (on chat pages it moves to a button in the header so it does not cover the message box).
 
-- Ask how to do something in EduAI — for example "How do I join a course?" or "How do I report a bug?". Penny answers only from this user guide, filtered to your role, and links the guide pages it used.
+- Ask how to do something in EduAI — for example "How do I join a course?" or "How do I report a bug?". Penny answers from the user guide and instructor onboarding guide, filtered to your role, and links the guide pages it used.
 - Inside a course, Penny can also answer questions about that course's materials, and when you preview a material you can choose **Ask Penny about this** to ask about that file. The panel header always says which course or material it is looking at.
 - Platform how-to questions still work inside a course: Penny always searches the guide as well.
 - If the guide does not cover your question, Penny says so instead of guessing. If it says it is temporarily unavailable, the search service is down; try again later.
@@ -62,6 +63,8 @@ Core Settings contains:
 - **Providers** — enable or configure supported AI providers.
 - **Canvas** — connect Canvas when the tab is available for your role.
 
+Forgot your password? Choose **Forgot your password?** on the sign-in page. EduAI emails you a 6-digit code to enter with your new password.
+
 If your session expires, sign in again. If an extension reports that the auth service is unavailable, Core may be temporarily unreachable; retry after Core is available rather than repeatedly changing your password.
 
 ## Roles and access
@@ -70,7 +73,7 @@ EduAI combines a platform role with course-level access.
 
 | Role or access | Typical capabilities |
 | --- | --- |
-| **STUDENT** | View enrolled courses and materials, use course chat, and complete published AI Tutor activities |
+| **STUDENT** | View enrolled published courses, use course chat, and complete published AI Tutor activities |
 | **TA course access** | Student capabilities plus staff access for assigned courses, such as roster/material visibility in Core and grading/oversight in AI Tutor |
 | **INSTRUCTOR** | Manage assigned courses and materials, connect Canvas, author AI Tutor content, and use Question Maker |
 | **UNIT_ADMIN** | Manage courses within authorized departments and use unit-scoped administration |
@@ -80,7 +83,7 @@ TA is primarily a course enrollment role. A person may therefore have the platfo
 
 Buttons, tabs, and sidebar links are filtered by role and policy. A missing or disabled action usually means you do not have the required course access, the feature has been disabled by an administrator, or the course is not linked to the required application. Ask an instructor or administrator instead of trying to work around the restriction.
 
-Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. Students and TAs should expect an access-denied screen.
+Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can open the courses they assist there to see course details, topics and the roster, but cannot create or edit questions or assessments. Students see an access-denied screen.
 
 ## EduAI Core workflows
 
@@ -105,6 +108,8 @@ Platform administrators, unit administrators, and instructors can make a new cou
 
 The new course starts as a **Draft**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
 
+If a deleted course has the same code, section, year and term, or the same instructor already teaches that code in another section, year or term, EduAI first shows **This course may already exist**. **Restore** brings the deleted course back with its materials, enrollments and question banks; **Create new course anyway** makes a separate course.
+
 Who can create where:
 
 - Unit administrators can only create courses under the course codes they are authorized for. If you have no authorized course codes, the button is disabled.
@@ -121,10 +126,14 @@ If your course already exists in Canvas, you don't need to create it by hand: fe
 4. Enter a clear question and send it.
 5. Continue in the same chat when asking follow-up questions about the same course.
 
+Use the attachment control to add PDF, Word, PowerPoint, Excel, UTF-8 text/code, or PNG/JPEG/WebP files to a message. Images are transcribed before sending; the chat model receives text, not the original image. Wait for extraction to finish and check any warning about truncated content. Message attachments are separate from the course learning-material library.
+
 The selected course controls which material can be retrieved. Start a separate chat when switching course context. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
 
 **Assistive Mode.** Course Chat has an Assist toggle that reformats answers into a predictable structure (top summary, short stages, an explicit "next?" prompt) for readers who find long unbroken prose hard to work through. Turning it on may switch the request to a larger model, so replies can take longer; the progress indicator shows an expected duration and says so when a reply is taking longer than usual. Toggling Assist on the last reply re-generates that reply in place rather than only restyling it. Set your default in
 **Settings → Accessibility**.
+
+**Restrict Course Chat.** Instructors can turn on **Restrict Course Chat to this course** in a course's **Settings** tab so that course chat declines questions unrelated to the course. An administrator can switch the feature off for every course with **Course chat restriction available** in **Administration → Settings**; the course switch then says so.
 
 **Model selection and Auto.** Where the model picker offers **Auto**, EduAI chooses a model per message based on the question. Administrators decide in **AI Management** which Auto modes are available, so the picker may show one, both, or neither. Some models are hosted on UBC hardware; a "degraded" indicator in the header means those machines are busy, not that anything is broken.
 
@@ -132,8 +141,10 @@ Do not put passwords, API keys, private student information, or other secrets in
 
 ### Work with course materials
 
-- Students and TAs can view materials made available to their course access.
-- Instructors can upload supported material files and may connect/sync Canvas content.
+- Students use course chat rather than the course Materials tab. Course-material files and their names are hidden from students; staff retain materials access according to their course permissions.
+- Instructors and TAs can upload learning materials, several files at once with progress shown for each, and instructors may connect/sync Canvas content. Materials are the reference content used to ground course chat, not a place for student submissions.
+- PNG, JPEG and WebP images are transcribed by a vision model before indexing. Check the transcription and retrieval with real examples; handwriting and charts can be misread. A scanned PDF without a text layer still needs OCR or conversion to a supported image.
+- A file may be linked to up to three approved topics. Automatic matching uses existing accepted topics; it does not invent new topics on upload. Instructors can change the links on the file. Use **Topics → Suggest topics** to request new suggestions, then review them. Core and course chat show students approved topics only, never suggestions or Uncategorized. AI Tutor's course page can still list unapproved suggestions to students; this is a known bug.
 - Uploaded material is processed and indexed before it becomes useful to course-aware chat. A processing failure means the file may not be available to retrieval.
 - If Canvas is unavailable or a sync is rate-limited, wait and retry rather than starting multiple simultaneous syncs.
 
@@ -212,13 +223,13 @@ The **Administration** sidebar group provides:
 - **Invitations** — platform invitation management.
 - **Settings** — platform policies and retention/configuration controls.
 - **Logs** — audit, security, and system activity.
-- **Cron Jobs** — job status and manual operations.
+- **Cron Jobs** — job status, manual runs, and per-job settings such as how many days deleted course materials are kept before they are purged (**Edit settings → Delete after (days)**).
 
 **Admin Chatbot** appears separately near the bottom of the sidebar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
 
 **Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
 
-1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on every signed-in page, for every role.
+1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on signed-in Core pages, for every role. AI Tutor and Question Maker do not have Penny yet.
 2. In the same card, **Students can ask about course material** decides whether students can also ask about the course or material they are viewing. Instructors and administrators can always ask about their own courses while Penny is on.
 3. Penny answers with the AI providers and models enabled under **Administration → AI Management**. Each user can save their own key in Penny's gear menu; anyone without one uses the platform's configured key. Under **Help assistant tuning** on the AI Management page you can choose the **Default answer model** and how many guide pages one answer may draw on.
 4. To stop Penny during a cost or provider incident, switch off **Enable Penny, the help assistant**. This stops every Penny question, documentation and course material alike, for everyone, administrators included.
@@ -246,7 +257,7 @@ For a guided tour, open the **(?)** help button in the page header and choose **
 
 ### Instructor: build course content
 
-1. Open **AI Tutor → Courses** and select or import a Core course.
+1. Open **AI Tutor → Courses** and select a course synced from Core.
 2. Create the content hierarchy: **module → lesson → activity**.
 3. Configure the activity prompt and enabled tutoring modes.
 4. Preview the material.
@@ -281,11 +292,13 @@ Only use custom AI prompts that support the learning objective. Do not include s
 
 The **Question Library** in the main sidebar provides a cross-course view.
 
+On the **Questions** tab, and in the Question Library once a course is picked, you can filter by **Bank**. A question card's menu offers **Move to bank…** and **Add to bank…**; banks that already hold the question can't be picked.
+
 ### Create and approve an AI-assisted question variant
 
 1. In a course workspace, open **Questions** and create or select a question.
 2. Add the question text, type, difficulty, topics, choices, reasoning, and other required metadata.
-3. Generate an AI variant when the AI service is available.
+3. Generate an AI variant when the AI service is available. For a new question you can set **Number of questions** (1–10) to get several drafts at once, then go through them: **Save & next** saves a draft and **Discard draft** skips it.
 4. Review and edit the draft carefully.
 5. Approve the variant to push the finalized question into Core.
 
@@ -295,7 +308,7 @@ Approval can fail if the linked Core course or topic has changed. Refresh the co
 
 1. Open **Assessments** in the course workspace.
 2. Create an assessment and add sections.
-3. Choose questions from the bank.
+3. Choose the assessment’s course topics if you want to limit its scope, then choose questions from the bank. Off-topic questions cannot be added while that restriction is in place.
 4. Save the assessment.
 5. Open the variants workflow to produce equivalent versions and review the AI comparison.
 6. Export to the required format or Canvas after a final human review.

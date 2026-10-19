@@ -257,7 +257,7 @@ Read the documents relevant to the subsystem before implementation:
 | [Question Maker developer guide](../apps/extensions/question-maker/docs/DEVELOPER_GUIDE.md) | QM architecture and product flow code pointers |
 | [Question Maker architecture](../apps/extensions/question-maker/docs/ARCHITECTURE.md) | QM runtime, containers, networking, and deployment |
 | [Test inventory](../TESTS.md) | Test policy, commands, and file-by-file inventory |
-| [Changelog](../CHANGELOG.md) | Shipped changes across all products |
+| [Historical changelog](deprecated/CHANGELOG.md) | Archived changes; use linked PRs for current work |
 
 Planning and implementation notes under `docs/implementations/` can explain why a design exists, but verify their status against the current code before using them as a contract.
 
@@ -271,7 +271,7 @@ Before opening a pull request:
 4. Add validation and negative authorization cases.
 5. Add or update focused tests and run the affected suites.
 6. Update `TESTS.md` when the test inventory changes.
-7. Update `CHANGELOG.md` for a user-visible or operationally significant change.
+7. Describe user-visible and operational changes in the linked issue and PR. The changelog under `docs/deprecated/` is historical.
 8. Update `README.md`, env examples, and subsystem docs when setup, behavior, or configuration changes.
 9. Verify every path, function name, route, and command cited in documentation.
 10. Review logs, errors, screenshots, fixtures, and commits for secrets or personal data.

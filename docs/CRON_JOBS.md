@@ -260,6 +260,8 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 
 | Job | Schedule | Type | Purpose |
 |---|---|---|---|
+| `ai-status-probe` | every `AI_STATUS_POLL_MINUTES` minutes (default 15) | Core handler (`execution: "CORE"`) | Sample UBC fleet health per model and store a status history point for the AI status indicators |
+| `disk-usage-check` | `*/30 * * * *` (every 30 minutes) | Core handler (`execution: "CORE"`) | Log and email the admins when this server's disk passes **Warn at** (85%) or **Critical at** (95%); both admin-editable. See [Disk usage alerts](#disk-usage-alerts-1869) |
 | `backup-nightly` | `0 2 * * *` (02:00 UTC) | Infra | pg_dump all three databases |
 | `backup-offsite` | `45 2 * * *` (02:45 UTC) | Infra | Sync dumps to off-site storage |
 | `backup-rotate` | `15 3 * * *` (03:15 UTC) | Infra | Delete local dumps past retention window |

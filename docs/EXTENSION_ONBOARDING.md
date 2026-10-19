@@ -1,7 +1,7 @@
 # Extension Onboarding Guide
 
 **Issue:** EduAICore #636  
-**Last Updated:** 2026-07-08  
+**Last Updated:** 2026-10-17  
 **Verified against:** AI Tutor, Question Maker, example-extension
 
 This guide explains how to connect a new extension to the EduAI Core platform. It covers auth, session handling, role enforcement, calling Core APIs, and registering the extension in Core's sidebar.
@@ -31,7 +31,7 @@ Core is the single identity provider for the entire platform. Extensions do not 
 
 **How it works:**
 
-1. A user logs in on Core. Core sets a session cookie with `Domain=.eduai.ok.ubc.ca` (production) or `Domain=localhost` (development). The cookie is readable by every extension running under the same domain.
+1. A user logs in on Core. Core sets an HTTP-only session cookie. Hosted subdomains share it when `COOKIE_DOMAIN` is configured for their parent domain. Localhost uses a host-only cookie (no Domain attribute), shared across ports. JavaScript cannot read the HTTP-only cookie.
 2. When the user navigates to an extension, the extension's auth middleware forwards the raw `Cookie` header to `POST /api/sessions/validate` on Core.
 3. Core validates the cookie and returns the user identity (`{ id, email, name, image, role }`).
 4. The middleware populates `req.user` and the request continues.
@@ -76,56 +76,13 @@ EDUAI_BASE_URL=http://localhost:3000/api
 
 ## 4. Session validation middleware
 
-Both extensions implement the same `requireAuth` middleware. Copy this pattern exactly:
+Use the maintained middleware in [AI Tutor](../apps/extensions/ai-tutor/server/src/middleware/auth.js) or [Question Maker](../apps/extensions/question-maker/app/backend/src/middleware/auth.js) as the implementation reference. The example extension is a minimal demonstration, not a production-ready error-handling contract.
 
-```js
-// src/middleware/auth.js
-
-const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN']);
-
-function normalizeRole(role) {
-  return VALID_ROLES.has(role) ? role : 'STUDENT';
-}
-
-export async function requireAuth(req, res, next) {
-  try {
-    const headers = { cookie: req.headers.cookie ?? '' };
-    // Core requires EDUAI_API_KEY on POST /api/sessions/validate.
-    // Unset keys produce 403. Still attempt the request so a template can
-    // run without Core (e.g. local UI-only experiments).
-    const serviceKey = process.env.EDUAI_API_KEY?.trim();
-    if (serviceKey) headers.authorization = `Bearer ${serviceKey}`;
-
-    const response = await fetch(`${process.env.CORE_URL}/api/sessions/validate`, {
-      method: 'POST',
-      headers,
-    });
-
-    if (!response.ok) {
-      if (req.path.startsWith('/api/')) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
-      const returnUrl = encodeURIComponent(`${process.env.EXTENSION_URL}${req.originalUrl}`);
-      return res.redirect(`${process.env.CORE_URL}/login?redirect=${returnUrl}`);
-    }
-
-    const { user } = await response.json();
-    req.user = { ...user, role: normalizeRole(user.role) };
-    next();
-  } catch {
-    res.status(503).json({ error: 'Auth service unavailable — is Core running?' });
-  }
-}
-```
-
-Key points:
-
-- **`EDUAI_API_KEY` is required for `POST /api/sessions/validate`.** Send `Authorization: Bearer ${EDUAI_API_KEY}` (trim the env var) alongside the cookie. A missing key yields an opaque 403 from Core.
-- **Forward the raw `Cookie` header verbatim.** Do not parse or filter it — Core's session store resolves the correct session from the cookie value.
-- **API routes (`/api/*`) return 401.** These are called by fetch, not browser navigation. Let the client handle it.
-- **All other routes redirect to Core login.** The `?redirect=` param tells Core where to send the user after authentication.
-- **Unknown roles normalize to `STUDENT`.** This is the least-privilege default and guards against future roles that the extension hasn't been updated to recognize.
-- **The `catch` block returns 503, not 401.** It only runs when the `fetch` to Core itself fails (network error, Core down) — a distinct failure mode from Core responding with an invalid session. `401` means "you're not authenticated"; `503` means "we couldn't even ask."
+- Forward the incoming raw Cookie header and the server-only EDUAI_API_KEY to POST /api/sessions/validate.
+- Preserve the distinction between an invalid session (401), a bad service configuration (403), rate limiting (429), and a Core outage (503). Do not turn every failure into a sign-in loop.
+- Treat the returned platform role and authorized units as identity, then check course access separately for every course operation.
+- Redirect unauthenticated browser navigation to Core’s /auth/login with a validated return URL. API requests should return an error for the frontend to handle.
+- Never expose the service key through a VITE_ variable, browser request, or source bundle.
 
 ### Core response shape
 
@@ -144,9 +101,9 @@ Key points:
 }
 ```
 
-`authorizedUnits` is only populated for `UNIT_ADMIN` users. Extensions that implement unit-level scoping (like AI Tutor) use this array to filter which courses a unit admin can see. Extensions that do not implement unit scoping can ignore the field.
+`authorizedUnits` is only populated for `UNIT_ADMIN` users. Extensions that implement unit-level scoping (like AI Tutor) use this array to filter which courses a unit admin can see. A course-scoped extension must enforce those units or deny unit-admin access; ignoring them must not grant cross-unit access.
 
-Returns `401` (no body) when the session is missing or expired.
+Returns `401` with a JSON error when the session is missing or expired. Invalid service credentials return `403`, with repeated invalid requests rate-limited to `429`; valid callers can also receive `429` when admission limits are exceeded.
 
 ---
 
@@ -155,7 +112,7 @@ Returns `401` (no body) when the session is missing or expired.
 When `requireAuth` receives a `401` from Core on a non-API route, it redirects the user to Core's login page with a `?redirect=` parameter:
 
 ```
-GET {CORE_URL}/login?redirect={encodeURIComponent(extensionUrl + req.originalUrl)}
+GET {CORE_URL}/auth/login?redirect={encodeURIComponent(extensionUrl + req.originalUrl)}
 ```
 
 After a successful login, Core validates the `?redirect=` value and redirects the user back. Core's `validateRedirectUrl` function accepts:
@@ -275,7 +232,7 @@ Reads are unaffected. Your own extension should run the mirror-image guard on it
 | `POST /api/sessions/validate` | Session validation — **requires** the key; a cookie alone is `403` |
 | `GET /api/courses` | List courses (role-filtered when a cookie is forwarded; unscoped for a bare service key) |
 | `GET /api/courses/:id` | Single-course live read-through |
-| `GET /api/courses/:id/topics` | Topics for a course |
+| `GET /api/courses/:id/topics` | Service-key callers receive staff topics, including suggestions; never expose this response directly as a student topic list |
 | `GET /api/courses/:id/enrollments` | Course roster |
 | `GET /api/policies` | Platform feature flags |
 | `POST /api/completion` | Stateless LLM completion for extension AI-assist |
@@ -349,7 +306,7 @@ Core and the new extension must run simultaneously for the auth flow to work.
 | Example extension | `9000` | `http://localhost:3000` |
 
 **Cookie behavior across ports:**  
-Core sets `Domain=localhost` in development. Modern browsers (Chrome, Firefox, Edge) share `Domain=localhost` cookies across ports when `SameSite=Lax` is set, which is Better Auth's default. No host file edits are required.
+On localhost, Core deliberately omits the Domain attribute and ignores loopback `COOKIE_DOMAIN` values. Cookies are shared across ports on the same hostname. Use `localhost` consistently rather than mixing it with `127.0.0.1`; keep `credentials: "include"` on cross-origin browser API calls.
 
 **Common local dev failures:**
 
@@ -370,7 +327,7 @@ Run through these steps after wiring up a new extension. All items must pass bef
 ### Auth flow
 
 - [ ] Start Core and the new extension locally.
-- [ ] Visit a protected extension route without a session — confirm a redirect to `{CORE_URL}/login?redirect=<extension-url>`.
+- [ ] Visit a protected extension route without a session — confirm a redirect to `{CORE_URL}/auth/login?redirect=<extension-url>`.
 - [ ] Log in on Core — confirm you land back on the extension at the original URL.
 - [ ] Hit a protected extension API route without a session (e.g., `curl http://localhost:<port>/api/me`) — confirm `401 Authentication required`.
 - [ ] Log out on Core — confirm the next request to the extension redirects to Core login.
