@@ -311,8 +311,9 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// #1962: students never see a course's files. One gate in the shared access
-// step refuses them on every materials path, before any read or write.
+// #1962: by default students never see a course's files. One gate in the
+// shared access step refuses them on every materials path, before any read or
+// write. (A course that shares its files is covered at the end, #2002.)
 // ---------------------------------------------------------------------------
 
 describe("students are refused on every materials path (#1962)", () => {
@@ -2319,6 +2320,121 @@ describe("GET materials — ?ids= re-read (#1795 review round 3)", () => {
     const body = await (await loader(makeIdsArgs(" , "))).json();
 
     expect(body).toEqual({ materials: [], nextCursor: null });
+    expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #2002: a course that shares its files lets its students READ them — list,
+// `?ids=` re-read and preview — through each file's own student gate. Every
+// write stays staff-only, and an unpublished course stays closed.
+// ---------------------------------------------------------------------------
+
+describe("a course that shares its files with students (#2002)", () => {
+  const SHARED = { ...COURSE, studentFilesVisible: true };
+  const STUDENT = { level: "student", rank: 0 } as const;
+  const ROW = {
+    id: "mat-1",
+    title: "Lecture 1",
+    mimeType: "text/plain",
+    fileSize: 10,
+    status: "READY",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    uploadedBy: "instructor-1",
+    externalId: null,
+    failureCode: null,
+    visibleToStudents: true,
+    availableAt: null,
+    _count: { chunks: 3 },
+  };
+
+  beforeEach(() => {
+    mockSession("STUDENT", "student-user");
+    mockAccess(STUDENT, SHARED);
+    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
+      { canvasFileId: "excluded-canvas-file" },
+    ] as never);
+  });
+
+  it("lists files through the student gate, without upload or filing details", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([ROW] as never);
+
+    const res = await loader(makeArgs("GET"));
+
+    expect(res.status).toBe(200);
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          courseId: COURSE_ID,
+          deletedAt: null,
+          unpublishedAt: null,
+          visibleToStudents: true,
+          AND: expect.any(Array),
+        }),
+      }),
+    );
+    expect((await res.json()).materials).toEqual([
+      {
+        id: "mat-1",
+        title: "Lecture 1",
+        mimeType: "text/plain",
+        fileSize: 10,
+        status: "READY",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("re-reads by ids through the same gate", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    const args = makeArgs("GET");
+    args.request = new Request(`http://localhost/api/courses/${COURSE_ID}/materials?ids=mat-1`);
+
+    expect((await loader(args)).status).toBe(200);
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ["mat-1"] }, visibleToStudents: true }),
+      }),
+    );
+  });
+
+  it("previews a file the student may see, and 404s one the gate hides", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "mat-1",
+      title: "Lecture 1",
+      status: "READY",
+      rawText: "Preview text",
+    } as never);
+
+    const shown = await loader(makePreviewArgs("mat-1"));
+    expect(shown.status).toBe(200);
+    expect((await shown.json()).excerpt).toBe("Preview text");
+    expect(prisma.courseMaterial.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ visibleToStudents: true }) }),
+    );
+
+    // Gated off, though the row exists.
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "mat-2" } as never);
+    expect((await loader(makePreviewArgs("mat-2"))).status).toBe(404);
+  });
+
+  it.each<[string, () => Promise<Response>]>([
+    ["POST upload", () => action(stubUploadArgs())],
+    ["PATCH rename", () => action(makeRenameArgs("mat-1", { title: "New name" }))],
+    ["DELETE", () => action(makeDeleteArgs("mat-1"))],
+  ])("still refuses %s", async (_path, call) => {
+    expect((await call()).status).toBe(403);
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("stays closed while the course is unpublished", async () => {
+    mockAccess(STUDENT, { ...SHARED, isPublished: false });
+
+    expect((await loader(makeArgs("GET"))).status).toBe(403);
     expect(prisma.courseMaterial.findMany).not.toHaveBeenCalled();
   });
 });

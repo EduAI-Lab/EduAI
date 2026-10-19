@@ -48,7 +48,11 @@ import { topicsForMaterials, type MaterialTopic } from "~/lib/topics/material-to
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { z } from "zod";
 import { withErrorResponse } from "~/lib/errors.server";
-import { previewExcerpt, readMaterialForViewer } from "~/lib/materials/viewable-material.server";
+import {
+  previewExcerpt,
+  readMaterialForViewer,
+  materialGateFor,
+} from "~/lib/materials/viewable-material.server";
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -76,13 +80,14 @@ type MaterialEditAuditDetails = {
  * Shared auth resolution for all material routes: session + §7 course access.
  * Returns a Response on failure, or the session user + access on success.
  *
- * #1962: students never see a course's files — course chat is their way into a
- * course — so a student is refused here, before any read or write, on every
- * path this module serves: list, `?ids=` re-read, preview, upload, rename,
- * delete and reprocess. `canViewMaterial` is an allow-list of staff levels, so
- * a level added later is refused until it is named there. No student UI calls
- * this API any more, so the refusal is audited like the policy denials it
- * replaced: a student request here is a stale client or a probe.
+ * #1962: a course's files are staff-only by default — course chat is a
+ * student's way into a course. #2002: a course may share its files with
+ * students, and then a student may READ them (list, `?ids=` re-read, preview)
+ * in a published course, still through the per-file student gate. Upload,
+ * rename, delete and reprocess stay staff-only. `canViewMaterial` is an
+ * allow-list, so a level added later is refused until it is named there. A
+ * refusal is audited like the policy denials it replaced: a student request
+ * the course does not allow is a stale client or a probe.
  */
 async function resolveMaterialsAccess(
   request: Request,
@@ -103,7 +108,13 @@ async function resolveMaterialsAccess(
   if (!access) {
     return { response: json(403, { error: "Forbidden" }) };
   }
-  if (!canViewMaterial(access.level)) {
+  const allowed =
+    access.level === "student"
+      ? canViewMaterial(access.level, course.studentFilesVisible) &&
+        course.isPublished &&
+        request.method === "GET"
+      : canViewMaterial(access.level);
+  if (!allowed) {
     const { fireAndForget, logSecurityEvent } = await import("~/lib/logging.server");
     fireAndForget(
       logSecurityEvent({
@@ -926,13 +937,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const resolved = await resolveMaterialsAccess(request, courseId);
       if (resolved.response) return resolved.response;
 
-      // Students were refused in resolveMaterialsAccess (#1962), so every caller
-      // from here on is staff and reads every live material, unfiltered. The
-      // single-material read is shared with the help assistant's material context
-      // (#1821), so both ask the identical question.
+      // Staff read every live material, unfiltered; a student (only where the
+      // course shares its files, #2002) reads through the per-file student gate.
+      // The single-material read is shared with the help assistant's material
+      // context (#1821), so both ask the identical question.
       if (materialId) {
         const read = await readMaterialForViewer({ courseId, materialId, access: resolved.access });
-        // Only a student can be gated off a material that exists, and none get here.
+        // A material the student gate hides answers like a missing one.
         if (read.status !== "ok") {
           return json(404, { error: "Material not found" });
         }
@@ -946,6 +957,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         return json(200, { material: meta, ...previewExcerpt(rawText) });
       }
 
+      const student = resolved.access.level === "student";
+      const studentGate = await materialGateFor(courseId, resolved.access);
+
       // A targeted re-read of rows the client already holds (#1795 review round
       // 3), not a page: no cursor in, no cursor out, so merging the answer
       // cannot disturb the pages the user loaded with "load more".
@@ -955,16 +969,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           return json(200, { materials: [], nextCursor: null });
         }
         const rows = await prisma.courseMaterial.findMany({
-          where: { courseId, deletedAt: null, id: { in: requestedIds } },
+          where: { courseId, deletedAt: null, id: { in: requestedIds }, ...studentGate },
           select: MATERIAL_LIST_SELECT,
           orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
         });
-        return json(200, { materials: await toMaterialListRows(rows), nextCursor: null });
+        return json(200, {
+          materials: student ? toStudentMaterialRows(rows) : await toMaterialListRows(rows),
+          nextCursor: null,
+        });
       }
 
       const { cursor, limit } = cursorParams;
       const pageArgs = {
-        where: { courseId, deletedAt: null },
+        where: { courseId, deletedAt: null, ...studentGate },
         select: MATERIAL_LIST_SELECT,
         orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
         take: limit + 1,
@@ -976,8 +993,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : await prisma.courseMaterial.findMany(pageArgs);
       const { page, nextCursor } = splitPage(rows, limit);
 
-      return json(200, { materials: await toMaterialListRows(page), nextCursor });
+      return json(200, {
+        materials: student ? toStudentMaterialRows(page) : await toMaterialListRows(page),
+        nextCursor,
+      });
     },
     { request },
   );
+}
+
+/**
+ * A list row as a student sees it (#2002): what the file list draws, and
+ * nothing about who uploaded the file, how processing went, when it is
+ * scheduled, or which topics it is filed under (some may be hidden from them).
+ */
+function toStudentMaterialRows(
+  rows: Array<Prisma.CourseMaterialGetPayload<{ select: typeof MATERIAL_LIST_SELECT }>>,
+) {
+  return rows.map(({ id, title, mimeType, fileSize, status, createdAt }) => ({
+    id,
+    title,
+    mimeType,
+    fileSize,
+    status,
+    createdAt,
+  }));
 }
