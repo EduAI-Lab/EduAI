@@ -12,12 +12,17 @@ const mocks = vi.hoisted(() => ({
   topicCount: vi.fn(),
   topicUpdateMany: vi.fn(),
   invalidate: vi.fn(),
+  audit: vi.fn(),
   order: [] as string[],
 }));
 
 vi.mock("~/lib/auth/request-session.server", () => ({ getRequestSession: mocks.session }));
 vi.mock("~/lib/auth/course-access.server", () => ({ resolveCourseAccessGate: mocks.access }));
 vi.mock("~/lib/courses/server", () => ({ invalidateCourseTopicNamesCache: mocks.invalidate }));
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: (work: Promise<void>) => void work,
+  logAuditAction: mocks.audit,
+}));
 vi.mock("~/lib/prisma.server", () => {
   const tx = {
     course: { update: mocks.courseUpdate },
@@ -99,6 +104,7 @@ describe("PATCH /api/courses/:id/student-visibility (#2002)", () => {
     expect((await call({ studentFilesVisible: true })).status).toBe(403);
     expect(mocks.courseUpdate).not.toHaveBeenCalled();
     expect(mocks.invalidate).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
   });
 
   it("writes only the fields sent", async () => {
@@ -109,6 +115,23 @@ describe("PATCH /api/courses/:id/student-visibility (#2002)", () => {
     expect((await call({ studentFilesVisible: false })).status).toBe(200);
     expect(mocks.topicCount).not.toHaveBeenCalled();
     expect(mocks.topicUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("records who changed what students see", async () => {
+    mocks.session.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+
+    await call({ studentFilesVisible: true });
+
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: "u1",
+        actionCode: "COURSE_STUDENT_VISIBILITY_UPDATED",
+        category: "COURSE",
+        entityType: "Course",
+        entityId: "c1",
+        details: { studentFilesVisible: true, topics: [] },
+      }),
+    );
   });
 
   it("drops the topic-name cache only after the write commits", async () => {

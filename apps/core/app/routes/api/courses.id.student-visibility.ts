@@ -21,8 +21,10 @@ import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 import { withErrorResponse } from "~/lib/errors.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import { canEditCourse } from "~/lib/rbac/permissions";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { FALLBACK_TOPIC_NAME } from "~/lib/topics/fallback.server";
 
 const StudentVisibilitySchema = z
@@ -108,6 +110,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // Only once the write has committed: course chat caches topic names, and a
       // read that started earlier must not re-cache a topic hidden just now.
       invalidateCourseTopicNamesCache(courseId);
+
+      // Opening a course's files to students is the widest exposure here, so it
+      // is on the record, as a single material's visibility change already is.
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session.user),
+          ...getRequestContext(request),
+          actionCode: "COURSE_STUDENT_VISIBILITY_UPDATED",
+          category: "COURSE",
+          entityType: "Course",
+          entityId: courseId,
+          details: { studentFilesVisible, topics },
+        }),
+      );
 
       return jsonResponse({ success: true });
     },
