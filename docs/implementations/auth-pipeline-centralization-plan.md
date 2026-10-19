@@ -392,7 +392,7 @@ Implement `requireRole` as part of Phase 2 — alongside `requireAuth` in AI Tut
 
 **Resolved — use `COOKIE_DOMAIN=localhost` in all extension `.env` files.**
 
-Current behavior: hosted subdomains share Core’s HTTP-only cookie when `COOKIE_DOMAIN` names their parent domain. Localhost uses a host-only cookie shared across ports; loopback domain values are ignored. See [extension onboarding](../EXTENSION_ONBOARDING.md#9-local-development-setup) and `apps/core/app/lib/auth/cookie-domain.ts`.
+Core's `crossSubDomainCookies` is enabled for `*.eduai.ok.ubc.ca` in production. Locally, the equivalent is setting `COOKIE_DOMAIN=localhost` in each service's `.env`. All modern browsers (Chrome, Firefox, Edge) handle `Domain=localhost` cookies correctly across ports when `SameSite=Lax` is set, which is Better Auth's default in non-HTTPS environments. No host file edits are required.
 
 All three services must be running simultaneously for the auth flow to work locally. If a developer encounters cookie issues, the first thing to verify is that `COOKIE_DOMAIN=localhost` is set and the Core dev server is running. This must be documented in the local dev setup guide before Phase 2 work begins.
 

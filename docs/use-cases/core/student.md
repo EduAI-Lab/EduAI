@@ -64,7 +64,6 @@ For a student caller, `restrictRagToStudentVisible` is always `true` (`courseAcc
 - **Actor:** Enrolled student on a published course
 - **Current behavior (#1962):** The student course screen has no Materials tab, and course-material list/preview routes reject student access. Staff permissions are unchanged. Students use course chat; course file names are redacted from the student chat presentation (#1963).
 - **Related code:** `apps/core/app/components/courses/course-detail-student-view.tsx`, `apps/core/app/routes/api/courses.materials.$.ts`, `apps/core/app/lib/materials/viewable-material.server.ts`, `apps/core/app/lib/rbac/permissions.ts`.
-- **Separate setting work:** #2002 adds explicit per-course opt-in; check that change before using this snapshot to describe later deployments.
 
 ---
 

@@ -4,8 +4,6 @@
 **What you will do:** Create your account, connect Canvas, set up a course in Core, then try AI Tutor and Question Maker.
 **How long it takes:** About 20–30 minutes, once.
 
-Start with the five-task **Getting started** checklist on each app’s dashboard. The header play button runs a short tour on supported pages; see [Getting started](ONBOARDING.md) for the tasks and browser-local progress behavior.
-
 This is a guided first-run walkthrough. For a full reference on every screen, role, and workflow across the three apps, use the [user guide](USER_GUIDE.md) instead.
 
 ## Where to sign in
@@ -48,7 +46,7 @@ Go to your Core host from the table above and sign in.
 
 ### Land on your dashboard
 
-After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom.
+After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom. Each app's dashboard also has a five-task **Getting started** checklist, and the ▶ **Page tour** button in the header walks you through the page you are on; see the [user guide](USER_GUIDE.md#navigation-shared-across-the-platform).
 
 **If you're stuck:** The invite link expired — ask your admin to resend. Wrong role (for example Student) — ask them to re-invite you as **Instructor**.
 
@@ -71,7 +69,7 @@ The token needs permission to read the courses you teach.
 
 ### Connect it in EduAI
 
-Open the **profile menu** at the bottom of the Core sidebar, choose **Settings**, then the **Canvas** tab. Settings has Account, Accessibility, Providers and Canvas tabs, plus API Keys when your role may set personal keys.
+Open the **profile menu** at the bottom of the Core sidebar, choose **Settings**, then the **Canvas** tab. Settings has four tabs: Account, Accessibility, Providers, and Canvas.
 
 Fill in the **Canvas Integration** card:
 
@@ -115,7 +113,7 @@ Each file can have up to three topics, shown as tags under its name on the **Mat
 
 - **Automatic:** once a file finishes processing, EduAI files it under the existing topic that fits it best. It only uses topics you have approved, and it never creates a topic by itself. A file that fits nothing shows **No topic**.
 - **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
-- **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Core and course chat hide suggestions from students until you approve them; AI Tutor's course page can still list them (a known bug). Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
+- **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Core and course chat hide suggestions from students until you approve them; AI Tutor's course page can still list them, even after you dismiss one (a known bug, [#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)). Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
 
 ### Enrollments
 

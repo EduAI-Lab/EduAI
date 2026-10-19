@@ -30,7 +30,8 @@ You remain signed in because Core provides the shared session for all three appl
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
 - Open the **profile menu** in the sidebar footer for Settings and Log out.
 - Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
-- Each app's dashboard has a five-task **Getting started** checklist, and its five main pages have a ▶ **Page tour** button in the header (see [Getting started](ONBOARDING.md)). Tours start only when you choose them. On the Core and Question Maker dashboards, ▶ plays the dashboard tour.
+- Each app's dashboard has a five-task **Getting started** checklist. **Open** takes you to a task; tick it yourself when you have finished. Progress is saved for your account in this browser only.
+- Five main pages in each app have a ▶ **Page tour** button in the header. Tours start only when you press it. On the Core and Question Maker dashboards, ▶ plays the app's overview tour, the same one **(?) → Take the tour** offers. Question Maker's checklist and tours are for instructors and administrators.
 - Use **Report a bug** in the header when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
@@ -40,7 +41,7 @@ You remain signed in because Core provides the shared session for all three appl
 When an administrator has turned it on, **Penny** sits in the bottom-right corner of every Core page (on chat pages it moves to a button in the header so it does not cover the message box).
 
 - Ask how to do something in EduAI — for example "How do I join a course?" or "How do I report a bug?". Penny answers from the user guide and instructor onboarding guide, filtered to your role, and links the guide pages it used.
-- Inside a course, Penny can also answer questions about that course's materials, and when you preview a material you can choose **Ask Penny about this** to ask about that file. The panel header always says which course or material it is looking at.
+- Inside a course, Penny can also answer questions about that course's materials. Staff previewing a material can choose **Ask Penny about this** to ask about that file. The panel header always says which course or material it is looking at.
 - Platform how-to questions still work inside a course: Penny always searches the guide as well.
 - If the guide does not cover your question, Penny says so instead of guessing. If it says it is temporarily unavailable, the search service is down; try again later.
 - Conversations are kept only in this browser tab. Opening a different course or material starts a new conversation.
@@ -50,16 +51,17 @@ Penny is a guide, not an answer key: for assessment-style questions it explains 
 
 ## Sign in and account setup
 
-1. Sign in through EduAI Core.
-2. If you opened an extension first, it sends you to Core to sign in and then returns you to the extension.
-3. Students may be asked for their student number during onboarding.
-4. Open **profile menu → Settings** to manage your account.
+1. New to EduAI? Open your invitation email, or choose **Sign up** on the Core sign-in page. When registration is invite-only there is no Sign up link; ask your instructor or administrator for an invitation. Confirm your email address from the message EduAI sends.
+2. Sign in through EduAI Core. Students see their courses once an instructor adds them or the course roster syncs; until then the dashboard says your professor hasn't added you yet.
+3. If you opened an extension first, it sends you to Core to sign in and then returns you to the extension.
+4. Students may be asked for their student number during onboarding.
+5. Open **profile menu → Settings** to manage your account.
 
 Core Settings contains:
 
-- **Account** — profile and password-related settings.
+- **Account** — change your password; students also link their student number here.
 - **Accessibility** — assistive and display preferences for Core. AI Tutor and Question Maker have their own accessibility controls and must be configured separately (see [Navigation shared across the platform](#navigation-shared-across-the-platform)).
-- **API Keys** — available when your role is allowed to configure personal AI provider keys.
+- **API Keys** — administrators only: server API keys for calling EduAI endpoints.
 - **Providers** — enable or configure supported AI providers.
 - **Canvas** — connect Canvas when the tab is available for your role.
 
@@ -83,7 +85,7 @@ TA is primarily a course enrollment role. A person may therefore have the platfo
 
 Buttons, tabs, and sidebar links are filtered by role and policy. A missing or disabled action usually means you do not have the required course access, the feature has been disabled by an administrator, or the course is not linked to the required application. Ask an instructor or administrator instead of trying to work around the restriction.
 
-Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can open the courses they assist there to see course details, topics and the roster, but cannot create or edit questions or assessments. Students see an access-denied screen.
+Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can open the courses they assist, add questions and edit the ones they wrote, but cannot make AI variants, build assessments or use Canvas. Students see an access-denied screen.
 
 ## EduAI Core workflows
 
@@ -108,7 +110,7 @@ Platform administrators, unit administrators, and instructors can make a new cou
 
 The new course starts as a **Draft**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
 
-If a deleted course has the same code, section, year and term, or the same instructor already teaches that code in another section, year or term, EduAI first shows **This course may already exist**. **Restore** brings the deleted course back with its materials, enrollments and question banks; **Create new course anyway** makes a separate course.
+If a deleted course has the same code, section, year and term, or the same instructor already teaches that code in another section, year or term, EduAI first shows **This course may already exist**. **Restore** brings the deleted course back with its materials and enrollments; Question Maker and AI Tutor content is not restored. If you can't restore it, the dialog tells you to ask an administrator. **Create new course anyway** makes a separate course.
 
 Who can create where:
 
@@ -126,7 +128,7 @@ If your course already exists in Canvas, you don't need to create it by hand: fe
 4. Enter a clear question and send it.
 5. Continue in the same chat when asking follow-up questions about the same course.
 
-Use the attachment control to add PDF, Word, PowerPoint, Excel, UTF-8 text/code, or PNG/JPEG/WebP files to a message. Images are transcribed before sending; the chat model receives text, not the original image. Wait for extraction to finish and check any warning about truncated content. Message attachments are separate from the course learning-material library.
+Use the attachment control to add up to three PDF, Word, PowerPoint, Excel, UTF-8 text/code, or PNG/JPEG/WebP files (10 MB each by default) to a message. Images are transcribed before sending; the chat model receives text, not the original image. Wait for extraction to finish and check any warning about truncated content. Message attachments are separate from the course learning-material library.
 
 The selected course controls which material can be retrieved. Start a separate chat when switching course context. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
 
@@ -144,7 +146,7 @@ Do not put passwords, API keys, private student information, or other secrets in
 - Students use course chat rather than the course Materials tab. Course-material files and their names are hidden from students; staff retain materials access according to their course permissions.
 - Instructors and TAs can upload learning materials, several files at once with progress shown for each, and instructors may connect/sync Canvas content. Materials are the reference content used to ground course chat, not a place for student submissions.
 - PNG, JPEG and WebP images are transcribed by a vision model before indexing. Check the transcription and retrieval with real examples; handwriting and charts can be misread. A scanned PDF without a text layer still needs OCR or conversion to a supported image.
-- A file may be linked to up to three approved topics. Automatic matching uses existing accepted topics; it does not invent new topics on upload. Instructors can change the links on the file. Use **Topics → Suggest topics** to request new suggestions, then review them. Core and course chat show students approved topics only, never suggestions or Uncategorized. AI Tutor's course page can still list unapproved suggestions to students; this is a known bug.
+- A file may be linked to up to three approved topics. Automatic matching uses existing accepted topics; it does not invent new topics on upload. Instructors can change the links on the file. Use **Topics → Suggest topics** to request new suggestions, then review them. Core and course chat show students approved topics only, never suggestions or Uncategorized. AI Tutor's course page can still list suggestions that were never approved, and keeps listing one after it is dismissed; this is a known bug ([#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)).
 - Uploaded material is processed and indexed before it becomes useful to course-aware chat. A processing failure means the file may not be available to retrieval.
 - If Canvas is unavailable or a sync is rate-limited, wait and retry rather than starting multiple simultaneous syncs.
 
@@ -196,13 +198,13 @@ The full link is shown **once**, when you create it. Copy it then; EduAI stores 
 
 ### Instructor: the Course Assistant
 
-Instructors see a second chat entry, **Course Assistant**, below Course Chat in the sidebar.
+Once you teach at least one published course, a second chat entry, **Course Assistant**, appears below Course Chat in the sidebar, whatever your platform role.
 It is a read-only helper for *running* one of your published courses — it can answer questions about that course's roster, enrollments, and topics, and nothing else.
 
 1. Open **Course Assistant** and pick one of your published courses.
 2. Ask about the roster or topics — for example "who enrolled in the last 7 days?" or "list the topics defined for this course".
 
-What it deliberately cannot do: reach another course, look up platform users, triage bug reports, search course materials, or change anything. It is not a tutoring assistant; use Course Chat for that. The link also appears for anyone who holds an active instructor enrollment on a course, even if their platform role is not `INSTRUCTOR`.
+What it deliberately cannot do: reach another course, look up platform users, triage bug reports, search course materials, or change anything. It is not a tutoring assistant; use Course Chat for that.
 
 ### Instructor and unit administrator: chat oversight
 
@@ -230,7 +232,7 @@ The **Administration** sidebar group provides:
 **Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
 
 1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on signed-in Core pages, for every role. AI Tutor and Question Maker do not have Penny yet.
-2. In the same card, **Students can ask about course material** decides whether students can also ask about the course or material they are viewing. Instructors and administrators can always ask about their own courses while Penny is on.
+2. In the same card, **Students can ask about course material** decides whether students can also ask about the course they are viewing. Instructors and administrators can always ask about their own courses while Penny is on.
 3. Penny answers with the AI providers and models enabled under **Administration → AI Management**. Each user can save their own key in Penny's gear menu; anyone without one uses the platform's configured key. Under **Help assistant tuning** on the AI Management page you can choose the **Default answer model** and how many guide pages one answer may draw on.
 4. To stop Penny during a cost or provider incident, switch off **Enable Penny, the help assistant**. This stops every Penny question, documentation and course material alike, for everyone, administrators included.
 

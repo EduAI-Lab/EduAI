@@ -232,7 +232,7 @@ Reads are unaffected. Your own extension should run the mirror-image guard on it
 | `POST /api/sessions/validate` | Session validation — **requires** the key; a cookie alone is `403` |
 | `GET /api/courses` | List courses (role-filtered when a cookie is forwarded; unscoped for a bare service key) |
 | `GET /api/courses/:id` | Single-course live read-through |
-| `GET /api/courses/:id/topics` | Service-key callers receive staff topics, including suggestions; never expose this response directly as a student topic list |
+| `GET /api/courses/:id/topics` | Service-key callers receive staff topics, including suggestions; never expose this response directly as a student topic list (AI Tutor still does: [#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)) |
 | `GET /api/courses/:id/enrollments` | Course roster |
 | `GET /api/policies` | Platform feature flags |
 | `POST /api/completion` | Stateless LLM completion for extension AI-assist |

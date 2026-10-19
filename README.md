@@ -118,6 +118,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) | Adding a second or third instructor to an existing course without demoting the current one — the **Add instructor** control, the console fallback, and what an `INSTRUCTOR` enrollment does *not* buy an ADMIN account |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
 | [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
+| [`ONBOARDING.md`](docs/ONBOARDING.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
@@ -556,7 +557,3 @@ git commit --no-verify        # bypass it for one commit
 ```
 
 > The legacy per-app hooks in `apps/extensions/ai-tutor/.githooks/` are superseded by the root lefthook config and are not installed by anything.
-
-### Onboarding and documentation
-
-Each application’s dashboard has a five-task checklist, with account-specific progress in the current browser. Fifteen key pages across the apps have a ▶ page-tour button, and on the Core and Question Maker dashboards it plays the existing dashboard tour; no tour starts automatically. Tour copy is generated from [docs/ONBOARDING.md](docs/ONBOARDING.md): run `npm run onboarding:generate` after editing and `npm run onboarding:check` to detect drift. Product instructions live in the [user guide](docs/USER_GUIDE.md) and [instructor onboarding](docs/INSTRUCTOR_ONBOARDING.md). Run `npm run help-docs:generate -w edu-ai` after changing either guide so Penny uses the same text.
