@@ -1167,6 +1167,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/assistant/gate",
+    readiness: "excluded",
+    reason: "Extension widget's render condition for the signed-in reader — not platform ops",
+    routeFile: "routes/api/assistant.gate.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/assistant/settings",
     readiness: "excluded",
     reason: "User self-service assistant provider/model and key — not platform ops",
