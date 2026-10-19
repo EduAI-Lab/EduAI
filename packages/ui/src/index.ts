@@ -26,7 +26,7 @@ export { HelpHint } from "./help-hint";
 export type { HelpHintContent, HelpHintProps } from "./help-hint";
 
 // ── Guided tours ───────────────────────────────────────────────────────────
-export { TourProvider, useTour, useAutoStartTour } from "./tour/tour-provider";
+export { TourProvider, useTour } from "./tour/tour-provider";
 export type { TourContextValue, TourProviderProps } from "./tour/tour-provider";
 export { TourOverlay } from "./tour/tour-overlay";
 export type { TourOverlayProps } from "./tour/tour-overlay";

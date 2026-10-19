@@ -39,8 +39,8 @@ describe("onboarding routes and roles", () => {
       resolveOnboardingPage("question-maker", "/courses/1/assessments/2/variants", "ADMIN"),
     ).toBeNull();
   });
-  it("uses learner copy for TAs without promising author access", () => {
-    expect(onboardingTasks("ai-tutor", "TA")[1].label).toBe("Choose a module");
+  it("gives TAs staff copy that matches their teaching workspace, without promising authoring", () => {
+    expect(onboardingTasks("ai-tutor", "TA")[1].label).toBe("Review a module");
     expect(onboardingTasks("ai-tutor", "TA")[0].href).toBe("/instructor");
     expect(onboardingTasks("core", "INSTRUCTOR")[1].label).toBe(
       "Prepare materials, topics and enrollments",
@@ -89,7 +89,8 @@ describe("page tours", () => {
     const view = render(<PageTourButton platform="core" pathname="/courses" role="STUDENT" />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Play page tour" }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // Portalled to <body>, so the sticky header's stacking context can't put it under Penny.
+    expect(view.container.contains(screen.getByRole("dialog"))).toBe(false);
     view.rerender(<PageTourButton platform="core" pathname="/settings" role="STUDENT" />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

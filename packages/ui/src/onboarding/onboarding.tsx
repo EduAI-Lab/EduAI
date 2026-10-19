@@ -135,7 +135,7 @@ function PageTour({ pageId }: { pageId: OnboardingPageId }) {
   return (
     <>
       <PlayButton title={`Tour: ${page.title}`} onClick={() => setOpen(true)} />
-      <LocalTour steps={page.steps} open={open} onOpenChange={setOpen} />
+      <LocalTour steps={page.steps} open={open} onOpenChange={setOpen} portal />
     </>
   );
 }
@@ -149,12 +149,12 @@ export function PageTourButton({
   platform: OnboardingPlatform;
   pathname: string;
   role?: string | null;
-  /** The app's existing dashboard tour, played on demand instead of auto-starting (#2004). */
+  /** The app's overview tour, played from the dashboard instead of auto-starting (#2004). */
   dashboardTour?: string;
 }) {
   const { startTour } = useTour();
   if (dashboardTour && pathname === "/dashboard") {
-    return <PlayButton title="Tour: Dashboard" onClick={() => startTour(dashboardTour)} />;
+    return <PlayButton title="Tour: Overview" onClick={() => startTour(dashboardTour)} />;
   }
   const pageId = resolveOnboardingPage(platform, pathname, role);
   return pageId ? <PageTour key={`${pathname}:${role}`} pageId={pageId} /> : null;

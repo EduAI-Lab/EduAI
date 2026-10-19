@@ -26,7 +26,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "core.course.Check the course",
         "title": "Check the course",
-        "body": "Confirm the course code, section and instructors. Use Course Chat to ask about the learning materials."
+        "body": "Confirm the course code, section and instructors. Students use **Chat about this course** to ask about the learning materials."
       },
       {
         "id": "core.course.Prepare learning materials",
@@ -70,7 +70,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "core.settings.Account and accessibility",
         "title": "Account and accessibility",
-        "body": "Use Account to manage your profile and Accessibility to set your Core preferences. Accessibility settings in the other apps are separate."
+        "body": "Use Account to change your password (students also link their student number) and Accessibility to set your Core preferences. Accessibility settings in the other apps are separate."
       },
       {
         "id": "core.settings.Optional connections",
@@ -116,7 +116,7 @@ export const ONBOARDING_PAGES = {
   "ai-tutor.course": {
     "title": "Explore course content",
     "task": "Choose a module",
-    "staffTask": "Create or review a module",
+    "staffTask": "Review a module",
     "steps": [
       {
         "id": "ai-tutor.course.Follow the structure",
@@ -133,7 +133,7 @@ export const ONBOARDING_PAGES = {
   "ai-tutor.module": {
     "title": "Open a lesson",
     "task": "Choose a lesson",
-    "staffTask": "Create or review a lesson",
+    "staffTask": "Review a lesson",
     "steps": [
       {
         "id": "ai-tutor.module.Choose a lesson",
@@ -194,12 +194,12 @@ export const ONBOARDING_PAGES = {
       {
         "id": "question-maker.courses.Choose the course",
         "title": "Choose the course",
-        "body": "Question Maker is for instructors and administrators. Your courses come from Core; select the right course before creating content."
+        "body": "Your courses come from Core; select the right course before creating content."
       },
       {
         "id": "question-maker.courses.Check access",
         "title": "Check access",
-        "body": "If a course is missing, confirm your Core course access and allow time for synchronization. Students and TAs do not have Question Maker authoring access."
+        "body": "If a course is missing, confirm your Core course access and allow time for synchronization. TAs can add questions to the courses they assist but cannot build assessments."
       }
     ]
   },

@@ -5,6 +5,8 @@ export type OnboardingPageId = keyof typeof ONBOARDING_PAGES;
 
 const STAFF = new Set(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"]);
 const SUPPORTED = new Set([...STAFF, "STUDENT", "TA"]);
+// Pages a task opens directly; every other task starts from the course list.
+const DIRECT_PAGES = new Set(["help", "settings", "chat", "library"]);
 
 function hasAccess(platform: OnboardingPlatform, role?: string | null) {
   return !!role && SUPPORTED.has(role) && (platform !== "question-maker" || STAFF.has(role));
@@ -55,16 +57,8 @@ export function onboardingTasks(platform: OnboardingPlatform, role?: string | nu
     .map((id) => {
       const page = ONBOARDING_PAGES[id];
       const name = id.split(".")[1];
-      const href =
-        name === "help"
-          ? "/help"
-          : name === "settings"
-            ? "/settings"
-            : name === "chat"
-              ? "/chat"
-              : name === "library"
-                ? "/library"
-                : courses;
-      return { id, label: role && STAFF.has(role) ? page.staffTask : page.task, href };
+      const href = DIRECT_PAGES.has(name) ? `/${name}` : courses;
+      // TAs get staff copy: their tasks open the teaching workspace.
+      return { id, label: role === "STUDENT" ? page.task : page.staffTask, href };
     });
 }

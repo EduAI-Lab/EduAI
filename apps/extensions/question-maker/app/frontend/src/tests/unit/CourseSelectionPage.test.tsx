@@ -1,25 +1,18 @@
 /**
  * Unit tests for CourseSelectionPage (#1544): role-based view selection and
  * the course-select handler. Child views and hooks are mocked so we exercise
- * only this page's own routing/dispatch logic. The guided tour itself is
- * covered by the shared engine's tests in `@eduai/ui`.
+ * only this page's own routing/dispatch logic.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-const { navigateMock, useAuthMock, useDisplayCoursesMock, useAutoStartTourMock } = vi.hoisted(
-  () => ({
-    navigateMock: vi.fn(),
-    useAuthMock: vi.fn(),
-    useDisplayCoursesMock: vi.fn(),
-    useAutoStartTourMock: vi.fn(),
-  }),
-);
+const { navigateMock, useAuthMock, useDisplayCoursesMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  useAuthMock: vi.fn(),
+  useDisplayCoursesMock: vi.fn(),
+}));
 
 vi.mock("react-router", () => ({ useNavigate: () => navigateMock }));
-vi.mock("@eduai/ui", () => ({
-  useAutoStartTour: (...args: unknown[]) => useAutoStartTourMock(...args),
-}));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
 vi.mock("@/hooks/useDisplayCourses", () => ({ useDisplayCourses: () => useDisplayCoursesMock() }));
 
@@ -82,11 +75,5 @@ describe("CourseSelectionPage", () => {
     render(<CourseSelectionPage />);
     fireEvent.click(screen.getByText("select-7"));
     expect(navigateMock).toHaveBeenCalledWith("/courses/7?tab=overview");
-  });
-
-  it("never auto-starts a tour; tours start from the header play button (#2004)", () => {
-    setup("INSTRUCTOR", []);
-    render(<CourseSelectionPage />);
-    expect(useAutoStartTourMock).not.toHaveBeenCalled();
   });
 });

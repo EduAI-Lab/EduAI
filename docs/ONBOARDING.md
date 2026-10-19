@@ -1,14 +1,14 @@
-# Getting started with EduAI
+# Getting started checklist and page tours
 
-Each app's dashboard has a five-item **Getting started** checklist. Use **Open** to begin a task and tick it when you have completed it. Tasks that need a course take you to the course list first; choose your own course there. The checklist does not create, publish or approve anything for you.
+Source of the in-app **Getting started** checklist and ▶ **Page tour** copy in Core, AI Tutor and Question Maker (#2004). What users see is described in the [user guide](USER_GUIDE.md#navigation-shared-across-the-platform).
 
-Progress is saved separately for each account and app in this browser. It does not sync to another browser or device. If browser storage is unavailable, progress lasts for the current page session and the checklist says so. You can untick a task to revisit it.
+Each `## <app>.<page>: Title` section is one page: `Task:` is the checklist label for students, `Staff task:` the label for everyone else (TAs included), and each numbered `**Step** — body` line is one tour step. Each app has exactly five pages. Run `npm run onboarding:generate` after editing; CI runs `npm run onboarding:check` to catch stale generated copy. Routes and role access live in `packages/ui/src/onboarding/catalog.ts`.
 
-The five pages below for each app have a ▶ **Page tour** button in the header. Tours start only when requested; nothing launches a tour automatically. On the Core and Question Maker dashboards, ▶ plays the existing dashboard tour, which **(?) → Take the tour** also offers. Close or skip a tour at any time and replay it from the same button. Finishing a tour does not mark the underlying task complete.
+The copy relies on these rules:
 
-The checklist adapts its task wording to your role. Course-level permissions still control the actual actions: a checklist or tour never grants access. Question Maker's checklist and tours are for instructors and administrators; TAs can open the courses they assist there but cannot author questions. The [user guide](USER_GUIDE.md) explains everyday workflows, and the [instructor walkthrough](INSTRUCTOR_ONBOARDING.md) covers initial course setup.
-
-The page instructions below are also the source for in-app tours. Maintain them here and run `npm run onboarding:generate` after edits; `npm run onboarding:check` detects stale generated copy. Route matching and access stay in code.
+- Nothing starts a tour automatically. On the Core and Question Maker dashboards, ▶ plays the app's overview tour instead of a page from this file.
+- Checklist progress is per account and app, in the browser only. Users tick tasks themselves; opening a page or finishing a tour never does.
+- A checklist or tour never grants access. Question Maker's checklist and tours show for instructors, unit admins and admins only.
 
 ## core.courses: Find your course
 
@@ -25,7 +25,7 @@ Task: Find your course chat
 
 Staff task: Prepare materials, topics and enrollments
 
-1. **Check the course** — Confirm the course code, section and instructors. Use Course Chat to ask about the learning materials.
+1. **Check the course** — Confirm the course code, section and instructors. Students use **Chat about this course** to ask about the learning materials.
 2. **Prepare learning materials** — If you manage this course, upload learning materials and wait for Ready. Review topic matches and approve suggestions before students use them.
 3. **Check access** — Course staff manage enrollments and publishing according to their permissions. A course must be published before enrolled students can see it.
 
@@ -45,7 +45,7 @@ Task: Review account and accessibility settings
 
 Staff task: Review account settings and connect Canvas if needed
 
-1. **Account and accessibility** — Use Account to manage your profile and Accessibility to set your Core preferences. Accessibility settings in the other apps are separate.
+1. **Account and accessibility** — Use Account to change your password (students also link their student number) and Accessibility to set your Core preferences. Accessibility settings in the other apps are separate.
 2. **Optional connections** — The available tabs depend on your role and platform policy. Instructors can connect Canvas when permitted. Keep provider keys and Canvas tokens private.
 
 ## core.help: Find help
@@ -70,7 +70,7 @@ Staff task: Find your teaching course
 
 Task: Choose a module
 
-Staff task: Create or review a module
+Staff task: Review a module
 
 1. **Follow the structure** — A course contains modules, each containing lessons and activities. Start with the module your instructor recommends.
 2. **Prepare and publish** — Authors can add modules and publish content. Students see content only when the relevant course and parent content are published; TAs do not gain authoring permissions.
@@ -79,7 +79,7 @@ Staff task: Create or review a module
 
 Task: Choose a lesson
 
-Staff task: Create or review a lesson
+Staff task: Review a lesson
 
 1. **Choose a lesson** — Lessons group activities within this module. Open a lesson to work through its activities or review its setup.
 2. **Check visibility** — Authors should review the lesson and its activities before publishing. Students cannot see drafts; ask your instructor if expected content is missing.
@@ -109,8 +109,8 @@ Task: Open a course workspace
 
 Staff task: Open a course workspace
 
-1. **Choose the course** — Question Maker is for instructors and administrators. Your courses come from Core; select the right course before creating content.
-2. **Check access** — If a course is missing, confirm your Core course access and allow time for synchronization. Students and TAs do not have Question Maker authoring access.
+1. **Choose the course** — Your courses come from Core; select the right course before creating content.
+2. **Check access** — If a course is missing, confirm your Core course access and allow time for synchronization. TAs can add questions to the courses they assist but cannot build assessments.
 
 ## question-maker.course: Explore the workspace
 
