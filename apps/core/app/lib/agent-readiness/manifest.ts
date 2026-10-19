@@ -331,6 +331,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     note: "No GET — course detail loader supplies UI state (#782)",
     routeFile: "routes/api/courses.id.response-style.ts",
   }),
+  entry({
+    method: "PATCH",
+    path: "/api/courses/:id/student-visibility",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    note: "No GET — course detail loader and topics API supply UI state (#2002)",
+    routeFile: "routes/api/courses.id.student-visibility.ts",
+  }),
 
   // ── Enrollments ─────────────────────────────────────────────────────────────
   entry({
