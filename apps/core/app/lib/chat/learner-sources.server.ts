@@ -106,6 +106,8 @@ export function toLearnerRagHits(
  * there, or has lost access, does not. Today only instructors and unit admins read
  * someone else's chat (§5c oversight, `courseChatViewPolicyKey`), but the check
  * does not lean on that, so a later sharing rule cannot show a student file names.
+ * Nor does a course that shares its files with students (#2002): the check never
+ * passes the course's sharing flag, so course chat still names no file to them.
  *
  * Every turn of a chat runs in its course (chat.ts rejects a mismatched course),
  * so the chat's course decides. One with no course left — the course was deleted
@@ -119,4 +121,21 @@ export async function readerSeesMaterialFiles(
   if (!access.chat.courseId) return false;
   const { access: courseAccess } = await resolveCourseAccessGate(viewer, access.chat.courseId);
   return courseAccess !== null && canViewMaterial(courseAccess.level);
+}
+
+/**
+ * The topic names a student may see in this course right now (#2002). A stored
+ * turn keeps the topics it was answered with, so a learner transcript is
+ * filtered through this on every read: a topic hidden since then drops out of
+ * the history too. A chat with no course has no topics to show.
+ */
+export async function loadVisibleLearnerTopicNames(
+  courseId: string | null,
+): Promise<ReadonlySet<string>> {
+  if (!courseId) return new Set();
+  const topics = await prisma.courseTopic.findMany({
+    where: { courseId, deletedAt: null, ...LEARNER_TOPIC_WHERE },
+    select: { name: true },
+  });
+  return new Set(topics.map((topic) => topic.name));
 }

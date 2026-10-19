@@ -234,12 +234,27 @@ export function withoutSourceCitations<M extends CitableMessage>(message: M): M 
  * A transcript as a student may read it (#1963): course file names never leave
  * the server. The model's own citations are cut from every reply's text, since a
  * pre-#1936 turn has no file list and names the file only there. A turn's topics
- * stay; a pre-#1963 turn that recorded file names but no topics keeps an empty
- * topic list, so the client still treats it as a course turn.
+ * stay, minus any not in `visibleTopics` — the topics shown to students now, so
+ * one hidden since the turn was answered (#2002) is not shown from history; a
+ * pre-#1963 turn that recorded file names but no topics keeps an empty topic
+ * list, so the client still treats it as a course turn.
  */
-export function toLearnerTranscript(messages: StoredChatMessage[]): StoredChatMessage[] {
+export function toLearnerTranscript(
+  messages: StoredChatMessage[],
+  visibleTopics: ReadonlySet<string>,
+): StoredChatMessage[] {
   return messages.map((message) => {
-    const scrubbed = withoutSourceCitations(message);
+    let scrubbed = withoutSourceCitations(message);
+    const ragTopics = scrubbed.metadata?.ragTopics;
+    if (scrubbed.metadata && ragTopics) {
+      scrubbed = {
+        ...scrubbed,
+        metadata: {
+          ...scrubbed.metadata,
+          ragTopics: ragTopics.filter((topic) => visibleTopics.has(topic)),
+        },
+      };
+    }
     if (scrubbed.metadata?.ragSources === undefined) return scrubbed;
     const { ragSources: _ragSources, ...rest } = scrubbed.metadata;
     return { ...scrubbed, metadata: { ...rest, ragTopics: rest.ragTopics ?? [] } };
