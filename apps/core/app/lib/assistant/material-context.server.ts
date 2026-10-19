@@ -97,11 +97,9 @@ export async function resolveCourseContext(input: {
   access: AccessLevel | null;
 }): Promise<ResolvedPageContext> {
   const { course, access } = input;
-  // The materials API's read gate, publish check included (#2002).
-  const canView =
-    access !== null &&
-    canViewMaterial(access.level, course.studentFilesVisible) &&
-    (access.level !== "student" || course.isPublished);
+  // The materials API's read gate (#2002): a student needs a published course
+  // that shares its files.
+  const canView = access !== null && canViewMaterial(access.level, course);
   return {
     kind: "resolved",
     courseId: course.id,

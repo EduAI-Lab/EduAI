@@ -109,11 +109,8 @@ async function resolveMaterialsAccess(
     return { response: json(403, { error: "Forbidden" }) };
   }
   const allowed =
-    access.level === "student"
-      ? canViewMaterial(access.level, course.studentFilesVisible) &&
-        course.isPublished &&
-        request.method === "GET"
-      : canViewMaterial(access.level);
+    canViewMaterial(access.level, course) &&
+    (access.level !== "student" || request.method === "GET");
   if (!allowed) {
     const { fireAndForget, logSecurityEvent } = await import("~/lib/logging.server");
     fireAndForget(

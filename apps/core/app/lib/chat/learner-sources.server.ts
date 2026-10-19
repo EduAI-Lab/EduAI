@@ -107,7 +107,7 @@ export function toLearnerRagHits(
  * someone else's chat (§5c oversight, `courseChatViewPolicyKey`), but the check
  * does not lean on that, so a later sharing rule cannot show a student file names.
  * Nor does a course that shares its files with students (#2002): the check never
- * passes the course's sharing flag, so course chat still names no file to them.
+ * passes the course to `canViewMaterial`, so course chat still names no file to them.
  *
  * Every turn of a chat runs in its course (chat.ts rejects a mismatched course),
  * so the chat's course decides. One with no course left — the course was deleted
