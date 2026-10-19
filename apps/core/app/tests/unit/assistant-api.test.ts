@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { removeAssistantKey } from "~/components/assistant/assistant-api";
+import { removeAssistantKey } from "@eduai/ui/assistant";
 
 afterEach(() => vi.unstubAllGlobals());
 

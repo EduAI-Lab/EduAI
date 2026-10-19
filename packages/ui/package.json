@@ -18,7 +18,9 @@
     "./runtime-env": "./src/lib/runtime-env.ts",
     "./primitive-union": "./src/lib/primitive-union.ts",
     "./math-markdown": "./src/lib/math-markdown.ts",
-    "./bug-report-capture": "./src/bug-report-capture.ts"
+    "./bug-report-capture": "./src/bug-report-capture.ts",
+    "./assistant/shared": "./src/assistant/shared.ts",
+    "./assistant": "./src/assistant/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -81,7 +83,8 @@
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.3.1",
     "use-stick-to-bottom": "^1.1.1",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

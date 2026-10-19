@@ -9,8 +9,7 @@
  *    role's OWN slice. An example the corpus can't answer would make the very
  *    first reply "that isn't in the documentation".
  */
-import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
-import { helpSliceForRole, type HelpSlice } from "~/lib/help/role-slices";
+import { ASSISTANT_DISPLAY_NAME, helpSliceForRole, type HelpSlice } from "./shared";
 
 export type IntroExample =
   /** A platform how-to question, answered from guide page `pageId`. */

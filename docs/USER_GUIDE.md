@@ -36,7 +36,7 @@ You remain signed in because Core provides the shared session for all three appl
 
 ## Ask Penny, the help assistant
 
-When an administrator has turned it on, **Penny** sits in the bottom-right corner of every Core page (on chat pages it moves to a button in the header so it does not cover the message box).
+When an administrator has turned it on, **Penny** sits in the bottom-right corner of every page in EduAI Core, AI Tutor and Question Maker. On chat pages, and on AI Tutor lessons, it moves to an **Ask Penny** button in the header so it does not cover the message box. Your conversation is kept separately in each app.
 
 - Ask how to do something in EduAI — for example "How do I join a course?" or "How do I report a bug?". Penny answers only from this user guide, filtered to your role, and links the guide pages it used.
 - Inside a course, Penny can also answer questions about that course's materials, and when you preview a material you can choose **Ask Penny about this** to ask about that file. The panel header always says which course or material it is looking at.
@@ -218,7 +218,7 @@ The **Administration** sidebar group provides:
 
 **Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
 
-1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on every signed-in page, for every role.
+1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on every signed-in page of Core, AI Tutor and Question Maker, for every role.
 2. In the same card, **Students can ask about course material** decides whether students can also ask about the course or material they are viewing. Instructors and administrators can always ask about their own courses while Penny is on.
 3. Penny answers with the AI providers and models enabled under **Administration → AI Management**. Each user can save their own key in Penny's gear menu; anyone without one uses the platform's configured key. Under **Help assistant tuning** on the AI Management page you can choose the **Default answer model** and how many guide pages one answer may draw on.
 4. To stop Penny during a cost or provider incident, switch off **Enable Penny, the help assistant**. This stops every Penny question, documentation and course material alike, for everyone, administrators included.

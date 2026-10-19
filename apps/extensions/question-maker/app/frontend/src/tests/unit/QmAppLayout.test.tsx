@@ -5,7 +5,7 @@
  * pulse indicator. Every `@eduai/ui` shell primitive and sibling
  * component/context is mocked so this exercises only QmAppLayout's own logic.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 let pathnameValue = "/dashboard";
@@ -470,5 +470,47 @@ describe("QmAccessShell", () => {
     capturedAppShellProps.sidebar.navUser.onLogout();
     await new Promise((r) => setTimeout(r, 0));
     expect(toastErrorFn).toHaveBeenCalled();
+  });
+});
+
+describe("QmAppLayout — Penny, the help assistant (#1958)", () => {
+  const fetchMock = vi.fn();
+  const bubbleName = /Ask Penny, the help assistant/;
+
+  function gateResponse(gate: { mounted: boolean; docs: boolean }) {
+    return new Response(
+      JSON.stringify({ gate, user: { id: "core-u1", role: "INSTRUCTOR" }, context: null }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders Penny when Core says the assistant is on, scoped to the workspace's Core course", async () => {
+    pathnameValue = "/courses/42";
+    coursesValue = [{ id: 42, coreCourseId: "core-c42", name: "CS 42" }];
+    fetchMock.mockResolvedValue(gateResponse({ mounted: true, docs: true }));
+    render(<QmAppLayout />);
+
+    expect(await screen.findByRole("button", { name: bubbleName })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:3000/api/assistant/gate?courseId=core-c42",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("renders no Penny when the assistant is off", async () => {
+    fetchMock.mockResolvedValue(gateResponse({ mounted: false, docs: false }));
+    render(<QmAppLayout />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: bubbleName })).not.toBeInTheDocument();
   });
 });

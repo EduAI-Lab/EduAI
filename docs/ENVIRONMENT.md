@@ -196,7 +196,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `COOKIE_DOMAIN` | — | Cross-subdomain auth cookie domain (e.g. `.eduai.ok.ubc.ca`). Loopback values are ignored so `crossSubDomainCookies` stays off locally |
 | `LOG_LEVEL` | `info` | Server log verbosity |
 | `TOPIC_ANALYSIS_MODEL` | `vllm:qwen3.8-27b-instruct` | See the main table — resolves `TOPIC_ANALYSIS_MODEL` → `AI_JOB_DEFAULT_MODEL` → the default |
-| `VITE_AI_TUTOR_URL` / `VITE_QUESTION_MAKER_URL` / `VITE_EXTRA_EXTENSIONS` | — | Sidebar app-switcher entries. An extension appears **only** when its URL var is set; `VITE_EXTRA_EXTENSIONS` is a JSON array of `{id,name,url,description?,color?}`. Baked in at build time |
+| `VITE_AI_TUTOR_URL` / `VITE_QUESTION_MAKER_URL` / `VITE_EXTRA_EXTENSIONS` | — | Sidebar app-switcher entries. An extension appears **only** when its URL var is set; `VITE_EXTRA_EXTENSIONS` is a JSON array of `{id,name,url,description?,color?}`. The AI Tutor and Question Maker origins are also the only origins allowed to call Penny's `/api/assistant/*` endpoints cross-origin (#1958). Baked in at build time |
 
 ### Future queue settings
 

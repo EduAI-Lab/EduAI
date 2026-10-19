@@ -18,6 +18,7 @@ import {
   PageHelpButton,
   type HistoryPayload,
 } from "@eduai/ui";
+import { ExtensionHelpAssistant } from "@eduai/ui/assistant";
 import {
   IconArrowLeft,
   IconBooks,
@@ -316,6 +317,11 @@ function QmAppLayoutInner() {
           </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           {bugReport ? <BugReportTriggerButton onClick={bugReport.openBugReport} /> : null}
+          <ExtensionHelpAssistant
+            coreUrl={getCoreUrl()}
+            coreCourseId={coreCourseId ?? null}
+            placement="floating"
+          />
           {/* Last, so it sits in the header's top-right corner (#1754). The
               guided tour is launched from its modal. */}
           <QmPageHelp showIndicator={courses.length === 0 && !isCoursesLoading} />

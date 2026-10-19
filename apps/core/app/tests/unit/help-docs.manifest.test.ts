@@ -26,11 +26,7 @@ import { HELP_GUIDE_SOURCES } from "~/lib/assistant/help-docs/generated/guides";
 import { sectionsWithBody } from "~/lib/assistant/help-docs/sections";
 import { resolvedHelpPages } from "~/lib/assistant/help-docs/sources.server";
 import { canReadHelpSlice, visibleHelpSlices } from "~/lib/help/role-slices";
-import {
-  DOCS_EXAMPLES,
-  buildAssistantIntro,
-  docsExamplesForRole,
-} from "~/components/assistant/intro-copy";
+import { DOCS_EXAMPLES, buildAssistantIntro, docsExamplesForRole } from "@eduai/ui/assistant";
 
 const root = findMonorepoRoot(__dirname);
 

@@ -9,17 +9,11 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { IconArrowLeft, IconLoader2 } from "@tabler/icons-react";
-import {
-  Button,
-  Checkbox,
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@eduai/ui";
+import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 import {
   fetchAssistantSettings,

@@ -13,7 +13,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import type { PublishedAssistantContext } from "~/lib/assistant/assistant-visibility";
+import type { PublishedAssistantContext } from "./shared";
 
 const CONTEXT_EVENT = "eduai:assistant-context";
 const OPEN_EVENT = "eduai:assistant-open";
