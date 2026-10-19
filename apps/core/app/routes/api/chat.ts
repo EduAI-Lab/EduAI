@@ -43,6 +43,7 @@ import {
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
+import { untilAborted } from "~/lib/ai/until-aborted";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
@@ -3403,14 +3404,19 @@ export async function action({ request }: ActionFunctionArgs) {
             // absent.
             await result.consumeStream?.();
 
-            const consumed = await Promise.all([
-              result.text,
-              result.usage,
-              result.finishReason,
-              result.sources,
-              result.reasoning,
-              result.response,
-            ]);
+            // These never settle after an abort (#2009); the race turns that hang
+            // into an AbortError, which the catch below treats as a client abort.
+            const consumed = await untilAborted(
+              Promise.all([
+                result.text,
+                result.usage,
+                result.finishReason,
+                result.sources,
+                result.reasoning,
+                result.response,
+              ]),
+              streamAbortController.signal,
+            );
             const text = consumed[0];
             usage = consumed[1];
             finishReason = consumed[2];
@@ -3611,14 +3617,18 @@ export async function action({ request }: ActionFunctionArgs) {
           let providerResultResolved = false;
           try {
             await result.consumeStream?.();
-            const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
-              result.text,
-              result.usage,
-              result.finishReason,
-              result.sources,
-              result.reasoning,
-              result.response,
-            ]);
+            // These never settle after an abort (#2009); see untilAborted.
+            const [text, usage, finishReason, sources, reasoning, response] = await untilAborted(
+              Promise.all([
+                result.text,
+                result.usage,
+                result.finishReason,
+                result.sources,
+                result.reasoning,
+                result.response,
+              ]),
+              streamAbortController.signal,
+            );
             providerResultResolved = true;
 
             const renderedText = renderAdhdStructuredResponse({
@@ -3816,14 +3826,18 @@ export async function action({ request }: ActionFunctionArgs) {
             // this optional SDK convenience method.
             await result.consumeStream?.();
 
-            const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
-              result.text,
-              result.usage,
-              result.finishReason,
-              result.sources,
-              result.reasoning,
-              result.response,
-            ]);
+            // These never settle after an abort (#2009); see untilAborted.
+            const [text, usage, finishReason, sources, reasoning, response] = await untilAborted(
+              Promise.all([
+                result.text,
+                result.usage,
+                result.finishReason,
+                result.sources,
+                result.reasoning,
+                result.response,
+              ]),
+              streamAbortController.signal,
+            );
             providerResultResolved = true;
 
             if (response?.messages?.length) {

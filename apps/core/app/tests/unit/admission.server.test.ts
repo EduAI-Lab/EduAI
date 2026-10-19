@@ -32,6 +32,58 @@ describe("AI admission", () => {
     expect(getAiAdmissionStats().inflight).toBe(0);
   });
 
+  // #2009: a release function is safe to call twice, and a slot nobody releases
+  // is reclaimed, so one stuck request cannot hold the gate until a restart.
+  it("frees only one slot when a release is called twice", async () => {
+    process.env.AI_MAX_INFLIGHT = "2";
+    const a = await acquireAiAdmission();
+    await acquireAiAdmission();
+    a.release();
+    a.release();
+    expect(getAiAdmissionStats().inflight).toBe(1);
+  });
+
+  it("reclaims a slot held past AI_ADMISSION_MAX_HOLD_MS, with a warning", async () => {
+    process.env.AI_MAX_INFLIGHT = "1";
+    process.env.AI_ADMISSION_MAX_HOLD_MS = "30";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stuck = await acquireAiAdmission();
+      expect(getAiAdmissionStats().inflight).toBe(1);
+      await new Promise((r) => setTimeout(r, 60));
+      expect(getAiAdmissionStats().inflight).toBe(0);
+      expect(warn).toHaveBeenCalledWith(
+        "[ai-admission] reclaimed a slot held longer than the limit",
+        expect.objectContaining({ maxHoldMs: 30, max: 1 }),
+      );
+
+      // The late release of the reclaimed slot frees nothing a newer request holds.
+      const next = await acquireAiAdmission();
+      stuck.release();
+      expect(getAiAdmissionStats().inflight).toBe(1);
+      next.release();
+    } finally {
+      delete process.env.AI_ADMISSION_MAX_HOLD_MS;
+      warn.mockRestore();
+    }
+  });
+
+  it("logs the gate's numbers when a request is turned away", async () => {
+    process.env.AI_MAX_INFLIGHT = "1";
+    process.env.AI_ADMISSION_WAIT_MS = "20";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await acquireAiAdmission();
+      await expect(acquireAiAdmission()).rejects.toBeInstanceOf(AdmissionTimeoutError);
+      expect(warn).toHaveBeenCalledWith(
+        "[ai-admission] request turned away: no slot freed in time",
+        expect.objectContaining({ waitedMs: 20, inflight: 1, max: 1 }),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("queues and resumes when a slot frees", async () => {
     process.env.AI_MAX_INFLIGHT = "1";
     process.env.AI_ADMISSION_WAIT_MS = "2000";

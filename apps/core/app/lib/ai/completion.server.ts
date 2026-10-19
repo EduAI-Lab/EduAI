@@ -20,6 +20,7 @@ import {
   providerErrorDiagnostic,
 } from "~/lib/ai/provider-errors.server";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
+import { untilAborted } from "~/lib/ai/until-aborted";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
@@ -706,11 +707,12 @@ export async function runCompletion(request: CompletionRequest) {
 
   try {
     await result.consumeStream();
-    const [text, usage, finishReason] = await Promise.all([
-      result.text,
-      result.usage,
-      result.finishReason,
-    ]);
+    // After an abort these promises never settle (#2009): without the race this
+    // call would never return and the route would never free its admission slot.
+    const [text, usage, finishReason] = await untilAborted(
+      Promise.all([result.text, result.usage, result.finishReason]),
+      request.signal,
+    );
 
     return {
       ok: true as const,
@@ -729,6 +731,13 @@ export async function runCompletion(request: CompletionRequest) {
       },
     };
   } catch (error) {
+    if (request.signal?.aborted) {
+      // A deadline (#2009) is a timeout; anything else is the client going away.
+      return request.signal.reason instanceof DOMException &&
+        request.signal.reason.name === "TimeoutError"
+        ? { ok: false as const, status: 504, error: "AI request timed out" }
+        : { ok: false as const, status: 499, error: "Request aborted" };
+    }
     console.error("[completion] provider stream failed", {
       model: validatedModelId,
       providerId: parsedModel.providerId,

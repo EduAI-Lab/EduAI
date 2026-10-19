@@ -135,7 +135,53 @@ afterEach(() => {
 });
 
 describe("POST /api/completion review regressions", () => {
-  it("passes the request AbortSignal to streamText as abortSignal", async () => {
+  // #2009 (prod outage 2026-10-18): after an abort, AI SDK 4 leaves the result
+  // promises pending forever. A client that hung up mid-answer used to keep its
+  // admission slot, and eight of them blocked every local-model request.
+  it("frees the admission slot when the client hangs up mid-answer", async () => {
+    const release = vi.fn();
+    vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+    const never = new Promise<never>(() => {});
+    vi.mocked(streamText).mockResolvedValue({
+      consumeStream: vi.fn().mockResolvedValue(undefined),
+      text: never,
+      usage: never,
+      finishReason: never,
+    } as never);
+    const controller = new AbortController();
+
+    const pending = action(makeRequest(baseBody(), controller.signal));
+    setTimeout(() => controller.abort(), 20);
+    const res = await pending;
+
+    expect(res.status).toBe(499);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers 504 and frees the slot when the request outlives AI_REQUEST_TIMEOUT_MS", async () => {
+    process.env.AI_REQUEST_TIMEOUT_MS = "30";
+    try {
+      const release = vi.fn();
+      vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+      const never = new Promise<never>(() => {});
+      vi.mocked(streamText).mockResolvedValue({
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: never,
+        usage: never,
+        finishReason: never,
+      } as never);
+
+      const res = await action(makeRequest(baseBody()));
+
+      expect(res.status).toBe(504);
+      await expect(res.json()).resolves.toEqual({ error: "AI request timed out" });
+      expect(release).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.AI_REQUEST_TIMEOUT_MS;
+    }
+  });
+
+  it("passes streamText an abortSignal that follows the request's", async () => {
     const controller = new AbortController();
     const args = makeRequest(baseBody(), controller.signal);
     mockStream();
@@ -143,11 +189,13 @@ describe("POST /api/completion review regressions", () => {
     const res = await action(args);
     expect(res.status).toBe(200);
 
-    expect(vi.mocked(streamText).mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({
-        abortSignal: args.request.signal,
-      }),
-    );
+    // #2009: the request's signal combined with a deadline, so it is a different
+    // object, but a client abort still reaches the provider call.
+    const passed = vi.mocked(streamText).mock.calls.at(-1)?.[0].abortSignal;
+    expect(passed).toBeInstanceOf(AbortSignal);
+    expect(passed?.aborted).toBe(false);
+    controller.abort();
+    expect(passed?.aborted).toBe(true);
 
     await expect(res.json()).resolves.toEqual({
       content: "Done.",
