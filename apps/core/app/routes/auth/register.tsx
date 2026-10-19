@@ -1,15 +1,30 @@
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
 
+import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { RegisterForm } from "~/components/register-form";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { signUpSchema, type SignUpInput } from "~/lib/auth";
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { auth } from "~/lib/auth/server";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { validateRedirectUrl } from "~/lib/auth/guards.server";
+import { rememberPendingSelfEnrollmentForSignUp } from "~/lib/courses/pending-self-enrollment.server";
+import {
+  describeSelfEnrollmentLinkForVisitor,
+  SELF_ENROLL_COMPLETE_PATH,
+  selfEnrollmentTokenFromRedirect,
+} from "~/lib/courses/self-enrollment.server";
+
+const signUpResponseSchema = z.object({
+  token: z.string().nullable().optional(),
+  user: z.object({ id: z.string(), role: z.string().nullable().optional() }),
+});
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -35,10 +50,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // message. Read the flag server-side (the signup page is unauthenticated, so
   // usePolicies() is unavailable here).
   if (!(await getPolicy("auth.allowPublicRegistration"))) {
-    return { registrationDisabled: true };
+    return { registrationDisabled: true, joining: null, redirectTo: "" };
   }
 
-  return { registrationDisabled: false };
+  // #1961: arrived from a course join link via sign-in. Name the course and keep
+  // the link for the action, which remembers the join once the account exists.
+  const redirectTo = validateRedirectUrl(new URL(request.url).searchParams.get("redirect"));
+  const joinToken = selfEnrollmentTokenFromRedirect(redirectTo);
+  if (!joinToken) return { registrationDisabled: false, joining: null, redirectTo: "" };
+  return {
+    registrationDisabled: false,
+    joining: await describeSelfEnrollmentLinkForVisitor(joinToken),
+    redirectTo,
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -51,6 +75,10 @@ export async function action({ request }: ActionFunctionArgs) {
     throw error;
   }
   const values = Object.fromEntries(formData);
+  // #1961: the course join link this sign-up started from, kept by the form.
+  const joinToken = selfEnrollmentTokenFromRedirect(
+    validateRedirectUrl(String(values.redirectTo || "")),
+  );
   const input = {
     name: String(values.name || ""),
     email: String(values.email || ""),
@@ -77,7 +105,7 @@ export async function action({ request }: ActionFunctionArgs) {
         name: input.name,
         email: input.email,
         password: input.password,
-        callbackURL: "/onboarding/student-id",
+        callbackURL: joinToken ? SELF_ENROLL_COMPLETE_PATH : "/onboarding/student-id",
       }),
     });
 
@@ -93,6 +121,32 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
+    if (joinToken) {
+      // Remembered against the new account and redeemed when the email is
+      // verified, so the link need not survive the trip through the inbox.
+      const signedUp = signUpResponseSchema.safeParse(await response.json().catch(() => null));
+      const joinPath = `/courses/self-enroll?token=${encodeURIComponent(joinToken)}`;
+      if (signedUp.success) {
+        const remembered = await rememberPendingSelfEnrollmentForSignUp({
+          userId: signedUp.data.user.id,
+          email: input.email,
+          token: joinToken,
+        });
+        if (signedUp.data.token) {
+          // The completion loader redeems a saved join. If remembering failed,
+          // keep the token in the normal signed-in Join flow so the student
+          // can still join or see why the link is unusable.
+          const headers = new Headers();
+          appendAuthSetCookies(response, headers);
+          return redirect(remembered ? SELF_ENROLL_COMPLETE_PATH : joinPath, { headers });
+        }
+      }
+      // Keep the link for both new accounts and Better Auth's stand-in response.
+      // The same destination and notice preserve email anti-enumeration; only a
+      // password-checked sign-in may attach this join to an existing account.
+      return redirect(`/auth/login?registered=1&redirect=${encodeURIComponent(joinPath)}`);
+    }
+
     return redirect("/auth/verify-email");
   } catch (err: unknown) {
     const message = messageFromCause(err, "Sign up failed");
@@ -102,8 +156,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function RegisterPage() {
   const isLoading = useNavigation().state !== "idle";
-  const { registrationDisabled } = useLoaderData() as {
+  const { registrationDisabled, joining, redirectTo } = useLoaderData() as {
     registrationDisabled: boolean;
+    joining: { courseCode: string; courseName: string } | null;
+    redirectTo: string;
   };
   const actionData = useActionData() as
     | {
@@ -174,7 +230,17 @@ export default function RegisterPage() {
             {actionData?.formError && (
               <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
             )}
-            <RegisterForm fieldErrors={actionData?.fieldErrors} isLoading={isLoading} />
+            {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
+            {joining && <JoinCourseNotice {...joining} action="sign-up" />}
+            <RegisterForm
+              fieldErrors={actionData?.fieldErrors}
+              isLoading={isLoading}
+              loginHref={
+                redirectTo
+                  ? `/auth/login?redirect=${encodeURIComponent(redirectTo)}`
+                  : "/auth/login"
+              }
+            />
           </Form>
         )}
       </div>

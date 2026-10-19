@@ -134,17 +134,8 @@ describe("canUploadMaterial", () => {
   });
 });
 
-describe("canViewMaterial — published course", () => {
-  it.each(ALL_ACCESS)("access=%s → true (published)", (access) => {
-    if (!access) {
-      expect(canViewMaterial(access, true)).toBe(false);
-    } else {
-      expect(canViewMaterial(access, true)).toBe(true);
-    }
-  });
-});
-
-describe("canViewMaterial — unpublished course", () => {
+// #1962: course files are staff-only; students reach a course through course chat.
+describe("canViewMaterial", () => {
   it.each([
     ["admin", true],
     ["unit", true],
@@ -152,8 +143,8 @@ describe("canViewMaterial — unpublished course", () => {
     ["ta", true],
     ["student", false],
     [null, false],
-  ] as [CourseAccess, boolean][])("access=%s → %s (unpublished)", (access, expected) => {
-    expect(canViewMaterial(access, false)).toBe(expected);
+  ] as [CourseAccess, boolean][])("access=%s → %s", (access, expected) => {
+    expect(canViewMaterial(access)).toBe(expected);
   });
 });
 

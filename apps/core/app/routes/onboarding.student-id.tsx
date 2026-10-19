@@ -10,6 +10,12 @@ import {
 import { LinkRosterSchema } from "~/lib/canvas/schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
+/** Only a local course detail path can continue this onboarding flow. */
+function continuation(request: Request): string {
+  const next = new URL(request.url).searchParams.get("next");
+  return next && /^\/courses\/[a-zA-Z0-9_-]+$/.test(next) ? next : "/dashboard";
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
 
@@ -20,7 +26,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const needsOnboarding = await userNeedsStudentIdOnboarding(session.user.id, session.user.role);
 
   if (!needsOnboarding) {
-    return redirect("/dashboard");
+    return redirect(continuation(request));
   }
 
   return {
@@ -39,7 +45,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const intent = String(formData.get("intent") ?? "link");
 
   if (intent === "skip") {
-    return redirect("/dashboard", {
+    return redirect(continuation(request), {
       headers: { "Set-Cookie": studentIdOnboardingSkipCookieHeader() },
     });
   }
@@ -60,7 +66,7 @@ export async function action({ request }: ActionFunctionArgs) {
       session.user.role,
       result.data.studentNumber,
     );
-    return redirect("/dashboard");
+    return redirect(continuation(request));
   } catch (error) {
     if (error instanceof LinkRosterError) {
       return { formError: error.message };

@@ -9,6 +9,8 @@ export interface LoginFormProps extends React.ComponentProps<"div"> {
   isLoading?: boolean;
   /** §6b: hide the "Sign up" link when public registration is disabled. */
   allowRegistration?: boolean;
+  /** #1961: Sign up keeps a course join link, so the new account still joins the course. */
+  registerHref?: string;
 }
 
 export function LoginForm({
@@ -16,6 +18,7 @@ export function LoginForm({
   fieldErrors,
   isLoading = false,
   allowRegistration = true,
+  registerHref = "/auth/register",
   ...props
 }: LoginFormProps) {
   return (
@@ -61,7 +64,7 @@ export function LoginForm({
       {allowRegistration && (
         <div className="text-center text-sm">
           Don&apos;t have an account?{" "}
-          <a href="/auth/register" className="underline underline-offset-4">
+          <a href={registerHref} className="underline underline-offset-4">
             Sign up
           </a>
         </div>

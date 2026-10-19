@@ -1,7 +1,11 @@
 // app/components/chat/use-chat-attachments.ts
 import { useCallback, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { CHAT_ATTACHMENT_MAX_FILES, classifyAttachmentName } from "~/lib/chat/attachment-types";
+import {
+  CHAT_ATTACHMENT_MAX_FILES,
+  chatImageExtensionFor,
+  classifyAttachmentName,
+} from "~/lib/chat/attachment-types";
 import { encodeTextDataUrl, type ChatTextAttachment } from "~/lib/chat/chat-attachments";
 
 export type ChatAttachmentItem = {
@@ -18,6 +22,45 @@ const successSchema = z.object({ text: z.string(), truncated: z.boolean() });
 const failureSchema = z.object({ error: z.string() });
 const FALLBACK_ERROR = "We couldn't read this file. Try again, or attach a different copy.";
 const NETWORK_ERROR = "Couldn't upload this file. Check your connection and try again.";
+const UNSUPPORTED_ERROR =
+  "This file type can't be attached. Try a PDF, Word, PowerPoint, Excel, text, code, or image (PNG, JPG, WebP) file.";
+
+/**
+ * The files a paste should attach, or `[]` to let it through as text.
+ *
+ * Office apps and web pages put a picture of the copied selection next to its
+ * text (`text/plain` plus `text/html`); the student meant the text, so that
+ * paste stays text. A screenshot, a "Copy image", or files copied in Finder
+ * attach. Screenshots arrive as a generic `image.png`, so pasted images are
+ * renamed "Pasted image N" to tell them apart in the chips.
+ */
+export type PastedFiles = {
+  files: File[];
+  /** Per file, whether it was renamed "Pasted image N" (and so used up a number). */
+  renamed: boolean[];
+};
+
+export function filesFromPaste(data: DataTransfer, pastedImagesSoFar: number): PastedFiles {
+  const none: PastedFiles = { files: [], renamed: [] };
+  const files = Array.from(data.files);
+  if (files.length === 0) return none;
+  const types = Array.from(data.types);
+  if (types.includes("text/html") && data.getData("text/plain").trim().length > 0) return none;
+  let imageNumber = pastedImagesSoFar;
+  const renamed: boolean[] = [];
+  const out = files.map((file) => {
+    const extension = chatImageExtensionFor(file.type);
+    const genericName = file.name === "" || /^image\.\w+$/iu.test(file.name);
+    renamed.push(Boolean(extension && genericName));
+    if (!extension || !genericName) return file;
+    imageNumber += 1;
+    return new File([file], `Pasted image ${imageNumber}${extension}`, {
+      type: file.type,
+      lastModified: file.lastModified,
+    });
+  });
+  return { files: out, renamed };
+}
 
 /** Upload one file to `/api/chat/attachments` and return its extracted text. */
 export async function uploadChatAttachment(
@@ -96,9 +139,7 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
           name: file.name,
           status: supported ? "pending" : "failed",
           truncated: false,
-          error: supported
-            ? null
-            : "This file type can't be attached. Try a PDF, Word, PowerPoint, text, or code file.",
+          error: supported ? null : UNSUPPORTED_ERROR,
           text: null,
         };
       });
@@ -132,7 +173,25 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
     [patch, start],
   );
 
+  /** Screenshots pasted into the message being written; numbering restarts per message. */
+  const pastedImages = useRef(0);
+  /** Attach what a paste carries; true when the paste was taken, so the caller cancels it. */
+  const paste = useCallback(
+    (data: DataTransfer): boolean => {
+      const { files, renamed } = filesFromPaste(data, pastedImages.current);
+      if (files.length === 0) return false;
+      // Only files `add` will accept use up a number, so a paste past the
+      // per-message limit leaves no gap (#1990 review).
+      const room = Math.max(0, CHAT_ATTACHMENT_MAX_FILES - live.current.size);
+      pastedImages.current += renamed.slice(0, room).filter(Boolean).length;
+      add(files);
+      return true;
+    },
+    [add],
+  );
+
   const clear = useCallback(() => {
+    pastedImages.current = 0;
     live.current.clear();
     setLimitError(null);
     setEntries([]);
@@ -161,5 +220,5 @@ export function useChatAttachments(options: { upload?: typeof uploadChatAttachme
   );
   const isBlocking = entries.some((e) => e.status !== "ready");
 
-  return { items, add, remove, retry, clear, attachments, isBlocking, limitError };
+  return { items, add, paste, remove, retry, clear, attachments, isBlocking, limitError };
 }

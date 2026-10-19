@@ -65,9 +65,11 @@ describe("auth/verify-email action", () => {
     const resendRequest = vi.mocked(auth.handler).mock.calls[0][0] as Request;
     expect(resendRequest.url).toBe("http://localhost/api/auth/send-verification-email");
     expect(resendRequest.headers.get("cookie")).toBeNull();
+    // #1961: the resent link lands where a sign-up from a course join link
+    // finishes; for any other sign-up that page carries on to onboarding.
     expect(await resendRequest.json()).toEqual({
       email: "student@ubc.ca",
-      callbackURL: "/onboarding/student-id",
+      callbackURL: "/courses/self-enroll/complete",
     });
   });
 

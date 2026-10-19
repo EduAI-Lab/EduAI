@@ -86,6 +86,8 @@ import {
 } from "~/components/courses/course-response-style-settings";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
+import { MaterialTopicsEditor } from "~/components/courses/material-topics-editor";
+import type { MaterialTopic, MaterialTopicChoice } from "~/hooks/api/use-course-materials";
 import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
@@ -94,6 +96,7 @@ import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
 import { useTopicAnalysis } from "~/hooks/api/use-topic-analysis";
+import { SuggestTopicsBar } from "~/components/courses/suggest-topics-bar";
 import { TopicAnalysisBanner } from "~/components/courses/topic-analysis-banner";
 import {
   isSuggestion,
@@ -204,6 +207,15 @@ interface Props {
    * affordance on the failure popover, rather than a button that cannot work.
    */
   onReprocessMaterial?: (materialId: string) => Promise<void>;
+  /**
+   * #1965: replace a material's topics; rejects with the server's error code.
+   * Optional: without it topics are shown but can't be changed, and the upload
+   * dialog closes on success as before.
+   */
+  onSetMaterialTopics?: (
+    materialId: string,
+    topics: MaterialTopicChoice[],
+  ) => Promise<MaterialTopic[]>;
   /**
    * #1939: publish (true) or unpublish (false) the course; rejects when the
    * server refuses. Optional like `onReprocessMaterial`: without it the page
@@ -384,6 +396,7 @@ export function CourseDetailManagerView({
   onRefreshEnrollments,
   onRefreshMaterials,
   onDeleteMaterial,
+  onSetMaterialTopics,
   courseId,
   currentUserId,
   showCanvasMaterialSync = false,
@@ -400,10 +413,15 @@ export function CourseDetailManagerView({
     dismissTopic,
     mergeTopic,
     retryAnalysis,
+    suggestTopics,
+    inFlight: topicAnalysisInFlight,
     refetch: refetchTopicAnalysis,
     // `courseId` is optional on this component; without one there is nothing to
     // poll, so the hook stays idle rather than fetching `/api/courses//…`.
-  } = useTopicAnalysis(courseId ?? "", Boolean(courseId), () => onRefreshTopics?.());
+  } = useTopicAnalysis(courseId ?? "", Boolean(courseId), async () => {
+    // #1965: the job files uploads under topics, so the materials' tags change too.
+    await Promise.all([onRefreshTopics?.(), onRefreshMaterials?.()]);
+  });
   const [retryingAnalysis, setRetryingAnalysis] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
@@ -468,14 +486,28 @@ export function CourseDetailManagerView({
   /** Set when the list read comes back 401/403 — see `refreshSelfEnrollLinks`. */
   const [selfEnrollForbidden, setSelfEnrollForbidden] = useState(false);
 
-  // Close upload modal when success arrives (not on file select — upload may fail)
+  // #1965: an upload starts the topic job once its file is processed. Re-read the
+  // job status after a batch settles so the banner and the materials' topics
+  // follow it; the short delay lets the job row be written first.
+  const wasUploadingRef = useRef(isUploading);
+  useEffect(() => {
+    const finished = wasUploadingRef.current && !isUploading;
+    wasUploadingRef.current = isUploading;
+    if (!finished) return;
+    const timer = setTimeout(() => void refetchTopicAnalysis(), 1500);
+    return () => clearTimeout(timer);
+  }, [isUploading, refetchTopicAnalysis]);
+
+  // Close upload modal when success arrives (not on file select — upload may fail).
+  // #1965: kept open when each uploaded file offers a topic picker, so the
+  // instructor can file the upload before closing it.
   const prevSuccessRef = useRef(materialsSuccess);
   useEffect(() => {
-    if (materialsSuccess && materialsSuccess !== prevSuccessRef.current) {
+    if (materialsSuccess && materialsSuccess !== prevSuccessRef.current && !onSetMaterialTopics) {
       setUploadOpen(false);
     }
     prevSuccessRef.current = materialsSuccess;
-  }, [materialsSuccess]);
+  }, [materialsSuccess, onSetMaterialTopics]);
 
   const { isEnabled } = usePolicyGate();
   const {
@@ -524,6 +556,32 @@ export function CourseDetailManagerView({
   // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
   const canRenameMaterial = (material: CourseMaterial) =>
     canDeleteMaterialForUploader(material.uploadedBy);
+
+  // #1965: the topics a material can be filed under — accepted ones only. An
+  // unreviewed suggestion is approved on the Topics tab first, and the SYSTEM
+  // placeholder is not a subject.
+  const fileableTopics: MaterialTopic[] = topics
+    .filter((t) => (t.reviewStatus ?? "ACCEPTED") === "ACCEPTED" && t.origin !== "SYSTEM")
+    .map((t) => ({ id: t.id, name: t.name }));
+
+  /** One material's topic tags and, when the viewer may change them, the picker. */
+  const renderMaterialTopics = (material: CourseMaterial) => (
+    <MaterialTopicsEditor
+      topics={material.topics ?? []}
+      courseTopics={fileableTopics}
+      canCreate
+      onSave={
+        onSetMaterialTopics && canRenameMaterial(material)
+          ? async (choices) => {
+              await onSetMaterialTopics(material.id, choices);
+              // A typed name may have created a topic, or approved a suggestion.
+              if (choices.some((choice) => "name" in choice)) await onRefreshTopics?.();
+            }
+          : undefined
+      }
+      pendingLabel={material.status === "PROCESSING" ? "Topic chosen after processing" : undefined}
+    />
+  );
 
   // #1841: every instructor of record, falling back to the single legacy field.
   const displayInstructors = resolveDisplayInstructors(course);
@@ -1032,6 +1090,15 @@ export function CourseDetailManagerView({
             success={materialsSuccess}
             uploads={uploads}
             onFilesSelect={onFilesSelect}
+            renderItemExtra={
+              onSetMaterialTopics
+                ? (item) => {
+                    if (item.status === "failed" || item.status === "duplicate") return null;
+                    const material = materials.find((m) => m.id === item.materialId);
+                    return material ? renderMaterialTopics(material) : null;
+                  }
+                : undefined
+            }
           />
         </DialogContent>
       </Dialog>
@@ -1455,6 +1522,7 @@ export function CourseDetailManagerView({
               meta: (
                 <>
                   {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  {m.status !== "FAILED" && renderMaterialTopics(m)}
                 </>
               ),
             }))}
@@ -1580,6 +1648,13 @@ export function CourseDetailManagerView({
           <div className="flex flex-col gap-4">
             {/* #1624: persistent status for automatic topic provisioning. Reads
                 the durable job row, so it survives a reload. */}
+            {canReviewTopicSuggestions && (
+              <SuggestTopicsBar
+                unfiledMaterials={topicAnalysis.unfiledMaterials}
+                busy={topicAnalysisInFlight}
+                onSuggest={suggestTopics}
+              />
+            )}
             <TopicAnalysisBanner
               status={topicAnalysis}
               retrying={retryingAnalysis}

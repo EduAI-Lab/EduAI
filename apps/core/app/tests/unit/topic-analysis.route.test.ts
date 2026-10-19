@@ -13,6 +13,8 @@ const review = vi.hoisted(() => ({
 vi.mock("~/lib/auth/course-access.server", () => ({ resolveCourseAccessGate }));
 vi.mock("~/lib/auth/request-session.server", () => ({ getRequestSession }));
 vi.mock("~/lib/topics/review.server", () => review);
+const startTopicSuggestion = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/topics/job.server", () => ({ startTopicSuggestion }));
 vi.mock("~/lib/logging.server", () => ({ fireAndForget: vi.fn(), logAuditAction: vi.fn() }));
 vi.mock("~/lib/request-context.server", () => ({
   getActorContext: () => ({}),
@@ -220,5 +222,35 @@ describe("POST /api/courses/:courseId/topic-analysis", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "TOPIC_NOT_FOUND" });
+  });
+});
+
+describe("POST suggest (#1966)", () => {
+  it("starts a Suggest run and answers 202 with its job", async () => {
+    startTopicSuggestion.mockResolvedValue({ jobId: "job-s" });
+
+    const res = await action({ request: post({ action: "suggest" }), params: PARAMS } as never);
+
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ jobId: "job-s" });
+    expect(startTopicSuggestion).toHaveBeenCalledWith({ courseId: "course-1", userId: "user-1" });
+  });
+
+  it("answers 409 when the course has no processed materials", async () => {
+    startTopicSuggestion.mockResolvedValue(null);
+
+    const res = await action({ request: post({ action: "suggest" }), params: PARAMS } as never);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "NO_ANALYZABLE_MATERIALS" });
+  });
+
+  it("is instructor-only, like the other review actions", async () => {
+    resolveCourseAccessGate.mockResolvedValue({ course: COURSE, access: { level: "ta", rank: 1 } });
+
+    const res = await action({ request: post({ action: "suggest" }), params: PARAMS } as never);
+
+    expect(res.status).toBe(403);
+    expect(startTopicSuggestion).not.toHaveBeenCalled();
   });
 });

@@ -10,12 +10,15 @@ import { PasswordRequirements } from "~/components/password-requirements";
 export interface RegisterFormProps extends React.ComponentProps<"div"> {
   fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
   isLoading?: boolean;
+  /** #1961: Login keeps a course join link. */
+  loginHref?: string;
 }
 
 export function RegisterForm({
   className,
   fieldErrors,
   isLoading = false,
+  loginHref = "/auth/login",
   ...props
 }: RegisterFormProps) {
   const [password, setPassword] = useState("");
@@ -102,7 +105,7 @@ export function RegisterForm({
       </div>
       <div className="text-center text-sm">
         Already have an account?{" "}
-        <a href="/auth/login" className="underline underline-offset-4">
+        <a href={loginHref} className="underline underline-offset-4">
           Login
         </a>
       </div>

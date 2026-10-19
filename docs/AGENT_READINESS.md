@@ -184,7 +184,7 @@ RAG search still has no standalone HTTP route, by design — it is reached in-pr
 | ------ | ---- | ------ |
 | POST | `/api/chat` | Streaming, persistence, apiKeys — use narrow tools instead |
 | POST | `/api/chat/cancel` | Browser-only request-specific stream cancellation |
-| POST | `/api/chat/attachments` | Browser-only multipart file extraction for the chat composer (#1902) |
+| POST | `/api/chat/attachments` | Browser-only multipart file extraction for the chat composer (#1902); images are transcribed by the vision model (#1742) |
 | POST | `/api/completion` | Stateless streaming completion for extension AI-assist (#858) |
 | GET | `/api/ai-jobs/:jobId` | Authenticated background-job polling for UI clients |
 | GET/DELETE | `/api/chats/:chatId` | Chat UI persistence, not ops |

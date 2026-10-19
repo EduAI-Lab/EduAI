@@ -4,7 +4,7 @@ import { cn } from "@eduai/ui";
 import { Alert, AlertDescription } from "@eduai/ui";
 import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck } from "@tabler/icons-react";
 import { MATERIAL_INPUT_ACCEPT } from "~/lib/materials/accepted-types";
-import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
+import type { MaterialFailureCode, MaterialTopic } from "~/hooks/api/use-course-materials";
 
 export interface CourseMaterial {
   id: string;
@@ -39,6 +39,8 @@ export interface CourseMaterial {
   hasExtractedText?: boolean;
   /** Why a FAILED row failed (#1791); null on rows that predate the column. */
   failureCode?: MaterialFailureCode | null;
+  /** The material's topics, main topic first (#1965). Staff-only. */
+  topics?: MaterialTopic[];
 }
 
 /** Where one file of a batch upload (#1748) stands. */
@@ -55,6 +57,8 @@ export interface UploadItem {
   status: UploadItemStatus;
   /** Why the file wasn't added; set on `duplicate` and `failed`. */
   message?: string;
+  /** Set once the server has accepted the file and created its material (#1965). */
+  materialId?: string;
 }
 
 export interface CourseMaterialsUploadProps {
@@ -64,6 +68,11 @@ export interface CourseMaterialsUploadProps {
   /** Per-file progress of the current batch; listed only when it has more than one file. */
   uploads?: UploadItem[];
   onFilesSelect: (files: File[]) => void;
+  /**
+   * Extra controls under one accepted file, such as its topics (#1965). When
+   * given, the per-file list is shown for a single file too.
+   */
+  renderItemExtra?: (item: UploadItem) => React.ReactNode;
 }
 
 const STATUS_LABEL = {
@@ -97,6 +106,7 @@ export function CourseMaterialsUpload({
   success = null,
   uploads = [],
   onFilesSelect,
+  renderItemExtra,
 }: CourseMaterialsUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -206,8 +216,9 @@ export function CourseMaterialsUpload({
         </Alert>
       )}
 
-      {/* Per-file progress; a single file is fully described by the alerts above */}
-      {uploads.length > 1 && (
+      {/* Per-file progress; a single file is fully described by the alerts above,
+          unless each file also carries its own controls */}
+      {(uploads.length > 1 || (renderItemExtra && uploads.some((u) => u.materialId))) && (
         <ul
           aria-label="Upload progress"
           className="max-h-60 space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-muted/30 p-2"
@@ -218,6 +229,7 @@ export function CourseMaterialsUpload({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-foreground">{item.name}</p>
                 {item.message && <p className="text-xs text-muted-foreground">{item.message}</p>}
+                {item.materialId && renderItemExtra?.(item)}
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {STATUS_LABEL[item.status]}

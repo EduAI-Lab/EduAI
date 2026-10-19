@@ -35,6 +35,9 @@ readonly CRON_UNIT_SOURCE="$TEMPLATE_DIR/eduai-cron-worker.service"
 readonly CRON_SCRIPT_DIR="/opt/eduai/cron"
 readonly TARGET_ROOT="/srv/www/eduai-production"
 readonly WEB_USER="www-data"
+readonly PROC_ROOT="/proc"
+# Units that run from a release; each resolves `current` once, when it starts.
+readonly RELEASE_UNITS=(eduai-core eduai-aitutor-server eduai-qm-backend eduai-cron-worker)
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
 assert_no_symlink_components() {
@@ -83,6 +86,77 @@ validate_release() {
     assert_no_symlink_components "$release/$relative"
     [ -f "$release/$relative" ] || die "release is incomplete; missing $release/$relative"
   done
+}
+# The release each running EduAI unit was started from, one per line (#1992
+# review). A unit resolves `current` when it starts, so after a release that
+# restarted only Core, AI Tutor and Question Maker still run from the one
+# before. Fails when it cannot tell, so the caller removes nothing.
+releases_in_use() {
+  local unit pid cwd rel
+  command -v systemctl >/dev/null 2>&1 || return 1
+  for unit in "${RELEASE_UNITS[@]}"; do
+    pid=$(systemctl show -p MainPID --value "$unit" 2>/dev/null) || return 1
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    [ "$pid" -eq 0 ] && continue # not running (or not installed)
+    cwd=$(readlink -f -- "$PROC_ROOT/$pid/cwd" 2>/dev/null) || return 1
+    case "$cwd" in
+      "$TARGET_ROOT/releases/"*)
+        rel=${cwd#"$TARGET_ROOT/releases/"}
+        printf '%s\n' "$TARGET_ROOT/releases/${rel%%/*}"
+        ;;
+    esac
+  done
+}
+# Each release is ~1.9 GB, almost all node_modules, and s348's disk is 27 GB
+# (#1869). Only the live release and the one before it (the rollback target)
+# are needed, so older releases are removed, except one a running service
+# still uses (see `releases_in_use`). A release newer than the live one
+# is kept too: it is a build waiting to be activated. `previous` is recorded by
+# activate-release; before the first activation that records it, the newest
+# release older than the live one stands in for it.
+# Returns 2 when it removed nothing because it could not tell what a running
+# unit uses, so an explicit `prune-releases` can fail loudly (#1992 re-review).
+prune_releases() {
+  local current previous dir id in_use kept=() removed=0
+  current=$(readlink -f -- "$TARGET_ROOT/current" 2>/dev/null) || die "no current release; refusing to prune"
+  [ -d "$current" ] || die "current release is missing: $current; refusing to prune"
+  assert_safe_release "$current"
+  previous=""
+  if [ -L "$TARGET_ROOT/previous" ]; then
+    previous=$(readlink -f -- "$TARGET_ROOT/previous" 2>/dev/null || true)
+  fi
+  if [ -z "$previous" ] || [ ! -d "$previous" ] || [ "$previous" = "$current" ]; then
+    previous=""
+    # Newest by modification time among those older than current.
+    for dir in $(ls -1dt "$TARGET_ROOT/releases"/*/ 2>/dev/null); do
+      dir=${dir%/}
+      [ "$dir" = "$current" ] && continue
+      [ "$dir" -nt "$current" ] && continue
+      previous=$dir
+      break
+    done
+  fi
+  # A unit restarting between `systemctl show` and the /proc read looks like an
+  # unreadable one, so try once more before giving up.
+  if ! in_use=$(releases_in_use) && ! { sleep 2; in_use=$(releases_in_use); }; then
+    echo "Could not tell which release each running service uses; no release was removed." >&2
+    return 2
+  fi
+  for dir in "$TARGET_ROOT/releases"/*; do
+    [ -d "$dir" ] || continue
+    if [ "$dir" = "$current" ] || [ "$dir" = "$previous" ] || [ "$dir" -nt "$current" ] ||
+      grep -qxF -- "$dir" <<<"$in_use"; then
+      kept+=("$(basename "$dir")")
+      continue
+    fi
+    id=$(basename "$dir")
+    [[ "$id" =~ ^[0-9a-f]{8,64}$ ]] || { echo "Skipping unexpected entry: $dir"; continue; }
+    assert_safe_release "$dir"
+    rm -rf -- "$dir"
+    echo "Removed release $id"
+    removed=$((removed + 1))
+  done
+  echo "Kept: ${kept[*]} (live $(basename "$current")${previous:+, rollback $(basename "$previous")}); removed $removed"
 }
 prepare_static_assets() {
   local release="$1" static_root parent
@@ -361,8 +435,18 @@ case "${1:-}" in
     release=$(release_arg "$@")
     validate_release "$release"
     prepare_static_assets "$release"
+    old=$(readlink -f -- "$TARGET_ROOT/current" 2>/dev/null || true)
     ln -sfn "$release" "$TARGET_ROOT/current"
+    if [ -n "$old" ] && [ "$old" != "$release" ] && [ -d "$old" ]; then
+      ln -sfn "$old" "$TARGET_ROOT/previous"
+    fi
     echo "Activated $release"
+    # The release is live either way; a prune that could not run is only a warning here.
+    prune_releases || echo "Warning: old releases were not pruned; run prune-releases after the restarts." >&2
+    ;;
+  prune-releases)
+    no_extra_args "$@"
+    prune_releases
     ;;
   validate-release)
     release=$(release_arg "$@")
@@ -378,5 +462,5 @@ case "${1:-}" in
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, install-cron-worker, validate-release, activate-release, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-cron-worker, restart-cron-worker, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, install-qm-env, install-qm-unit, install-qm-apache, aitutor-db-install, provision-aitutor, install-cron-worker, validate-release, activate-release, prune-releases, enable-aitutor, restart-aitutor, enable-qm, restart-qm, enable-cron-worker, restart-cron-worker, enable-core, restart-core, reload-apache" ;;
 esac

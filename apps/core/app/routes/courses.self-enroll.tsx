@@ -22,34 +22,8 @@ import {
   previewSelfEnrollmentLink,
   redeemSelfEnrollmentLink,
 } from "~/lib/courses/self-enrollment.server";
-import { fireAndForget, logAuditAction } from "~/lib/logging.server";
-import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-
-/**
- * A `Map` because the code arrives as a plain string from the library's result
- * union; an unrecognised one falls back to the generic message rather than
- * rendering a raw error code at a student.
- */
-const ERROR_MESSAGES = new Map<string, string>([
-  ["MISSING_TOKEN", "This enrollment link is missing its token."],
-  ["INVALID_TOKEN", "This enrollment link is not valid."],
-  ["COURSE_MISMATCH", "This enrollment link belongs to a different course."],
-  ["COURSE_NOT_FOUND", "The course for this link no longer exists."],
-  [
-    "COURSE_NOT_PUBLISHED",
-    "This course is not open to students yet. Try again once your instructor publishes it.",
-  ],
-  ["LINK_REVOKED", "This enrollment link was turned off. Ask your instructor for a new one."],
-  ["LINK_EXPIRED", "This enrollment link has expired. Ask your instructor for a new one."],
-  [
-    "LINK_EXHAUSTED",
-    "This enrollment link has reached its limit. Ask your instructor for a new one.",
-  ],
-]);
-
-function friendlyError(code: string): string {
-  return ERROR_MESSAGES.get(code) ?? "Something went wrong with this enrollment link.";
-}
+import { logSelfEnrollmentRedeemed } from "~/lib/courses/self-enrollment-audit.server";
+import { friendlySelfEnrollmentError } from "~/lib/courses/self-enrollment-messages";
 
 /**
  * Send an anonymous visitor to log in and come straight back here — token and
@@ -74,12 +48,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const token = new URL(request.url).searchParams.get("token")?.trim() ?? "";
   if (token === "") {
-    return { ok: false as const, error: "MISSING_TOKEN", message: friendlyError("MISSING_TOKEN") };
+    return {
+      ok: false as const,
+      error: "MISSING_TOKEN",
+      message: friendlySelfEnrollmentError("MISSING_TOKEN"),
+    };
   }
 
   const preview = await previewSelfEnrollmentLink(token, session.user.id);
   if (!preview.ok) {
-    return { ok: false as const, error: preview.error, message: friendlyError(preview.error) };
+    return {
+      ok: false as const,
+      error: preview.error,
+      message: friendlySelfEnrollmentError(preview.error),
+    };
   }
   // Already in the course — send them there instead of offering a Join they do
   // not need. This is also what keeps a student who joined in week one from
@@ -107,36 +89,27 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const result = await redeemSelfEnrollmentLink({ token, userId: session.user.id });
   if (result.status === "201") {
-    // Every other path that creates an enrollment logs it — the single-add
-    // route and the CSV import both do — so a roster built from a shared link
-    // must not be the one that is invisible when someone asks who joined this
-    // course and how. `source` names the link so the answer is "and how".
     // Only on 201: a 200 means the student was already enrolled and this
     // request wrote nothing.
-    fireAndForget(
-      logAuditAction({
-        ...getActorContext(session.user),
-        ...getRequestContext(request),
-        actionCode: "ENROLLMENT_ADDED",
-        category: "ENROLLMENT",
-        entityType: "Enrollment",
-        entityId: result.enrollmentId,
-        details: {
-          courseId: result.courseId,
-          role: "STUDENT",
-          targetUserId: session.user.id,
-          source: "SELF_ENROLLMENT_LINK",
-          linkId: result.linkId,
-        },
-      }),
-    );
+    logSelfEnrollmentRedeemed({
+      user: session.user,
+      request,
+      enrollmentId: result.enrollmentId,
+      courseId: result.courseId,
+      linkId: result.linkId,
+      deferred: false,
+    });
   }
   if (result.status === "201" || result.status === "200") {
     // Both outcomes mean "you are in this course" — land the student on it
     // rather than making them read a confirmation they did not ask for.
     return redirect(`/courses/${result.courseId}`);
   }
-  return { ok: false as const, error: result.error, message: friendlyError(result.error) };
+  return {
+    ok: false as const,
+    error: result.error,
+    message: friendlySelfEnrollmentError(result.error),
+  };
 }
 
 export default function SelfEnrollPage() {
@@ -175,8 +148,7 @@ export default function SelfEnrollPage() {
                 <p className="text-sm text-muted-foreground">{data.courseName}</p>
               </div>
               <p className="text-sm text-muted-foreground">
-                You&apos;ll be enrolled as a student and will be able to see this course&apos;s
-                materials and chat.
+                You&apos;ll be enrolled as a student and can ask about this course in course chat.
               </p>
               <Form method="post">
                 <input type="hidden" name="token" value={data.token} />

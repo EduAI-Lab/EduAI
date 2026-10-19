@@ -365,6 +365,44 @@ describe("ChatInput — attachments (#1902)", () => {
     expect(await screen.findByText("dropped.sql")).toBeInTheDocument();
   });
 
+  // #1742: a screenshot pasted into the textbox attaches like a picked file.
+  const pasteInto = (clipboardData: Partial<DataTransfer>) =>
+    fireEvent.paste(screen.getByRole("textbox"), { clipboardData });
+  const pastedScreenshot = () => ({
+    files: [new File(["png"], "image.png", { type: "image/png" })] as unknown as FileList,
+    types: ["Files"],
+    getData: () => "",
+  });
+
+  it("attaches a screenshot pasted into the textbox", async () => {
+    stubUploadOk("transcript", false);
+    render(<ChatInput {...makeProps({ input: "what's wrong here?" })} />);
+    const notPrevented = pasteInto(pastedScreenshot());
+    expect(notPrevented).toBe(false);
+    expect(await screen.findByText("Pasted image 1.png")).toBeInTheDocument();
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/chat/attachments", expect.anything());
+  });
+
+  it("lets a text paste through to the textbox", () => {
+    stubUploadOk("body", false);
+    render(<ChatInput {...makeProps({ input: "" })} />);
+    const notPrevented = pasteInto({
+      files: [] as unknown as FileList,
+      types: ["text/plain"],
+      getData: () => "hello",
+    });
+    expect(notPrevented).toBe(true);
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it("does not attach a paste when attachments are disabled", () => {
+    stubUploadOk("body", false);
+    render(<ChatInput {...makeProps({ input: "q", attachmentsEnabled: false })} />);
+    pasteInto(pastedScreenshot());
+    expect(screen.queryByText("Pasted image 1.png")).toBeNull();
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
   it("calls onSubmit with one argument when nothing is attached", () => {
     const onSubmit = vi.fn();
     render(<ChatInput {...makeProps({ input: "hello", onSubmit })} />);
@@ -374,10 +412,10 @@ describe("ChatInput — attachments (#1902)", () => {
 
   it("offers Remove but no Retry for an unsupported file", async () => {
     render(<ChatInput {...makeProps({ input: "q" })} />);
-    pick([new File(["x"], "photo.png")]);
+    pick([new File(["x"], "animation.gif")]);
     expect(await screen.findByText(/can't be attached/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /remove photo\.png/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /retry photo\.png/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /remove animation\.gif/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry animation\.gif/i })).toBeNull();
   });
 
   it("offers Retry for a failed upload and re-uploads on click", async () => {

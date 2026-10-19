@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { Prisma } from "@prisma/client";
 
@@ -6,8 +6,10 @@ import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import { JobPayloadSchema, type JobPayload } from "~/lib/queue/job-schema";
 import { runTopicAnalysisCompletion } from "~/lib/topics/completion.server";
+import { matchMaterialsToTopics } from "~/lib/topics/auto-match.server";
+import { suggestCourseTopics } from "~/lib/topics/suggest.server";
 import { ensureCourseHasTopic } from "~/lib/topics/fallback.server";
-import { provisionCourseTopics, type RunTopicCompletion } from "~/lib/topics/provision.server";
+import type { RunTopicCompletion } from "~/lib/topics/provision.server";
 
 /**
  * Topic analysis runs in-process against a durable `AiJob` row rather than on
@@ -98,8 +100,8 @@ export type StartTopicAnalysisArgs = {
   /**
    * Run the batch again even if it already COMPLETED (#1937). A restored
    * material keeps its checksum, so its earlier analysis matches by key, but
-   * the delete removed the suggestions that analysis made. Safe because
-   * provisioning only creates names the course does not already hold.
+   * the course's topics may have changed while it was deleted. Safe because
+   * matching skips a material that is already filed (#1965).
    */
   rerunCompleted?: boolean;
 };
@@ -336,14 +338,33 @@ export async function runTopicAnalysisJob(
   const { input } = parsed.data;
 
   try {
-    const result = await provisionCourseTopics({
-      courseId: input.courseId,
-      materialIds: input.materialIds,
-      canvasCourseId: input.canvasCourseId ?? null,
-      userId: row.userId,
-      jobId,
-      runCompletion,
-    });
+    const result =
+      input.mode === "suggest"
+        ? // #1966: an instructor asked for the topics the course is missing.
+          {
+            kind: "topic-analysis",
+            mode: "suggest",
+            ...(await suggestCourseTopics({
+              courseId: input.courseId,
+              canvasCourseId: input.canvasCourseId ?? null,
+              userId: row.userId,
+              jobId,
+              runCompletion,
+            })),
+          }
+        : // #1965: uploads are filed under the course's existing topics.
+          {
+            kind: "topic-analysis",
+            mode: "match",
+            ...(await matchMaterialsToTopics({
+              courseId: input.courseId,
+              materialIds: input.materialIds,
+              canvasCourseId: input.canvasCourseId ?? null,
+              userId: row.userId,
+              runCompletion,
+              heartbeat: () => renewTopicAnalysisLease(jobId),
+            })),
+          };
 
     // The course must be authorable whatever the analysis produced — including
     // when it produced nothing at all.
@@ -351,17 +372,7 @@ export async function runTopicAnalysisJob(
 
     await prisma.aiJob.update({
       where: { id: jobId },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        result: {
-          kind: "topic-analysis",
-          created: result.created,
-          createdNames: result.createdNames,
-          usedSource: result.usedSource,
-          duplicatesSkipped: result.duplicatesSkipped,
-        },
-      },
+      data: { status: "COMPLETED", completedAt: new Date(), result },
     });
   } catch (error) {
     // A failed analysis must still leave the course authorable (#1624: "Question
@@ -380,6 +391,18 @@ export async function runTopicAnalysisJob(
       }),
     );
   }
+}
+
+/**
+ * Push a running job's lease forward. Matching makes up to one model call per
+ * material, so a large Canvas sync can outlast `TOPIC_ANALYSIS_LEASE_MS`; without
+ * renewal a status read would reclaim the job as abandoned and run it twice.
+ */
+async function renewTopicAnalysisLease(jobId: string): Promise<void> {
+  await prisma.aiJob.updateMany({
+    where: { id: jobId, status: "RUNNING" },
+    data: { startedAt: new Date() },
+  });
 }
 
 async function failJob(jobId: string, message: string): Promise<void> {
@@ -419,6 +442,93 @@ export function startTopicAnalysis(args: StartTopicAnalysisArgs): void {
       }),
     );
   });
+}
+
+/**
+ * Start an on-demand Suggest run for a course (#1966), or return the one already
+ * in flight, so a double click doesn't ask the model twice. Returns null when
+ * the course has no processed materials to read.
+ *
+ * Unlike an upload batch, a Suggest run is keyed per request rather than by
+ * content: the instructor asked for a fresh look, and the course's topics may
+ * have changed since the last one even if its files have not.
+ */
+export async function startTopicSuggestion(args: {
+  courseId: string;
+  userId: string;
+}): Promise<{ jobId: string } | null> {
+  const inFlight = await prisma.aiJob.findFirst({
+    where: {
+      courseId: args.courseId,
+      kind: "topic-analysis",
+      status: { in: ["PENDING", "RUNNING"] },
+      payload: { path: ["input", "mode"], equals: "suggest" },
+    },
+    select: { id: true },
+  });
+  if (inFlight) return { jobId: inFlight.id };
+
+  const [materials, course] = await Promise.all([
+    prisma.courseMaterial.findMany({
+      where: { courseId: args.courseId, status: "READY", deletedAt: null },
+      select: { id: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: MAX_MATERIALS_PER_JOB,
+    }),
+    prisma.course.findUnique({
+      where: { id: args.courseId },
+      select: { externalId: true, externalSource: true },
+    }),
+  ]);
+  if (materials.length === 0) return null;
+
+  const key = `topic-suggest:${args.courseId}:${randomUUID()}`;
+  const payload: JobPayload = JobPayloadSchema.parse({
+    kind: "topic-analysis",
+    type: "background",
+    source: TOPIC_ANALYSIS_SOURCE,
+    userId: args.userId,
+    courseId: args.courseId,
+    idempotencyKey: key,
+    input: {
+      kind: "topic-analysis",
+      mode: "suggest",
+      courseId: args.courseId,
+      materialIds: materials.map((material) => material.id),
+      canvasCourseId: course?.externalSource === "canvas" ? course.externalId : null,
+      // Its own batch, so the status read reports this run alone.
+      batchKey: key,
+    },
+  });
+
+  const job = await prisma.aiJob.create({
+    data: {
+      kind: "topic-analysis",
+      type: "background",
+      source: TOPIC_ANALYSIS_SOURCE,
+      status: "PENDING",
+      payload,
+      userId: args.userId,
+      courseId: args.courseId,
+      queueName: TOPIC_ANALYSIS_QUEUE_NAME,
+      bullJobId: key,
+    },
+    select: { id: true },
+  });
+
+  void runTopicAnalysisJob(job.id).catch((cause: unknown) => {
+    fireAndForget(
+      logSystemError({
+        source: "AI",
+        code: "topic_suggestion_start_failed",
+        message: `Failed to run topic suggestion for course ${args.courseId}`,
+        error: cause,
+        actorUserId: args.userId,
+        details: { jobId: job.id, courseId: args.courseId },
+      }),
+    );
+  });
+  return { jobId: job.id };
 }
 
 function isUniqueViolation(cause: unknown): boolean {

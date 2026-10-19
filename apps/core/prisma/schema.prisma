@@ -53,6 +53,7 @@ model User {
   systemLogs                SystemLog[]
   passwordHistory           PasswordHistory[]
   selfEnrollmentLinks       SelfEnrollmentLink[]   @relation("SelfEnrollmentLinkCreator")
+  pendingSelfEnrollments    PendingSelfEnrollment[]
 
   @@map("user")
 }
@@ -328,6 +329,9 @@ model SelfEnrollmentLink {
   createdById String?
   createdBy   User?   @relation("SelfEnrollmentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
+  /// Joins started from this link by people who had no activated account yet (#1961).
+  pendingJoins PendingSelfEnrollment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -337,6 +341,37 @@ model SelfEnrollmentLink {
   /// delete seq-scans this table to apply the action.
   @@index([createdById])
   @@map("self_enrollment_links")
+}
+
+/// A course join someone started from a self-enrollment link before they had an
+/// activated account (#1961). Written when they register through the link (or
+/// sign in still unverified), redeemed through the link when they activate.
+///
+/// Holds the link, never its token, so #1756's hash-only rule still holds. Keeps
+/// the verdict once redeemed: the person is often not the one who triggers it (a
+/// mail scanner can open the verification link first), and the landing page still
+/// has to tell them whether they got in.
+model PendingSelfEnrollment {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  linkId String
+  link   SelfEnrollmentLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime  @default(now())
+  /// Null while the join waits for activation.
+  resolvedAt DateTime?
+  /// What redemption answered: "JOINED", or the link's refusal code (LINK_EXPIRED, …).
+  outcome    String?
+
+  /// One pending join per person per link; also serves "this user's joins" and
+  /// the cascade when a user is deleted.
+  @@unique([userId, linkId])
+  /// The cascade when a link (or its course) is deleted.
+  @@index([linkId])
+  @@map("pending_self_enrollments")
 }
 
 model AIInteraction {
@@ -547,6 +582,10 @@ model CourseMaterial {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   processedAt       DateTime?
+  /// When a person last set this material's topics by hand (#1965). Null means
+  /// EduAI may file it automatically; once set, auto-matching leaves the
+  /// material's topics alone, including after a re-sync changes its content.
+  topicsSetManuallyAt DateTime?
   course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   uploader          User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
   duplicateOf       CourseMaterial? @relation("MaterialDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
@@ -642,13 +681,17 @@ model CourseTopic {
   @@map("course_topics")
 }
 
-/// Which materials a generated topic was derived from (#1624) — the provenance
-/// half of "generated topics identify their source materials". Empty for
-/// human-created topics and for the SYSTEM fallback topic.
+/// A material filed under a topic. Written three ways: as the provenance of a
+/// generated topic (#1624), by auto-matching a processed material to an
+/// existing topic (#1965), and by a person choosing a material's topics. A
+/// material has at most `MAX_TOPICS_PER_MATERIAL` live topics (enforced in code).
 model CourseTopicSource {
   id         String         @id @default(cuid())
   topicId    String
   materialId String
+  /// Order of this topic among the material's topics; the lowest is its main
+  /// topic (#1965). Ties (rows from before this column) fall back to createdAt.
+  position   Int            @default(0)
   createdAt  DateTime       @default(now())
   topic      CourseTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
@@ -1233,6 +1276,7 @@ enum SystemLogSource {
   DB
   SSR
   API
+  HOST
 }
 
 model AuditLog {

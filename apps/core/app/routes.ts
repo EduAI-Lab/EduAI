@@ -41,6 +41,7 @@ export default [
   route("/courses", "routes/courses.tsx"),
   // Static before dynamic: this must not be swallowed by `/courses/:courseId`.
   route("/courses/self-enroll", "routes/courses.self-enroll.tsx"),
+  route("/courses/self-enroll/complete", "routes/courses.self-enroll.complete.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/units/:department/chats", "routes/units.$department.chats.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
@@ -48,6 +49,10 @@ export default [
     "/api/courses/:courseId/materials/:materialId/reprocess",
     "routes/api/courses.materials.$.ts",
     { id: "routes/api/courses.materials.$:materialId.reprocess" },
+  ),
+  route(
+    "/api/courses/:courseId/materials/:materialId/topics",
+    "routes/api/courses.materials.topics.ts",
   ),
   route("/api/courses/:courseId/materials/:materialId", "routes/api/courses.materials.$.ts", {
     id: "routes/api/courses.materials.$:materialId",

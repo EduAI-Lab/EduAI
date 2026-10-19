@@ -490,6 +490,25 @@ describe("KNOWN_CRON_JOBS registry", () => {
     expect(slots).not.toContain(invitationJob()!.schedule);
   });
 
+  describe("disk-usage-check (#1869)", () => {
+    const diskJob = () => KNOWN_CRON_JOBS.find((j) => j.name === "disk-usage-check");
+
+    it("is a Core-handler job every 30 minutes", () => {
+      expect(diskJob()).toMatchObject({
+        schedule: "*/30 * * * *",
+        script: "Core handler",
+        execution: "CORE",
+      });
+    });
+
+    it("declares warning and critical thresholds of 85% and 95%", () => {
+      expect(diskJob()!.settings?.map((s) => [s.key, s.default])).toEqual([
+        ["warnPercent", 85],
+        ["criticalPercent", 95],
+      ]);
+    });
+  });
+
   describe("purge-deleted-materials", () => {
     const purgeJob = () => KNOWN_CRON_JOBS.find((j) => j.name === "purge-deleted-materials");
 

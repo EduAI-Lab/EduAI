@@ -133,3 +133,18 @@ describe("RegisterForm — loading state", () => {
     expect(screen.getByRole("button", { name: "Creating account..." })).toBeInTheDocument();
   });
 });
+
+describe("RegisterForm — a course join link (#1961)", () => {
+  it("points Login at the given href, keeping a join link", () => {
+    render(<RegisterForm loginHref="/auth/login?redirect=%2Fcourses%2Fself-enroll%3Ftoken%3Dt" />);
+    expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute(
+      "href",
+      "/auth/login?redirect=%2Fcourses%2Fself-enroll%3Ftoken%3Dt",
+    );
+  });
+
+  it("links plain sign-in by default", () => {
+    render(<RegisterForm />);
+    expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute("href", "/auth/login");
+  });
+});

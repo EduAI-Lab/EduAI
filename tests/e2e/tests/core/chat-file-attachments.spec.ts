@@ -11,7 +11,9 @@
  *
  * API checks hit the real routes: the extraction endpoint's auth and type gate,
  * and /api/chat's attachment and image guards, which all reject before any model
- * call, so they need no LLM either.
+ * call, so they need no LLM either. Images are accepted as attachments since
+ * #1742 but need the campus vision model, so they are covered in unit tests;
+ * here only the refusals that happen before it is called are checked.
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
@@ -21,7 +23,8 @@ const RUN_SUFFIX = Date.now().toString().slice(-5);
 // Non-ASCII on purpose: the text crosses a base64 data URL in the browser.
 const PLANTED_PHRASE = "PANGOLIN_SYLLABUS_42 — café";
 const NOTES_BODY = `# Week 3 notes\n\nThe deadline code is ${PLANTED_PHRASE}.\n`;
-const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+// GIF is still not an accepted type (#1742 accepts PNG, JPEG and WebP).
+const GIF_HEADER = Buffer.from("GIF89a\x01\x00\x01\x00", "latin1");
 
 interface ChatRequestMessage {
   role: string;
@@ -154,17 +157,17 @@ test.describe("Chat file attachments (#1902)", () => {
     const composerChips = page.getByRole("list", { name: "Attached files" });
     await expect(composerChips.getByText("notes.md")).toBeVisible();
 
-    // An image is refused in the browser (chat is text-only) and can only be removed.
+    // An unsupported type is refused in the browser and can only be removed.
     await page.getByTestId("chat-attachment-input").setInputFiles({
-      name: "photo.png",
-      mimeType: "image/png",
-      buffer: PNG_HEADER,
+      name: "animation.gif",
+      mimeType: "image/gif",
+      buffer: GIF_HEADER,
     });
     await expect(page.getByText(/can't be attached/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Retry photo.png" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry animation.gif" })).toHaveCount(0);
     await input.fill("When is the deadline in my notes?");
     await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
-    await page.getByRole("button", { name: "Remove photo.png" }).click();
+    await page.getByRole("button", { name: "Remove animation.gif" }).click();
 
     const sendButton = page.getByRole("button", { name: "Send message" });
     await expect(sendButton).toBeEnabled();
@@ -191,7 +194,9 @@ test.describe("Chat file attachments (#1902)", () => {
     await expect(page.getByText(PLANTED_PHRASE)).toHaveCount(0);
   });
 
-  test("the extraction endpoint requires a session and rejects images", async ({ playwright }) => {
+  test("the extraction endpoint requires a session and rejects unsupported files", async ({
+    playwright,
+  }) => {
     const anonCtx = await playwright.request.newContext();
     try {
       const anon = await anonCtx.post(`${CORE_URL}/api/chat/attachments`, {
@@ -202,11 +207,18 @@ test.describe("Chat file attachments (#1902)", () => {
       await anonCtx.dispose();
     }
 
-    const image = await studentCtx.post(`${CORE_URL}/api/chat/attachments`, {
-      multipart: { file: { name: "photo.png", mimeType: "image/png", buffer: PNG_HEADER } },
+    const gif = await studentCtx.post(`${CORE_URL}/api/chat/attachments`, {
+      multipart: { file: { name: "animation.gif", mimeType: "image/gif", buffer: GIF_HEADER } },
     });
-    expect(image.status()).toBe(400);
-    expect(await image.json()).toMatchObject({ code: "ATTACHMENT_TYPE_UNSUPPORTED" });
+    expect(gif.status()).toBe(400);
+    expect(await gif.json()).toMatchObject({ code: "ATTACHMENT_TYPE_UNSUPPORTED" });
+
+    // #1742: a "PNG" whose bytes are not a PNG is refused before the vision model runs.
+    const fakePng = await studentCtx.post(`${CORE_URL}/api/chat/attachments`, {
+      multipart: { file: { name: "photo.png", mimeType: "image/png", buffer: Buffer.from("hi") } },
+    });
+    expect(fakePng.status()).toBe(400);
+    expect(await fakePng.json()).toMatchObject({ code: "ATTACHMENT_TYPE_UNSUPPORTED" });
   });
 
   test("/api/chat rejects an image attachment and too many files before any model call", async () => {
