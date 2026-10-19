@@ -46,7 +46,7 @@ Go to your Core host from the table above and sign in.
 
 ### Land on your dashboard
 
-After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom. Each app's dashboard also has a five-task **Getting started** checklist, and the ▶ **Page tour** button in the header walks you through the page you are on; see the [user guide](USER_GUIDE.md#navigation-shared-across-the-platform).
+After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom. Each app's dashboard also has a five-task **Getting started** checklist, and five main pages in each app have a ▶ **Page tour** button in the header; see the [user guide](USER_GUIDE.md#navigation-shared-across-the-platform).
 
 **If you're stuck:** The invite link expired — ask your admin to resend. Wrong role (for example Student) — ask them to re-invite you as **Instructor**.
 

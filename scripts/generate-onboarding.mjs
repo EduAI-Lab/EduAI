@@ -18,6 +18,8 @@ for (const section of source.split(/^## /m).slice(1)) {
   const staffTask = lines.find((line) => line.startsWith("Staff task: "))?.slice(12);
   const steps = lines.flatMap((line) => {
     const step = line.match(/^\d+\. \*\*(.+)\*\* — (.+)$/);
+    // Tour cards render plain text, so Markdown would show as literal asterisks.
+    if (step?.[2].includes("**")) throw new Error(`Markdown in tour step body: ${id}`);
     return step ? [{ id: `${id}.${step[1]}`, title: step[1], body: step[2] }] : [];
   });
   if (!task || !staffTask || steps.length < 2) throw new Error(`Incomplete page: ${id}`);

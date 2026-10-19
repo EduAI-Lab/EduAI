@@ -2,13 +2,13 @@
 
 Source of the in-app **Getting started** checklist and ▶ **Page tour** copy in Core, AI Tutor and Question Maker (#2004). What users see is described in the [user guide](USER_GUIDE.md#navigation-shared-across-the-platform).
 
-Each `## <app>.<page>: Title` section is one page: `Task:` is the checklist label for students, `Staff task:` the label for everyone else (TAs included), and each numbered `**Step** — body` line is one tour step. Each app has exactly five pages. Run `npm run onboarding:generate` after editing; CI runs `npm run onboarding:check` to catch stale generated copy. Routes and role access live in `packages/ui/src/onboarding/catalog.ts`.
+Each `## <app>.<page>: Title` section is one page: `Task:` is the checklist label for students, `Staff task:` the label for everyone else (TAs included), and each numbered `**Step** — body` line is one tour step. Tour titles and bodies are plain text, so no Markdown. Each app has exactly five pages. Run `npm run onboarding:generate` after editing; CI runs `npm run onboarding:check` to catch stale generated copy. Routes and role access live in `packages/ui/src/onboarding/catalog.ts`.
 
 The copy relies on these rules:
 
 - Nothing starts a tour automatically. On the Core and Question Maker dashboards, ▶ plays the app's overview tour instead of a page from this file.
 - Checklist progress is per account and app, in the browser only. Users tick tasks themselves; opening a page or finishing a tour never does.
-- A checklist or tour never grants access. Question Maker's checklist and tours show for instructors, unit admins and admins only.
+- A checklist or tour never grants access. Question Maker's checklist and page tours show for instructors, unit admins and admins only.
 
 ## core.courses: Find your course
 
@@ -25,7 +25,7 @@ Task: Find your course chat
 
 Staff task: Prepare materials, topics and enrollments
 
-1. **Check the course** — Confirm the course code, section and instructors. Students use **Chat about this course** to ask about the learning materials.
+1. **Check the course** — Confirm the course code, section and instructors. Students use Chat about this course to ask about the learning materials.
 2. **Prepare learning materials** — If you manage this course, upload learning materials and wait for Ready. Review topic matches and approve suggestions before students use them.
 3. **Check access** — Course staff manage enrollments and publishing according to their permissions. A course must be published before enrolled students can see it.
 
@@ -110,7 +110,7 @@ Task: Open a course workspace
 Staff task: Open a course workspace
 
 1. **Choose the course** — Your courses come from Core; select the right course before creating content.
-2. **Check access** — If a course is missing, confirm your Core course access and allow time for synchronization. TAs can add questions to the courses they assist but cannot build assessments.
+2. **Check access** — If a course is missing, confirm your Core course access and allow time for synchronization. TAs can add draft questions and variants; only staff can mark them reviewed or build assessments.
 
 ## question-maker.course: Explore the workspace
 

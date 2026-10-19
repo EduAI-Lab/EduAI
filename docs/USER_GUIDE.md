@@ -31,7 +31,7 @@ You remain signed in because Core provides the shared session for all three appl
 - Open the **profile menu** in the sidebar footer for Settings and Log out.
 - Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
 - Each app's dashboard has a five-task **Getting started** checklist. **Open** takes you to a task; tick it yourself when you have finished. Progress is saved for your account in this browser only.
-- Five main pages in each app have a ▶ **Page tour** button in the header. Tours start only when you press it. On the Core and Question Maker dashboards, ▶ plays the app's overview tour, the same one **(?) → Take the tour** offers. Question Maker's checklist and tours are for instructors and administrators.
+- Five main pages in each app have a ▶ **Page tour** button in the header. Tours start only when you press it. On the Core and Question Maker dashboards, ▶ plays the app's overview tour, the same one **(?) → Take the tour** offers. Question Maker's checklist and page tours are for instructors and administrators.
 - Use **Report a bug** in the header when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
@@ -85,7 +85,7 @@ TA is primarily a course enrollment role. A person may therefore have the platfo
 
 Buttons, tabs, and sidebar links are filtered by role and policy. A missing or disabled action usually means you do not have the required course access, the feature has been disabled by an administrator, or the course is not linked to the required application. Ask an instructor or administrator instead of trying to work around the restriction.
 
-Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can open the courses they assist, add questions and edit the ones they wrote, but cannot make AI variants, build assessments or use Canvas. Students see an access-denied screen.
+Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can open the courses they assist, add questions and AI variants and edit the ones they wrote, but their work stays a draft until staff mark it reviewed. TAs cannot build assessments or use Canvas. Students see an access-denied screen.
 
 ## EduAI Core workflows
 

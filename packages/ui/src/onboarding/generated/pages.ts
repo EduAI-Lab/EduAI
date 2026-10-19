@@ -26,7 +26,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "core.course.Check the course",
         "title": "Check the course",
-        "body": "Confirm the course code, section and instructors. Students use **Chat about this course** to ask about the learning materials."
+        "body": "Confirm the course code, section and instructors. Students use Chat about this course to ask about the learning materials."
       },
       {
         "id": "core.course.Prepare learning materials",
@@ -199,7 +199,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "question-maker.courses.Check access",
         "title": "Check access",
-        "body": "If a course is missing, confirm your Core course access and allow time for synchronization. TAs can add questions to the courses they assist but cannot build assessments."
+        "body": "If a course is missing, confirm your Core course access and allow time for synchronization. TAs can add draft questions and variants; only staff can mark them reviewed or build assessments."
       }
     ]
   },
