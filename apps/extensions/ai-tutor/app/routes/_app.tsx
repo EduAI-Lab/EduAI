@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
+  OnboardingChecklist,
+  PageTourButton,
   AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
@@ -226,6 +228,7 @@ function AppLayoutInner() {
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <BugReportTriggerButton onClick={handleOpenBugReport} />
+          <PageTourButton platform="ai-tutor" pathname={pathname} role={user.role} />
           {/* Last, so it sits in the header's top-right corner (#1754). */}
           <AiTutorPageHelp role={user.role} />
         </>
@@ -243,6 +246,14 @@ function AppLayoutInner() {
         </>
       }
     >
+      {pathname === "/dashboard" && (
+        <OnboardingChecklist
+          platform="ai-tutor"
+          userId={user.id}
+          role={user.role}
+          navigate={navigate}
+        />
+      )}
       <Outlet />
     </AppShell>
   );

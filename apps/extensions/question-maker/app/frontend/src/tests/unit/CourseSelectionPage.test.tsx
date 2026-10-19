@@ -84,14 +84,9 @@ describe("CourseSelectionPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/courses/7?tab=overview");
   });
 
-  it("auto-starts the guided tour only once courses have loaded (#1754)", () => {
+  it("never auto-starts a tour; tours start from the header play button (#2004)", () => {
     setup("INSTRUCTOR", []);
-    useDisplayCoursesMock.mockReturnValue({ displayCourses: [], isLoading: true });
-    const { rerender } = render(<CourseSelectionPage />);
-    expect(useAutoStartTourMock).toHaveBeenLastCalledWith("main", { enabled: false });
-
-    useDisplayCoursesMock.mockReturnValue({ displayCourses: [], isLoading: false });
-    rerender(<CourseSelectionPage />);
-    expect(useAutoStartTourMock).toHaveBeenLastCalledWith("main", { enabled: true });
+    render(<CourseSelectionPage />);
+    expect(useAutoStartTourMock).not.toHaveBeenCalled();
   });
 });

@@ -343,3 +343,6 @@ export { Combobox, MultiSelect } from "./ui/combobox";
 export type { ComboboxOption, ComboboxProps, MultiSelectProps } from "./ui/combobox";
 export { DetailPageScaffold } from "./detail-page-scaffold";
 export type { DetailPageScaffoldProps } from "./detail-page-scaffold";
+
+export { OnboardingChecklist, PageTourButton } from "./onboarding/onboarding";
+export type { OnboardingPlatform } from "./onboarding/catalog";

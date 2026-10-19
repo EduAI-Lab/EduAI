@@ -70,7 +70,10 @@ const ARTICLES: HelpArticle[] = [
           The guided tour can be relaunched any time from this page (see “Relaunch guided tour”
           above), or from the (?) help button in the top-right corner of any page.
         </li>
-        <li>For new users, a first-run guided tour may start automatically.</li>
+        <li>
+          Your dashboard has a Getting started checklist. Page tours start from the header play
+          button when you choose them.
+        </li>
         <li>
           The tour highlights key actions (course select, tabs, help, and assessment workflow entry
           points).

@@ -342,6 +342,8 @@ jobs:
       # Enforceable only now that the repo has actually been swept (#1512).
       # oxfmt is pinned to an exact version, so a transitive bump cannot change
       # the expected output out from under this gate.
+      - name: Check generated onboarding copy
+        run: npm run onboarding:check
       - name: Format check
         run: npm run format:check
       # The sweep commit recorded in .git-blame-ignore-revs has to keep resolving
