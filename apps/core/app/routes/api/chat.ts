@@ -43,7 +43,7 @@ import {
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { registerActiveChatCancellation } from "~/lib/ai/active-chat-cancellations.server";
-import { untilAborted } from "~/lib/ai/until-aborted";
+import { createStreamFailure, raceStreamFailure, untilAborted } from "~/lib/ai/until-aborted";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
@@ -3166,6 +3166,10 @@ export async function action({ request }: ActionFunctionArgs) {
             ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
             : null;
           const streamData = streaming && !needsOversight ? new StreamData() : null;
+          // Rejects with a provider error raised inside this run's stream: the
+          // result promises then never settle (#2009), so the non-streaming
+          // waits below race this to fail at once instead of hanging.
+          const streamFailure = createStreamFailure();
 
           // The AI SDK returns synchronously, but several compatible adapters and
           // long-standing route tests return a promise. Normalizing both shapes
@@ -3243,6 +3247,7 @@ export async function action({ request }: ActionFunctionArgs) {
               logStreamError(error, streamTrace);
               probe?.hooks.signalError(error);
               void streamData?.close();
+              streamFailure.fail(error instanceof Error ? error : new Error(String(error)));
             },
           });
 
@@ -3282,14 +3287,19 @@ export async function action({ request }: ActionFunctionArgs) {
               void pump;
             }
           }
-          return { result, streamData };
+          return { result, streamData, streamFailed: streamFailure.failed };
         };
 
         let result;
+        let resultFailed: Promise<never> = new Promise<never>(() => {});
         let liveStreamData: StreamData | null = null;
         let fleetRetry = false;
         try {
-          ({ result, streamData: liveStreamData } = await runStreamText());
+          ({
+            result,
+            streamData: liveStreamData,
+            streamFailed: resultFailed,
+          } = await runStreamText());
         } catch (error) {
           if (isClientAbort(error, streamAbortController.signal)) {
             releaseAdmission();
@@ -3329,7 +3339,11 @@ export async function action({ request }: ActionFunctionArgs) {
                   previousServerId: failedPick.serverId,
                   fleetRetryAttempt: true,
                 });
-                ({ result, streamData: liveStreamData } = await runStreamText());
+                ({
+                  result,
+                  streamData: liveStreamData,
+                  streamFailed: resultFailed,
+                } = await runStreamText());
                 // #876 success marker — only after the alternate attempt succeeds.
                 fleetRetry = true;
                 routerContext = {
@@ -3360,7 +3374,11 @@ export async function action({ request }: ActionFunctionArgs) {
                   serverId: overflow.serverId,
                   previousServerId: failedPick.serverId,
                 });
-                ({ result, streamData: liveStreamData } = await runStreamText());
+                ({
+                  result,
+                  streamData: liveStreamData,
+                  streamFailed: resultFailed,
+                } = await runStreamText());
               }
             } catch (retryError) {
               releaseAdmission();
@@ -3407,7 +3425,7 @@ export async function action({ request }: ActionFunctionArgs) {
             // These never settle after an abort (#2009); the race turns that hang
             // into an AbortError, which the catch below treats as a client abort.
             const consumed = await untilAborted(
-              Promise.all([
+              raceStreamFailure(resultFailed, [
                 result.text,
                 result.usage,
                 result.finishReason,
@@ -3619,7 +3637,7 @@ export async function action({ request }: ActionFunctionArgs) {
             await result.consumeStream?.();
             // These never settle after an abort (#2009); see untilAborted.
             const [text, usage, finishReason, sources, reasoning, response] = await untilAborted(
-              Promise.all([
+              raceStreamFailure(resultFailed, [
                 result.text,
                 result.usage,
                 result.finishReason,
@@ -3828,7 +3846,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
             // These never settle after an abort (#2009); see untilAborted.
             const [text, usage, finishReason, sources, reasoning, response] = await untilAborted(
-              Promise.all([
+              raceStreamFailure(resultFailed, [
                 result.text,
                 result.usage,
                 result.finishReason,

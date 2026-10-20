@@ -24,3 +24,31 @@ function abortError(): Error {
   error.name = "AbortError";
   return error;
 }
+
+/**
+ * `Promise.all(values)`, but rejecting as soon as `failed` does (#2009).
+ *
+ * A provider error inside the stream, such as a prompt over the model's context
+ * window, leaves a stream result's promises pending forever, just as an abort
+ * does. Callers pass a promise their `streamText` `onError` rejects, so the
+ * error ends the wait at once instead of after a deadline.
+ */
+export function raceStreamFailure<T extends readonly unknown[] | []>(
+  failed: Promise<never>,
+  values: T,
+): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }> {
+  return Promise.race([Promise.all(values), failed]);
+}
+
+/** A promise a stream's `onError` rejects, for `raceStreamFailure` (#2009). */
+export type StreamFailure = { failed: Promise<never>; fail: (reason: Error) => void };
+
+export function createStreamFailure(): StreamFailure {
+  let fail: StreamFailure["fail"] = () => {};
+  const failed = new Promise<never>((_, reject) => {
+    fail = reject;
+  });
+  // Rejected only when the stream errors; never an unhandled rejection.
+  failed.catch(() => {});
+  return { failed, fail };
+}

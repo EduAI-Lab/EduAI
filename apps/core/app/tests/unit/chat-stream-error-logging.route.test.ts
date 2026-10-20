@@ -248,4 +248,52 @@ describe("Learning-chat stream error logging (#989)", () => {
     expect(message).not.toContain("sk-do-not-leak");
     consoleErrorSpy.mockRestore();
   });
+
+  // #2009: a provider error inside the stream left the result promises pending
+  // forever, so a non-streaming chat turn hung and kept its admission slot.
+  it("answers a non-streaming turn when the model refuses the prompt mid-stream", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const never = new Promise<never>(() => {});
+    vi.mocked(streamText).mockImplementation(((options: {
+      onError?: (event: { error: unknown }) => void;
+    }) => {
+      setTimeout(
+        () =>
+          options.onError?.({
+            error: new APICallError({
+              message:
+                "This model's maximum context length is 16384 tokens. However, you requested 16385 tokens.",
+              url: "http://cmps01/v1/chat/completions",
+              requestBodyValues: {},
+              statusCode: 400,
+              isRetryable: false,
+            }),
+          }),
+        10,
+      );
+      return {
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: never,
+        usage: never,
+        finishReason: never,
+        sources: never,
+        reasoning: never,
+        response: never,
+      };
+    }) as never);
+
+    const outcome = await Promise.race([
+      action(makeRequest(baseBody())),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2000)),
+    ]);
+
+    expect(outcome).not.toBe("hung");
+    const res = outcome as Response;
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      code: "CONTEXT_LENGTH_EXCEEDED",
+      retryable: false,
+    });
+    consoleErrorSpy.mockRestore();
+  });
 });

@@ -20,7 +20,7 @@ import {
   providerErrorDiagnostic,
 } from "~/lib/ai/provider-errors.server";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
-import { untilAborted } from "~/lib/ai/until-aborted";
+import { createStreamFailure, raceStreamFailure, untilAborted } from "~/lib/ai/until-aborted";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
@@ -667,6 +667,11 @@ export async function runCompletion(request: CompletionRequest) {
   const temperature = request.temperature ?? DEFAULT_TEMPERATURE;
   const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS;
 
+  // A provider error inside the stream (e.g. a prompt over the model's context
+  // window) leaves result.text and friends pending forever, like an abort does
+  // (#2009). This promise rejects with that error so the wait below ends at once.
+  const streamFailure = createStreamFailure();
+
   let result;
   try {
     result = await streamText({
@@ -682,6 +687,7 @@ export async function runCompletion(request: CompletionRequest) {
           providerId: parsedModel.providerId,
           diagnostic: providerErrorDiagnostic(error),
         });
+        streamFailure.fail(error instanceof Error ? error : new Error(String(error)));
       },
     });
   } catch (error) {
@@ -710,7 +716,7 @@ export async function runCompletion(request: CompletionRequest) {
     // After an abort these promises never settle (#2009): without the race this
     // call would never return and the route would never free its admission slot.
     const [text, usage, finishReason] = await untilAborted(
-      Promise.all([result.text, result.usage, result.finishReason]),
+      raceStreamFailure(streamFailure.failed, [result.text, result.usage, result.finishReason]),
       request.signal,
     );
 

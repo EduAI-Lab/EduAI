@@ -142,20 +142,67 @@ describe("POST /api/completion review regressions", () => {
     const release = vi.fn();
     vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
     const never = new Promise<never>(() => {});
-    vi.mocked(streamText).mockResolvedValue({
-      consumeStream: vi.fn().mockResolvedValue(undefined),
-      text: never,
-      usage: never,
-      finishReason: never,
-    } as never);
     const controller = new AbortController();
+    // Hang up once the model call has started, i.e. mid-answer.
+    vi.mocked(streamText).mockImplementation((() => {
+      setTimeout(() => controller.abort(), 10);
+      return {
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: never,
+        usage: never,
+        finishReason: never,
+      };
+    }) as never);
 
-    const pending = action(makeRequest(baseBody(), controller.signal));
-    setTimeout(() => controller.abort(), 20);
-    const res = await pending;
+    const res = await action(makeRequest(baseBody(), controller.signal));
 
     expect(res.status).toBe(499);
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  // #2009, the real trigger (prod 2026-10-20): the 2B refused a prompt one token
+  // over its context window. The error arrives inside the stream, which left the
+  // result promises pending forever, so the request hung and leaked its slot.
+  it("fails at once with CONTEXT_LENGTH_EXCEEDED when the model refuses the prompt mid-stream", async () => {
+    const release = vi.fn();
+    vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+    const never = new Promise<never>(() => {});
+    vi.mocked(streamText).mockImplementation(((options: {
+      onError?: (event: { error: unknown }) => void;
+    }) => {
+      setTimeout(
+        () =>
+          options.onError?.({
+            error: new APICallError({
+              message:
+                "litellm.ContextWindowExceededError: This model's maximum context length is 16384 tokens. However, you requested 3072 output tokens and your prompt contains at least 13313 input tokens",
+              url: "http://cmps01/v1/chat/completions",
+              requestBodyValues: {},
+              statusCode: 400,
+              isRetryable: false,
+            }),
+          }),
+        10,
+      );
+      return {
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: never,
+        usage: never,
+        finishReason: never,
+      };
+    }) as never);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const started = Date.now();
+    const res = await action(makeRequest(baseBody({ maxTokens: 3072 })));
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      code: "CONTEXT_LENGTH_EXCEEDED",
+      retryable: false,
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   it("answers 504 and frees the slot when the request outlives AI_REQUEST_TIMEOUT_MS", async () => {

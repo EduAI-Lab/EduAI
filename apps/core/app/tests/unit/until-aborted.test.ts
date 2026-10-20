@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { untilAborted } from "~/lib/ai/until-aborted";
+import { raceStreamFailure, untilAborted } from "~/lib/ai/until-aborted";
 
 // #2009: AI SDK 4 leaves a stream result's promises pending forever after an
 // abort; untilAborted turns that hang into an AbortError the callers handle.
@@ -33,5 +33,23 @@ describe("untilAborted", () => {
   it("returns the promise itself when there is no signal", () => {
     const promise = Promise.resolve(1);
     expect(untilAborted(promise, undefined)).toBe(promise);
+  });
+});
+
+// #2009: a provider error inside the stream leaves the result promises pending
+// forever too; the failure promise ends the wait at once.
+describe("raceStreamFailure", () => {
+  it("resolves with every value when nothing fails", async () => {
+    const neverFails = new Promise<never>(() => {});
+    await expect(raceStreamFailure(neverFails, [Promise.resolve("text"), 3])).resolves.toEqual([
+      "text",
+      3,
+    ]);
+  });
+
+  it("rejects with the stream's error even though the values never settle", async () => {
+    const error = new Error("maximum context length is 16384 tokens");
+    const failed = Promise.reject(error) as Promise<never>;
+    await expect(raceStreamFailure(failed, [new Promise(() => {})])).rejects.toBe(error);
   });
 });
