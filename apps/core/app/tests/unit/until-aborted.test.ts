@@ -30,6 +30,25 @@ describe("untilAborted", () => {
     });
   });
 
+  // CI (merge queue, 2026-10-21): with the signal already aborted, untilAborted
+  // returned without handling the promise; when it rejected later (the stream's
+  // onError reporting the abort), Node exited on the unhandled rejection and
+  // took Core down mid-E2E-run.
+  it("leaves no unhandled rejection when the signal had already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let rejectLater: (error: Error) => void = () => {};
+    const later = new Promise<never>((_, reject) => {
+      rejectLater = reject;
+    });
+
+    await expect(untilAborted(later, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    rejectLater(new Error("the stream reported the abort afterwards"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
   it("returns the promise itself when there is no signal", () => {
     const promise = Promise.resolve(1);
     expect(untilAborted(promise, undefined)).toBe(promise);

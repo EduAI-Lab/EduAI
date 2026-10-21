@@ -11,7 +11,13 @@
  */
 export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(abortError());
+  if (signal.aborted) {
+    // Nobody waits for `promise` any more, but it may still reject (the stream's
+    // onError reporting the abort). Unhandled, that rejection exits the Node
+    // process, which took Core down mid-E2E-run in the merge queue.
+    promise.catch(() => {});
+    return Promise.reject(abortError());
+  }
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(abortError());
     signal.addEventListener("abort", onAbort, { once: true });
