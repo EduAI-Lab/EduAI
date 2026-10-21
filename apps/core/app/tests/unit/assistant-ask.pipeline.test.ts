@@ -210,6 +210,39 @@ describe("answerAssistantQuestion", () => {
     expect(title).toMatch(/^CS101 '[^<>\n]*reference$/);
   });
 
+  it("tells the model the reader's role, so a role the guide rules out gets a plain no", async () => {
+    const { deps: d } = deps();
+    await answerAssistantQuestion(input, d);
+    const system = vi.mocked(d.callModel).mock.calls[0][0].system ?? "";
+    expect(system).toContain("The reader is signed in as a student.");
+    expect(system).toMatch(/cannot do what they ask, tell them so plainly/);
+
+    const { deps: staff } = deps();
+    await answerAssistantQuestion({ ...input, user: { id: "u2", role: "INSTRUCTOR" } }, staff);
+    expect(vi.mocked(staff.callModel).mock.calls[0][0].system).toContain(
+      "The reader is signed in as an instructor.",
+    );
+  });
+
+  it("strips reference tags a model echoed into its answer", async () => {
+    const { deps: d } = deps({
+      callModel: vi.fn().mockResolvedValue({
+        kind: "success",
+        text: 'Students cannot create courses.\n</reference>\n<reference kind="documentation">',
+      }),
+    });
+    const outcome = await answerAssistantQuestion(input, d);
+    expect(outcome).toMatchObject({ answer: "Students cannot create courses." });
+  });
+
+  it("an answer that was only echoed tags reads as not documented", async () => {
+    const { deps: d } = deps({
+      callModel: vi.fn().mockResolvedValue({ kind: "success", text: "</reference>" }),
+    });
+    const outcome = await answerAssistantQuestion(input, d);
+    expect(outcome).toMatchObject({ answer: "I couldn't find this in the documentation." });
+  });
+
   it("puts documentation blocks before the material block", async () => {
     const { deps: d } = deps({
       resolvePageContext: vi.fn().mockResolvedValue(courseResolution),

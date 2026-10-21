@@ -97,6 +97,10 @@ Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can op
 
 Only courses you are allowed to access should appear. Admins can access all courses; unit admins are scoped to their authorized departments; other users need an appropriate course relationship.
 
+### Who can create a course
+
+Students and teaching assistants can't create courses. If you need a course set up, ask your instructor or a unit administrator. Courses are created by instructors, unit administrators and platform administrators, or brought across from Canvas.
+
 ### Create a new course
 
 Platform administrators, unit administrators, and instructors can make a new course by hand:
@@ -116,7 +120,6 @@ Who can create where:
 
 - Unit administrators can only create courses under the course codes they are authorized for. If you have no authorized course codes, the button is disabled.
 - Instructors can create courses only while an administrator leaves **Instructors can create courses** turned on. When it is off, the button stays visible but greyed out, with a tooltip explaining why.
-- Students and teaching assistants cannot create courses.
 
 If your course already exists in Canvas, you don't need to create it by hand: fetch it from Canvas instead (see **Instructor: connect and sync Canvas**). That brings across the course details and lets you sync materials and the roster.
 
