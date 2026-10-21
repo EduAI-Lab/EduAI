@@ -12,6 +12,7 @@ import {
 } from "~/lib/ai/provider-errors.server";
 import {
   acquireAiAdmission,
+  aiRequestTimeoutMs,
   AdmissionTimeoutError,
   admissionTimeoutResponse,
   withAdmissionRelease,
@@ -160,6 +161,11 @@ export async function action({ request }: ActionFunctionArgs) {
         admissionRelease?.();
         admissionRelease = null;
       };
+      // A deadline on top of the client's own signal (#2009): a model call that
+      // never ends is aborted, and with it the slot it holds is freed.
+      const signal = needsAdmission
+        ? AbortSignal.any([request.signal, AbortSignal.timeout(aiRequestTimeoutMs())])
+        : request.signal;
 
       let outcome;
       try {
@@ -177,7 +183,7 @@ export async function action({ request }: ActionFunctionArgs) {
           temperature: payload.temperature,
           maxTokens: payload.maxTokens,
           routingContext: payload.routingContext,
-          signal: request.signal,
+          signal,
         });
       } catch (error) {
         releaseAdmission();
@@ -223,7 +229,7 @@ export async function action({ request }: ActionFunctionArgs) {
           });
           const release = admissionRelease;
           admissionRelease = null;
-          return withAdmissionRelease(response, release, request.signal);
+          return withAdmissionRelease(response, release, signal);
         } catch (error) {
           releaseAdmission();
           throw error;

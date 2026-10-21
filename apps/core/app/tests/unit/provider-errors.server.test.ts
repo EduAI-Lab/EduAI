@@ -123,3 +123,43 @@ function apiCallError(options: {
     ...options,
   });
 }
+
+// #2009 (prod 2026-10-18/20): the 2B's 16,384-token window refused a 13,313-token
+// prompt plus 3,072 output tokens. That must surface as a clear, non-retryable 400,
+// not a generic failure a client keeps retrying.
+describe("context-window refusals", () => {
+  const apiError = (message: string) =>
+    new APICallError({
+      message,
+      url: "http://cmps01/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 400,
+      isRetryable: false,
+    });
+
+  it.each([
+    [
+      "LiteLLM",
+      "litellm.ContextWindowExceededError: litellm.BadRequestError: ContextWindowExceededError: OpenAIException - This model's maximum context length is 16384 tokens. However, you requested 3072 output tokens and your prompt contains at least 13313 input tokens",
+    ],
+    [
+      "vLLM",
+      "This model's maximum context length is 16384 tokens. However, you requested 16385 tokens.",
+    ],
+  ])("classifies %s's wording as CONTEXT_LENGTH_EXCEEDED", (_label, message) => {
+    expect(classifyProviderFailure("vllm", apiError(message))).toMatchObject({
+      status: 400,
+      code: "CONTEXT_LENGTH_EXCEEDED",
+      retryable: false,
+      error: expect.stringContaining("Shorten the prompt or lower maxTokens"),
+    });
+  });
+
+  it("keeps an unrelated 400 as PROVIDER_REQUEST_FAILED", () => {
+    const failure = classifyProviderFailure(
+      "vllm",
+      apiError("temperature must be between 0 and 2"),
+    );
+    expect(failure.code).toBe("PROVIDER_REQUEST_FAILED");
+  });
+});
