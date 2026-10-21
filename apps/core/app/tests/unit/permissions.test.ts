@@ -146,6 +146,17 @@ describe("canViewMaterial", () => {
   ] as [CourseAccess, boolean][])("access=%s → %s", (access, expected) => {
     expect(canViewMaterial(access)).toBe(expected);
   });
+
+  // #2002: a student reads files only in a published course that shares them;
+  // staff are unaffected by either flag.
+  it.each([
+    [{ studentFilesVisible: true, isPublished: true }, true],
+    [{ studentFilesVisible: true, isPublished: false }, false],
+    [{ studentFilesVisible: false, isPublished: true }, false],
+  ])("student in %o → %s", (course, expected) => {
+    expect(canViewMaterial("student", course)).toBe(expected);
+    expect(canViewMaterial("ta", course)).toBe(true);
+  });
 });
 
 describe("canDeleteMaterial", () => {

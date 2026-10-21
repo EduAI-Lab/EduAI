@@ -157,6 +157,9 @@ model Course {
   /// #1821: course-level opt-out for the help assistant's material half. Off means
   /// this course's content is never sent to a model by the assistant.
   aiAssistantEnabled          Boolean                   @default(true)
+  /// #2002: enrolled students may list and preview this course's files, each still
+  /// behind its own student gate. Off (the #1962 default) means staff-only.
+  studentFilesVisible         Boolean                   @default(false)
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                     Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
@@ -656,6 +659,9 @@ model CourseTopic {
   /// topic-analysis job created and nobody has reviewed yet. Defaults to
   /// ACCEPTED so the migration leaves existing rows unflagged.
   reviewStatus    TopicReviewStatus        @default(ACCEPTED)
+  /// #2002: shown to students on the course page and in course chat. Hides the
+  /// name only — course chat still answers from the topic's materials.
+  visibleToStudents Boolean                @default(true)
   /// How much the generator trusts this name: 1 for a Canvas module title, less
   /// for a heading match, least for an AI proposal. Null on human-created rows.
   confidence      Float?

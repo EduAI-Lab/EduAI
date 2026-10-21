@@ -224,6 +224,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 **Notes:**
 - TAs can only delete materials they personally uploaded (`CourseMaterial.uploadedBy === user.id`). Instructors can delete any material in their course.
 - Students cannot upload, list, preview or download materials (#1962). Course chat is their way into a course.
+- A published course whose instructor turned on file sharing (#2002) lets its students list and preview materials, each still behind its own student visibility gate. Upload, rename and delete stay staff-only. The setting is changed by ADMIN, UNIT_ADMIN(D) or INSTRUCTOR(C) (`PATCH /api/courses/:id/student-visibility`).
 
 ---
 
@@ -582,7 +583,7 @@ Enforcement in `app/routes/api/courses.materials.$.ts`.
 | Operation | Target | Current | Notes |
 |---|---|---|---|
 | Upload material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target (TA behind `tas.canManageMaterials`) | Students refused on every materials path (#1962) |
-| View / download material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target | Students refused on every materials path (#1962) |
+| View / download material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target | Students refused (#1962) unless the published course shares its files, then read-only through the student gate (#2002) |
 | Delete material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(O) | **Not implemented as a separate delete route** | No DELETE /materials endpoint found |
 
 ---

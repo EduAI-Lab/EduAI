@@ -40,8 +40,15 @@ export function canUploadMaterial(access: CourseAccess): boolean {
   return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 
-// Course files are staff-only; students reach a course through course chat (#1962).
-export function canViewMaterial(access: CourseAccess): boolean {
+// Course files are staff-only by default; students reach a course through course
+// chat (#1962). A published course that shares its files (#2002) lets students
+// read them — never change them, and still through each file's own student gate.
+// Without `course` the answer is the staff allow-list alone.
+export function canViewMaterial(
+  access: CourseAccess,
+  course?: { studentFilesVisible: boolean; isPublished: boolean },
+): boolean {
+  if (access === "student") return !!course?.studentFilesVisible && course.isPublished;
   return access === "admin" || access === "unit" || access === "instructor" || access === "ta";
 }
 

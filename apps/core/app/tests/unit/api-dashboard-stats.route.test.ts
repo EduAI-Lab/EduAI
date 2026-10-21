@@ -167,13 +167,15 @@ describe("GET /api/dashboard/stats", () => {
     );
     expect(body).toMatchObject({ chatCount: 3, chatCountWeek: 1, materialCount: 0, topicCount: 4 });
     expect(prisma.courseMaterial.count).not.toHaveBeenCalled();
-    // The learner view (#1937) in the student's published courses only.
+    // The learner view (#1937, minus topics hidden from students, #2002) in the
+    // student's published courses only.
     expect(prisma.courseTopic.count).toHaveBeenCalledWith({
       where: {
         courseId: { in: ["course-1"] },
         deletedAt: null,
         course: { isPublished: true, deletedAt: null },
         reviewStatus: "ACCEPTED",
+        visibleToStudents: true,
         name: { not: "Uncategorized" },
       },
     });

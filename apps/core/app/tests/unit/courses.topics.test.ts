@@ -72,6 +72,8 @@ const TOPIC = {
   reviewStatus: "ACCEPTED" as const,
   confidence: null,
   generatedByJobId: null,
+  // #2002: shown to students unless an instructor hides it.
+  visibleToStudents: true,
   // #1624 provenance projection — empty for a hand-authored topic, which has no
   // source materials to name.
   sources: [],
