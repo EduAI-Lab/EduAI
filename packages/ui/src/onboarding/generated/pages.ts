@@ -4,7 +4,7 @@ export const ONBOARDING_PAGES = {
   "core.courses": {
     "title": "Find your course",
     "task": "Open an enrolled course",
-    "staffTask": "Create or find your teaching course",
+    "staffTask": "Find your teaching course",
     "steps": [
       {
         "id": "core.courses.Choose a course",
@@ -21,7 +21,7 @@ export const ONBOARDING_PAGES = {
   "core.course": {
     "title": "Check your course",
     "task": "Find your course chat",
-    "staffTask": "Prepare materials, topics and enrollments",
+    "staffTask": "Review the course's materials and topics",
     "steps": [
       {
         "id": "core.course.Check the course",

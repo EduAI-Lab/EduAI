@@ -42,9 +42,12 @@ describe("onboarding routes and roles", () => {
   it("gives TAs staff copy that matches their teaching workspace, without promising authoring", () => {
     expect(onboardingTasks("ai-tutor", "TA")[1].label).toBe("Review a module");
     expect(onboardingTasks("ai-tutor", "TA")[0].href).toBe("/instructor");
-    expect(onboardingTasks("core", "INSTRUCTOR")[1].label).toBe(
-      "Prepare materials, topics and enrollments",
-    );
+    // A Core TA cannot create courses or manage enrollments, so neither staff task promises it.
+    expect(
+      onboardingTasks("core", "TA")
+        .map((task) => task.label)
+        .slice(0, 2),
+    ).toEqual(["Find your teaching course", "Review the course's materials and topics"]);
   });
 });
 

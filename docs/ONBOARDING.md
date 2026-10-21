@@ -14,7 +14,7 @@ The copy relies on these rules:
 
 Task: Open an enrolled course
 
-Staff task: Create or find your teaching course
+Staff task: Find your teaching course
 
 1. **Choose a course** — Search or filter the course list, then open the right course. Students need an active enrollment and a published course.
 2. **Create when permitted** — Instructors and administrators can use Create course when policy allows it. A new course starts as Draft; prepare it before publishing.
@@ -23,7 +23,7 @@ Staff task: Create or find your teaching course
 
 Task: Find your course chat
 
-Staff task: Prepare materials, topics and enrollments
+Staff task: Review the course's materials and topics
 
 1. **Check the course** — Confirm the course code, section and instructors. Students use Chat about this course to ask about the learning materials.
 2. **Prepare learning materials** — If you manage this course, upload learning materials and wait for Ready. Review topic matches and approve suggestions before students use them.
