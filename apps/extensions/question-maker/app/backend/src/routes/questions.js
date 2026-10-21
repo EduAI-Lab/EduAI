@@ -738,7 +738,7 @@ router.post(
       res.status(201).json({
         success: true,
         message: `${saved.length} question${saved.length === 1 ? "" : "s"} saved successfully`,
-        data: saved,
+        data: { questions: saved, assessmentId: result.assessmentId },
       });
     } catch (error) {
       next(error);

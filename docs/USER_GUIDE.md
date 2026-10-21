@@ -92,6 +92,10 @@ Question Maker is currently intended for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN`
 
 Only courses you are allowed to access should appear. Admins can access all courses; unit admins are scoped to their authorized departments; other users need an appropriate course relationship.
 
+### Who can create a course
+
+Students and teaching assistants can't create courses. If you need a course set up, ask your instructor or a unit administrator. Courses are created by instructors, unit administrators and platform administrators, or brought across from Canvas.
+
 ### Create a new course
 
 Platform administrators, unit administrators, and instructors can make a new course by hand:
@@ -109,7 +113,6 @@ Who can create where:
 
 - Unit administrators can only create courses under the course codes they are authorized for. If you have no authorized course codes, the button is disabled.
 - Instructors can create courses only while an administrator leaves **Instructors can create courses** turned on. When it is off, the button stays visible but greyed out, with a tooltip explaining why.
-- Students and teaching assistants cannot create courses.
 
 If your course already exists in Canvas, you don't need to create it by hand: fetch it from Canvas instead (see **Instructor: connect and sync Canvas**). That brings across the course details and lets you sync materials and the roster.
 
@@ -179,7 +182,7 @@ Limits are **500 rows** and **256 KiB** per upload; split a larger roster into b
 
 The import is **not all-or-nothing**. Each row is processed on its own and you get a summary naming the line number of anything that failed — so a 100-row file with three bad addresses enrolls 97 people and tells you about the other three. Someone already enrolled is reported as already enrolled rather than as an error, so re-uploading last week's roster is safe. A row is rejected if the email has no EduAI account yet, or if it asks for a role you cannot grant: instructors may add students and TAs, but only administrators may add another instructor.
 
-**Share a self-enrollment link.** Generate a link and students who open it join the course themselves. The link is scoped to that one course, expires, can be revoked at any time, and can carry a maximum number of uses. It only ever enrolls people as **students** — there is no way to grant staff access through a link, however it is shared.
+**Share a self-enrollment link.** Generate a link and students who open it join the course themselves. The link is scoped to that one course, expires, can be revoked at any time, and can carry a maximum number of uses. It only ever enrolls people as **students** — there is no way to grant staff access through a link, however it is shared. A student who doesn't have an EduAI account yet can create one straight from the link: they're added to the course as soon as they verify their email (or immediately after signup when verification is disabled), as long as the link still works then. Students who still need to link their student number see that step before continuing into the course. If it has expired, been revoked or reached its limit in the meantime, they're told so and asked to get a new one from you.
 
 The full link is shown **once**, when you create it. Copy it then; EduAI stores only a hash afterwards and cannot show it again. Treat it like a password: anyone holding it can join the course. If it leaks, revoke it and generate a new one.
 
