@@ -147,6 +147,10 @@ database-provisioning action.
       scripts with `install-cron-worker`.
 - [ ] Enable and restart `eduai-cron-worker` only after the Core environment and
       cron configuration are readable.
+- [ ] Install a host mail client for failure alerts (`msmtp-mta` + `bsd-mailx`),
+      relaying through `smtp.mail-relay.ubc.ca:25` from `noreply.eduai@ubc.ca`,
+      set `ALERT_EMAIL` to the team alert list, and send a test (#1874; see
+      `infra/cron/README.md`, "Failure alerts").
 
 ## 9. Web server and systemd
 

@@ -121,12 +121,31 @@ A host that is not managed by the s378 installer must still provide:
 - an `eduai-cron` account with access only to the intended backup/log paths;
 - `/etc/eduai/cron.env` owned by root and readable by that account;
 - PostgreSQL client tooling or the expected database containers;
-- a mail command if failure alerts are required;
+- a mail command if failure alerts are required (see "Failure alerts" below);
 - AWS credentials or an explicit local off-site destination.
 
 The repository does not install an operating-system scheduler for these scripts.
 Connect them to an approved scheduler only after confirming that the Core
 in-process scheduler is not also running the same jobs.
+
+## Failure alerts
+
+When a script fails, `lib.sh` emails `ALERT_EMAIL` with the host's `mail`
+command. That is separate from Core's own email (`SMTP_*` in the Core env), so
+the host needs its own mail client. On s348 (#1874):
+
+- `msmtp-mta` and `bsd-mailx` are installed, and `/etc/msmtprc` relays through
+  `smtp.mail-relay.ubc.ca:25` with no login (STARTTLS).
+- The `from` address is `noreply.eduai@ubc.ca`, the same as Core's `EMAIL_FROM`.
+  Use an @ubc.ca sender rather than @eduai.ok.ubc.ca, which has no SPF/DKIM/MX
+  records; UBC IT confirmed it needs no mailbox.
+- `ALERT_EMAIL` in `/etc/eduai/cron.env` is the team alert list, which accepts
+  mail from any @ubc.ca address. Keep the list address out of this public repo.
+
+Test after any change: `echo test | mail -s "EduAI cron alert test" "$ALERT_EMAIL"`
+should print nothing and arrive for every list member. Changing `ALERT_EMAIL`
+needs no restart; scripts read `cron.env` on every run. Core's disk-usage alert
+(#1869) goes through Core's mailer to the same list via `DISK_ALERT_EMAILS`.
 
 ## Backup and restore expectations
 
