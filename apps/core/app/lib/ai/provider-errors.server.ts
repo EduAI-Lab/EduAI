@@ -8,6 +8,7 @@ export const PROVIDER_ERROR_CODES = [
   "MODEL_UNAVAILABLE",
   "PROVIDER_REQUEST_FAILED",
   "PROVIDER_TIMEOUT",
+  "CONTEXT_LENGTH_EXCEEDED",
 ] as const;
 
 export type ProviderErrorCode = (typeof PROVIDER_ERROR_CODES)[number];
@@ -35,6 +36,8 @@ const PUBLIC_MESSAGES = {
   MODEL_UNAVAILABLE: "Requested model is unavailable",
   PROVIDER_REQUEST_FAILED: "Provider request failed",
   PROVIDER_TIMEOUT: "Provider request timed out",
+  CONTEXT_LENGTH_EXCEEDED:
+    "The prompt plus maxTokens is longer than this model's context window. Shorten the prompt or lower maxTokens.",
 } satisfies Record<ProviderErrorCode, string>;
 
 /** Retry-After as providers send it: whole seconds, as a number or a digit string. */
@@ -160,6 +163,11 @@ export function classifyProviderFailure(provider: string, cause: unknown): Provi
     if (statusCode === 429 || (statusCode !== null && statusCode >= 500)) {
       return createProviderFailure(provider, "PROVIDER_UNAVAILABLE", { retryAfter });
     }
+    // #2009: vLLM / LiteLLM refuse a prompt that, with maxTokens, overflows the
+    // model's window. Say so: retrying the same request can never succeed.
+    if (statusCode === 400 && CONTEXT_LENGTH_PATTERN.test(fields.message)) {
+      return createProviderFailure(provider, "CONTEXT_LENGTH_EXCEEDED");
+    }
 
     return createProviderFailure(provider, "PROVIDER_REQUEST_FAILED", {
       retryable: fields.isRetryable,
@@ -204,8 +212,14 @@ function defaultFailureOptions(code: ProviderErrorCode): ProviderFailureDefaults
       return { status: 502, retryable: true };
     case "PROVIDER_REQUEST_FAILED":
       return { status: 502, retryable: false };
+    case "CONTEXT_LENGTH_EXCEEDED":
+      return { status: 400, retryable: false };
   }
 }
+
+/** vLLM's and LiteLLM's wording for a prompt plus output budget over the model's window. */
+const CONTEXT_LENGTH_PATTERN =
+  /maximum context length|context ?window ?exceeded|context_length_exceeded/i;
 
 function isApiCallErrorLike(error: DecodedProviderError): boolean {
   return error.name === "AI_APICallError" || error.statusCode !== null;
