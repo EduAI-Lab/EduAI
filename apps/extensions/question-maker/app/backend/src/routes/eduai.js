@@ -4,15 +4,14 @@
  */
 import express from "express";
 import { authenticateToken } from "../middleware/auth.js";
-import { QM_AUTHORIZED } from "../middleware/roles.js";
 import eduaiService from "../services/eduaiService.js";
 import {
   resolveAccessForCourse,
   resolveCourseAccessWithCourse,
   LEVELS,
+  requireQmAuthoringOrLiveTa,
 } from "../middleware/courseAccess.js";
 import { findCoursesByProjectedCode, listCoursesForUser } from "../services/courseListService.js";
-import { listCoursesFromCore } from "../services/coreApiService.js";
 import { prisma } from "../config/database.js";
 import { safeRequestLogFields } from "../utils/safeLogging.js";
 import {
@@ -162,28 +161,7 @@ router.use(authenticateToken);
 // platform STUDENT with a TA enrollment can use them. These two endpoints are
 // intentionally unscoped: the provider probe can spend shared AI capacity and
 // the model catalog is an admin-only Core surface. Let a live TA use the same
-// picker/status UX, while ordinary STUDENTs remain denied.
-const requireQmAuthoringOrLiveTa = async (req, res, next) => {
-  if (QM_AUTHORIZED.includes(req.user?.role)) return next();
-  if (req.user?.role !== "STUDENT") {
-    return res.status(403).json({
-      success: false,
-      error: "Question Maker authoring access required",
-    });
-  }
-
-  try {
-    const coreCourses = await listCoursesFromCore(req.headers.cookie ?? "", { all: true });
-    if (coreCourses.some((course) => course?.callerEnrollmentRole === "TA")) return next();
-  } catch {
-    // Fail closed when the live Core course snapshot is unavailable.
-  }
-
-  return res.status(403).json({
-    success: false,
-    error: "Question Maker authoring access required",
-  });
-};
+// picker/status UX (`requireQmAuthoringOrLiveTa`), while ordinary STUDENTs remain denied.
 
 /**
  * GET /api/eduai/ai-status – proxies Core's shared fleet-status snapshot for
