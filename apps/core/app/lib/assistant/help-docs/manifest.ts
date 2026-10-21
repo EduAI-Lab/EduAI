@@ -52,8 +52,19 @@ export const HELP_DOC_PAGES: readonly HelpDocPage[] = [
   { id: "sign-in", source: "user-guide", heading: "Sign in and account setup", slice: "student" },
   { id: "roles", source: "user-guide", heading: "Roles and access", slice: "student" },
   { id: "find-a-course", source: "user-guide", heading: "Find a course", slice: "student" },
-  // Everyone: it also tells students and TAs that they can't create courses.
-  { id: "create-a-course", source: "user-guide", heading: "Create a new course", slice: "student" },
+  // Students only ever see that they can't create courses, never the steps (#1958).
+  {
+    id: "who-can-create-courses",
+    source: "user-guide",
+    heading: "Who can create a course",
+    slice: "student",
+  },
+  {
+    id: "create-a-course",
+    source: "user-guide",
+    heading: "Create a new course",
+    slice: "instructor",
+  },
   {
     id: "course-chat",
     source: "user-guide",

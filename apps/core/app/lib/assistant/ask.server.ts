@@ -54,6 +54,7 @@ import {
   buildRewritePrompt,
   buildSystemPrompt,
   fallbackRetrievalQuery,
+  stripReferenceTags,
 } from "~/lib/assistant/prompt";
 import {
   resolveAssistantProvider,
@@ -345,6 +346,7 @@ async function runPipeline(
     model: choice.model,
     key: choice.key,
     system: buildSystemPrompt({
+      role: input.user.role,
       docs,
       material: materialBlock ? { label: materialBlock.label, block: materialBlock.block } : null,
     }),
@@ -359,7 +361,7 @@ async function runPipeline(
   ];
   return finish({
     kind: "answered",
-    answer: answer.text || NOT_DOCUMENTED_ANSWER,
+    answer: stripReferenceTags(answer.text) || NOT_DOCUMENTED_ANSWER,
     sources,
     scope: answeredScope,
   });
