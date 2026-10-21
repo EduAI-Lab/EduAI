@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Button,
   Card,
@@ -53,6 +53,18 @@ export function CourseStudentVisibilitySettings({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
 
+  // Keep edits across a save and drop one only once the topics show it as stored,
+  // so a failed refetch cannot flip a saved checkbox back to its stale value.
+  useEffect(() => {
+    setTopicEdits((edits) => {
+      const pending = Object.entries(edits).filter(([id, value]) => {
+        const topic = topics.find((t) => t.id === id);
+        return topic !== undefined && stored(topic) !== value;
+      });
+      return pending.length === Object.keys(edits).length ? edits : Object.fromEntries(pending);
+    });
+  }, [topics]);
+
   // Only an approved topic can be shown to students; Uncategorized never is.
   const eligible = topics.filter(
     (topic) => topic.reviewStatus === "ACCEPTED" && topic.name !== "Uncategorized",
@@ -84,7 +96,6 @@ export function CourseStudentVisibilitySettings({
       }
       setSavedFiles(files);
       await onSaved?.();
-      setTopicEdits({});
       setFeedback({ error: false, text: "Saved." });
     } catch {
       setFeedback({ error: true, text: "Network error." });

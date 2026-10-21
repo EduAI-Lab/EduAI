@@ -38,11 +38,10 @@ export function StudentCourseMaterials({ courseId }: { courseId: string }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={material.status !== "READY"}
                   onClick={() => setPreview({ id: material.id, title: material.title })}
                   aria-label={`Preview ${material.title}`}
                 >
-                  {material.status === "READY" ? "Preview" : "Not ready"}
+                  Preview
                 </Button>
               </li>
             ))}

@@ -2369,6 +2369,8 @@ describe("a course that shares its files with students (#2002)", () => {
           deletedAt: null,
           unpublishedAt: null,
           visibleToStudents: true,
+          // A FAILED or PROCESSING row is a broken title to a student.
+          status: "READY",
           AND: expect.any(Array),
         }),
       }),
@@ -2393,7 +2395,11 @@ describe("a course that shares its files with students (#2002)", () => {
     expect((await loader(args)).status).toBe(200);
     expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: { in: ["mat-1"] }, visibleToStudents: true }),
+        where: expect.objectContaining({
+          id: { in: ["mat-1"] },
+          visibleToStudents: true,
+          status: "READY",
+        }),
       }),
     );
   });

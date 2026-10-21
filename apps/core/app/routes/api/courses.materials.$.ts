@@ -955,7 +955,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
 
       const student = resolved.access.level === "student";
-      const studentGate = await materialGateFor(courseId, resolved.access);
+      // Students list only finished files: a FAILED or PROCESSING row (or a #949
+      // duplicate) is a broken title they can neither open nor act on.
+      const gate = await materialGateFor(courseId, resolved.access);
+      const studentGate = student ? { ...gate, status: "READY" as const } : gate;
 
       // A targeted re-read of rows the client already holds (#1795 review round
       // 3), not a page: no cursor in, no cursor out, so merging the answer

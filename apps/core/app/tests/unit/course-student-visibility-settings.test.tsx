@@ -137,6 +137,24 @@ describe("CourseStudentVisibilitySettings (#2002)", () => {
     expect(sentBodies()[1]).toEqual({ topics: [{ id: "t2", visibleToStudents: false }] });
   });
 
+  it("keeps a saved edit on screen when the refetch leaves the topics stale", async () => {
+    render(
+      <CourseStudentVisibilitySettings
+        courseId="c1"
+        studentFilesVisible={false}
+        topics={TOPICS}
+        onSaved={onSaved}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shown" }));
+    fireEvent.click(saveButton());
+
+    await screen.findByText("Saved.");
+    // onSaved resolved but the topics prop never changed (the GET failed).
+    expect(screen.getByRole("checkbox", { name: "Shown" })).not.toBeChecked();
+  });
+
   it("has nothing to save once an edit is undone", () => {
     render(
       <CourseStudentVisibilitySettings courseId="c1" studentFilesVisible={false} topics={TOPICS} />,
