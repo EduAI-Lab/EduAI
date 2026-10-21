@@ -652,7 +652,7 @@ describe("POST /api/questions/extract/save", () => {
 
   it("saves extracted questions on success", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
-    mockSaveExtracted.mockResolvedValue({ questions: [{ id: 1 }, { id: 2 }] });
+    mockSaveExtracted.mockResolvedValue({ questions: [{ id: 1 }, { id: 2 }], assessmentId: 7 });
 
     const res = await request(app)
       .post("/api/questions/extract/save")
@@ -660,7 +660,8 @@ describe("POST /api/questions/extract/save", () => {
       .send({ courseId: 1, questions: [{ description: "a" }, { description: "b" }] });
 
     expect(res.status).toBe(201);
-    expect(res.body.data).toHaveLength(2);
+    expect(res.body.data.questions).toHaveLength(2);
+    expect(res.body.data.assessmentId).toBe(7);
   });
 });
 
