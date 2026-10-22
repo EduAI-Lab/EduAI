@@ -103,6 +103,7 @@ export default [
   route("/admin/logs", "routes/admin.logs.tsx"),
   route("/unit-admin/invitations", "routes/unit-admin.invitations.tsx"),
   route("/admin/cron-jobs", "routes/admin.cron-jobs.tsx"),
+  route("/admin/api-access", "routes/admin.api-access.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/routing-model-settings", "routes/api/routing-model-settings.ts"),
@@ -125,6 +126,10 @@ export default [
     id: "routes/api/admin.bug-reports:id",
   }),
   route("/api/admin/cron-jobs", "routes/api/admin.cron-jobs.ts"),
+  route("/api/admin/api-access", "routes/api/admin.api-access.ts"),
+  route("/api/admin/api-access/:id", "routes/api/admin.api-access.ts", {
+    id: "routes/api/admin.api-access:id",
+  }),
   route("/api/dashboard/stats", "routes/api/dashboard.stats.ts"),
   route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
   route("/api/e2e/seed", "routes/api/e2e.seed.ts"),

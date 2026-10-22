@@ -31,6 +31,11 @@ import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 8192;
 const MAX_COMPLETION_TOKENS = 16_384;
+
+/** The output tokens a completion may use: its `maxTokens`, or the default `runCompletion` applies. */
+export function completionOutputTokenBudget(maxTokens: number | undefined): number {
+  return maxTokens ?? DEFAULT_MAX_TOKENS;
+}
 const COMPLETION_MESSAGE_ROLES = new Set(["system", "user", "assistant"]);
 
 export const COMPLETION_MAX_BODY_BYTES_DEFAULT = 2 * 1024 * 1024;

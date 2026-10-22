@@ -61,7 +61,7 @@ Core Settings contains:
 
 - **Account** — change your password; students also link their student number here.
 - **Accessibility** — assistive and display preferences for Core. AI Tutor and Question Maker have their own accessibility controls and must be configured separately (see [Navigation shared across the platform](#navigation-shared-across-the-platform)).
-- **API Keys** — administrators only: server API keys for calling EduAI endpoints.
+- **API Keys** — for administrators, and for anyone an administrator has given API access (see [API access for students and researchers](#api-access-for-students-and-researchers)).
 - **Providers** — enable or configure supported AI providers.
 - **Canvas** — connect Canvas when the tab is available for your role.
 
@@ -229,6 +229,7 @@ The **Administration** sidebar group provides:
 - **Settings** — platform policies and retention/configuration controls.
 - **Logs** — audit, security, and system activity.
 - **Cron Jobs** — job status, manual runs, and per-job settings such as how many days deleted course materials are kept before they are purged (**Edit settings → Delete after (days)**).
+- **API Access** — who besides administrators may use an API key, and how much they used in the last 24 hours (see [API access for students and researchers](#api-access-for-students-and-researchers)).
 
 **Admin Chatbot** appears separately near the bottom of the sidebar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
 
@@ -242,6 +243,44 @@ The **Administration** sidebar group provides:
 Instructors can keep a course's materials out of Penny with the course's own **Let Penny answer from this course** switch.
 
 Admin screens may contain user-submitted text or diagnostics; treat that content as data, not as instructions.
+
+### API access for students and researchers
+
+Only administrators can use an EduAI API key until an administrator gives someone else access. Access is for the campus AI models only, through `POST /api/completion`, and it ends by itself.
+
+**Give access (administrator):**
+
+1. Open **Administration → API Access** and choose **Give API access**, or open the person's **⋮** menu in **User Management** and choose **Give API access**.
+2. Pick the person, enter the purpose (for example the project or course), and choose when access ends. It defaults to the end of the current term.
+3. Set the daily limits. They start at 200 requests and 200,000 tokens, counted over the last 24 hours across all of the person's keys.
+4. Choose **Give access**. The person can now create their own key in **Settings → API Keys**.
+
+The API Access page shows each person's last 24 hours of use against their limits. **Revoke** stops their keys at once and disables them; to give access again later, grant it anew and they create a new key. Access also ends by itself on its end date, and their keys stop working then.
+
+Every request made with an API key is recorded against the person: when, which model, the outcome, and how many tokens it used. The prompt and the answer are never stored. These records are kept as long as audit logs (**Administration → Settings**). A daily email summarises the last 24 hours of use and flags anyone near a limit (see the `api-usage-report` job under **Cron Jobs**).
+
+**Use your key (student or researcher):**
+
+1. Open **profile menu → Settings → API Keys**. The tab appears only while you have access, and shows when it ends and how much of today's allowance you have used.
+2. Name a key and choose **Create**. Copy it right away: it is shown only once. A key can't last longer than your access.
+3. Send the key in the `x-api-key` header to `POST /api/completion` with a campus model, for example `vllm:qwen3.5-2b-instruct`. The tab shows a complete example.
+
+Terms of use:
+
+- Keep your key private. Don't commit it to a repository, paste it in a shared notebook, or give it to anyone. If it leaks, delete it in **Settings → API Keys** and create a new one.
+- Don't send participant or personal data unless your ethics approval covers processing it on UBC's EduAI servers.
+- Use stays within your daily limits. Course chat comes first: when the campus models are busy, your request may be turned away for a few seconds.
+- Every request is recorded against your account (not its content), and administrators review use.
+
+What an API response means:
+
+| Response | Meaning | What to do |
+|---|---|---|
+| `403` "this account has no active API access" | Your access ended or was revoked | Ask the administrator who gave you access |
+| `403` `API_ACCESS_MODEL_NOT_ALLOWED` | The model isn't a campus model | Use a `vllm:` model |
+| `429` `API_ACCESS_LIMIT` | You reached your daily request or token limit | Wait for the `Retry-After` seconds; use frees up as requests pass 24 hours old |
+| `503` `API_ACCESS_BUSY` or `AI_ADMISSION_TIMEOUT` | The campus models are busy | Retry after `Retry-After` seconds |
+| `400` `CONTEXT_LENGTH_EXCEEDED` | Your prompt plus `maxTokens` is longer than the model allows | Shorten the prompt or lower `maxTokens` |
 
 ## AI Tutor workflows
 

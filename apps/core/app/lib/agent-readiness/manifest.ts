@@ -1135,6 +1135,30 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "triggerCronJob",
     routeFile: "routes/api/admin.cron-jobs.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/admin/api-access",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/admin/api-access",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/admin/api-access/:id",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
 
   // ── Dashboard & test hooks ──────────────────────────────────────────────────
   entry({
