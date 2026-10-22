@@ -47,13 +47,13 @@ describe("nav — chatbot placement (#835)", () => {
 });
 
 describe("getNavForUser — ADMIN role", () => {
-  it("wraps the 7 admin items into a NavGroupItem", () => {
+  it("wraps the 8 admin items into a NavGroupItem", () => {
     const result = getNavForUser({ role: "ADMIN" });
     const group = result.find((item): item is NavGroupItem => "children" in item);
     expect(group).toBeDefined();
     expect(group!.key).toBe("admin-group");
     expect(group!.title).toBe("Administration");
-    expect(group!.children).toHaveLength(7);
+    expect(group!.children).toHaveLength(8);
   });
 
   it("includes all expected admin keys in the group children", () => {
@@ -68,6 +68,7 @@ describe("getNavForUser — ADMIN role", () => {
       "admin-settings",
       "admin-logs",
       "admin-cron",
+      "admin-api-access",
     ]);
   });
 

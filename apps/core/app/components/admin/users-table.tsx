@@ -29,6 +29,7 @@ import {
   IconUserCheck,
   IconUserOff,
   IconMessageCircle,
+  IconKey,
 } from "@tabler/icons-react";
 
 import { RoleBadge, Avatar as EduAvatar, StatusBadge } from "@eduai/ui";
@@ -166,6 +167,16 @@ function RowActions({
             View chat history
           </DropdownMenuItem>
         )}
+        {user.role !== "ADMIN" &&
+          user.isActive && (
+            // #2039: admins already have API access; anyone else needs a grant.
+            <DropdownMenuItem asChild>
+              <a href={`/admin/api-access?grantFor=${encodeURIComponent(user.id)}`}>
+                <IconKey className="mr-2 h-4 w-4" />
+                Give API access
+              </a>
+            </DropdownMenuItem>
+          )}
         <DropdownMenuItem onClick={() => onToggleActive(user)} disabled={isCurrentUser}>
           {user.isActive ? (
             <IconUserOff className="mr-2 h-4 w-4" />
