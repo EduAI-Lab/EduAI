@@ -12,11 +12,15 @@ import {
 } from "~/lib/ai/provider-errors.server";
 import {
   acquireAiAdmission,
+  admissionRetryAfterSeconds,
   aiRequestTimeoutMs,
   AdmissionTimeoutError,
   admissionTimeoutResponse,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { checkApiAccessLimits } from "~/lib/api-keys/access-grants.server";
+import { tryAcquireGrantedKeySlot } from "~/lib/api-keys/granted-slots.server";
+import { startApiRequestLog, type ApiRequestLogger } from "~/lib/api-keys/request-log.server";
 import { isClientRequestedBedrockModel } from "~/lib/ai/routing/bedrock/overflow.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
@@ -47,13 +51,26 @@ async function readBoundedCompletionJson(
   return readBoundedJson(request, maxBytes, "Completion request body exceeds size limit");
 }
 
+/** Holds the request's log once the caller is known to be using an API key. */
+type ApiRequestLogRef = { current: ApiRequestLogger | null };
+
+/** How long a streamed answer's token usage is awaited for the request log. */
+const STREAM_USAGE_LOG_GRACE_MS = 30_000;
+
 /**
  * POST /api/completion — stateless LLM completion for extension AI assist (#858).
+ *
+ * Also the one route a non-admin's API key works on, while an admin's API
+ * access grant is active (#2039): campus models only, within the grant's daily
+ * limits and a shared concurrency cap. Every API key request is logged.
  *
  * See docs/implementations/lightweight-completion-endpoint.md
  */
 export async function action({ request }: ActionFunctionArgs) {
-  return withErrorResponse(
+  // Set once the caller is known to be using an API key; the row is written
+  // with the final status below, or when a streamed answer's usage settles.
+  const apiLogRef: ApiRequestLogRef = { current: null };
+  const routeResponse = await withErrorResponse(
     async () => {
       if (request.method !== "POST") {
         return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -62,8 +79,19 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
 
-      const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+      const {
+        response: apiKeyGuard,
+        session: apiKeySession,
+        apiKey,
+      } = await enforceAdminIfApiKey(request, { allowGrantedUsers: true });
       if (apiKeyGuard) return apiKeyGuard;
+      const grant = apiKey?.grant ?? null;
+      if (apiKey && apiKeySession?.user) {
+        apiLogRef.current = startApiRequestLog(
+          { userId: apiKeySession.user.id, apiKeyId: apiKey.id, grantId: grant?.id ?? null },
+          "/api/completion",
+        );
+      }
 
       // Completion is stateless, but retain a stable principal for admission and
       // billing-abuse controls. Service-key traffic is intentionally one shared
@@ -130,6 +158,8 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       const model = payload.model;
+      const apiLog = apiLogRef.current;
+      apiLog?.setModel(model);
       const modelPolicy = await resolveCompletionModelPolicy(model);
       if (!modelPolicy.ok) {
         return jsonError(modelPolicy.error, modelPolicy.status);
@@ -139,14 +169,60 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       const needsAdmission = model.startsWith("vllm:") || model.startsWith("ollama:");
+
+      // #2039: a granted (non-admin) key may only use the campus models, within
+      // its daily limits, and only a few such requests run at once so course
+      // chat keeps its slots.
+      let grantedSlotRelease: (() => void) | null = null;
+      if (grant) {
+        if (!needsAdmission) {
+          return new Response(
+            JSON.stringify({
+              error: "API access is limited to the campus models (vllm:…).",
+              code: "API_ACCESS_MODEL_NOT_ALLOWED",
+            }),
+            { status: 403, headers: JSON_HEADERS },
+          );
+        }
+        const limits = await checkApiAccessLimits(grant);
+        if (!limits.ok) {
+          return new Response(
+            JSON.stringify({
+              error: "API_ACCESS_LIMIT",
+              limit: limits.limit,
+              retryAfter: limits.retryAfter,
+            }),
+            {
+              status: 429,
+              headers: { ...JSON_HEADERS, "Retry-After": String(limits.retryAfter) },
+            },
+          );
+        }
+        grantedSlotRelease = tryAcquireGrantedKeySlot();
+        if (!grantedSlotRelease) {
+          const retryAfter = admissionRetryAfterSeconds();
+          return new Response(JSON.stringify({ error: "API_ACCESS_BUSY", retryAfter }), {
+            status: 503,
+            headers: { ...JSON_HEADERS, "Retry-After": String(retryAfter) },
+          });
+        }
+      }
+
       let admissionRelease: (() => void) | null = null;
       let admissionWaitedMs = 0;
       if (needsAdmission) {
         try {
           const admission = await acquireAiAdmission(request.signal);
-          admissionRelease = admission.release;
+          const releaseGrantedSlot = grantedSlotRelease;
+          admissionRelease = releaseGrantedSlot
+            ? () => {
+                admission.release();
+                releaseGrantedSlot();
+              }
+            : admission.release;
           admissionWaitedMs = admission.waitedMs;
         } catch (error) {
+          grantedSlotRelease?.();
           if (error instanceof AdmissionTimeoutError) {
             return admissionTimeoutResponse();
           }
@@ -229,6 +305,11 @@ export async function action({ request }: ActionFunctionArgs) {
           });
           const release = admissionRelease;
           admissionRelease = null;
+          apiLog?.finishWhenSettled(
+            200,
+            outcome.result.usage,
+            aiRequestTimeoutMs() + STREAM_USAGE_LOG_GRACE_MS,
+          );
           return withAdmissionRelease(response, release, signal);
         } catch (error) {
           releaseAdmission();
@@ -237,6 +318,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       releaseAdmission();
+      apiLog?.setUsage(outcome.body.usage);
       return new Response(JSON.stringify(outcome.body), {
         status: 200,
         headers: {
@@ -247,4 +329,6 @@ export async function action({ request }: ActionFunctionArgs) {
     },
     { request },
   );
+  apiLogRef.current?.finish(routeResponse.status);
+  return routeResponse;
 }

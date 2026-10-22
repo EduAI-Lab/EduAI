@@ -54,6 +54,9 @@ model User {
   passwordHistory           PasswordHistory[]
   selfEnrollmentLinks       SelfEnrollmentLink[]   @relation("SelfEnrollmentLinkCreator")
   pendingSelfEnrollments    PendingSelfEnrollment[]
+  apiAccessGrants           ApiAccessGrant[]       @relation("ApiAccessGrantee")
+  apiAccessGrantsIssued     ApiAccessGrant[]       @relation("ApiAccessGrantor")
+  apiRequestLogs            ApiRequestLog[]
 
   @@map("user")
 }
@@ -894,6 +897,70 @@ model apikey {
   @@index([referenceId])
   @@index([key])
   @@map("apiKey")
+}
+
+/// #2039: an admin's permission for a non-admin (e.g. a research student) to
+/// create and use their own API key. Without an active grant a non-admin can't
+/// manage keys, and their keys are refused on every request.
+model ApiAccessGrant {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation("ApiAccessGrantee", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The admin who granted access; kept as null if that account is deleted.
+  grantedById String?
+  grantedBy   User?   @relation("ApiAccessGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  /// Why access was given, e.g. "Honours project: LLM judge evaluation".
+  purpose String
+
+  /// Access ends here with no manual cleanup; keys can't outlive it.
+  expiresAt         DateTime
+  /// Requests and tokens allowed per rolling 24 hours, across all the user's keys.
+  dailyRequestLimit Int
+  dailyTokenLimit   Int
+
+  /// Set when an admin revokes access before it expires.
+  revokedAt   DateTime?
+  revokedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// "This user's grants", newest first; the active one is unrevoked and unexpired.
+  @@index([userId, expiresAt])
+  @@map("api_access_grants")
+}
+
+/// #2039: one row per request made with an API key, for accountability and
+/// per-user limits. Never stores prompt or answer text.
+model ApiRequestLog {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The key used. Not a foreign key, so the record outlives a deleted key.
+  apiKeyId String
+  /// The grant the request ran under; null for an admin's key.
+  grantId  String?
+
+  route            String
+  model            String?
+  status           Int
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  durationMs       Int?
+
+  createdAt DateTime @default(now())
+
+  /// Per-user usage in a time window (limits, usage summaries).
+  @@index([userId, createdAt])
+  /// Fleet-wide summaries and retention.
+  @@index([createdAt])
+  @@map("api_request_logs")
 }
 
 enum ChatbotType {
