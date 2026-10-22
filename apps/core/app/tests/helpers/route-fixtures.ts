@@ -38,6 +38,7 @@ export type CourseGateFixture = {
   isPublished?: boolean;
   department?: string | null;
   deletedAt?: Date | null;
+  studentFilesVisible?: boolean;
 };
 
 /**

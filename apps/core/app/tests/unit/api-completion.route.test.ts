@@ -50,6 +50,7 @@ import { APICallError } from "ai";
 
 vi.mock("~/lib/ai/admission.server", () => ({
   acquireAiAdmission: vi.fn().mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
+  aiRequestTimeoutMs: vi.fn(() => 300_000),
   AdmissionTimeoutError: class AdmissionTimeoutError extends Error {},
   withAdmissionRelease: vi.fn((response: Response) => response),
 }));

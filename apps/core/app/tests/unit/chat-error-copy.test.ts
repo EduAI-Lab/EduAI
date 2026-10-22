@@ -273,3 +273,19 @@ describe("describeStudentChatError — generic fallback", () => {
     expect(notice?.description).toBe("You can attach up to 3 files to one message.");
   });
 });
+
+// #2009: a question plus its retrieved course material can overflow the model.
+describe("describeStudentChatError — too long for the model", () => {
+  it("tells the student to shorten it, without provider details", () => {
+    const notice = describeStudentChatError(
+      rejectionError({
+        error:
+          "The prompt plus maxTokens is longer than this model's context window. Shorten the prompt or lower maxTokens.",
+        code: "CONTEXT_LENGTH_EXCEEDED",
+      }),
+    );
+    expect(notice).toMatchObject({ title: "That's too long for this model" });
+    expect(notice?.description).toMatch(/shorter question/u);
+    expect(notice?.description).not.toMatch(/maxTokens/u);
+  });
+});
