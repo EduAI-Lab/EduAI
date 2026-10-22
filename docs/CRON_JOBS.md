@@ -81,6 +81,17 @@ All EduAI production jobs run in UTC (enforced by the Core scheduler via `{ time
 
 Both thresholds are settings on the job in Admin → Cron Jobs. To test it on a server, lower **Warn at** below the current usage, click **Run now**, check the email and Admin → Logs, then reset the setting. `DISK_ALERT_PATHS` and `DISK_ALERT_EMAILS` are in `docs/ENVIRONMENT.md`.
 
+## API usage report (#2039)
+
+`api-usage-report` is a Core-handler job that runs daily at 15:00 UTC (08:00 Pacific in summer). It looks at the last 24 hours of requests made with the keys of people an administrator gave API access (Admin → API Access), and:
+
+- On a day with no such use, does nothing; the run message says so.
+- Otherwise emails a summary to `API_USAGE_REPORT_EMAILS`, or to every active admin when that is unset: each person's requests and tokens against their daily limits, requests refused for being over a limit or the concurrency cap, and their purpose.
+- Flags **heavy use**: at or above **Heavy use at** (default 80%) of either daily limit, or any refused request. Heavy use leads the email and is written to Admin → Logs (`API`, `API_ACCESS_HEAVY_USE`).
+- Fails the run when every email fails to send, so the next run tries again. Mail that isn't set up is noted in the run message but doesn't fail the run.
+
+Old request records are deleted by the log-retention sweep, on the audit-log window (Admin → Settings).
+
 ---
 
 ## Viewing job status

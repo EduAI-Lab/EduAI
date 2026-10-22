@@ -77,6 +77,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `CRON_OUTPUT_MAX_BYTES` | optional (default `65536`, range `1024-1048576`) | dev/prod | Maximum combined stdout/stderr bytes retained for a spawned cron script. Core terminates and fails a child that exceeds the cap. Invalid and sub-minimum values use the default; larger values are capped at 1 MiB. |
 | `DISK_ALERT_PATHS` | optional (default `/`) | dev/prod | Comma-separated paths whose filesystems the `disk-usage-check` job watches (#1869). Paths on the same disk are reported once; add one only if it is a separate mount (for example a dedicated backup volume). |
 | `DISK_ALERT_EMAILS` | optional | dev/prod | Extra comma-separated addresses for disk alerts, on top of every active platform admin. |
+| `API_USAGE_REPORT_EMAILS` | optional | dev/prod | Comma-separated recipients of the daily `api-usage-report` email (#2039). When set, it replaces the default of every active platform admin, so it can point at the team alert list alone. |
 | `CRON_SCRIPT_DIR` | optional (default repository `infra/cron`) | dev/prod | Directory that contains Core-triggered shell scripts. Production can set `/opt/eduai/cron`. |
 | `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
