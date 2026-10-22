@@ -29,6 +29,8 @@ export type LogRetentionPolicyCleanupResult = {
   systemRetentionDays: number;
   deletedAuditRows: number;
   deletedSystemRows: number;
+  /** #2039: API key request rows, kept as long as audit logs. */
+  deletedApiRequestRows: number;
 };
 
 /**
@@ -127,13 +129,17 @@ export async function runConfiguredLogRetention(
     persistedPolicy.systemRetentionDays,
   );
 
-  // Running both delete queries in parallel keeps cleanup latency predictable for manual triggers.
-  const [auditDeleteResult, systemDeleteResult] = await Promise.all([
+  // Running the delete queries in parallel keeps cleanup latency predictable for manual triggers.
+  // The API request log (#2039) is an accountability record, so it follows the audit window.
+  const [auditDeleteResult, systemDeleteResult, apiRequestDeleteResult] = await Promise.all([
     prisma.auditLog.deleteMany({
       where: { createdAt: { lt: buildCutoff(auditRetentionDays) } },
     }),
     prisma.systemLog.deleteMany({
       where: { createdAt: { lt: buildCutoff(systemRetentionDays) } },
+    }),
+    prisma.apiRequestLog.deleteMany({
+      where: { createdAt: { lt: buildCutoff(auditRetentionDays) } },
     }),
   ]);
 
@@ -142,6 +148,7 @@ export async function runConfiguredLogRetention(
     systemRetentionDays,
     deletedAuditRows: auditDeleteResult.count,
     deletedSystemRows: systemDeleteResult.count,
+    deletedApiRequestRows: apiRequestDeleteResult.count,
   };
 }
 

@@ -15,6 +15,7 @@ const ADMIN_NAV: NavItem[] = [
   { key: "admin-settings", title: "Settings", url: "/admin/settings" },
   { key: "admin-logs", title: "Logs", url: "/admin/logs" },
   { key: "admin-cron", title: "Cron Jobs", url: "/admin/cron-jobs" },
+  { key: "admin-api-access", title: "API Access", url: "/admin/api-access" },
 ];
 
 const ADMIN_SECONDARY_NAV: NavItem[] = [
