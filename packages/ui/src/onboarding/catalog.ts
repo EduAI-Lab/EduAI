@@ -58,7 +58,8 @@ export function onboardingTasks(platform: OnboardingPlatform, role?: string | nu
       const page = ONBOARDING_PAGES[id];
       const name = id.split(".")[1];
       const href = DIRECT_PAGES.has(name) ? `/${name}` : courses;
-      // TAs get staff copy: their tasks open the teaching workspace.
+      // AI Tutor TAs get staff copy: their tasks open the teaching workspace. Core has no global
+      // TA role, so a Core course TA arrives as STUDENT and gets the student checklist.
       return { id, label: role === "STUDENT" ? page.task : page.staffTask, href };
     });
 }
