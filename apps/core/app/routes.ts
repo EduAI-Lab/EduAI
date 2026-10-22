@@ -103,6 +103,7 @@ export default [
   route("/admin/logs", "routes/admin.logs.tsx"),
   route("/unit-admin/invitations", "routes/unit-admin.invitations.tsx"),
   route("/admin/cron-jobs", "routes/admin.cron-jobs.tsx"),
+  route("/admin/api-access", "routes/admin.api-access.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/routing-model-settings", "routes/api/routing-model-settings.ts"),
