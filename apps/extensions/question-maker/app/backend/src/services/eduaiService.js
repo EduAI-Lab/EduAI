@@ -23,6 +23,32 @@ const CORE_PAGE_SIZE = 200;
 
 const DEBUG_PREFIX = "[EduAI]";
 
+/** Formats like "B", "B)", "B.", "(B)", "B: text" — not "Binary", which only starts with a letter. */
+const MCQ_ANSWER_LETTER_PATTERN = /^\(?([A-Za-z])(?:[).:\]]|$)/;
+
+const normalizeChoiceText = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
+
+function resolveMcqAnswerLetter(question, choices) {
+  const findLetterByText = (text) => {
+    if (typeof text !== "string" || !text.trim()) return null;
+    const target = normalizeChoiceText(text);
+    const matches = choices.filter((choice) => normalizeChoiceText(choice.text) === target);
+    return matches.length === 1 ? matches[0].letter : null;
+  };
+
+  const answerText = typeof question.answer === "string" ? question.answer.trim() : "";
+  const statedLetter = answerText.match(MCQ_ANSWER_LETTER_PATTERN)?.[1].toUpperCase() ?? null;
+  const textLetter = findLetterByText(question.correct_choice_text);
+
+  if (textLetter) {
+    if (statedLetter && statedLetter !== textLetter) {
+      console.warn(`${DEBUG_PREFIX} MCQ answer letter disagreed with correct_choice_text`);
+    }
+    return textLetter;
+  }
+  return statedLetter ?? findLetterByText(answerText);
+}
+
 function perCallAbortSignal(parentSignal, timeoutMs) {
   const timeoutController = new AbortController();
   const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
@@ -412,17 +438,19 @@ Format each question as a JSON object with these exact fields:
     "difficulty": "easy/medium/hard",
     "reasoning_level": "factual/analytical/application",
     "type": "MCQ/SA/LA",
+    "choices": [{"letter": "A", "text": "Option A"}, ...],  // REQUIRED for MCQ questions only
+    "correct_choice_text": "The exact text of the correct choice",  // MCQ only
     "answer": "The correct answer (see guidelines below)",
     "primary_topic_id": number | null,
-    "secondary_topic_ids": number[],
-    "choices": [{"letter": "A", "text": "Option A"}, ...]  // REQUIRED for MCQ questions only
+    "secondary_topic_ids": number[]
   }
 
 IMPORTANT FOR MCQ QUESTIONS:
 - "content" must contain ONLY the question text, without any choices. Do NOT put options inside content.
 ${mcqChoiceCountLine}
 - Each choice must have a unique letter (A, B, C, D, E, etc.). Never omit "choices" for MCQ.
-- "answer" must be the single letter of the correct choice (e.g., "B").
+- Write all the choices first. Then work out the correct answer, find the choice whose text is that answer, and copy its text exactly into "correct_choice_text".
+- "answer" must be the single letter of that same choice (e.g., "B"). Double-check that the letter labels the choice in "correct_choice_text".
 ${mcqCountEnforced ? `- For this request, if type is MCQ, violating the exact choice count is an error — match the source question's option count.\n` : ""}
 
 Answer Guidelines:
@@ -743,13 +771,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
               }
             }
 
-            // Normalize answer to just the letter for MCQ
-            if (typeof question.answer === "string" && question.answer.trim().length > 0) {
-              const answerText = question.answer.trim();
-              // Extract letter from formats like "B", "B)", "B) Option B", etc.
-              const letterMatch = answerText.match(/^([A-Za-z])/);
-              answer = letterMatch ? letterMatch[1].toUpperCase() : answerText;
-            }
+            answer = resolveMcqAnswerLetter(question, choices);
           } else {
             // For SA/LA, keep full answer text
             answer =
