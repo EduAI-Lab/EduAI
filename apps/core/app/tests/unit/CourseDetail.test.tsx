@@ -360,7 +360,7 @@ describe("CourseDetailTaView", () => {
   });
 });
 
-// Student view (#1962: no course files anywhere; course chat is the main action)
+// Student view (#1962: course chat is the main action; files only where shared, #2002)
 describe("CourseDetailStudentView", () => {
   it("does NOT show Enrollments tab", () => {
     wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
@@ -385,5 +385,28 @@ describe("CourseDetailStudentView", () => {
     wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
     const chat = screen.getByRole("link", { name: /chat about this course/i });
     expect(chat).toHaveAttribute("href", "/chat?courseId=c1");
+  });
+
+  it("lists the course's files only where the course shares them (#2002)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(Response.json({ materials: [MATERIAL], nextCursor: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const { unmount } = wrap(
+        <CourseDetailStudentView course={{ ...COURSE, studentFilesVisible: false }} topics={[]} />,
+      );
+      expect(screen.queryByText("Course files")).not.toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+      unmount();
+
+      wrap(
+        <CourseDetailStudentView course={{ ...COURSE, studentFilesVisible: true }} topics={[]} />,
+      );
+      expect(await screen.findByRole("button", { name: "Preview Lecture 1" })).toBeEnabled();
+      expect(fetchMock).toHaveBeenCalledWith("/api/courses/c1/materials");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

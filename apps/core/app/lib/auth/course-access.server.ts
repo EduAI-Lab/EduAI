@@ -71,6 +71,8 @@ export const GATE_COURSE_SELECT = {
   isPublished: true,
   instructorId: true,
   deletedAt: true,
+  // #2002: the materials API's student read gate.
+  studentFilesVisible: true,
 } satisfies Prisma.CourseSelect;
 
 /** Projected course row returned by `resolveCourseAccessGate`. */

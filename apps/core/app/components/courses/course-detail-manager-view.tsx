@@ -84,6 +84,7 @@ import {
   CourseResponseStyleSettings,
   CourseResponseStyleSummary,
 } from "~/components/courses/course-response-style-settings";
+import { CourseStudentVisibilitySettings } from "~/components/courses/course-student-visibility-settings";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
 import { MaterialTopicsEditor } from "~/components/courses/material-topics-editor";
@@ -2239,6 +2240,18 @@ export function CourseDetailManagerView({
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
+            {/* #2002: what students see — files and topics. Same audience as the tab. */}
+            {courseId && (
+              <div className="mb-6">
+                <CourseStudentVisibilitySettings
+                  key={courseId}
+                  courseId={courseId}
+                  studentFilesVisible={course.studentFilesVisible ?? false}
+                  topics={topics}
+                  onSaved={onRefreshTopics}
+                />
+              </div>
+            )}
             {courseId && (
               <div className="mb-6">
                 <CourseResponseStyleSettings

@@ -59,6 +59,18 @@ function coreCreated() {
   return { ok: true, status: 201, json: () => Promise.resolve(null) };
 }
 
+/** The caller's Core course list, as the live-TA check reads it (#2013). */
+function coreCourses(courses) {
+  return {
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ data: courses, total: courses.length, page: 1, pageSize: 100 }),
+  };
+}
+
+const postedToCoreBugReports = (mockFetch) =>
+  mockFetch.mock.calls.some(([url]) => String(url).endsWith("/api/bug-reports"));
+
 describe("POST /api/bug-reports (proxy to Core)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -88,8 +100,11 @@ describe("POST /api/bug-reports (proxy to Core)", () => {
     expect(res.body.success).toBe(true);
   });
 
-  it("blocks platform STUDENT callers before proxying to Core", async () => {
-    const mockFetch = vi.fn().mockResolvedValueOnce(sessionOk(STUDENT));
+  it("blocks platform STUDENT callers with no TA enrollment before proxying to Core", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(sessionOk(STUDENT))
+      .mockResolvedValueOnce(coreCourses([{ id: "core-1", callerEnrollmentRole: "STUDENT" }]));
     vi.stubGlobal("fetch", mockFetch);
 
     const res = await request(app)
@@ -98,7 +113,41 @@ describe("POST /api/bug-reports (proxy to Core)", () => {
       .send({ description: "Students cannot submit QM proxy reports." });
 
     expect(res.status).toBe(403);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(postedToCoreBugReports(mockFetch)).toBe(false);
+  });
+
+  it("proxies a report from a platform STUDENT who is a live course TA (#2013)", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(sessionOk(STUDENT))
+      .mockResolvedValueOnce(coreCourses([{ id: "core-1", callerEnrollmentRole: "TA" }]))
+      .mockResolvedValueOnce(coreCreated());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .set("Cookie", "session=valid-token")
+      .send({ description: "The question list did not refresh." });
+
+    expect(res.status).toBe(201);
+    const [, init] = mockFetch.mock.calls.find(([url]) => String(url).endsWith("/api/bug-reports"));
+    expect(JSON.parse(init.body)).toMatchObject({ source: "QUESTION_MAKER", userId: STUDENT.id });
+  });
+
+  it("fails closed for a platform STUDENT when Core's course list is unavailable", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(sessionOk(STUDENT))
+      .mockRejectedValueOnce(new Error("Core unreachable"));
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await request(app)
+      .post("/api/bug-reports")
+      .set("Cookie", "session=valid-token")
+      .send({ description: "Core is down." });
+
+    expect(res.status).toBe(403);
+    expect(postedToCoreBugReports(mockFetch)).toBe(false);
   });
 
   it("sends QUESTION_MAKER source and authenticated userId to Core", async () => {

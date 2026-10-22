@@ -7,6 +7,7 @@ vi.mock("~/lib/chat-history/server", () => ({
 }));
 
 vi.mock("~/lib/chat/learner-sources.server", () => ({
+  loadVisibleLearnerTopicNames: vi.fn().mockResolvedValue(new Set(["Labs"])),
   readerSeesMaterialFiles: vi.fn().mockResolvedValue(true),
 }));
 

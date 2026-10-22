@@ -21,6 +21,8 @@ export interface CourseTopic {
   origin?: TopicOrigin;
   reviewStatus?: TopicReviewStatus;
   confidence?: number | null;
+  /** Shown to students on the course page and in course chat (#2002). */
+  visibleToStudents?: boolean;
   /** Bounded list of source materials; empty for human-created topics. */
   sources?: CourseTopicSource[];
   /** Total sources, which may exceed `sources.length` — the projection is capped. */

@@ -20,7 +20,8 @@ export type CourseScopeContext = {
   courseTopics: string[];
   /**
    * Unreviewed AI-suggested topics. Classifier-only: they are not course
-   * content, but they still describe the course's scope (#1936 review).
+   * content, but they still describe the course's scope (#1936 review). On a
+   * student's turn this also carries the topics hidden from students (#2002).
    */
   suggestedTopics?: string[];
   aiInstructions: string | null;

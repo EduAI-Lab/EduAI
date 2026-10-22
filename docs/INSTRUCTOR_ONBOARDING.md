@@ -115,6 +115,15 @@ Each file can have up to three topics, shown as tags under its name on the **Mat
 - **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
 - **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Core and course chat hide suggestions from students until you approve them; AI Tutor's course page can still list them, even after you dismiss one (a known bug, [#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)). Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
 
+### What students see
+
+On the **Settings** tab, **What students see** has two choices:
+
+- **Let students see course files** is off by default, so students reach the course only through course chat. Turn it on to let enrolled students list and preview the course's files on the course page. Files you hid from students or scheduled for later stay hidden. Course chat never names a file to a student either way.
+- **Topics shown to students** lists your approved topics. Untick one to hide its name from the course page and from the topics course chat lists under its answers. Chat still answers from that topic's files. Newly approved topics are shown.
+
+Admins, unit admins and the course's instructors can change these; TAs cannot.
+
 ### Enrollments
 
 On the **Enrollments** tab, review who is enrolled and add students or TAs as your pilot process requires.

@@ -52,4 +52,71 @@ describe("getCourseTopicNamesCached", () => {
     invalidateCourseTopicNamesCache("course-1");
     expect((await getCourseTopicNamesCached("course-1")).accepted).toEqual(["Tidy data"]);
   });
+
+  it("hides a topic hidden from students from a learner's list only (#2002)", async () => {
+    prismaMock.courseTopic.findMany.mockResolvedValue([
+      { name: "Shown", reviewStatus: "ACCEPTED", visibleToStudents: true },
+      { name: "Hidden", reviewStatus: "ACCEPTED", visibleToStudents: false },
+      { name: "Tidy data", reviewStatus: "SUGGESTED", visibleToStudents: true },
+    ]);
+    const { getCourseTopicNamesCached } = await import("~/lib/courses/server");
+
+    // The prompt never lists the hidden topic for a student, but the scope
+    // classifier still counts it as the course's.
+    expect(await getCourseTopicNamesCached("course-1", true)).toEqual({
+      accepted: ["Shown"],
+      suggested: ["Hidden", "Tidy data"],
+    });
+    expect(await getCourseTopicNamesCached("course-1")).toEqual({
+      accepted: ["Shown", "Hidden"],
+      suggested: ["Tidy data"],
+    });
+  });
+
+  it("invalidates the learner and staff lists together", async () => {
+    prismaMock.courseTopic.findMany.mockResolvedValue([
+      { name: "Labs", reviewStatus: "ACCEPTED", visibleToStudents: true },
+    ]);
+    const { getCourseTopicNamesCached, invalidateCourseTopicNamesCache } =
+      await import("~/lib/courses/server");
+    await getCourseTopicNamesCached("course-1", true);
+    await getCourseTopicNamesCached("course-1");
+
+    prismaMock.courseTopic.findMany.mockResolvedValue([
+      { name: "Labs", reviewStatus: "ACCEPTED", visibleToStudents: false },
+    ]);
+    invalidateCourseTopicNamesCache("course-1");
+
+    expect((await getCourseTopicNamesCached("course-1", true)).accepted).toEqual([]);
+    expect((await getCourseTopicNamesCached("course-1")).accepted).toEqual(["Labs"]);
+  });
+
+  it("does not cache a read that a topic change overtook (#2002)", async () => {
+    // The read starts while the topic is still shown...
+    let finishStaleRead!: (
+      rows: { name: string; reviewStatus: string; visibleToStudents: boolean }[],
+    ) => void;
+    prismaMock.courseTopic.findMany.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishStaleRead = resolve;
+      }),
+    );
+    const { getCourseTopicNamesCached, invalidateCourseTopicNamesCache } =
+      await import("~/lib/courses/server");
+    const staleRead = getCourseTopicNamesCached("course-1", true);
+
+    // ...the instructor hides it, and the route invalidates after its commit...
+    invalidateCourseTopicNamesCache("course-1");
+
+    // ...and only then does the old read come back.
+    finishStaleRead([{ name: "Labs", reviewStatus: "ACCEPTED", visibleToStudents: true }]);
+    expect((await staleRead).accepted).toEqual(["Labs"]);
+
+    // The next student turn must not be served that stale list from the cache.
+    prismaMock.courseTopic.findMany.mockResolvedValue([
+      { name: "Labs", reviewStatus: "ACCEPTED", visibleToStudents: false },
+    ]);
+    expect((await getCourseTopicNamesCached("course-1", true)).accepted).toEqual([]);
+    expect(prismaMock.courseTopic.findMany).toHaveBeenCalledTimes(2);
+  });
 });
