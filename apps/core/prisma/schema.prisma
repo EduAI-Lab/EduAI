@@ -948,10 +948,16 @@ model ApiRequestLog {
 
   route            String
   model            String?
+  /// The HTTP status, or 0 while the request is still running.
   status           Int
   promptTokens     Int?
   completionTokens Int?
+  /// Charged against the daily token limit. Set to an estimate when a request
+  /// starts, and replaced by the provider's count if one arrives.
   totalTokens      Int?
+  /// True when `totalTokens` is the estimate: the request was aborted, failed
+  /// or the provider reported no usage.
+  tokensEstimated  Boolean @default(false)
   durationMs       Int?
 
   createdAt DateTime @default(now())

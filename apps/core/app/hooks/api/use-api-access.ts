@@ -19,7 +19,13 @@ export type ApiAccessGrantRow = {
   usageLast24h: { requests: number; tokens: number };
 };
 
-export type ApiAccessDefaults = { dailyRequestLimit: number; dailyTokenLimit: number };
+export type ApiAccessDefaults = {
+  dailyRequestLimit: number;
+  dailyTokenLimit: number;
+  /** The server's caps; a grant above them is refused. */
+  maxDailyRequestLimit: number;
+  maxDailyTokenLimit: number;
+};
 
 export type CreateApiAccessGrantInput = {
   userId: string;
@@ -42,6 +48,8 @@ export function useApiAccessGrants() {
   const [defaults, setDefaults] = useState<ApiAccessDefaults>({
     dailyRequestLimit: 200,
     dailyTokenLimit: 200_000,
+    maxDailyRequestLimit: 5_000,
+    maxDailyTokenLimit: 5_000_000,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

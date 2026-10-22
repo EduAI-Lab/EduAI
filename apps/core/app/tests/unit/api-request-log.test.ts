@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({
-  default: { apiRequestLog: { create: vi.fn() } },
+  default: { apiRequestLog: { create: vi.fn(), update: vi.fn() } },
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -11,7 +11,11 @@ vi.mock("~/lib/logging.server", () => ({
 }));
 
 import prisma from "~/lib/prisma.server";
-import { startApiRequestLog } from "~/lib/api-keys/request-log.server";
+import {
+  API_REQUEST_IN_FLIGHT,
+  estimateRequestTokens,
+  startApiRequestLog,
+} from "~/lib/api-keys/request-log.server";
 import {
   getGrantedKeyInflight,
   resetGrantedKeySlots,
@@ -26,8 +30,13 @@ function writtenRows() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(prisma.apiRequestLog.create).mockResolvedValue({} as never);
+  vi.mocked(prisma.apiRequestLog.create).mockResolvedValue({ id: "row-1" } as never);
+  vi.mocked(prisma.apiRequestLog.update).mockResolvedValue({} as never);
 });
+
+function updatedRows() {
+  return vi.mocked(prisma.apiRequestLog.update).mock.calls.map(([args]) => args);
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -96,6 +105,72 @@ describe("startApiRequestLog", () => {
     log.finishWhenSettled(200, Promise.reject(new Error("stream failed")), 1_000);
     await vi.waitFor(() => expect(prisma.apiRequestLog.create).toHaveBeenCalledTimes(1));
     expect(writtenRows()[0]).toMatchObject({ totalTokens: null });
+  });
+});
+
+describe("startApiRequestLog: recorded before the model call (#2040 review)", () => {
+  it("estimates a request's tokens from its prompt length plus every output token it allows", () => {
+    expect(estimateRequestTokens(4_001, 3_072)).toBe(1_001 + 3_072);
+    expect(estimateRequestTokens(0, 256)).toBe(256);
+  });
+
+  it("writes a running row charged the estimate before the call", async () => {
+    const log = startApiRequestLog(caller, "/api/completion");
+    log.setModel("vllm:qwen3.5-2b-instruct");
+    await expect(log.begin(4_096)).resolves.toBe(true);
+    expect(writtenRows()).toEqual([
+      expect.objectContaining({
+        userId: "s1",
+        grantId: "g1",
+        model: "vllm:qwen3.5-2b-instruct",
+        status: API_REQUEST_IN_FLIGHT,
+        totalTokens: 4_096,
+        tokensEstimated: true,
+      }),
+    ]);
+  });
+
+  it("replaces the estimate with the provider's count when the call ends", async () => {
+    const log = startApiRequestLog(caller, "/api/completion");
+    await log.begin(4_096);
+    log.setUsage({ promptTokens: 232, completionTokens: 9, totalTokens: 241 });
+    log.finish(200);
+    expect(prisma.apiRequestLog.create).toHaveBeenCalledTimes(1);
+    expect(updatedRows()).toEqual([
+      {
+        where: { id: "row-1" },
+        data: expect.objectContaining({
+          status: 200,
+          totalTokens: 241,
+          tokensEstimated: false,
+        }),
+      },
+    ]);
+  });
+
+  it("keeps charging the estimate when an aborted stream's usage never arrives", async () => {
+    vi.useFakeTimers();
+    const log = startApiRequestLog(caller, "/api/completion");
+    await log.begin(8_192);
+    log.finishWhenSettled(200, new Promise(() => {}), 1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(updatedRows()).toEqual([
+      {
+        where: { id: "row-1" },
+        data: expect.objectContaining({ totalTokens: 8_192, tokensEstimated: true }),
+      },
+    ]);
+  });
+
+  it("says so when the running row can't be written", async () => {
+    vi.mocked(prisma.apiRequestLog.create).mockRejectedValueOnce(new Error("db down"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = startApiRequestLog(caller, "/api/completion");
+    await expect(log.begin(100)).resolves.toBe(false);
+    log.finish(503);
+    // Nothing to update, so the final row is created instead.
+    expect(prisma.apiRequestLog.update).not.toHaveBeenCalled();
+    expect(prisma.apiRequestLog.create).toHaveBeenCalledTimes(2);
   });
 });
 

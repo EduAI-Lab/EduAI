@@ -10,8 +10,10 @@ export type ApiUsageReportLine = {
   requestLimit: number;
   tokens: number;
   tokenLimit: number;
-  /** Requests turned away by their limits or the concurrency cap. */
+  /** Requests turned away for being over a daily limit. */
   refused: number;
+  /** Requests turned away only because the models were busy; not heavy use on their own. */
+  busy: number;
   heavy: boolean;
 };
 
@@ -35,10 +37,11 @@ export function buildApiUsageReportEmail(input: ApiUsageReportEmailInput): Email
   const describe = (line: ApiUsageReportLine) =>
     `${line.name} <${line.email}>: ${number.format(line.requests)}/${number.format(line.requestLimit)} requests, ` +
     `${number.format(line.tokens)}/${number.format(line.tokenLimit)} tokens` +
-    (line.refused > 0 ? `, ${number.format(line.refused)} refused` : "") +
+    (line.refused > 0 ? `, ${number.format(line.refused)} over limit` : "") +
+    (line.busy > 0 ? `, ${number.format(line.busy)} turned away while busy` : "") +
     (line.heavy ? " (HEAVY USE)" : "");
 
-  const explain = `Heavy use means at least ${input.heavyUsePercent}% of a daily limit, or requests refused for being over a limit or the concurrency cap.`;
+  const explain = `Heavy use means at least ${input.heavyUsePercent}% of a daily limit, or requests refused for being over one. "Busy" requests were turned away because the campus models were in use, which can happen at any level of use.`;
 
   const text = [
     "API key use by people an admin gave API access, over the last 24 hours:",
@@ -60,6 +63,7 @@ export function buildApiUsageReportEmail(input: ApiUsageReportEmailInput): Email
           <td style="padding:4px 12px 4px 0;">${number.format(line.requests)} / ${number.format(line.requestLimit)}</td>
           <td style="padding:4px 12px 4px 0;">${number.format(line.tokens)} / ${number.format(line.tokenLimit)}</td>
           <td style="padding:4px 12px 4px 0;">${line.refused > 0 ? number.format(line.refused) : ""}</td>
+          <td style="padding:4px 12px 4px 0;">${line.busy > 0 ? number.format(line.busy) : ""}</td>
           <td style="padding:4px 0;">${line.heavy ? "<strong>Heavy use</strong>" : ""}</td>
         </tr>`,
     )
@@ -69,7 +73,7 @@ export function buildApiUsageReportEmail(input: ApiUsageReportEmailInput): Email
     <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; line-height: 1.5; color: #111;">
       <p>API key use by people an admin gave API access, over the last 24 hours:</p>
       <table style="border-collapse:collapse;font-size:14px;">
-        <tr style="text-align:left;"><th style="padding:4px 12px 4px 0;">Person</th><th style="padding:4px 12px 4px 0;">Purpose</th><th style="padding:4px 12px 4px 0;">Requests</th><th style="padding:4px 12px 4px 0;">Tokens</th><th style="padding:4px 12px 4px 0;">Refused</th><th></th></tr>
+        <tr style="text-align:left;"><th style="padding:4px 12px 4px 0;">Person</th><th style="padding:4px 12px 4px 0;">Purpose</th><th style="padding:4px 12px 4px 0;">Requests</th><th style="padding:4px 12px 4px 0;">Tokens</th><th style="padding:4px 12px 4px 0;">Over limit</th><th style="padding:4px 12px 4px 0;">Busy</th><th></th></tr>
         ${rows}
       </table>
       <p style="font-size: 13px; color: #555;">${escapeHtml(explain)}</p>

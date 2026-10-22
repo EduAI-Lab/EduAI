@@ -6,13 +6,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     user: { findUnique: vi.fn() },
-    apiAccessGrant: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
-    apiRequestLog: { aggregate: vi.fn(), findFirst: vi.fn() },
+    apiAccessGrant: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    apiRequestLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     apikey: { updateMany: vi.fn() },
     $transaction: vi.fn(),
+    $executeRaw: vi.fn(),
   },
 }));
 
+import type { ApiAccessGrant } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { apiKeyManagementDenial } from "~/lib/api-keys/access.server";
 import {
@@ -20,6 +29,7 @@ import {
   checkApiAccessLimits,
   createApiAccessGrant,
   getActiveApiAccessGrant,
+  listApiAccessGrants,
   revokeApiAccessGrant,
 } from "~/lib/api-keys/access-grants.server";
 
@@ -48,7 +58,20 @@ function usage(requests: number, tokens: number | null) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.apiAccessGrant.findFirst).mockResolvedValue(null);
+  // An interactive transaction runs its callback against the same mocked client.
+  // (The revoke tests, which pass an array, set their own result.)
+  vi.mocked(prisma.$transaction).mockImplementation(((callback: TransactionCallback) =>
+    callback(prisma)) as never);
 });
+
+type TransactionCallback = (tx: typeof prisma) => Promise<ApiAccessGrant>;
+
+/** Counted rows in the window, oldest first, as `checkApiAccessLimits` reads them. */
+function windowRows(rows: Array<[iso: string, tokens: number]>) {
+  vi.mocked(prisma.apiRequestLog.findMany).mockResolvedValue(
+    rows.map(([iso, totalTokens]) => ({ createdAt: new Date(iso), totalTokens })) as never,
+  );
+}
 
 describe("getActiveApiAccessGrant", () => {
   it("looks only at unrevoked, unexpired grants", async () => {
@@ -160,9 +183,10 @@ describe("checkApiAccessLimits", () => {
 
   it("stops at the request limit and retries when the oldest request leaves the window", async () => {
     usage(200, 1_000);
-    vi.mocked(prisma.apiRequestLog.findFirst).mockResolvedValue({
-      createdAt: new Date("2026-10-20T13:00:00Z"),
-    } as never);
+    windowRows([
+      ["2026-10-20T13:00:00Z", 5],
+      ...Array.from({ length: 199 }, (): [string, number] => ["2026-10-21T10:00:00Z", 5]),
+    ]);
     await expect(checkApiAccessLimits(grant, NOW)).resolves.toEqual({
       ok: false,
       limit: "requests",
@@ -171,14 +195,28 @@ describe("checkApiAccessLimits", () => {
     });
   });
 
-  it("stops at the token limit", async () => {
-    usage(5, 200_000);
-    vi.mocked(prisma.apiRequestLog.findFirst).mockResolvedValue({
-      createdAt: new Date("2026-10-21T11:00:00Z"),
-    } as never);
+  // #2040 review: at the token limit the oldest request may be a small one, so
+  // retrying when it ages out would still be over the limit.
+  it("at the token limit, waits until enough tokens have aged out", async () => {
+    usage(3, 250_000);
+    windowRows([
+      ["2026-10-20T13:00:00Z", 1_000], // ages out in 1h; 249,000 left, still over
+      ["2026-10-20T14:00:00Z", 150_000], // ages out in 2h; 99,000 left, under the limit
+      ["2026-10-21T11:00:00Z", 99_000],
+    ]);
     await expect(checkApiAccessLimits(grant, NOW)).resolves.toMatchObject({
       ok: false,
       limit: "tokens",
+      retryAfter: 2 * 3600,
+    });
+  });
+
+  it("falls back to the oldest request when the rows changed between reads", async () => {
+    usage(200, 0);
+    windowRows([["2026-10-20T13:00:00Z", 0]]);
+    await expect(checkApiAccessLimits(grant, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryAfter: 3600,
     });
   });
 });
@@ -220,6 +258,22 @@ describe("createApiAccessGrant", () => {
     expect(prisma.apiAccessGrant.create).not.toHaveBeenCalled();
   });
 
+  // #2040 review: a double-clicked "Give access" must not create two grants.
+  it("checks and inserts in one transaction under a per-user lock", async () => {
+    asUser("STUDENT");
+    vi.mocked(prisma.apiAccessGrant.create).mockResolvedValue({ id: "g1" } as never);
+    await createApiAccessGrant(input, NOW);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    const [sql, lockKey] = vi.mocked(prisma.$executeRaw).mock.calls[0];
+    // SAFETY: a tagged-template call passes the template strings first.
+    expect((sql as TemplateStringsArray).join("?")).toContain("pg_advisory_xact_lock(hashtext(?))");
+    expect(lockKey).toBe("api-access-grant:s1");
+    expect(vi.mocked(prisma.$executeRaw).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(prisma.apiAccessGrant.findFirst).mock.invocationCallOrder[0],
+    );
+  });
+
   it("refuses a second active grant with 409", async () => {
     asUser("STUDENT");
     vi.mocked(prisma.apiAccessGrant.findFirst).mockResolvedValue(grant as never);
@@ -244,6 +298,7 @@ describe("revokeApiAccessGrant", () => {
       revokedAt: null,
     } as never);
     vi.mocked(prisma.apiAccessGrant.update).mockReturnValue("update-op" as never);
+    vi.mocked(prisma.apiAccessGrant.updateMany).mockReturnValue("end-others-op" as never);
     vi.mocked(prisma.apikey.updateMany).mockReturnValue("disable-op" as never);
     vi.mocked(prisma.$transaction).mockResolvedValue([{ ...grant, revokedAt: NOW }] as never);
 
@@ -252,11 +307,16 @@ describe("revokeApiAccessGrant", () => {
       where: { id: "g1" },
       data: { revokedAt: NOW, revokedById: "a1" },
     });
+    // Any other active grant the user holds ends too.
+    expect(prisma.apiAccessGrant.updateMany).toHaveBeenCalledWith({
+      where: { userId: "s1", revokedAt: null, expiresAt: { gt: NOW } },
+      data: { revokedAt: NOW, revokedById: "a1" },
+    });
     expect(prisma.apikey.updateMany).toHaveBeenCalledWith({
       where: { referenceId: "s1" },
       data: { enabled: false },
     });
-    expect(prisma.$transaction).toHaveBeenCalledWith(["update-op", "disable-op"]);
+    expect(prisma.$transaction).toHaveBeenCalledWith(["update-op", "end-others-op", "disable-op"]);
   });
 
   it("leaves an already revoked grant alone", async () => {
@@ -271,5 +331,51 @@ describe("revokeApiAccessGrant", () => {
   it("404s an unknown grant", async () => {
     vi.mocked(prisma.apiAccessGrant.findUnique).mockResolvedValue(null);
     await expect(revokeApiAccessGrant("nope", "a1", NOW)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("listApiAccessGrants", () => {
+  const row = (id: string, userId: string, revokedAt: Date | null = null) => ({
+    ...grant,
+    id,
+    userId,
+    revokedAt,
+    user: { id: userId, name: userId, email: `${userId}@ubc.ca`, role: "STUDENT" },
+  });
+
+  // #2040 review: one grouped usage query, not one per grant.
+  it("reads everyone's usage in one grouped query", async () => {
+    vi.mocked(prisma.apiAccessGrant.findMany).mockResolvedValue([
+      row("g1", "s1"),
+      row("g2", "s2"),
+      row("g0", "s1", NOW),
+    ] as never);
+    vi.mocked(prisma.apiRequestLog.groupBy).mockResolvedValue([
+      { userId: "s1", _count: { _all: 4 }, _sum: { totalTokens: 900 } },
+    ] as never);
+
+    const grants = await listApiAccessGrants({ includeInactive: true }, NOW);
+
+    expect(prisma.apiRequestLog.groupBy).toHaveBeenCalledTimes(1);
+    expect(prisma.apiRequestLog.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ["userId"],
+        where: expect.objectContaining({ userId: { in: ["s1", "s2"] } }),
+      }),
+    );
+    expect(grants.map((g) => [g.id, g.active, g.usageLast24h])).toEqual([
+      ["g1", true, { requests: 4, tokens: 900 }],
+      ["g2", true, { requests: 0, tokens: 0 }],
+      ["g0", false, { requests: 4, tokens: 900 }],
+    ]);
+    expect(prisma.apiAccessGrant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {}, take: 500 }),
+    );
+  });
+
+  it("skips the usage query when there are no grants", async () => {
+    vi.mocked(prisma.apiAccessGrant.findMany).mockResolvedValue([]);
+    await expect(listApiAccessGrants({}, NOW)).resolves.toEqual([]);
+    expect(prisma.apiRequestLog.groupBy).not.toHaveBeenCalled();
   });
 });

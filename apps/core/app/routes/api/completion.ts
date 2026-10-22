@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import {
+  completionOutputTokenBudget,
   resolveCompletionInputLimits,
   resolveCompletionModelPolicy,
   runCompletion,
@@ -20,7 +21,11 @@ import {
 } from "~/lib/ai/admission.server";
 import { checkApiAccessLimits } from "~/lib/api-keys/access-grants.server";
 import { tryAcquireGrantedKeySlot } from "~/lib/api-keys/granted-slots.server";
-import { startApiRequestLog, type ApiRequestLogger } from "~/lib/api-keys/request-log.server";
+import {
+  estimateRequestTokens,
+  startApiRequestLog,
+  type ApiRequestLogger,
+} from "~/lib/api-keys/request-log.server";
 import { isClientRequestedBedrockModel } from "~/lib/ai/routing/bedrock/overflow.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
@@ -205,6 +210,23 @@ export async function action({ request }: ActionFunctionArgs) {
             status: 503,
             headers: { ...JSON_HEADERS, "Retry-After": String(retryAfter) },
           });
+        }
+      }
+
+      // #2040 review: record the request before it can reach a model, charged an
+      // estimate, so aborting streams can't start calls the limits never see,
+      // and a call whose usage never arrives still counts against the tokens.
+      if (apiLog) {
+        const recorded = await apiLog.begin(
+          estimateRequestTokens(
+            (payload.systemPrompt?.length ?? 0) + JSON.stringify(payload.messages ?? []).length,
+            completionOutputTokenBudget(payload.maxTokens),
+          ),
+        );
+        // A granted key's limits are counted from these rows, so it never runs unrecorded.
+        if (!recorded && grant) {
+          grantedSlotRelease?.();
+          return jsonError("API usage could not be recorded. Try again shortly.", 503);
         }
       }
 

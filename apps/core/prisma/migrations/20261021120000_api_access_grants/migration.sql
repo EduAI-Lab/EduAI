@@ -30,6 +30,7 @@ CREATE TABLE "api_request_logs" (
     "promptTokens" INTEGER,
     "completionTokens" INTEGER,
     "totalTokens" INTEGER,
+    "tokensEstimated" BOOLEAN NOT NULL DEFAULT false,
     "durationMs" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

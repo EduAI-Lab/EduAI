@@ -89,14 +89,17 @@ export function GrantApiAccessDialog({
   const expiresAt = endOfDayIso(endDate);
   const requests = Number(requestLimit);
   const tokens = Number(tokenLimit);
+  // The server refuses limits above its caps, so they are checked here first.
+  const requestsValid =
+    Number.isInteger(requests) && requests > 0 && requests <= defaults.maxDailyRequestLimit;
+  const tokensValid =
+    Number.isInteger(tokens) && tokens > 0 && tokens <= defaults.maxDailyTokenLimit;
   const canSubmit =
     person !== null &&
     purpose.trim().length > 0 &&
     expiresAt !== null &&
-    Number.isInteger(requests) &&
-    requests > 0 &&
-    Number.isInteger(tokens) &&
-    tokens > 0 &&
+    requestsValid &&
+    tokensValid &&
     !submitting;
 
   const submit = async () => {
@@ -202,7 +205,10 @@ export function GrantApiAccessDialog({
                 id="grant-requests"
                 type="number"
                 min={1}
+                max={defaults.maxDailyRequestLimit}
                 value={requestLimit}
+                aria-invalid={!requestsValid}
+                aria-describedby="grant-limits-hint"
                 onChange={(event) => setRequestLimit(event.target.value)}
               />
             </div>
@@ -212,11 +218,21 @@ export function GrantApiAccessDialog({
                 id="grant-tokens"
                 type="number"
                 min={1}
+                max={defaults.maxDailyTokenLimit}
                 value={tokenLimit}
+                aria-invalid={!tokensValid}
+                aria-describedby="grant-limits-hint"
                 onChange={(event) => setTokenLimit(event.target.value)}
               />
             </div>
           </div>
+          <p
+            id="grant-limits-hint"
+            className={`text-xs ${requestsValid && tokensValid ? "text-muted-foreground" : "text-destructive"}`}
+          >
+            Whole numbers up to {defaults.maxDailyRequestLimit.toLocaleString("en-CA")} requests and{" "}
+            {defaults.maxDailyTokenLimit.toLocaleString("en-CA")} tokens a day.
+          </p>
 
           {error && (
             <p className="text-sm text-destructive" role="alert">

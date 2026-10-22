@@ -34,7 +34,12 @@ const revokedGrant: ApiAccessGrantRow = {
 function renderView(overrides: Partial<React.ComponentProps<typeof ApiAccessAdminView>> = {}) {
   const props: React.ComponentProps<typeof ApiAccessAdminView> = {
     grants: [activeGrant],
-    defaults: { dailyRequestLimit: 200, dailyTokenLimit: 200_000 },
+    defaults: {
+      dailyRequestLimit: 200,
+      dailyTokenLimit: 200_000,
+      maxDailyRequestLimit: 5_000,
+      maxDailyTokenLimit: 5_000_000,
+    },
     includeInactive: false,
     onIncludeInactiveChange: vi.fn(),
     isLoading: false,
@@ -116,6 +121,34 @@ describe("ApiAccessAdminView", () => {
       }),
     );
     expect(searchGrantableUsers).toHaveBeenCalledWith("nia");
+  });
+
+  // #2041 review: limits above the server's caps are caught here, not left to a generic 400.
+  it("won't grant limits above the server's caps, and says what they are", async () => {
+    renderView({
+      initialPerson: {
+        id: "s1",
+        name: "Sam Student",
+        email: "sam@student.ubc.ca",
+        role: "STUDENT",
+      },
+    });
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Purpose"), { target: { value: "Thesis" } });
+    const give = within(dialog).getByRole("button", { name: "Give access" });
+    expect(give).toBeEnabled();
+
+    const requests = within(dialog).getByLabelText("Requests / day");
+    fireEvent.change(requests, { target: { value: "6000" } });
+    expect(give).toBeDisabled();
+    expect(requests).toHaveAttribute("max", "5000");
+    expect(requests).toHaveAttribute("aria-invalid", "true");
+    expect(
+      within(dialog).getByText(/up to 5,000 requests and 5,000,000 tokens a day/),
+    ).toBeInTheDocument();
+
+    fireEvent.change(requests, { target: { value: "5000" } });
+    expect(give).toBeEnabled();
   });
 
   it("opens the dialog for a person linked from the users table and shows a refusal", async () => {

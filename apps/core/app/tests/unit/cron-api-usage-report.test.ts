@@ -52,7 +52,7 @@ function grant(userId: string, overrides: GrantOverrides = {}) {
 /** `counted` rows, then `refused` rows, as the two groupBy calls return them. */
 function usage(
   counted: Array<{ userId: string; requests: number; tokens: number | null }>,
-  refused: Array<{ userId: string; requests: number }> = [],
+  refused: Array<{ userId: string; requests: number; status?: 429 | 503 }> = [],
 ) {
   mocks.groupBy
     .mockResolvedValueOnce(
@@ -63,7 +63,11 @@ function usage(
       })),
     )
     .mockResolvedValueOnce(
-      refused.map((r) => ({ userId: r.userId, _count: { _all: r.requests } })),
+      refused.map((r) => ({
+        userId: r.userId,
+        status: r.status ?? 429,
+        _count: { _all: r.requests },
+      })),
     );
 }
 
@@ -107,7 +111,32 @@ describe("collectApiUsage", () => {
     );
   });
 
-  it("flags heavy use at the threshold of either limit, or any refusal, and lists it first", async () => {
+  // #2042 review: being turned away while the models were busy can happen at
+  // any level of use, so on its own it is reported but not heavy use.
+  it("reports busy refusals apart from over-limit ones, and only the latter are heavy", async () => {
+    usage(
+      [{ userId: "busy", requests: 3, tokens: 500 }],
+      [
+        { userId: "busy", requests: 2, status: 503 },
+        { userId: "limited", requests: 1, status: 429 },
+        { userId: "limited", requests: 4, status: 503 },
+      ],
+    );
+    mocks.grantFindMany.mockResolvedValue([grant("busy"), grant("limited")]);
+
+    const lines = await collectApiUsage(NOW, 80);
+
+    expect(lines.map((l) => [l.email, l.refused, l.busy, l.heavy])).toEqual([
+      ["limited@student.ubc.ca", 1, 4, true],
+      ["busy@student.ubc.ca", 0, 2, false],
+    ]);
+    expect(mocks.groupBy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ by: ["userId", "status"] }),
+    );
+  });
+
+  it("flags heavy use at the threshold of either limit, or an over-limit refusal, and lists it first", async () => {
     usage(
       [
         { userId: "light", requests: 10, tokens: 1_000 },
@@ -249,6 +278,7 @@ describe("buildApiUsageReportEmail", () => {
     tokens: 5_000,
     tokenLimit: 200_000,
     refused: 2,
+    busy: 3,
     heavy: true,
   };
 
@@ -260,7 +290,9 @@ describe("buildApiUsageReportEmail", () => {
       manageUrl: "https://my.eduai.test/admin/api-access",
     });
     expect(email.subject).toBe("[EduAI] API key use: 1 person near their limit");
-    expect(email.text).toContain("190/200 requests, 5,000/200,000 tokens, 2 refused (HEAVY USE)");
+    expect(email.text).toContain(
+      "190/200 requests, 5,000/200,000 tokens, 2 over limit, 3 turned away while busy (HEAVY USE)",
+    );
     expect(email.text).toContain("https://my.eduai.test/admin/api-access");
     expect(email.html).toContain("Sam &lt;b&gt;Student&lt;/b&gt;");
     expect(email.html).not.toContain("<b>Student</b>");

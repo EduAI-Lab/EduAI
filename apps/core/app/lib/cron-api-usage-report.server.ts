@@ -3,8 +3,10 @@
  *
  * Emails a summary of the last 24 hours when there was any use, and flags heavy
  * use: a person at or above `heavyUsePercent` of a daily limit, or with
- * requests refused for being over a limit or the concurrency cap. Heavy use is
- * also written to Admin → Logs.
+ * requests refused for being over a limit. Requests turned away only because
+ * the models were busy (503) are reported but are not heavy use: they can
+ * happen at any level of use (#2042 review). Heavy use is also written to
+ * Admin → Logs.
  *
  * Env:
  *   API_USAGE_REPORT_EMAILS  recipients (comma-separated); default the active admins
@@ -24,8 +26,12 @@ export const API_USAGE_REPORT_JOB = "api-usage-report";
 
 const HEAVY_USE_CODE = "API_ACCESS_HEAVY_USE";
 
-/** Statuses of requests the limits turned away; they don't use up the allowance. */
-const REFUSED_STATUSES = [429, 503];
+/** Turned away for being over a daily limit. */
+const OVER_LIMIT_STATUS = 429;
+/** Turned away because the granted-key slots or the models were busy. */
+const BUSY_STATUS = 503;
+/** Refused requests don't use up the allowance. */
+const REFUSED_STATUSES = [OVER_LIMIT_STATUS, BUSY_STATUS];
 
 async function reportRecipients(): Promise<string[]> {
   const configured = (process.env.API_USAGE_REPORT_EMAILS ?? "")
@@ -59,14 +65,19 @@ export async function collectApiUsage(
       _sum: { totalTokens: true },
     }),
     prisma.apiRequestLog.groupBy({
-      by: ["userId"],
+      by: ["userId", "status"],
       where: { ...window, status: { in: REFUSED_STATUSES } },
       _count: { _all: true },
     }),
   ]);
 
-  const refusedBy = new Map(refused.map((row) => [row.userId, row._count._all]));
-  const userIds = [...new Set([...counted.map((r) => r.userId), ...refusedBy.keys()])];
+  const overLimitBy = new Map<string, number>();
+  const busyBy = new Map<string, number>();
+  for (const row of refused) {
+    const into = row.status === OVER_LIMIT_STATUS ? overLimitBy : busyBy;
+    into.set(row.userId, (into.get(row.userId) ?? 0) + row._count._all);
+  }
+  const userIds = [...new Set([...counted.map((r) => r.userId), ...refused.map((r) => r.userId)])];
   if (userIds.length === 0) return [];
 
   const grants = await prisma.apiAccessGrant.findMany({
@@ -86,9 +97,9 @@ export async function collectApiUsage(
     if (!grant) continue;
     const requests = countedBy.get(userId)?._count._all ?? 0;
     const tokens = countedBy.get(userId)?._sum.totalTokens ?? 0;
-    const refusedCount = refusedBy.get(userId) ?? 0;
+    const overLimit = overLimitBy.get(userId) ?? 0;
     const heavy =
-      refusedCount > 0 ||
+      overLimit > 0 ||
       requests * 100 >= grant.dailyRequestLimit * heavyUsePercent ||
       tokens * 100 >= grant.dailyTokenLimit * heavyUsePercent;
     lines.push({
@@ -99,7 +110,8 @@ export async function collectApiUsage(
       requestLimit: grant.dailyRequestLimit,
       tokens,
       tokenLimit: grant.dailyTokenLimit,
-      refused: refusedCount,
+      refused: overLimit,
+      busy: busyBy.get(userId) ?? 0,
       heavy,
     });
   }

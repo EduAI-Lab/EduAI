@@ -49,6 +49,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     defaults: {
       dailyRequestLimit: DEFAULT_API_ACCESS_DAILY_REQUEST_LIMIT,
       dailyTokenLimit: DEFAULT_API_ACCESS_DAILY_TOKEN_LIMIT,
+      maxDailyRequestLimit: MAX_API_ACCESS_DAILY_REQUEST_LIMIT,
+      maxDailyTokenLimit: MAX_API_ACCESS_DAILY_TOKEN_LIMIT,
     },
   });
 }

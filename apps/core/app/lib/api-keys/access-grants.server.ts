@@ -80,9 +80,34 @@ export type ApiAccessLimitResult =
   | { ok: false; limit: "requests" | "tokens"; usage: ApiUsage; retryAfter: number };
 
 /**
+ * When enough of the window's requests (oldest first) have aged out for the
+ * user to be back under both limits: past the request limit that is the
+ * (requests - limit + 1)th oldest row, past the token limit the row at which
+ * the tokens left drop below it. Null if the rows don't get there (they were
+ * written between the two reads); the caller then falls back to the oldest.
+ */
+function freesAtMs(
+  rows: ReadonlyArray<{ createdAt: Date; totalTokens: number | null }>,
+  usage: ApiUsage,
+  grant: ActiveApiAccessGrant,
+): number | null {
+  let requests = usage.requests;
+  let tokens = usage.tokens;
+  for (const row of rows) {
+    requests -= 1;
+    tokens -= row.totalTokens ?? 0;
+    if (requests < grant.dailyRequestLimit && tokens < grant.dailyTokenLimit) {
+      return row.createdAt.getTime() + API_ACCESS_USAGE_WINDOW_MS;
+    }
+  }
+  return null;
+}
+
+/**
  * Whether the grant still has room in its rolling 24-hour window. When it
- * doesn't, `retryAfter` (seconds) is when the oldest request in the window
- * drops out of it: the earliest moment anything frees up.
+ * doesn't, `retryAfter` (seconds) is when enough requests have aged out of the
+ * window for the user to be under both limits again (#2040 review: it used to
+ * be the oldest request alone, which need not free enough tokens).
  */
 export async function checkApiAccessLimits(
   grant: ActiveApiAccessGrant,
@@ -96,12 +121,15 @@ export async function checkApiAccessLimits(
   else if (usage.tokens >= grant.dailyTokenLimit) limit = "tokens";
   if (!limit) return { ok: true, usage };
 
-  const oldest = await prisma.apiRequestLog.findFirst({
+  // At most a limit's worth of rows, and only two columns of each.
+  const rows = await prisma.apiRequestLog.findMany({
     where: countedSince(grant.userId, since),
     orderBy: { createdAt: "asc" },
-    select: { createdAt: true },
+    select: { createdAt: true, totalTokens: true },
   });
-  const freesAt = (oldest?.createdAt.getTime() ?? now.getTime()) + API_ACCESS_USAGE_WINDOW_MS;
+  const freesAt =
+    freesAtMs(rows, usage, grant) ??
+    (rows[0]?.createdAt.getTime() ?? now.getTime()) + API_ACCESS_USAGE_WINDOW_MS;
   const retryAfter = Math.max(1, Math.ceil((freesAt - now.getTime()) / 1000));
   return { ok: false, limit, usage, retryAfter };
 }
@@ -128,6 +156,10 @@ export type CreateApiAccessGrantInput = {
 /**
  * Give a non-admin API access. Refuses admins (they already have it), inactive
  * accounts, and users who already hold an active grant (edit or revoke that one).
+ *
+ * The "already has access" check and the insert run in one transaction under a
+ * per-user advisory lock, so two concurrent grants (a double-clicked "Give
+ * access") can't both pass the check (#2040 review).
  */
 export async function createApiAccessGrant(
   input: CreateApiAccessGrantInput,
@@ -154,16 +186,25 @@ export async function createApiAccessGrant(
   if (!user.isActive) {
     throw new ApiAccessGrantError("This account is deactivated", 400);
   }
-  if (await getActiveApiAccessGrant(input.userId, now)) {
-    throw new ApiAccessGrantError("This user already has API access", 409);
-  }
 
-  return prisma.apiAccessGrant.create({ data: input });
+  return prisma.$transaction(async (tx) => {
+    // Held until the transaction ends. `$executeRaw`, not `$queryRaw`: the lock
+    // function returns `void`, which Prisma can't deserialize.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`api-access-grant:${input.userId}`}))`;
+    const existing = await tx.apiAccessGrant.findFirst({
+      where: { userId: input.userId, revokedAt: null, expiresAt: { gt: now } },
+      select: { id: true },
+    });
+    if (existing) throw new ApiAccessGrantError("This user already has API access", 409);
+    return tx.apiAccessGrant.create({ data: input });
+  });
 }
 
 /**
- * End a grant now. The user's keys are disabled too, so a later grant starts
- * with fresh keys rather than reviving old ones that may have been shared.
+ * End a grant now. Any other active grant the user holds ends too, so revoking
+ * always leaves them without access, and their keys are disabled, so a later
+ * grant starts with fresh keys rather than reviving old ones that may have been
+ * shared.
  */
 export async function revokeApiAccessGrant(
   grantId: string,
@@ -177,6 +218,10 @@ export async function revokeApiAccessGrant(
   const [revoked] = await prisma.$transaction([
     prisma.apiAccessGrant.update({
       where: { id: grantId },
+      data: { revokedAt: now, revokedById },
+    }),
+    prisma.apiAccessGrant.updateMany({
+      where: { userId: grant.userId, revokedAt: null, expiresAt: { gt: now } },
       data: { revokedAt: now, revokedById },
     }),
     prisma.apikey.updateMany({
@@ -193,7 +238,14 @@ export type ApiAccessGrantSummary = ApiAccessGrant & {
   usageLast24h: ApiUsage;
 };
 
-/** Grants for the admin view, newest first, each with its last-24h usage. */
+/** The most grants the admin list returns; revoked and ended ones pile up over terms. */
+export const MAX_LISTED_API_ACCESS_GRANTS = 500;
+
+/**
+ * Grants for the admin view, newest first, each with its last-24h usage. Usage
+ * comes from one grouped query for all the listed users (#2040 review: it was
+ * one query per grant).
+ */
 export async function listApiAccessGrants(
   { includeInactive = false }: { includeInactive?: boolean } = {},
   now: Date = new Date(),
@@ -201,14 +253,33 @@ export async function listApiAccessGrants(
   const grants = await prisma.apiAccessGrant.findMany({
     where: includeInactive ? {} : { revokedAt: null, expiresAt: { gt: now } },
     orderBy: { createdAt: "desc" },
+    take: MAX_LISTED_API_ACCESS_GRANTS,
     include: { user: { select: { id: true, name: true, email: true, role: true } } },
   });
+  if (grants.length === 0) return [];
+
   const since = new Date(now.getTime() - API_ACCESS_USAGE_WINDOW_MS);
-  return Promise.all(
-    grants.map(async (grant) => ({
-      ...grant,
-      active: grant.revokedAt === null && grant.expiresAt.getTime() > now.getTime(),
-      usageLast24h: await getApiUsageSince(grant.userId, since),
-    })),
+  const userIds = [...new Set(grants.map((grant) => grant.userId))];
+  const usageRows = await prisma.apiRequestLog.groupBy({
+    by: ["userId"],
+    where: {
+      userId: { in: userIds },
+      createdAt: { gte: since },
+      status: { notIn: UNCOUNTED_STATUSES },
+    },
+    _count: { _all: true },
+    _sum: { totalTokens: true },
+  });
+  const usageBy = new Map(
+    usageRows.map((row) => [
+      row.userId,
+      { requests: row._count._all, tokens: row._sum.totalTokens ?? 0 },
+    ]),
   );
+
+  return grants.map((grant) => ({
+    ...grant,
+    active: grant.revokedAt === null && grant.expiresAt.getTime() > now.getTime(),
+    usageLast24h: usageBy.get(grant.userId) ?? { requests: 0, tokens: 0 },
+  }));
 }

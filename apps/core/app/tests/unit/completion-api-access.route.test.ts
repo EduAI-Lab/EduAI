@@ -62,9 +62,10 @@ vi.mock("~/lib/api-keys/access-grants.server", () => ({
   checkApiAccessLimits: vi.fn(),
 }));
 
-vi.mock("~/lib/api-keys/request-log.server", () => ({
-  startApiRequestLog: vi.fn(),
-}));
+vi.mock("~/lib/api-keys/request-log.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/api-keys/request-log.server")>();
+  return { ...actual, startApiRequestLog: vi.fn() };
+});
 
 vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
@@ -120,6 +121,7 @@ function mockStream() {
 }
 
 const logger = {
+  begin: vi.fn(),
   setModel: vi.fn(),
   setUsage: vi.fn(),
   finish: vi.fn(),
@@ -162,6 +164,7 @@ beforeEach(() => {
 
   resetGrantedKeySlots();
   vi.mocked(startApiRequestLog).mockReturnValue(logger as never);
+  logger.begin.mockResolvedValue(true);
   vi.mocked(checkApiAccessLimits).mockResolvedValue({
     ok: true,
     usage: { requests: 0, tokens: 0 },
@@ -270,6 +273,54 @@ describe("POST /api/completion with API access grants (#2039)", () => {
       "/api/completion",
     );
     expect(logger.finish).toHaveBeenCalledWith(res.status);
+  });
+
+  // #2040 review: a request is recorded, charged an estimate, before it can
+  // reach a model, so aborted streams can't slip past the limits.
+  it("records a granted request with its token estimate before taking an AI slot", async () => {
+    asKeyCaller("STUDENT", true);
+    mockStream();
+    await action(
+      makeRequest(
+        baseBody({
+          systemPrompt: "x".repeat(400),
+          messages: [{ role: "user", content: "y".repeat(400) }],
+          maxTokens: 1_000,
+        }),
+      ),
+    );
+    const [estimate] = logger.begin.mock.calls[0] as [number];
+    // About 800 prompt characters (~200 tokens) plus every allowed output token.
+    expect(estimate).toBeGreaterThan(1_200);
+    expect(estimate).toBeLessThan(1_300);
+    expect(logger.begin.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(acquireAiAdmission).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("charges the default output budget when maxTokens is not given", async () => {
+    asKeyCaller("STUDENT", true);
+    mockStream();
+    await action(makeRequest(baseBody()));
+    expect(logger.begin.mock.calls[0][0]).toBeGreaterThanOrEqual(8_192);
+  });
+
+  it("refuses a granted request it could not record, and frees its slot", async () => {
+    asKeyCaller("STUDENT", true);
+    logger.begin.mockResolvedValue(false);
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(503);
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+    expect(streamText).not.toHaveBeenCalled();
+    expect(getGrantedKeyInflight()).toBe(0);
+  });
+
+  it("still serves an admin's key when its row could not be recorded", async () => {
+    asKeyCaller("ADMIN", false);
+    logger.begin.mockResolvedValue(false);
+    mockStream();
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).toBe(200);
   });
 
   it("does not log cookie-session requests", async () => {
