@@ -15,6 +15,7 @@
  */
 import { useEffect, useId, useRef, useState, type ElementType, type KeyboardEvent } from "react";
 import {
+  IconArrowLeft,
   IconArrowUp,
   IconMessagePlus,
   IconSettings,
@@ -90,6 +91,34 @@ export function HelpAssistantHeaderButton({
       <IconSparkles className="size-4" aria-hidden />
       <span className="hidden sm:inline">Ask {ASSISTANT_DISPLAY_NAME}</span>
     </Button>
+  );
+}
+
+/** Settings stay same-origin in Core, so an extension links there instead. */
+function CoreSettingsNotice({ coreUrl, onBack }: { coreUrl: string; onBack: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onBack} className="gap-1.5 px-2">
+          <IconArrowLeft className="size-4" aria-hidden />
+          Back to conversation
+        </Button>
+      </div>
+      <div className="flex flex-col gap-3 px-4 py-3 text-sm">
+        <p className="text-muted-foreground leading-relaxed">
+          {ASSISTANT_DISPLAY_NAME}'s provider, model and your API key are managed in EduAI Core.
+          Open {ASSISTANT_DISPLAY_NAME} there and select the gear to change them.
+        </p>
+        <a
+          href={coreUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-primary-text underline-offset-2 hover:underline"
+        >
+          Open EduAI Core
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -362,7 +391,11 @@ export function HelpAssistantWidget({
           </div>
 
           {store.view === "settings" ? (
-            <AssistantSettingsPane onBack={() => setAssistantView("chat")} />
+            coreUrl ? (
+              <CoreSettingsNotice coreUrl={coreUrl} onBack={() => setAssistantView("chat")} />
+            ) : (
+              <AssistantSettingsPane onBack={() => setAssistantView("chat")} />
+            )
           ) : (
             <>
               <div

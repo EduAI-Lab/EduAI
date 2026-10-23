@@ -154,7 +154,16 @@ export const middleware: Route.MiddlewareFunction[] = [
       return blocked;
     }
 
-    const response = await next();
+    let response: Response;
+    try {
+      response = await next();
+    } catch (error) {
+      // A thrown 401/403/redirect still needs the CORS headers, or the extension sees an opaque failure.
+      if (corsOrigin && error instanceof Response) {
+        applyAssistantCorsHeaders(error.headers, corsOrigin);
+      }
+      throw error;
+    }
     if (corsOrigin) applyAssistantCorsHeaders(response.headers, corsOrigin);
     const isHtml =
       response.headers.get("content-type")?.toLowerCase().includes("text/html") ?? false;

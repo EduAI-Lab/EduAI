@@ -56,18 +56,51 @@ describe("assistant CORS", () => {
     expect(response.headers.get("Vary")).toContain("Origin");
   });
 
-  it("covers the gate and the settings endpoints", async () => {
-    for (const path of [
-      "/api/assistant/gate",
-      "/api/assistant/settings",
-      "/api/assistant/settings/models",
-      "/api/assistant/settings/reset",
-    ]) {
-      const response = await run(
-        new Request(`https://eduai.example${path}`, { headers: { Origin: QUESTION_MAKER } }),
-      ).res;
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe(QUESTION_MAKER);
-    }
+  it("covers the gate", async () => {
+    const response = await run(
+      new Request("https://eduai.example/api/assistant/gate", {
+        headers: { Origin: QUESTION_MAKER },
+      }),
+    ).res;
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(QUESTION_MAKER);
+  });
+
+  it("labels a thrown Response too", async () => {
+    const next = vi.fn(async () => {
+      throw new Response(null, { status: 401 });
+    });
+    const thrown = await run(
+      new Request("https://eduai.example/api/assistant/gate", {
+        headers: { Origin: AI_TUTOR },
+      }),
+      next,
+    ).res.then(
+      () => null,
+      (error: Response) => error,
+    );
+    expect(thrown).toBeInstanceOf(Response);
+    expect(thrown?.headers.get("Access-Control-Allow-Origin")).toBe(AI_TUTOR);
+  });
+
+  it.each([
+    "/api/assistant/settings",
+    "/api/assistant/settings/models",
+    "/api/assistant/settings/reset",
+  ])("keeps %s same-origin", async (path) => {
+    const read = await run(
+      new Request(`https://eduai.example${path}`, { headers: { Origin: AI_TUTOR } }),
+    ).res;
+    expect(read.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    const { next, res } = run(
+      new Request(`https://eduai.example${path}`, {
+        method: "POST",
+        headers: { Origin: AI_TUTOR, Cookie: COOKIE, "Content-Type": "application/json" },
+        body: "{}",
+      }),
+    );
+    expect((await res).status).toBe(403);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("gives an unlisted origin no CORS headers", async () => {
@@ -103,7 +136,8 @@ describe("assistant CORS", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("allows nothing when the extension URLs are unset", async () => {
+  it("allows nothing, and warns, when the extension URLs are unset", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("VITE_AI_TUTOR_URL", "");
     vi.stubEnv("VITE_QUESTION_MAKER_URL", "");
     const response = await run(
@@ -113,5 +147,7 @@ describe("assistant CORS", () => {
       }),
     ).res;
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });

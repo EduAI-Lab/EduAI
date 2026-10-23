@@ -171,4 +171,38 @@ describe("ExtensionHelpAssistant", () => {
       ),
     );
   });
+
+  it("retries a failed gate read instead of hiding Penny until reload", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchMock.mockResolvedValueOnce(json({ error: "Too many requests" }, 429));
+      fetchMock.mockResolvedValueOnce(gate());
+      renderAssistant();
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("button", { name: bubbleName })).toBeNull();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await screen.findByRole("button", { name: bubbleName })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-reads the gate when the tab becomes visible again", async () => {
+    fetchMock.mockImplementation(async () => gate());
+    renderAssistant();
+    await screen.findByRole("button", { name: bubbleName });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("links to Core for settings instead of editing them cross-origin", async () => {
+    fetchMock.mockResolvedValueOnce(gate());
+    renderAssistant();
+    fireEvent.click(await screen.findByRole("button", { name: bubbleName }));
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const link = screen.getByRole("link", { name: "Open EduAI Core" });
+    expect(link).toHaveAttribute("href", CORE);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });
