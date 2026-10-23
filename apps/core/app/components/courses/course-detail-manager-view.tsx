@@ -88,6 +88,7 @@ import { CourseStudentVisibilitySettings } from "~/components/courses/course-stu
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
 import { MaterialTopicsEditor } from "~/components/courses/material-topics-editor";
+import { TopicFiles } from "~/components/courses/topic-files";
 import type { MaterialTopic, MaterialTopicChoice } from "~/hooks/api/use-course-materials";
 import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
@@ -561,6 +562,14 @@ export function CourseDetailManagerView({
   // #1965: the topics a material can be filed under — accepted ones only. An
   // unreviewed suggestion is approved on the Topics tab first, and the SYSTEM
   // placeholder is not a subject.
+  // #1997: accepted topics with no file filed under them, flagged on the Topics tab.
+  const topicsWithoutFiles = topics.filter(
+    (t) =>
+      (t.reviewStatus ?? "ACCEPTED") === "ACCEPTED" &&
+      t.origin !== "SYSTEM" &&
+      (t.sourceCount ?? t.sources?.length ?? 0) === 0,
+  ).length;
+
   const fileableTopics: MaterialTopic[] = topics
     .filter((t) => (t.reviewStatus ?? "ACCEPTED") === "ACCEPTED" && t.origin !== "SYSTEM")
     .map((t) => ({ id: t.id, name: t.name }));
@@ -1697,6 +1706,14 @@ export function CourseDetailManagerView({
                 </form>
               </PolicyTooltip>
             )}
+            {/* #1997: topics no file is filed under yet, so they can be filled. */}
+            {topicsWithoutFiles > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {topicsWithoutFiles} {topicsWithoutFiles === 1 ? "topic has" : "topics have"} no
+                files yet. Use <span className="font-medium">Link files</span> on a topic to add
+                some.
+              </p>
+            )}
             {topics.length === 0 ? (
               <EmptyState title="No topics yet." size="sm" />
             ) : (
@@ -1709,8 +1726,19 @@ export function CourseDetailManagerView({
                           <span className="truncate">{t.name}</span>
                           <TopicOriginBadge topic={t} />
                         </span>
-                        {/* #1624: which material produced this suggestion. */}
-                        <TopicSourceList topic={t} />
+                        {/* #1624: which material produced this suggestion. #1997: an
+                            accepted topic lists its files instead, to link and unlink. */}
+                        {isSuggestion(t) || t.origin === "SYSTEM" || !courseId ? (
+                          <TopicSourceList topic={t} />
+                        ) : (
+                          <TopicFiles
+                            courseId={courseId}
+                            topic={t}
+                            onSetMaterialTopics={onSetMaterialTopics}
+                            canEditFile={canRenameMaterial}
+                            onChanged={onRefreshTopics}
+                          />
+                        )}
                       </span>
                       {/* #1624: an unreviewed suggestion gets rename/approve/merge/
                           dismiss instead of the plain delete — dismissing is a soft

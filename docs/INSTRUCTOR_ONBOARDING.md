@@ -112,7 +112,8 @@ Uploaded material is chunked and indexed before course-aware chat can use it. Wa
 Each file can have up to three topics, shown as tags under its name on the **Materials** tab. The first tag is the file's main topic.
 
 - **Automatic:** once a file finishes processing, EduAI files it under the existing topic that fits it best. It only uses topics you have approved, and it never creates a topic by itself. A file that fits nothing shows **No topic**.
-- **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
+- **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. Search the list to find a topic quickly. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
+- **From the topic's side:** on the **Topics** tab, each approved topic lists its files. Select **✕** on a file to unlink it, or **Link files** to tick the files that belong under the topic. A topic added this way goes after a file's existing topics, so its main topic stays the same. A file that already has three topics can't take another until you remove one. Topics with no files are marked **No files yet**, and the tab says how many there are.
 - **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Suggestions are hidden from students until you approve them. Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
 
 ### What students see

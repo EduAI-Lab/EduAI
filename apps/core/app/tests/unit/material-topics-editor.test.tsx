@@ -42,6 +42,43 @@ describe("MaterialTopicsEditor (#1965)", () => {
     );
   });
 
+  // #1997: the list used to sit in a short box that showed only about four
+  // topics; every topic is now reachable by search, and the count is shown.
+  it("lists every course topic, searchable, with a count", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `m${i}`,
+      name: `Week ${i + 1} topic`,
+    }));
+    render(<MaterialTopicsEditor topics={[]} courseTopics={many} onSave={vi.fn()} />);
+    openPicker();
+
+    const list = screen.getByRole("group", { name: "Course topics" });
+    expect(list.querySelectorAll('button[role="checkbox"]')).toHaveLength(12);
+    expect(screen.getByText("12 topics")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search topics"), { target: { value: "week 1" } });
+    // "Week 1", "Week 10", "Week 11", "Week 12".
+    expect(list.querySelectorAll('button[role="checkbox"]')).toHaveLength(4);
+    expect(screen.getByText("4 of 12 topics")).toBeInTheDocument();
+    expect(screen.getByLabelText("Week 12 topic")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search topics"), { target: { value: "zzz" } });
+    expect(screen.getByText("No topic matches.")).toBeInTheDocument();
+  });
+
+  it("keeps a picked topic picked while searching for another", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<MaterialTopicsEditor topics={[]} courseTopics={COURSE_TOPICS} onSave={onSave} />);
+    openPicker();
+    fireEvent.click(screen.getByLabelText("Limits"));
+    fireEvent.change(screen.getByLabelText("Search topics"), { target: { value: "ser" } });
+    fireEvent.click(screen.getByLabelText("Series"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith([{ topicId: "t1" }, { topicId: "t4" }]),
+    );
+  });
+
   it("stops at three topics", () => {
     render(<MaterialTopicsEditor topics={[]} courseTopics={COURSE_TOPICS} onSave={vi.fn()} />);
 

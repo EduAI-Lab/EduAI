@@ -10,7 +10,7 @@
  * view's own wiring, not their internals — mirrors the CourseMaterialsUpload
  * stub already used in CourseDetail.test.tsx.
  */
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -412,6 +412,44 @@ describe("CourseDetailManagerView — topics tab", () => {
     renderView({ topics: [] });
     clickTab(/topics/i);
     expect(screen.getByText("No topics yet.")).toBeInTheDocument();
+  });
+});
+
+describe("CourseDetailManagerView — topic files (#1997)", () => {
+  const WITH_FILES: CourseTopic = {
+    ...TOPIC,
+    id: "t-files",
+    name: "Recursion",
+    sources: [{ materialId: "m1", title: "Week 1 Reading" }],
+    sourceCount: 1,
+  };
+  const EMPTY: CourseTopic = {
+    ...TOPIC,
+    id: "t-empty",
+    name: "Graphs",
+    sources: [],
+    sourceCount: 0,
+  };
+
+  it("lists an accepted topic's files and counts the topics with none", () => {
+    renderView({ topics: [WITH_FILES, EMPTY] });
+    clickTab(/topics/i);
+    expect(screen.getByText("Week 1 Reading")).toBeInTheDocument();
+    expect(screen.getByText("No files yet")).toBeInTheDocument();
+    expect(screen.getByText(/1 topic has no\s+files yet/)).toBeInTheDocument();
+    // A suggestion's "From …" line is only for suggestions.
+    expect(screen.queryByText(/From Week 1 Reading/)).toBeNull();
+  });
+
+  it("offers Link files only when the viewer can change file topics", () => {
+    renderView({ topics: [EMPTY], onSetMaterialTopics: vi.fn() });
+    clickTab(/topics/i);
+    expect(screen.getByRole("button", { name: /link files/i })).toBeInTheDocument();
+    cleanup();
+
+    renderView({ topics: [EMPTY], onSetMaterialTopics: undefined });
+    clickTab(/topics/i);
+    expect(screen.queryByRole("button", { name: /link files/i })).toBeNull();
   });
 });
 
