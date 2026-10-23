@@ -701,6 +701,11 @@ model CourseTopicSource {
   /// Order of this topic among the material's topics; the lowest is its main
   /// topic (#1965). Ties (rows from before this column) fall back to createdAt.
   position   Int            @default(0)
+  /// How automatic matching filed this material under the topic (#1998); null
+  /// when a person made the link, or for links from before this column.
+  matchedBy       TopicMatchKind?
+  /// The model's own 0–100 estimate for an AI match; null otherwise.
+  matchConfidence Int?
   createdAt  DateTime       @default(now())
   topic      CourseTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
@@ -1255,6 +1260,14 @@ enum TopicOrigin {
 }
 
 /// Whether a topic still needs instructor review (#1624).
+/// How automatic matching chose a material's topic (#1998).
+enum TopicMatchKind {
+  /// The material's Canvas module name or first heading names the topic.
+  NAME
+  /// The model chose the topic from the course's list.
+  AI
+}
+
 enum TopicReviewStatus {
   ACCEPTED
   SUGGESTED

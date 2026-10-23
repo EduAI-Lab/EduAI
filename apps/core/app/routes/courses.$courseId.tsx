@@ -202,6 +202,7 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
     hasExtractedText: m.hasExtractedText,
     failureCode: m.failureCode ?? null,
     topics: m.topics,
+    topicsSetManually: m.topicsSetManually,
   };
 }
 

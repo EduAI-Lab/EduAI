@@ -1084,6 +1084,29 @@ describe("instructors choosing a material's topics (#1965)", () => {
     expect(row.topicsSetManuallyAt).not.toBeNull();
   });
 
+  // #1998: a link automatic matching made is labelled until a person saves
+  // the file's topics; saving (even unchanged) makes every link theirs.
+  it("clears an automatic match's label when a person saves the topics", async () => {
+    const topic = await acceptedTopic("Recursion");
+    const material = await seedMaterial({ checksum: "c-confirm", rawText: "x" });
+    await prisma.courseTopicSource.create({
+      data: {
+        topicId: topic.id,
+        materialId: material.id,
+        position: 0,
+        matchedBy: "AI",
+        matchConfidence: 70,
+      },
+    });
+
+    expect(await choose(material.id, [{ topicId: topic.id }])).toMatchObject({ status: "200" });
+
+    const link = await prisma.courseTopicSource.findUniqueOrThrow({
+      where: { topicId_materialId: { topicId: topic.id, materialId: material.id } },
+    });
+    expect(link).toMatchObject({ matchedBy: null, matchConfidence: null });
+  });
+
   it("reuses an existing topic for a typed near-duplicate name", async () => {
     await acceptedTopic("Loops");
     const material = await seedMaterial({ checksum: "c-plural", rawText: "x" });
