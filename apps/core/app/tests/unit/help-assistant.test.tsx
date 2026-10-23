@@ -27,8 +27,7 @@ import {
   BUBBLE_VISIBLE_ATTRIBUTE,
   HelpAssistant,
 } from "~/components/assistant/help-assistant";
-import { publishAssistantContext } from "~/components/assistant/assistant-events";
-import { resetAssistantStoreForTests } from "~/components/assistant/assistant-store";
+import { publishAssistantContext, resetAssistantStoreForTests } from "@eduai/ui/assistant";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const user = { id: "u1", role: "STUDENT" };

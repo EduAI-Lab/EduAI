@@ -135,6 +135,7 @@ export default [
   route("/api/e2e/seed", "routes/api/e2e.seed.ts"),
   route("/api/user-provider-settings", "routes/api/user-provider-settings.ts"),
   route("/api/assistant/ask", "routes/api/assistant.ask.ts"),
+  route("/api/assistant/gate", "routes/api/assistant.gate.ts"),
   route("/api/assistant/settings", "routes/api/assistant.settings.ts"),
   route("/api/assistant/settings/reset", "routes/api/assistant.settings.reset.ts"),
   route("/api/assistant/settings/models", "routes/api/assistant.settings.models.ts"),

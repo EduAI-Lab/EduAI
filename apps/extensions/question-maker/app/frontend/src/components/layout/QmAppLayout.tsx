@@ -20,6 +20,7 @@ import {
   PageHelpButton,
   type HistoryPayload,
 } from "@eduai/ui";
+import { ExtensionHelpAssistant } from "@eduai/ui/assistant";
 import {
   IconArrowLeft,
   IconBooks,
@@ -318,6 +319,11 @@ function QmAppLayoutInner() {
           </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           {bugReport ? <BugReportTriggerButton onClick={bugReport.openBugReport} /> : null}
+          <ExtensionHelpAssistant
+            coreUrl={getCoreUrl()}
+            coreCourseId={coreCourseId ?? null}
+            placement="floating"
+          />
           <PageTourButton
             platform="question-maker"
             pathname={pathname}

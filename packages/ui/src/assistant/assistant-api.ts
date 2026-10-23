@@ -1,14 +1,26 @@
 /**
- * @file Typed client calls for the assistant's endpoints (#1820, #1823).
+ * @file Typed client calls for the assistant's endpoints (#1820, #1823, #1958).
  *
- * Every response is parsed at this boundary. The settings shapes mirror
+ * Every response is parsed at this boundary. Calls go to Core: same-origin inside
+ * Core, cross-origin (CORS, with the Core session cookie) from an extension. The settings shapes mirror
  * `assistant-user-settings.server.ts`; no response here ever carries key material.
  */
 import { z } from "zod";
 
-import type { PublishedAssistantContext } from "~/lib/assistant/assistant-visibility";
+import type { PublishedAssistantContext } from "./shared";
 
 import { threadSourceSchema } from "./assistant-thread";
+
+let coreBaseUrl = "";
+
+/** Point every call at Core's origin. Inside Core this stays "" (same-origin). */
+export function setAssistantCoreUrl(url: string): void {
+  coreBaseUrl = url;
+}
+
+function coreApi(path: string): string {
+  return `${coreBaseUrl}${path}`;
+}
 
 const FALLBACK_ERROR = "Something went wrong. Please try again.";
 const NETWORK_ERROR = "Couldn't reach EduAI. Check your connection and try again.";
@@ -48,7 +60,7 @@ export async function askAssistant(input: {
 }): Promise<AskResult> {
   let response: Response;
   try {
-    response = await fetch("/api/assistant/ask", {
+    response = await fetch(coreApi("/api/assistant/ask"), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -112,7 +124,7 @@ async function settingsCall<T>(
 ): Promise<SettingsCallResult<T>> {
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(coreApi(url), {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       ...init,
@@ -162,4 +174,28 @@ export function fetchProviderModels(provider: string) {
     method: "POST",
     body: JSON.stringify({ provider }),
   });
+}
+
+const gateResponse = z.object({
+  gate: z.object({ mounted: z.boolean(), docs: z.boolean() }),
+  user: z.object({ id: z.string(), role: z.string().nullable() }),
+  context: z
+    .object({
+      courseId: z.string(),
+      materialId: z.null(),
+      label: z.string(),
+      materialScope: z.boolean(),
+    })
+    .nullable(),
+});
+
+export type AssistantGateResponse = z.infer<typeof gateResponse>;
+
+/**
+ * The gate snapshot for an app that has no Core root loader (an extension), plus
+ * the server-decided scope of the Core course the page is about, if any.
+ */
+export function fetchAssistantGate(courseId: string | null) {
+  const query = courseId ? `?courseId=${encodeURIComponent(courseId)}` : "";
+  return settingsCall(`/api/assistant/gate${query}`, gateResponse, { method: "GET" });
 }

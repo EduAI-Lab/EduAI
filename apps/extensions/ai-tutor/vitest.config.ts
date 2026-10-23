@@ -31,6 +31,11 @@ export default defineConfig({
         __dirname,
         "../../../packages/ui/src/bug-report-capture.ts",
       ),
+      "@eduai/ui/assistant/shared": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/assistant/shared.ts",
+      ),
+      "@eduai/ui/assistant": path.resolve(__dirname, "../../../packages/ui/src/assistant/index.ts"),
       "@eduai/ui": path.resolve(__dirname, "../../../packages/ui/src/index.ts"),
     },
   },
