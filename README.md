@@ -120,6 +120,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
 | [`ONBOARDING.md`](docs/ONBOARDING.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
+| [`implementations/extension-platform-design.md`](docs/implementations/extension-platform-design.md) | Proposed design for adding honours projects as extensions (#2000) — what Core owns vs the extension, scoped extension keys, the starter template, porting options and delivery order; decisions in [`extension-platform-review.md`](docs/implementations/extension-platform-review.md) |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deployment source-of-truth index for local development, s378, production, inference, backups, health checks, and rollback |

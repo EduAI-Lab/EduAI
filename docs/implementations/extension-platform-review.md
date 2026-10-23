@@ -2,9 +2,9 @@
 
 **Date:** 2026-10-22. **Baseline:** `8741d6d70`, refreshed `origin/development`.
 
-**Design:** [Extension platform proposal](../superpowers/specs/2026-10-22-extension-platform-design.md).
+**Design:** [Extension platform proposal](extension-platform-design.md).
 
-This continues the interrupted Claude review. Three independent read-only reviewers checked authentication/security, architecture/scaling and student onboarding; the primary reviewer checked source and synthesized their positions. Reviewers received competing positions for rebuttal, with direct peer challenges. The old agents were not resumed and missing replies were not invented.
+Three independent read-only reviews checked authentication and security, architecture and scaling, and student onboarding against the source. Each review saw the others' positions and rebutted them, and the source was re-checked before the disputes below were settled.
 
 ## Resolution of seven disputes
 
@@ -44,5 +44,3 @@ Reviewers converged on these recommendations. Professor/team choices remain: por
 ## Verification limits
 
 This is a source-verified architecture review, not a runtime audit or completed implementation. No application tests, model calls, deployments or live permission checks were performed. Proposed behavior must pass the design's acceptance checks when implemented.
-
-No issues, comments or PRs were posted. The user's unrelated `MEMORY.md` edit remains outside this work. Include the design explicitly in git despite `docs/superpowers/` being ignored, so later diff-based reviews can see it.

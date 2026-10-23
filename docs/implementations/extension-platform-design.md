@@ -4,7 +4,7 @@
 
 **Verified baseline:** `8741d6d70` (`origin/development`); `origin/main` was `b5de3921d`. Both include #2040.
 
-**Issue:** [#2000](https://github.com/EduAI-Lab/EduAI/issues/2000), epic #1731. [Review decisions and evidence](../../implementations/extension-platform-review.md).
+**Issue:** [#2000](https://github.com/EduAI-Lab/EduAI/issues/2000), epic #1731. [Review decisions and evidence](extension-platform-review.md).
 
 ## Recommendation
 
