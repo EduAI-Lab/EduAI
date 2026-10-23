@@ -118,6 +118,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | Variable | Default | Purpose |
 |---|---|---|
 | `EDUAI_DEPLOYMENT_MODE` | — | Must be `local` for auto-seeding and fixed demo users to run at all |
+| `EDUAI_DEV_QUICK_LOGIN` / `EDUAI_DEV_QUICK_LOGIN_PASSWORD` | off / — | Shared dev server only (#1900): `true` plus a password adds **Student / TA / Instructor** one-click buttons to the login page, signing in as `student1@`, `ta.cs@` and `instructor.cs@eduai.local`. The page only names the account; the server holds the password and re-checks that the account is active and not ADMIN or UNIT_ADMIN. There's no admin button. It only works when `BETTER_AUTH_URL`'s host is `dev.eduai.ok.ubc.ca` or loopback, so set in prod it does nothing but log `[dev-quick-login] … stays off`. The password must be those three accounts' password on that server. |
 | `EDUAI_ENABLE_LOCAL_DEMO` | — | Must be `true` alongside the above |
 | `EDUAI_LOCAL_SEED_PASSWORD` | — | Explicit fixture password; seeding refuses to run without it |
 | `E2E_SEED_SECRET` | — | Shared secret gating `POST /api/e2e/seed` and `/api/e2e/promote` |
