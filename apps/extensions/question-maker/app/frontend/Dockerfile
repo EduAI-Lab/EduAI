@@ -38,6 +38,8 @@ ENV VITE_API_URL=${VITE_API_URL} \
 
 RUN npm run build -w @eduai/types \
     && npm run build -w question-maker-frontend
+# Penny calls Core cross-origin (#1958), so the CSP must allow the Core origin.
+RUN sed -i "s|connect-src 'self'|connect-src 'self' ${VITE_CORE_URL%/}|" apps/extensions/question-maker/app/frontend/nginx.conf
 
 # Production stage
 FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6 AS production
@@ -50,7 +52,7 @@ RUN apk add --no-cache curl
 COPY --from=build /app/apps/extensions/question-maker/app/frontend/dist /usr/share/nginx/html
 
 # Copy nginx configuration
-COPY apps/extensions/question-maker/app/frontend/nginx.conf /etc/nginx/nginx.conf
+COPY --from=build /app/apps/extensions/question-maker/app/frontend/nginx.conf /etc/nginx/nginx.conf
 
 # Expose port
 EXPOSE 8080

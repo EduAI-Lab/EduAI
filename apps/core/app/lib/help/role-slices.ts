@@ -10,25 +10,13 @@
  * kinds of administrator see everything.
  */
 
-export const HELP_SLICES = ["student", "instructor", "admin"] as const;
+import { HELP_SLICES, helpSliceForRole, type HelpSlice } from "@eduai/ui/assistant/shared";
 
-export type HelpSlice = (typeof HELP_SLICES)[number];
+// Defined in the shared assistant module so the widget's intro examples use the same mapping.
+export { HELP_SLICES, helpSliceForRole, type HelpSlice };
 
 export function isHelpSlice(value: string): value is HelpSlice {
   return HELP_SLICES.some((slice) => slice === value);
-}
-
-/** The highest slice a platform role reaches. Unknown or missing roles get the student slice. */
-export function helpSliceForRole(role: string | null | undefined): HelpSlice {
-  switch (role) {
-    case "ADMIN":
-    case "UNIT_ADMIN":
-      return "admin";
-    case "INSTRUCTOR":
-      return "instructor";
-    default:
-      return "student";
-  }
 }
 
 /** Every slice a role may read, lowest first. Enforced server-side at query time. */

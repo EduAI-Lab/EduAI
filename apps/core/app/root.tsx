@@ -36,6 +36,11 @@ import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
 import { hasValidServiceKey } from "~/lib/auth/guards.server";
 import { loadAssistantGateSnapshot } from "~/lib/assistant/assistant-gate.server";
+import {
+  applyAssistantCorsHeaders,
+  assistantCorsOrigin,
+  assistantPreflightResponse,
+} from "~/lib/assistant/extension-cors.server";
 
 /**
  * Parse a URL-like value to its origin, skipping invalid or opaque (`null`)
@@ -98,6 +103,11 @@ export const middleware: Route.MiddlewareFunction[] = [
     const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
     const hasCookie = Boolean(request.headers.get("cookie"));
     const origin = request.headers.get("origin");
+    // #1958: an extension's Penny widget calling an assistant endpoint.
+    const corsOrigin = assistantCorsOrigin(request, url.pathname);
+    if (corsOrigin && request.method.toUpperCase() === "OPTIONS") {
+      return assistantPreflightResponse(corsOrigin);
+    }
 
     // Origin is the primary browser proof. Referer and Fetch Metadata are
     // fallback evidence for clients that omit Origin. Missing or malformed
@@ -109,7 +119,7 @@ export const middleware: Route.MiddlewareFunction[] = [
       const trusted = trustedMutationOrigins(url);
       let isSameOrigin = false;
       if (origin !== null) {
-        isSameOrigin = originMatchesTrusted(origin, trusted);
+        isSameOrigin = originMatchesTrusted(origin, trusted) || corsOrigin !== null;
       } else {
         const referer = request.headers.get("referer");
         if (referer !== null) {
@@ -144,7 +154,17 @@ export const middleware: Route.MiddlewareFunction[] = [
       return blocked;
     }
 
-    const response = await next();
+    let response: Response;
+    try {
+      response = await next();
+    } catch (error) {
+      // A thrown 401/403/redirect still needs the CORS headers, or the extension sees an opaque failure.
+      if (corsOrigin && error instanceof Response) {
+        applyAssistantCorsHeaders(error.headers, corsOrigin);
+      }
+      throw error;
+    }
+    if (corsOrigin) applyAssistantCorsHeaders(response.headers, corsOrigin);
     const isHtml =
       response.headers.get("content-type")?.toLowerCase().includes("text/html") ?? false;
     if (!isHtml) {

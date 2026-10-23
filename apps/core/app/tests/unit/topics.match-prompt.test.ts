@@ -49,7 +49,20 @@ describe("parseTopicMatchResponse (#1965)", () => {
     expect(parseTopicMatchResponse('{"match": " Sorting "}')).toEqual({
       kind: "match",
       name: "Sorting",
+      confidence: null,
     });
+  });
+
+  // #1998: the model's own confidence is kept, as a 0–100 whole number.
+  it.each([
+    ['{"match": "Sorting", "confidence": 72}', 72],
+    ['{"match": "Sorting", "confidence": 0.65}', 65],
+    ['{"match": "Sorting", "confidence": 100}', 100],
+    ['{"match": "Sorting", "confidence": 140}', null],
+    ['{"match": "Sorting", "confidence": -3}', null],
+    ['{"match": "Sorting", "confidence": "high"}', null],
+  ])("reads the confidence in %s as %s", (reply, confidence) => {
+    expect(parseTopicMatchResponse(reply)).toEqual({ kind: "match", name: "Sorting", confidence });
   });
 
   it("reads an explicit none", () => {
@@ -60,6 +73,7 @@ describe("parseTopicMatchResponse (#1965)", () => {
     expect(parseTopicMatchResponse('```json\n{"match": "Graphs"}\n```')).toEqual({
       kind: "match",
       name: "Graphs",
+      confidence: null,
     });
   });
 

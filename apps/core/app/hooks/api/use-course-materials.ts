@@ -49,6 +49,13 @@ export interface CourseMaterial {
 export interface MaterialTopic {
   id: string;
   name: string;
+  /**
+   * How automatic matching chose this topic (#1998): by the file's own module
+   * or heading name, or by the model. Absent or null when a person set it.
+   */
+  matchedBy?: "NAME" | "AI" | null;
+  /** The model's own 0–100 estimate for an AI match; a rough guide, not a measured accuracy. */
+  matchConfidence?: number | null;
 }
 
 /** An entry in a material's chosen topics: an existing topic, or a name to find or create. */

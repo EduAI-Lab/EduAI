@@ -47,7 +47,7 @@ import {
 } from "~/lib/assistant/assistant-gate.server";
 import { resolveCourseContext } from "~/lib/assistant/material-context.server";
 import { accessLevelFor } from "~/lib/auth/course-access.server";
-import { usePublishAssistantContext } from "~/components/assistant/assistant-events";
+import { usePublishAssistantContext } from "@eduai/ui/assistant";
 
 /**
  * #1821/#1822: whether the help assistant may ground answers in THIS course for
@@ -202,6 +202,7 @@ export function toUploadMaterial(m: CourseMaterialRow): UploadMaterial {
     hasExtractedText: m.hasExtractedText,
     failureCode: m.failureCode ?? null,
     topics: m.topics,
+    topicsSetManually: m.topicsSetManually,
   };
 }
 

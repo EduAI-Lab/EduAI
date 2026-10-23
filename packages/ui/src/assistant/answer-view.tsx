@@ -3,11 +3,14 @@
  * React text child — there is no `dangerouslySetInnerHTML` anywhere in this
  * component — so markup inside a model answer is shown as inert text.
  */
-import { Link } from "react-router";
+import type { ElementType } from "react";
 import { IconFileText } from "@tabler/icons-react";
 
 import { parseAnswer, safeSourceHref, type InlineSpan } from "./answer-blocks";
 import type { ThreadSource } from "./assistant-thread";
+
+const SOURCE_LINK_CLASS =
+  "inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-xs text-foreground transition-colors hover:bg-muted";
 
 function Inline({ spans }: { spans: InlineSpan[] }) {
   return (
@@ -67,8 +70,19 @@ export function AnswerView({ answer }: { answer: string }) {
   );
 }
 
-/** Cited pages. A URL that fails re-validation renders as plain text, never an href. */
-export function AnswerSources({ sources }: { sources: ThreadSource[] }) {
+/**
+ * Cited pages. A URL that fails re-validation renders as plain text, never an href.
+ * Cited paths are Core's; with `coreUrl` set (an extension) they open Core in a new tab.
+ */
+export function AnswerSources({
+  sources,
+  LinkComponent = "a",
+  coreUrl,
+}: {
+  sources: ThreadSource[];
+  LinkComponent?: ElementType;
+  coreUrl?: string;
+}) {
   if (sources.length === 0) return null;
   return (
     <div className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2">
@@ -86,13 +100,19 @@ export function AnswerSources({ sources }: { sources: ThreadSource[] }) {
           );
           return (
             <li key={`${source.id}-${source.url}`} className="max-w-full">
-              {href ? (
-                <Link
-                  to={href}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-xs text-foreground transition-colors hover:bg-muted"
+              {href && coreUrl ? (
+                <a
+                  href={`${coreUrl}${href}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={SOURCE_LINK_CLASS}
                 >
                   {content}
-                </Link>
+                </a>
+              ) : href ? (
+                <LinkComponent to={href} href={href} className={SOURCE_LINK_CLASS}>
+                  {content}
+                </LinkComponent>
               ) : (
                 <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                   {content}

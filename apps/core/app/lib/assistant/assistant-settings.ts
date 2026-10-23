@@ -2,13 +2,13 @@
  * @file Admin settings for the site-wide help assistant (#1817) — pure data, no
  * server deps, so the admin cards and the server reader share one definition.
  *
- * The persona name lives here too, in exactly one constant: "Penny" is a product
- * decision that can change again, so it appears in user-facing copy only and
- * never in routes, modules or setting keys.
+ * The persona name is defined once in `@eduai/ui/assistant/shared`, which Core and
+ * the extensions' widget share; it is re-exported here for Core's copy.
  */
 
-/** The assistant's user-facing name. Copy reads this; nothing else should. */
-export const ASSISTANT_DISPLAY_NAME = "Penny";
+import { ASSISTANT_DISPLAY_NAME } from "@eduai/ui/assistant/shared";
+
+export { ASSISTANT_DISPLAY_NAME };
 
 /** `SystemConfig.key` prefix for every assistant setting. */
 export const ASSISTANT_SETTING_PREFIX = "assistant.";

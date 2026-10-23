@@ -4,7 +4,6 @@
  */
 import { useMemo } from "react";
 import { IconBooks, IconLibrary, IconHelpCircle, IconSettings } from "@tabler/icons-react";
-import { useAutoStartTour } from "@eduai/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
 import { useQuestionStats } from "@/hooks/useQuestionStats";
@@ -36,8 +35,6 @@ const DIFF_COLORS = {
 };
 
 export default function DashboardPage() {
-  // First visit: the tour takes a new user to their courses and walks them through one.
-  useAutoStartTour("main");
   const { user } = useAuth();
   const { displayCourses, isLoading: coursesLoading } = useDisplayCourses();
   const { stats: questionStats } = useQuestionStats();

@@ -432,7 +432,7 @@ If you encounter issues not covered here:
 - [Canvas API Documentation](https://canvas.instructure.com/doc/api/)
 - [Canvas Quiz API](https://canvas.instructure.com/doc/api/quizzes.html)
 - [Canvas Question API](https://canvas.instructure.com/doc/api/quiz_questions.html)
-- [Question Maker Documentation](../README.md)
+- [Question Maker Documentation](../../README.md)
 
 ---
 

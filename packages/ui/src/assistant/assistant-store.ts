@@ -8,7 +8,7 @@
  */
 import { useSyncExternalStore } from "react";
 
-import type { PublishedAssistantContext } from "~/lib/assistant/assistant-visibility";
+import type { PublishedAssistantContext } from "./shared";
 
 import { askAssistant } from "./assistant-api";
 import {

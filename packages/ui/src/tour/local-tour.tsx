@@ -9,6 +9,8 @@ export interface LocalTourProps {
   steps: readonly Pick<TourStep, "id" | "target" | "title" | "body" | "placement">[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Portal to `document.body`; needed outside a dialog so the overlay isn't trapped in a header's stacking context. */
+  portal?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ export interface LocalTourProps {
  *
  * Cross-page tours belong in a `TourDefinition` run by `TourProvider`.
  */
-export function LocalTour({ steps, open, onOpenChange }: LocalTourProps) {
+export function LocalTour({ steps, open, onOpenChange, portal = false }: LocalTourProps) {
   const [index, setIndex] = React.useState(0);
 
   const available = React.useCallback(
@@ -48,7 +50,7 @@ export function LocalTour({ steps, open, onOpenChange }: LocalTourProps) {
 
   return (
     <TourOverlay
-      portal={false}
+      portal={portal}
       step={step}
       target={step.target ? findTourTarget(step.target) : null}
       stepNumber={index + 1}

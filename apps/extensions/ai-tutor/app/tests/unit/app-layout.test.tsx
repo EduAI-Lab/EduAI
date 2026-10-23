@@ -5,7 +5,7 @@
  * so the route's own handlers (not `@eduai/ui` internals) are what's tested.
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import type { BugReportSubmitData } from "@eduai/ui";
 
@@ -282,5 +282,62 @@ describe("_app layout — authenticated shell", () => {
     // AI Tutor has no /status route of its own; the page lives in Core.
     expect(link).toHaveAttribute("href", "http://localhost:3000/status");
     expect(link).toHaveAttribute("target", "_blank");
+  });
+});
+
+describe("_app layout — Penny, the help assistant (#1958)", () => {
+  const fetchMock = vi.fn();
+  const bubbleName = /Ask Penny, the help assistant/;
+
+  function gateResponse(gate: { mounted: boolean; docs: boolean }) {
+    return new Response(
+      JSON.stringify({ gate, user: { id: "core-u1", role: "INSTRUCTOR" }, context: null }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  function renderAt(path: string) {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <AppLayout />
+      </MemoryRouter>,
+    );
+  }
+
+  beforeEach(() => {
+    mockUser = { id: "u1", name: "Ada", role: "INSTRUCTOR", email: "ada@example.com" };
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders Penny when Core says the assistant is on, asking Core about the page's course", async () => {
+    fetchMock.mockResolvedValue(gateResponse({ mounted: true, docs: true }));
+    renderAt("/dashboard?coreCourseId=core-c1");
+
+    expect(await screen.findByRole("button", { name: bubbleName })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:3000/api/assistant/gate?courseId=core-c1",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("renders no Penny when the assistant is off", async () => {
+    fetchMock.mockResolvedValue(gateResponse({ mounted: false, docs: false }));
+    renderAt("/dashboard");
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: bubbleName })).not.toBeInTheDocument();
+  });
+
+  it("opens Penny from the header on a lesson, clear of the lesson's own chat", async () => {
+    fetchMock.mockResolvedValue(gateResponse({ mounted: true, docs: true }));
+    renderAt("/student/lesson/7");
+
+    const button = await screen.findByRole("button", { name: bubbleName });
+    expect(button).toHaveTextContent("Ask Penny");
   });
 });

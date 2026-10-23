@@ -10,7 +10,7 @@
  * view's own wiring, not their internals — mirrors the CourseMaterialsUpload
  * stub already used in CourseDetail.test.tsx.
  */
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -415,6 +415,44 @@ describe("CourseDetailManagerView — topics tab", () => {
   });
 });
 
+describe("CourseDetailManagerView — topic files (#1997)", () => {
+  const WITH_FILES: CourseTopic = {
+    ...TOPIC,
+    id: "t-files",
+    name: "Recursion",
+    sources: [{ materialId: "m1", title: "Week 1 Reading" }],
+    sourceCount: 1,
+  };
+  const EMPTY: CourseTopic = {
+    ...TOPIC,
+    id: "t-empty",
+    name: "Graphs",
+    sources: [],
+    sourceCount: 0,
+  };
+
+  it("lists an accepted topic's files and counts the topics with none", () => {
+    renderView({ topics: [WITH_FILES, EMPTY] });
+    clickTab(/topics/i);
+    expect(screen.getByText("Week 1 Reading")).toBeInTheDocument();
+    expect(screen.getByText("No files yet")).toBeInTheDocument();
+    expect(screen.getByText(/1 topic has no\s+files yet/)).toBeInTheDocument();
+    // A suggestion's "From …" line is only for suggestions.
+    expect(screen.queryByText(/From Week 1 Reading/)).toBeNull();
+  });
+
+  it("offers Link files only when the viewer can change file topics", () => {
+    renderView({ topics: [EMPTY], onSetMaterialTopics: vi.fn() });
+    clickTab(/topics/i);
+    expect(screen.getByRole("button", { name: /link files/i })).toBeInTheDocument();
+    cleanup();
+
+    renderView({ topics: [EMPTY], onSetMaterialTopics: undefined });
+    clickTab(/topics/i);
+    expect(screen.queryByRole("button", { name: /link files/i })).toBeNull();
+  });
+});
+
 describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
   const SUGGESTION: CourseTopic = {
     ...TOPIC,
@@ -427,9 +465,35 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
     sourceCount: 3,
   };
 
+  /** #1998: suggestions are reviewed in their own window. */
+  function openReview() {
+    fireEvent.click(screen.getByRole("button", { name: "Review suggestions" }));
+  }
+
+  it("keeps suggestions out of the topic list, behind a review banner (#1998)", () => {
+    renderView({ topics: [TOPIC, SUGGESTION] });
+    clickTab(/topics/i);
+    // Every tab stays mounted, so look inside the Topics panel only.
+    const panel = screen.getByRole("tabpanel", { name: /topics/i });
+    expect(within(panel).getByText(/1 topic suggestion to review/)).toBeInTheDocument();
+    expect(within(panel).queryByText("Chapter 1 — Recursion")).toBeNull();
+    expect(within(panel).getByText(TOPIC.name)).toBeInTheDocument();
+    openReview();
+    expect(
+      within(screen.getByRole("dialog")).getByText("Chapter 1 — Recursion"),
+    ).toBeInTheDocument();
+  });
+
+  it("says no topics are approved yet when only suggestions exist (#1998)", () => {
+    renderView({ topics: [SUGGESTION] });
+    clickTab(/topics/i);
+    expect(screen.getByText("No approved topics yet.")).toBeInTheDocument();
+  });
+
   it("names the materials a suggestion came from", () => {
     renderView({ topics: [SUGGESTION] });
     clickTab(/topics/i);
+    openReview();
     // The projection is capped, so the overflow is reported rather than hidden.
     expect(screen.getByText(/From Week 1 Reading and 2 more/)).toBeInTheDocument();
   });
@@ -438,6 +502,7 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
     const onRenameTopic = vi.fn().mockResolvedValue(undefined);
     renderView({ topics: [SUGGESTION], onRenameTopic });
     clickTab(/topics/i);
+    openReview();
 
     fireEvent.click(screen.getByRole("button", { name: /rename chapter 1/i }));
     fireEvent.change(screen.getByRole("textbox", { name: /rename chapter 1/i }), {
@@ -451,6 +516,7 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
   it("offers no rename affordance when no handler is supplied", () => {
     renderView({ topics: [SUGGESTION] });
     clickTab(/topics/i);
+    openReview();
     expect(screen.queryByRole("button", { name: /rename chapter 1/i })).toBeNull();
   });
 
@@ -479,6 +545,7 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
   it("shows them to an instructor", () => {
     renderView({ topics: [SUGGESTION], access: "instructor" });
     clickTab(/topics/i);
+    openReview();
     expect(screen.getByRole("button", { name: /approve chapter 1/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /dismiss chapter 1/i })).toBeInTheDocument();
   });

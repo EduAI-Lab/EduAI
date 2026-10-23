@@ -12,14 +12,12 @@ const {
   useQuestionStatsMock,
   useAllQuestionsMock,
   useAllAssessmentsMock,
-  useAutoStartTourMock,
 } = vi.hoisted(() => ({
   useAuthMock: vi.fn(),
   useDisplayCoursesMock: vi.fn(),
   useQuestionStatsMock: vi.fn(),
   useAllQuestionsMock: vi.fn(),
   useAllAssessmentsMock: vi.fn(),
-  useAutoStartTourMock: vi.fn(),
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
@@ -27,10 +25,6 @@ vi.mock("@/hooks/useDisplayCourses", () => ({ useDisplayCourses: () => useDispla
 vi.mock("@/hooks/useQuestionStats", () => ({ useQuestionStats: () => useQuestionStatsMock() }));
 vi.mock("@/hooks/useAllQuestions", () => ({ useAllQuestions: () => useAllQuestionsMock() }));
 vi.mock("@/hooks/useAllAssessments", () => ({ useAllAssessments: () => useAllAssessmentsMock() }));
-vi.mock("@eduai/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@eduai/ui")>()),
-  useAutoStartTour: (id: string) => useAutoStartTourMock(id),
-}));
 
 let lastProps: any;
 vi.mock("@/components/dashboard/QmDashboardView", () => ({

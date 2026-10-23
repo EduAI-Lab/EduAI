@@ -11,7 +11,7 @@
  */
 import type { AssistantSettings } from "~/lib/assistant/assistant-settings";
 import { getAssistantSettings } from "~/lib/assistant/assistant-settings.server";
-import type { AssistantGateSnapshot } from "~/lib/assistant/assistant-visibility";
+import type { AssistantGateSnapshot } from "@eduai/ui/assistant/shared";
 import type { PageContextResolution } from "~/lib/assistant/material-context.server";
 import {
   catalogueHasEnabledProvider,

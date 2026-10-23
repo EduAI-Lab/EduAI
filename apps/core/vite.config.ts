@@ -111,6 +111,9 @@ export default defineConfig(({ mode, isSsrBuild }) => {
       headers: {
         "Cache-Control": "no-store",
       },
+      // Vite's default CORS answers localhost preflights itself, without credentials,
+      // shadowing the root middleware's assistant CORS for the extensions (#1958).
+      cors: false,
       fs: {
         allow: [monorepoRoot],
       },
