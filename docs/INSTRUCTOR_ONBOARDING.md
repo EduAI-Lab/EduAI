@@ -14,7 +14,7 @@ This is a guided first-run walkthrough. For a full reference on every screen, ro
 | AI Tutor | https://aitutor.eduai.ok.ubc.ca | https://dev.aitutor.eduai.ok.ubc.ca |
 | Question Maker | https://questionmaker.eduai.ok.ubc.ca | https://dev.questionmaker.eduai.ok.ubc.ca |
 
-Ask your pilot coordinator which of the two sets applies to you — most pilot participants are on the `dev.` hosts.
+Ask your pilot coordinator which environment to use; do not mix production and dev during a walkthrough.
 
 You sign in once on Core, and the other two apps reuse that session in the same browser. Move between them with **Switch app** at the bottom of the sidebar.
 
@@ -46,7 +46,7 @@ Go to your Core host from the table above and sign in.
 
 ### Land on your dashboard
 
-After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom.
+After sign-in you land on **Dashboard**. It shows four counters across the top — courses teaching, students enrolled, materials uploaded, and AI interactions — plus a **Material status** panel breaking your files into Ready, Processing, and Failed, a **Your courses** list, recent conversations, and a **Canvas courses** card at the bottom. Each app's dashboard also has a five-task **Getting started** checklist, and five main pages in each app have a ▶ **Page tour** button in the header; see the [user guide](USER_GUIDE.md#navigation-shared-across-the-platform).
 
 **If you're stuck:** The invite link expired — ask your admin to resend. Wrong role (for example Student) — ask them to re-invite you as **Instructor**.
 
@@ -97,7 +97,7 @@ Open the course you will teach.
 
 A course page has these tabs: **Overview**, **Materials**, **Topics**, **Enrollments**, **TAs**, **Settings**, and **Chat history**.
 
-**Overview** summarises the course: student, material, and embedded-chunk counts, then course information (code, term, status, published state) and the assigned instructor and TAs.
+**Overview** summarises the course: student, material, and embedded-chunk counts, then course information (code, term, status, published state) and the assigned instructors and TAs.
 
 **Chat history** is greyed out unless an admin has turned on the instructor chat-viewing policy, which is **off by default**. A disabled tab here is expected, not a bug.
 
@@ -113,7 +113,7 @@ Each file can have up to three topics, shown as tags under its name on the **Mat
 
 - **Automatic:** once a file finishes processing, EduAI files it under the existing topic that fits it best. It only uses topics you have approved, and it never creates a topic by itself. A file that fits nothing shows **No topic**.
 - **Your choice:** select **Add topic** or **Edit topics** on a file, or on each file in the upload dialog, to pick from your topics or type a new one. A name that matches an existing topic apart from capitals or a plural uses that topic. EduAI never changes topics you set yourself.
-- **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Suggestions are hidden from students until you approve them. Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
+- **Suggest topics:** on the **Topics** tab, **Suggest topics** reads all of the course's files and your topics, and suggests only the topics the course is missing. Core and course chat hide suggestions from students until you approve them; AI Tutor's course page can still list them, even after you dismiss one (a known bug, [#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)). Approving one files the files it lists under it, up to three topics per file. A dismissed suggestion is never suggested again.
 
 ### What students see
 
@@ -132,7 +132,7 @@ On the **Enrollments** tab, review who is enrolled and add students or TAs as yo
 
 ### Publish the course
 
-Publishing is on the **Courses** page, not inside the course. Open the **⋮** menu on the course card and choose **Publish course** — the same menu reads **Unpublish course** when the course is already live, alongside **Edit course** and **Delete course**. The card badge tracks the current state.
+Use **Publish course** on the course page, or, on the **Courses** page, open the **⋮** menu on the course card and choose **Publish course** — the same menu reads **Unpublish course** when the course is already live, alongside **Edit course** and **Delete course**. The card badge tracks the current state.
 
 **If you're stuck:** No publish option — your admin may have turned off the instructor publish policy. Students cannot see the course — confirm it is Published **and** that they hold an active enrollment.
 
@@ -172,7 +172,7 @@ Select your course. The workspace has **Overview**, **Questions**, **Assessments
 
 ### Create a question, then generate an AI variant
 
-Question Maker's AI assist rewrites an *existing* question rather than inventing a set from a topic, so create one question first.
+The composer's AI can draft new questions (set **Number of questions** for up to 10 drafts, each reviewed before it is saved) or write a variant of an existing one. This path writes one question, then makes a variant of it.
 
 1. On **Questions**, add a question with its text, type, difficulty, topics, and choices.
 2. Generate an **AI variant** of that question.

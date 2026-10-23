@@ -52,7 +52,7 @@ export interface TourStep {
 
 export interface TourDefinition<Id extends string = string> {
   id: Id;
-  /** localStorage key marking the tour seen, which stops it auto-starting again. */
+  /** localStorage key recording that the tour was finished or skipped; nothing reads it to start tours (#2004). */
   storageKey: string;
   steps: readonly TourStep[];
   /** Routes known from the page the tour is started on (e.g. the lesson being viewed). */

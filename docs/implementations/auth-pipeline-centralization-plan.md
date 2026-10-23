@@ -374,7 +374,7 @@ router.delete('/courses/:id', requireAuth, requireRole(['ADMIN', 'PROFESSOR']), 
 
 ### Role reference
 
-The RBAC matrix in [`docs/implementations/rbac-matrix.md`](../rbac-matrix.md) documents which roles may access which resources in each extension. Use it as the source of truth when deciding what to pass to `requireRole`.
+The RBAC matrix in [`docs/implementations/rbac-matrix.md`](rbac-matrix.md) documents which roles may access which resources in each extension. Use it as the source of truth when deciding what to pass to `requireRole`.
 
 ### What not to build
 

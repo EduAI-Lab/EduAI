@@ -1,13 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-  PageHeading,
-  useAutoStartTour,
-} from "@eduai/ui";
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, PageHeading } from "@eduai/ui";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useTourQueryParam } from "~/components/tour/use-tour-query-param";
@@ -146,7 +139,6 @@ function DashboardContent({
 
 export default function Page() {
   const { user, isTA, dashboard, canvasIntegration } = useLoaderData<typeof loader>();
-  useAutoStartTour("dashboard");
   useTourQueryParam("dashboard");
 
   return (

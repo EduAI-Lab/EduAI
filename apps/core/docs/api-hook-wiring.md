@@ -15,7 +15,7 @@ resolve to `false`).
 | `useCourseDetail` | `use-course-detail.ts` | (consumes route loader data) | No direct fetch |
 | `useCourseMaterials` | `use-course-materials.ts` | `GET/POST /api/courses/:id/materials`, `DELETE .../:materialId` | Upload is async (202 + poll); server-side duplicate detection |
 | `useCourseTopics` | `use-course-topics.ts` | `GET/POST/DELETE /api/courses/:id/topics`, `PATCH .../:topicId` | |
-| `useTopicAnalysis` | `use-topic-analysis.ts` | `GET/POST /api/courses/:id/topic-analysis` | Drives automatic topic provisioning (#1624) |
+| `useTopicAnalysis` | `use-topic-analysis.ts` | `GET/POST /api/courses/:id/topic-analysis` | Polls file-topic analysis and requests instructor-initiated topic suggestions (#1965, #1966) |
 | `useCourseEnrollments` | `use-course-enrollments.ts` | `GET/POST /api/courses/:id/enrollments`, `PATCH/DELETE .../:enrollmentId` | No stub gate |
 | `useCourseTAs` | `use-course-tas.ts` | `GET/POST/DELETE /api/courses/:id/tas` | |
 | `useCourseChats` / `useUnitChats` / `useChatDetail` | `use-course-chats.ts` | `GET /api/courses/:id/chats`, `GET /api/units/:dept/chats`, `GET /api/chats/:id` (cursor-paginated) | |

@@ -9,7 +9,7 @@ import type { TourDefinition } from "@eduai/ui";
 export const CORE_TOURS = {
   dashboard: {
     id: "dashboard",
-    // Bump the version suffix to re-show the tour after a meaningful shell change.
+    // Records that the tour was finished or skipped; nothing reads it to start tours (#2004).
     storageKey: "eduai:tour:dashboard:v1",
     steps: [
       {

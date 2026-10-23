@@ -1,7 +1,14 @@
 import * as React from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
-import { AppShell, CommandSearchButton, ThemeToggle, type AppSidebarProps } from "@eduai/ui";
+import {
+  OnboardingChecklist,
+  PageTourButton,
+  AppShell,
+  CommandSearchButton,
+  ThemeToggle,
+  type AppSidebarProps,
+} from "@eduai/ui";
 
 import { useCoreSidebarProps, type UseCoreSidebarPropsOptions } from "~/components/app-sidebar";
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
@@ -129,6 +136,7 @@ export function CoreAppShell({
   children,
 }: CoreAppShellProps) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const sidebar = useCoreSidebarProps({
     user,
     variant: sidebarVariant,
@@ -146,7 +154,17 @@ export function CoreAppShell({
           <CoreHeaderActions
             extraActions={actions}
             assistant={<AssistantHeaderButton />}
-            help={<CorePageHelp role={user.role} />}
+            help={
+              <>
+                <PageTourButton
+                  platform="core"
+                  pathname={pathname}
+                  role={user.role}
+                  dashboardTour="dashboard"
+                />
+                <CorePageHelp role={user.role} />
+              </>
+            }
           />
         }
         commandPalette={<CommandPalette user={user} />}
@@ -154,6 +172,14 @@ export function CoreAppShell({
         mainClassName={mainClassName}
         providerClassName={providerClassName}
       >
+        {pathname === "/dashboard" && (
+          <OnboardingChecklist
+            platform="core"
+            userId={user.id}
+            role={user.role}
+            navigate={navigate}
+          />
+        )}
         {children}
       </AppShell>
       {/* #1822: the one mount point for the help assistant. It renders nothing
