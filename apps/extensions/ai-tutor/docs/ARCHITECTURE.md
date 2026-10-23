@@ -299,7 +299,7 @@ guard; grep for the value before deleting markup.
 
 ## Bug Report Capture
 
-Implementation: [`app/hooks/useBugReportCapture.ts`](../app/hooks/useBugReportCapture.ts),
+Implementation: [`packages/ui/src/bug-report-capture.ts`](../../../../packages/ui/src/bug-report-capture.ts),
 mounted exactly once via `BugReportProvider`.
 
 On mount the hook **monkey-patches global APIs**:

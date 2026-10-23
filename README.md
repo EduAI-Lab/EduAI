@@ -47,7 +47,7 @@ EduAI/
 ├── docker-compose.dev.yml           # Dev-only Postgres + Redis containers (apps run on the host)
 ├── docker-compose.test.yml          # Containerized unit/integration suites
 ├── docker-compose.e2e.yml           # Containerized end-to-end stack
-├── CHANGELOG.md                     # Unified changelog across all apps
+├── docs/deprecated/CHANGELOG.md     # Historical changelog (archived)
 ├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
 ```
@@ -118,6 +118,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) | Adding a second or third instructor to an existing course without demoting the current one — the **Add instructor** control, the console fallback, and what an `INSTRUCTOR` enrollment does *not* buy an ADMIN account |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
 | [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
+| [`ONBOARDING.md`](docs/ONBOARDING.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
@@ -133,7 +134,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 
 ## Changelog
 
-All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
+Current changes are recorded in linked issues and pull requests. The [historical changelog](docs/deprecated/CHANGELOG.md) is archived.
 
 ## Chat latency benchmarking (EduAI Core)
 

@@ -1,3 +1,5 @@
+> Historical test observations below describe the run when recorded. Current student materials access changed in #1962/#1963; use [the user guide](../USER_GUIDE.md) and [current authorization scenarios](../use-cases/core/student.md) for today’s behavior. A historical pass is not a new deployment verification.
+
 # EduAI Core — End-to-End User Workflows
 
 > **How to edit this file:** pick a role section below and work it in stages — Claude finds the paths, Claude simulates them via Playwright *and turns that into a committed e2e test* (`tests/e2e/tests/core/`), Claude reviews (its own and another Claude's) work, Claude sweeps once more for gaps, then a human walks the same paths (see the [README](./README.md) for the full methodology). Add/update a row per workflow, including a link to its e2e test — every workflow needs one, it's not optional. Prioritize AI-involving workflows and happy paths first. File bugs as GitHub issues and link them in the Bugs column — don't just describe them in prose. Prefix security findings with `SECURITY:`. Bump **Last updated** every time you edit.

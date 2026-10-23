@@ -38,10 +38,12 @@ ENV VITE_API_URL=${VITE_API_URL} \
 
 RUN npm run build -w @eduai/types \
     && npm run build -w ai-tutor
+# Penny calls Core cross-origin (#1958), so the CSP must allow the Core origin.
+RUN sed -i "s|connect-src 'self'|connect-src 'self' ${VITE_CORE_URL%/}|" apps/extensions/ai-tutor/nginx.conf
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6 AS production
 
-COPY apps/extensions/ai-tutor/nginx.conf /etc/nginx/nginx.conf
+COPY --from=build /app/apps/extensions/ai-tutor/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /app/apps/extensions/ai-tutor/build/client /usr/share/nginx/html
 
 EXPOSE 8080

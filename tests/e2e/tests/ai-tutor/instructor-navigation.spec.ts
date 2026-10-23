@@ -181,7 +181,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
   test("the header files a bug report, and refuses an incomplete one first", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await page.getByRole("button", { name: "Report a bug" }).click();
+    await page.getByRole("button", { name: "Report a bug", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Report a bug");
     // Available to every role, with an anonymous option and diagnostics off by

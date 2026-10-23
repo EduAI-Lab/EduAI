@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parseAnswer, parseInline, safeSourceHref } from "~/components/assistant/answer-blocks";
+import { parseAnswer, parseInline, safeSourceHref } from "@eduai/ui/assistant";
 
 describe("parseAnswer", () => {
   it("splits paragraphs, ordered and unordered lists, and code fences", () => {

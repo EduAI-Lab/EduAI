@@ -19,11 +19,13 @@ vi.mock("@eduai/ui", async (importOriginal) => ({
   useTour: () => ({ startTour: vi.fn() }),
 }));
 
-import { isAssistantVisible } from "~/lib/assistant/assistant-visibility";
+import {
+  isAssistantVisible,
+  requestAssistantOpen,
+  resetAssistantStoreForTests,
+} from "@eduai/ui/assistant";
 import { HelpView } from "~/components/help/help-view";
 import { HelpAssistant, useAssistantVisibility } from "~/components/assistant/help-assistant";
-import { requestAssistantOpen } from "~/components/assistant/assistant-events";
-import { resetAssistantStoreForTests } from "~/components/assistant/assistant-store";
 
 afterEach(() => {
   cleanup();

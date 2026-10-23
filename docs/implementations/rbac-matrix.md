@@ -719,7 +719,7 @@ Known limitations: list/aggregate endpoints without a `courseId` (e.g. the cross
 | Instructor-floor invariant unenforced | Core, AI Tutor | High — schema allows zero-instructor courses; enforcement specced in #305 |
 | Course list / detail has no auth gate in Core | Core | Medium — all courses visible to anonymous callers |
 | AI provider / model GET endpoints are public | Core | Medium — model metadata visible without auth |
-| Students can upload course materials | Core | Medium — contradicts target (`—` for students) |
+| Students can upload course materials | Core | Resolved by #1962: student uploads are refused |
 | Instructors cannot create topics in Core | Core | Medium — only ADMIN can; target allows INSTRUCTOR(C) |
 | ~~Question Maker has no RBAC at all~~ | Question Maker | Resolved — Sections 16–18 enforced via session-role + course-access middleware (#296, #311–#314); see [§20.12](#2012-question-maker--role-architecture) |
 | Core chat endpoint has no course enrollment or publish check | Core | Medium — any authenticated user can start a chat in any course |

@@ -70,7 +70,9 @@
     "test:qm:server:integration": "docker compose -f docker-compose.test.yml run --build --rm qm-server-integration-tests",
     "clean": "turbo run clean && rm -rf node_modules",
     "syncpack:check": "syncpack lint",
-    "syncpack:fix": "syncpack fix"
+    "syncpack:fix": "syncpack fix",
+    "onboarding:generate": "node scripts/generate-onboarding.mjs",
+    "onboarding:check": "node scripts/generate-onboarding.mjs --check"
   },
   "devDependencies": {
     "@better-auth/core": "1.6.22",

@@ -134,7 +134,7 @@ export function hasSeenTour(storageKey: string): boolean {
   try {
     return localStorage.getItem(storageKey) !== null;
   } catch {
-    return true; // Storage unreadable: don't nag with an auto-start every visit.
+    return true; // Storage unreadable: report the tour as seen.
   }
 }
 

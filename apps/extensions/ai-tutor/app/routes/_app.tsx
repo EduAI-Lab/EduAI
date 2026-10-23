@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
+  OnboardingChecklist,
+  PageTourButton,
   AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
@@ -13,7 +15,8 @@ import {
   type BugReportSubmitData,
   type HistoryPayload,
 } from "@eduai/ui";
-import { getCoreDashboardUrl, getCoreStatusUrl } from "../lib/coreUrl";
+import { assistantPlacementFor, ExtensionHelpAssistant } from "@eduai/ui/assistant";
+import { getCoreDashboardUrl, getCoreStatusUrl, getCoreUrl } from "../lib/coreUrl";
 import {
   IconArrowLeft,
   IconBooks,
@@ -71,6 +74,9 @@ const AI_TUTOR_LOGO = (
     </span>
   </>
 );
+
+/** Lesson pages carry the student's own AI chat, so Penny opens from the header there. */
+const CHAT_SCREEN_PREFIXES = ["/student/lesson"];
 
 /** Reads the active route's published breadcrumb trail (see ShellBreadcrumbContext). */
 function HeaderBreadcrumbs() {
@@ -226,6 +232,12 @@ function AppLayoutInner() {
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <BugReportTriggerButton onClick={handleOpenBugReport} />
+          <ExtensionHelpAssistant
+            coreUrl={getCoreUrl()}
+            coreCourseId={coreCourseId}
+            placement={assistantPlacementFor(pathname, CHAT_SCREEN_PREFIXES)}
+          />
+          <PageTourButton platform="ai-tutor" pathname={pathname} role={user.role} />
           {/* Last, so it sits in the header's top-right corner (#1754). */}
           <AiTutorPageHelp role={user.role} />
         </>
@@ -243,6 +255,14 @@ function AppLayoutInner() {
         </>
       }
     >
+      {pathname === "/dashboard" && (
+        <OnboardingChecklist
+          platform="ai-tutor"
+          userId={user.id}
+          role={user.role}
+          navigate={navigate}
+        />
+      )}
       <Outlet />
     </AppShell>
   );
