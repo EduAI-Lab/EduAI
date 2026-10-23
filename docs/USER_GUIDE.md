@@ -261,6 +261,8 @@ Every request made with an API key is recorded against the person: when, which m
 
 **Use your key (student or researcher):**
 
+The [student API guide](STUDENT_API_GUIDE.md) has the full details: request examples in curl, Python and JavaScript, each model's context window, how limits and tokens are counted, every error and when to retry, and tips for large batches. The steps in short:
+
 1. Open **profile menu → Settings → API Keys**. The tab appears only while you have access, and shows when it ends and how much of today's allowance you have used.
 2. Name a key and choose **Create**. Copy it right away: it is shown only once. A key can't last longer than your access.
 3. Send the key in the `x-api-key` header to `POST /api/completion` with a campus model, for example `vllm:qwen3.5-2b-instruct`. The tab shows a complete example.
