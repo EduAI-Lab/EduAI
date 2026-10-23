@@ -20,7 +20,7 @@ Recommend porting inside EduAI with early, small PRs. Keep all three options bel
 | Launcher types, bug sources, callbacks, CI, Docker and operational scripts name existing apps. | Register extensions once and drive the supported integration profile from that record. |
 | `example-extension` is a minimal Express auth demo. Existing clients differ in auth/persistence behavior. | Build a thin SDK around agreed contracts; it is not simply identical code extracted from existing apps. |
 | #2040 provides personal `x-api-key` grants; non-admin grants reach completion only. Extensions use a separate shared Bearer key. | Introduce extension identities without turning student accounts into service accounts. |
-| Deletion callbacks are best-effort; existing extensions have reconciliation jobs. | New extensions need reliable delivery and idempotent handling. |
+| Deletion callbacks are best-effort; existing extensions have reconciliation jobs. | New extensions reuse that pattern with their own callback secret, a re-check before archiving, and the reconcile job in the template. |
 
 There is no useful verified fixed count of files every project must edit. The acceptance test below replaces the earlier “35 files” claim.
 
@@ -76,6 +76,7 @@ These are **proposed extension permissions**, not claims that every existing rou
 | `policies:read` | `GET /api/policies`; explicitly projected public feature values, not arbitrary operator settings. |
 | `bug-reports:write` | `POST /api/bug-reports`; key plus cookie in the template; reporter from session, source from extension identity. |
 | `questions:read/write`, `banks:read/write` | Existing question/bank routes mapped by method; opt-in scopes, cookie and existing course/role/answer-visibility rules. |
+| `lifecycle:read` | Key-only status read for the extension's own course pointers: course ID and whether it is deleted, nothing else. Used by the deletion callback and the reconcile job. |
 | Course RAG/chat, materials, background roster sync | Unavailable through v1 extension keys. Add for a concrete project with permissions and tests. |
 
 Unknown methods/routes deny access. Discovery uses `/api/models`, not admin `/api/ai-models`. Personal completion grants do not currently grant discovery or full extension integration.
@@ -86,9 +87,13 @@ Add `packages/extension-sdk` with built JavaScript/types for the template's Expr
 
 Avoid domain synchronization, automatic local users and an exhaustive API wrapper. Preserve `401`, `403`, `429` and Core-unavailable distinctions; outages must not become login loops. Existing apps may adopt the SDK later.
 
-For new extensions, persist course-deletion deliveries in a small Core outbox in the same transaction as soft deletion. A scheduled worker retries with backoff, bounded concurrency and separate callback secrets; receivers acknowledge duplicates safely. Alert after 24 hours pending, retain unacknowledged deliveries until resolved or explicitly cancelled at decommission, and remove acknowledged records after 30 days.
+Course deletion reuses the pattern AI Tutor and QM already run, with three changes for new extensions:
 
-Include event ID and a monotonically increasing Core lifecycle version, updated transactionally on deletion and restore. Authorized live course reads return that version; pointer reactivation persists it atomically. Callback processing compares versions under the same per-course lock/transaction, so a delayed older deletion cannot archive a reactivated pointer. Test that race explicitly; also check for superseding restores before retrying delivery.
+- Core sends each extension's callback with that extension's own callback secret.
+- The handler re-checks the course with Core (`lifecycle:read`) before archiving. A course that exists again is left alone, so a delayed deletion arriving after a restore does nothing. A timeout or outage archives nothing.
+- A nightly reconcile job in the template compares pointer rows with live Core state, so a missed callback is corrected within a day.
+
+Decided 2026-10-22 over a Core outbox with lifecycle versions: same outcome without a new Core subsystem. Revisit if a project needs deletion to take effect faster than a day.
 
 The template archives linked data reversibly; permanent purge follows declared retention. Authorized live re-access after a Core restore reactivates the pointer. Existing AI Tutor/QM reconciliation remains intact during migration. Never infer deletion from user-scoped `403`/`404`, timeout or outage.
 
@@ -156,13 +161,13 @@ Each row is a bounded review milestone; split migrations/tooling into smaller PR
 |---|---|---|
 | 1 · S | Ownership/intake rules and exact HTTP permission matrix | Agree actor, method/path, data/error contracts; preserve professor options. |
 | 2 · L | Extension principal, enforcement, budgets/usage and isolated deployment profile | After 1. Test invalid/expired keys, insufficient scope with valid cookie, cross-course denial, personal/legacy compatibility, cancellation/limits and effective isolation. |
-| 3 · M–L | Registry, launcher, bug identities and deletion outbox | After identity contract in 1–2. Test fourth app, historical reports/source spoofing, callback failure/restart/duplicates/restore and stalled delivery. |
-| 4 · M | Thin SDK and one complete template | After 2–3. Real-Core contracts and browser login/course/domain/AI flow, including outage/denial. Retain old demo until replacement passes. |
+| 3 · M | Registry, launcher, bug identities and per-extension callbacks | After identity contract in 1–2. Test fourth app, historical reports/source spoofing, per-extension callback secrets, and duplicate or delayed-after-restore callbacks. |
+| 4 · M | Thin SDK and one complete template | After 2–3. Real-Core contracts and browser login/course/domain/AI flow, including outage/denial; the reconcile job catches a missed callback. Retain old demo until replacement passes. |
 | 5 · M–L | Repeatable scaffold/dev/CI/build/ops profile and pilot port | After 4. Pass generated-fourth-extension test, backup restore and real model call; retain existing app checks. Option 2/3 tooling only if selected. |
 
 Work may overlap after contracts agree. No live template deployment precedes authorization/isolation. Extension-only PRs run the extension plus contracts; shared changes expand to affected existing apps.
 
-**Deferred:** full domain SDK, existing-app SDK/key migration, automatic arbitrary-schema promotion, full mock Core, publishing before option 2 is selected, universal non-Node scaffolding. Federation is a prerequisite for deployments that cannot be trusted with Core cookies.
+**Deferred:** Core deletion outbox (only if deletion must take effect faster than a day), full domain SDK, existing-app SDK/key migration, automatic arbitrary-schema promotion, full mock Core, publishing before option 2 is selected, universal non-Node scaffolding. Federation is a prerequisite for deployments that cannot be trusted with Core cookies.
 
 ## Decisions still needed
 

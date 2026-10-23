@@ -20,6 +20,8 @@ This continues the interrupted Claude review. Three independent read-only review
 
 Reviewers converged on these recommendations. Professor/team choices remain: port location, pilot stack and deployment ownership.
 
+**Later decision (2026-10-22):** course deletion uses a per-extension callback secret, a Core re-check before archiving, and the template's nightly reconcile job instead of the proposed outbox. That gets the same outcome with no new Core subsystem.
+
 ## Source-verified corrections
 
 | Earlier assumption | Correction and evidence |
