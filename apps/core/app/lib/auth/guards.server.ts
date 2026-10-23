@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { auth } from "./server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { getActiveApiAccessGrant } from "~/lib/api-keys/access-grants.server";
+import type { ActiveApiAccessGrant } from "~/lib/api-keys/access-grants.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import type { LogSecurityEventInput } from "~/lib/logging.server";
@@ -39,6 +41,21 @@ export function validateRedirectUrl(url: string | null): string {
 type GuardResult = {
   response: Response | null;
   session: Session | null;
+  /**
+   * Set when the caller authenticated with an API key (not a cookie). `grant`
+   * is the API access grant a non-admin's key runs under (#2039), null for an
+   * admin's key.
+   */
+  apiKey?: { id: string; grant: ActiveApiAccessGrant | null } | null;
+};
+
+export type EnforceApiKeyOptions = {
+  /**
+   * #2039: also accept keys of active non-admins who hold an API access grant.
+   * Only routes built for it opt in (`/api/completion`), and they must enforce
+   * the grant's limits themselves.
+   */
+  allowGrantedUsers?: boolean;
 };
 
 /**
@@ -99,13 +116,17 @@ function throttleResponseForApiKeyError(error: ApiKeyVerificationError): Respons
 }
 
 /**
- * Enforce: if request includes `x-api-key`, only ADMIN users may proceed.
+ * Enforce: if request includes `x-api-key`, only ADMIN users may proceed, plus
+ * (with `allowGrantedUsers`) users an admin granted API access (#2039).
  * Returns `{ response, session }` so callers can reuse the fetched session.
  *
  * With `enableSessionForAPIKeys: false`, Better Auth will not auto-mock a
  * session from x-api-key; this guard verifies the key and loads the owner.
  */
-export async function enforceAdminIfApiKey(request: Request): Promise<GuardResult> {
+export async function enforceAdminIfApiKey(
+  request: Request,
+  options: EnforceApiKeyOptions = {},
+): Promise<GuardResult> {
   const apiKeyHeader = request.headers.get("x-api-key")?.trim();
   if (!apiKeyHeader) {
     return { response: null, session: null };
@@ -183,7 +204,15 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     },
   });
 
-  if (!user || user.role !== "ADMIN" || !user.isActive) {
+  // #2039: a non-admin's key is honoured only on routes that opt in, and only
+  // while an admin's grant is active. Checked on every request, so revoking or
+  // expiring the grant cuts the key off at once.
+  const grant =
+    user && user.role !== "ADMIN" && user.isActive && options.allowGrantedUsers
+      ? await getActiveApiAccessGrant(user.id)
+      : null;
+
+  if (!user || !user.isActive || (user.role !== "ADMIN" && !grant)) {
     // An anonymous denial has no email to record, and the entry must not carry
     // a `details` key at all in that case.
     const event: LogSecurityEventInput = {
@@ -199,7 +228,12 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     fireAndForget(logSecurityEvent(event));
     return {
       response: new Response(
-        JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
+        JSON.stringify({
+          error:
+            user && user.role !== "ADMIN" && options.allowGrantedUsers
+              ? "Forbidden: this account has no active API access"
+              : "Forbidden: x-api-key access restricted to admin users",
+        }),
         {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -221,7 +255,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     },
   } as Session;
 
-  return { response: null, session };
+  return { response: null, session, apiKey: { id: verification.key.id, grant } };
 }
 
 type AdminGate = { response: Response; session: null } | { response: null; session: Session };

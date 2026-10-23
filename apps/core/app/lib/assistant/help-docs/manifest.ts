@@ -167,6 +167,13 @@ export const HELP_DOC_PAGES: readonly HelpDocPage[] = [
     heading: "Platform administrator",
     slice: "admin",
   },
+  // #2039: students and researchers given API access read this too.
+  {
+    id: "api-access",
+    source: "user-guide",
+    heading: "API access for students and researchers",
+    slice: "student",
+  },
 
   // ── Instructor onboarding ─────────────────────────────────────────────────
   {
@@ -244,6 +251,13 @@ export const HELP_DOC_PAGES: readonly HelpDocPage[] = [
     source: "instructor-onboarding",
     heading: "Topics on your files",
     title: "Onboarding: topics on your files",
+    slice: "instructor",
+  },
+  {
+    id: "onboarding-what-students-see",
+    source: "instructor-onboarding",
+    heading: "What students see",
+    title: "Onboarding: what students see",
     slice: "instructor",
   },
   {

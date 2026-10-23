@@ -205,6 +205,15 @@ function routes(isStaff: boolean): PageHelpRoute[] {
         helpHref: "/help#administration",
       },
     },
+    {
+      match: "/admin/api-access",
+      content: {
+        title: "API access",
+        summary:
+          "Give someone who isn't an admin time-limited use of an API key for the campus models, see their use today, or revoke it.",
+        helpHref: "/help#administration",
+      },
+    },
   ];
 }
 

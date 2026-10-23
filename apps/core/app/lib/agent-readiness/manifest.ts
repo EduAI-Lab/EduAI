@@ -331,6 +331,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     note: "No GET — course detail loader supplies UI state (#782)",
     routeFile: "routes/api/courses.id.response-style.ts",
   }),
+  entry({
+    method: "PATCH",
+    path: "/api/courses/:id/student-visibility",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    note: "No GET — course detail loader and topics API supply UI state (#2002)",
+    routeFile: "routes/api/courses.id.student-visibility.ts",
+  }),
 
   // ── Enrollments ─────────────────────────────────────────────────────────────
   entry({
@@ -1126,6 +1134,30 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     adminChatTool: "triggerCronJob",
     routeFile: "routes/api/admin.cron-jobs.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/admin/api-access",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/admin/api-access",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/admin/api-access/:id",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
   }),
 
   // ── Dashboard & test hooks ──────────────────────────────────────────────────

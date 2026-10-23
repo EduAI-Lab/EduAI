@@ -386,19 +386,22 @@ describe("ragTopics and the learner transcript (#1963)", () => {
   });
 
   it("drops file titles for a student reader and keeps their topics", () => {
-    const [current, legacy, plain] = toLearnerTranscript([
-      reviveStoredMessage({
-        messageId: "m1",
-        role: "assistant",
-        content: { content: "a", metadata: { ragSources: ["L14.pdf"], ragTopics: ["Labs"] } },
-      }),
-      reviveStoredMessage({
-        messageId: "m2",
-        role: "assistant",
-        content: { content: "b (Source: W1.pdf)", metadata: { ragSources: ["W1.pdf"] } },
-      }),
-      reviveStoredMessage({ messageId: "m3", role: "user", content: { content: "q" } }),
-    ]);
+    const [current, legacy, plain] = toLearnerTranscript(
+      [
+        reviveStoredMessage({
+          messageId: "m1",
+          role: "assistant",
+          content: { content: "a", metadata: { ragSources: ["L14.pdf"], ragTopics: ["Labs"] } },
+        }),
+        reviveStoredMessage({
+          messageId: "m2",
+          role: "assistant",
+          content: { content: "b (Source: W1.pdf)", metadata: { ragSources: ["W1.pdf"] } },
+        }),
+        reviveStoredMessage({ messageId: "m3", role: "user", content: { content: "q" } }),
+      ],
+      new Set(["Labs"]),
+    );
 
     expect(current.metadata).toEqual({ ragTopics: ["Labs"] });
     // A pre-#1963 turn: no topics to show, but still a course turn, so the UI keeps
@@ -409,29 +412,32 @@ describe("ragTopics and the learner transcript (#1963)", () => {
   });
 
   it("cuts the model's own file citations from a student's transcript text", () => {
-    const [preFileList, listed, question] = toLearnerTranscript([
-      // A pre-#1936 turn: the only trace of the file is the citation in its text.
-      reviveStoredMessage({
-        messageId: "m1",
-        role: "assistant",
-        content: {
-          content: "Trees are hierarchical (Source: Week 3 Lecture.pdf).\n\nSources:\n- L14.pdf",
-        },
-      }),
-      reviveStoredMessage({
-        messageId: "m2",
-        role: "assistant",
-        content: {
-          content: "Graphs have edges.\n\nSource: W1.pdf",
-          metadata: { ragSources: ["W1.pdf"] },
-        },
-      }),
-      reviveStoredMessage({
-        messageId: "m3",
-        role: "user",
-        content: { content: "(Source: my notes)" },
-      }),
-    ]);
+    const [preFileList, listed, question] = toLearnerTranscript(
+      [
+        // A pre-#1936 turn: the only trace of the file is the citation in its text.
+        reviveStoredMessage({
+          messageId: "m1",
+          role: "assistant",
+          content: {
+            content: "Trees are hierarchical (Source: Week 3 Lecture.pdf).\n\nSources:\n- L14.pdf",
+          },
+        }),
+        reviveStoredMessage({
+          messageId: "m2",
+          role: "assistant",
+          content: {
+            content: "Graphs have edges.\n\nSource: W1.pdf",
+            metadata: { ragSources: ["W1.pdf"] },
+          },
+        }),
+        reviveStoredMessage({
+          messageId: "m3",
+          role: "user",
+          content: { content: "(Source: my notes)" },
+        }),
+      ],
+      new Set(),
+    );
 
     expect(preFileList.content).toBe("Trees are hierarchical.");
     expect(preFileList.parts).toEqual([{ type: "text", text: "Trees are hierarchical." }]);
@@ -441,5 +447,23 @@ describe("ragTopics and the learner transcript (#1963)", () => {
     // A student's own words are theirs to see as written.
     expect(question.content).toBe("(Source: my notes)");
     expect(JSON.stringify([preFileList, listed])).not.toMatch(/Week 3 Lecture|L14\.pdf|W1\.pdf/);
+  });
+
+  it("drops a topic hidden from students since the turn was answered (#2002)", () => {
+    const [turn] = toLearnerTranscript(
+      [
+        reviveStoredMessage({
+          messageId: "m1",
+          role: "assistant",
+          content: {
+            content: "a",
+            metadata: { ragSources: ["L14.pdf"], ragTopics: ["Labs", "Exams"] },
+          },
+        }),
+      ],
+      new Set(["Labs"]),
+    );
+
+    expect(turn.metadata).toEqual({ ragTopics: ["Labs"] });
   });
 });

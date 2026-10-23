@@ -79,6 +79,7 @@ describe("loadLearnerTopicsByMaterial (#1963)", () => {
           courseId: "course-1",
           deletedAt: null,
           reviewStatus: "ACCEPTED",
+          visibleToStudents: true,
           name: { not: "Uncategorized" },
         },
       },

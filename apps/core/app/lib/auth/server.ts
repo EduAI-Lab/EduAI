@@ -20,7 +20,7 @@ import {
 import { isPasswordReused, recordPasswordHistory } from "./password-history.server";
 import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
-import { isActiveAdminUser } from "../api-keys/access.server";
+import { apiKeyManagementDenial } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asJsonObject, asText } from "~/lib/json-value";
@@ -40,7 +40,10 @@ export const authBaseURL =
 const cookieDomain = resolveAuthCookieDomain();
 const useSecureCookies = authBaseURL.startsWith("https://");
 
-const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
+/** A key's requested lifetime in seconds, as the api-key plugin takes it. */
+const expiresInSecondsSchema = z.number().finite();
+
+const API_KEY_MANAGEMENT_PATHS = new Set([
   "/api-key/create",
   "/api-key/delete",
   "/api-key/list",
@@ -309,12 +312,21 @@ export const auth = betterAuth({
         }
       }
 
-      if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
+      if (API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
         const session = await getSessionFromCtx(ctx);
-        if (!(await isActiveAdminUser(session?.user?.id))) {
-          throw new APIError("FORBIDDEN", {
-            message: "API key management restricted to admin users",
-          });
+        // Admins, or (#2039) a user an admin granted API access, on their own keys.
+        // SAFETY: better-auth types `ctx.body` as `any`; the one field read here
+        // goes through `expiresInSecondsSchema` before it is used.
+        const expiresIn = expiresInSecondsSchema.safeParse(
+          (ctx.body as JsonObject | undefined)?.expiresIn,
+        );
+        const denial = await apiKeyManagementDenial(
+          session?.user?.id,
+          ctx.path,
+          expiresIn.success ? expiresIn.data : null,
+        );
+        if (denial) {
+          throw new APIError("FORBIDDEN", { message: denial });
         }
       }
 

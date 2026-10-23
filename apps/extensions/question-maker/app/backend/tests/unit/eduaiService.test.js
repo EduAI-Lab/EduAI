@@ -667,6 +667,101 @@ describe("generateQuestions", () => {
     expect(out[0].answer).toBe("B");
   });
 
+  describe("MCQ answer resolution (#2036)", () => {
+    const binaryChoices = [
+      { letter: "A", text: "1010" },
+      { letter: "B", text: "1100" },
+      { letter: "C", text: "1110" },
+      { letter: "D", text: "1011" },
+    ];
+
+    /** Mocks one generated MCQ over `binaryChoices` with the given answer fields. */
+    function mockBinaryMcq(answerFields) {
+      axios.post.mockResolvedValue({
+        status: 200,
+        data: {
+          content: [
+            {
+              content: "What is the binary of decimal 10?",
+              type: "MCQ",
+              difficulty: "easy",
+              reasoning_level: "factual",
+              choices: binaryChoices,
+              ...answerFields,
+            },
+          ],
+        },
+      });
+    }
+
+    it("trusts the correct choice text over a letter that points at another option", async () => {
+      mockBinaryMcq({ answer: "D", correct_choice_text: "1010" });
+      const out = await eduaiService.generateQuestions(baseParams);
+      expect(out[0].answer).toBe("A");
+    });
+
+    it("matches the correct choice text ignoring case and surrounding whitespace", async () => {
+      axios.post.mockResolvedValue({
+        status: 200,
+        data: {
+          content: [
+            {
+              content: "Which is a mitochondrion's role?",
+              type: "MCQ",
+              difficulty: "easy",
+              reasoning_level: "factual",
+              choices: [
+                { letter: "A", text: "Protein  synthesis" },
+                { letter: "B", text: "ATP production" },
+              ],
+              answer: "A",
+              correct_choice_text: "  atp production ",
+            },
+          ],
+        },
+      });
+      const out = await eduaiService.generateQuestions(baseParams);
+      expect(out[0].answer).toBe("B");
+    });
+
+    it("keeps the letter when the correct choice text matches no option", async () => {
+      mockBinaryMcq({ answer: "C", correct_choice_text: "ten" });
+      const out = await eduaiService.generateQuestions(baseParams);
+      expect(out[0].answer).toBe("C");
+    });
+
+    it("resolves an answer written as option text to that option's letter", async () => {
+      mockBinaryMcq({ answer: "1010" });
+      const out = await eduaiService.generateQuestions(baseParams);
+      expect(out[0].answer).toBe("A");
+    });
+
+    it("leaves the answer unset instead of reading the first character of unmatched text", async () => {
+      mockBinaryMcq({ answer: "Binary ten" });
+      const out = await eduaiService.generateQuestions(baseParams);
+      expect(out[0].answer).toBeNull();
+    });
+
+    it("does not pass the correct choice text through to the normalized question", async () => {
+      mockBinaryMcq({ answer: "A", correct_choice_text: "1010" });
+      const out = await eduaiService.generateQuestions(baseParams);
+      expect(out[0]).not.toHaveProperty("correct_choice_text");
+    });
+
+    it("asks for the choices before the answer, and for the correct choice's text", async () => {
+      mockBinaryMcq({ answer: "A" });
+      await eduaiService.generateQuestions(baseParams);
+      const { systemPrompt } = axios.post.mock.calls[0][1];
+      const schema = systemPrompt.slice(
+        systemPrompt.indexOf("Format each question"),
+        systemPrompt.indexOf("IMPORTANT FOR MCQ"),
+      );
+      expect(schema.indexOf('"choices"')).toBeGreaterThan(-1);
+      expect(schema.indexOf('"choices"')).toBeLessThan(schema.indexOf('"answer"'));
+      expect(schema).toContain('"correct_choice_text"');
+    });
+  });
+
   it("parses MCQ choices embedded in the content body", async () => {
     axios.post.mockResolvedValue({
       status: 200,

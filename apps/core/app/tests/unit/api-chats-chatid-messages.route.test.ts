@@ -19,6 +19,7 @@ vi.mock("~/lib/chat/revive-message.server", () => ({
 }));
 
 vi.mock("~/lib/chat/learner-sources.server", () => ({
+  loadVisibleLearnerTopicNames: vi.fn().mockResolvedValue(new Set(["Limits"])),
   readerSeesMaterialFiles: vi.fn().mockResolvedValue(true),
 }));
 

@@ -94,6 +94,7 @@ describe("listAccessibleCourseTopics", () => {
         reviewStatus: "ACCEPTED",
         confidence: null,
         generatedByJobId: null,
+        visibleToStudents: true,
       },
     ]);
 

@@ -54,6 +54,9 @@ model User {
   passwordHistory           PasswordHistory[]
   selfEnrollmentLinks       SelfEnrollmentLink[]   @relation("SelfEnrollmentLinkCreator")
   pendingSelfEnrollments    PendingSelfEnrollment[]
+  apiAccessGrants           ApiAccessGrant[]       @relation("ApiAccessGrantee")
+  apiAccessGrantsIssued     ApiAccessGrant[]       @relation("ApiAccessGrantor")
+  apiRequestLogs            ApiRequestLog[]
 
   @@map("user")
 }
@@ -157,6 +160,9 @@ model Course {
   /// #1821: course-level opt-out for the help assistant's material half. Off means
   /// this course's content is never sent to a model by the assistant.
   aiAssistantEnabled          Boolean                   @default(true)
+  /// #2002: enrolled students may list and preview this course's files, each still
+  /// behind its own student gate. Off (the #1962 default) means staff-only.
+  studentFilesVisible         Boolean                   @default(false)
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                     Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
@@ -656,6 +662,9 @@ model CourseTopic {
   /// topic-analysis job created and nobody has reviewed yet. Defaults to
   /// ACCEPTED so the migration leaves existing rows unflagged.
   reviewStatus    TopicReviewStatus        @default(ACCEPTED)
+  /// #2002: shown to students on the course page and in course chat. Hides the
+  /// name only — course chat still answers from the topic's materials.
+  visibleToStudents Boolean                @default(true)
   /// How much the generator trusts this name: 1 for a Canvas module title, less
   /// for a heading match, least for an AI proposal. Null on human-created rows.
   confidence      Float?
@@ -888,6 +897,76 @@ model apikey {
   @@index([referenceId])
   @@index([key])
   @@map("apiKey")
+}
+
+/// #2039: an admin's permission for a non-admin (e.g. a research student) to
+/// create and use their own API key. Without an active grant a non-admin can't
+/// manage keys, and their keys are refused on every request.
+model ApiAccessGrant {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation("ApiAccessGrantee", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The admin who granted access; kept as null if that account is deleted.
+  grantedById String?
+  grantedBy   User?   @relation("ApiAccessGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  /// Why access was given, e.g. "Honours project: LLM judge evaluation".
+  purpose String
+
+  /// Access ends here with no manual cleanup; keys can't outlive it.
+  expiresAt         DateTime
+  /// Requests and tokens allowed per rolling 24 hours, across all the user's keys.
+  dailyRequestLimit Int
+  dailyTokenLimit   Int
+
+  /// Set when an admin revokes access before it expires.
+  revokedAt   DateTime?
+  revokedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// "This user's grants", newest first; the active one is unrevoked and unexpired.
+  @@index([userId, expiresAt])
+  @@map("api_access_grants")
+}
+
+/// #2039: one row per request made with an API key, for accountability and
+/// per-user limits. Never stores prompt or answer text.
+model ApiRequestLog {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The key used. Not a foreign key, so the record outlives a deleted key.
+  apiKeyId String
+  /// The grant the request ran under; null for an admin's key.
+  grantId  String?
+
+  route            String
+  model            String?
+  /// The HTTP status, or 0 while the request is still running.
+  status           Int
+  promptTokens     Int?
+  completionTokens Int?
+  /// Charged against the daily token limit. Set to an estimate when a request
+  /// starts, and replaced by the provider's count if one arrives.
+  totalTokens      Int?
+  /// True when `totalTokens` is the estimate: the request was aborted, failed
+  /// or the provider reported no usage.
+  tokensEstimated  Boolean @default(false)
+  durationMs       Int?
+
+  createdAt DateTime @default(now())
+
+  /// Per-user usage in a time window (limits, usage summaries).
+  @@index([userId, createdAt])
+  /// Fleet-wide summaries and retention.
+  @@index([createdAt])
+  @@map("api_request_logs")
 }
 
 enum ChatbotType {

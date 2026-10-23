@@ -5,8 +5,13 @@ import { isPasswordExpired, getPasswordChangedAt } from "~/lib/auth/password-exp
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import prisma from "~/lib/prisma.server";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
-import { SettingsView } from "~/components/settings/settings-view";
+import { SettingsView, type SettingsApiAccess } from "~/components/settings/settings-view";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  API_ACCESS_USAGE_WINDOW_MS,
+  getActiveApiAccessGrant,
+  getApiUsageSince,
+} from "~/lib/api-keys/access-grants.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -44,7 +49,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  return { user: session.user, studentNumber, passwordExpired, providerExpiries };
+  // #2039: a non-admin with an active grant manages their own keys here.
+  let apiAccess: SettingsApiAccess | null = null;
+  if (session.user.role !== "ADMIN") {
+    const grant = await getActiveApiAccessGrant(session.user.id);
+    if (grant) {
+      const since = new Date(Date.now() - API_ACCESS_USAGE_WINDOW_MS);
+      apiAccess = {
+        expiresAt: grant.expiresAt.toISOString(),
+        dailyRequestLimit: grant.dailyRequestLimit,
+        dailyTokenLimit: grant.dailyTokenLimit,
+        usageLast24h: await getApiUsageSince(session.user.id, since),
+      };
+    }
+  }
+
+  return { user: session.user, studentNumber, passwordExpired, providerExpiries, apiAccess };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -79,7 +99,8 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function SettingsPage() {
-  const { user, studentNumber, passwordExpired, providerExpiries } = useLoaderData<typeof loader>();
+  const { user, studentNumber, passwordExpired, providerExpiries, apiAccess } =
+    useLoaderData<typeof loader>();
 
   return (
     <CoreAppShell user={user}>
@@ -88,6 +109,7 @@ export default function SettingsPage() {
         studentNumber={studentNumber}
         passwordExpired={passwordExpired}
         providerExpiries={providerExpiries}
+        apiAccess={apiAccess}
       />
     </CoreAppShell>
   );

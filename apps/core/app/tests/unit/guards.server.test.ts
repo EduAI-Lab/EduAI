@@ -8,6 +8,7 @@ import {
 } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { getActiveApiAccessGrant } from "~/lib/api-keys/access-grants.server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
@@ -20,6 +21,10 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/api-keys/access.server", () => ({
   isActiveAdminUser: vi.fn(),
+}));
+
+vi.mock("~/lib/api-keys/access-grants.server", () => ({
+  getActiveApiAccessGrant: vi.fn(),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -150,6 +155,8 @@ describe("enforceAdminIfApiKey", () => {
     vi.mocked(prisma.user.findUnique).mockReset();
     vi.mocked(isActiveAdminUser).mockReset();
     vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    vi.mocked(getActiveApiAccessGrant).mockReset();
+    vi.mocked(getActiveApiAccessGrant).mockResolvedValue(null);
     vi.mocked(logSecurityEvent).mockClear();
   });
 
@@ -454,6 +461,94 @@ describe("enforceAdminIfApiKey", () => {
         entityLabel: "cookie-owner@test.com",
       }),
     );
+  });
+
+  describe("API access grants (#2039)", () => {
+    const studentKey = {
+      valid: true,
+      error: null,
+      key: {
+        id: "k-student",
+        referenceId: "s1",
+        createdAt: new Date("2026-10-01"),
+        updatedAt: new Date("2026-10-01"),
+        expiresAt: null,
+      },
+    };
+    const student = {
+      id: "s1",
+      email: "student1@eduai.local",
+      role: "STUDENT",
+      isActive: true,
+    };
+    const grant = {
+      id: "g1",
+      userId: "s1",
+      expiresAt: new Date("2026-12-31"),
+      dailyRequestLimit: 200,
+      dailyTokenLimit: 200_000,
+    };
+
+    beforeEach(() => {
+      vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+      vi.mocked(auth.api.verifyApiKey).mockResolvedValue(studentKey as never);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue(student as never);
+    });
+
+    it("admits a granted student's key on a route that opts in, and returns the grant", async () => {
+      vi.mocked(getActiveApiAccessGrant).mockResolvedValue(grant);
+      const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-student-key"), {
+        allowGrantedUsers: true,
+      });
+      expect(gate.response).toBeNull();
+      expect(gate.session?.user.id).toBe("s1");
+      expect(gate.apiKey).toEqual({ id: "k-student", grant });
+      expect(getActiveApiAccessGrant).toHaveBeenCalledWith("s1");
+    });
+
+    it("refuses a granted student's key on a route that does not opt in", async () => {
+      vi.mocked(getActiveApiAccessGrant).mockResolvedValue(grant);
+      const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-student-key"));
+      expect(gate.response?.status).toBe(403);
+      expect(getActiveApiAccessGrant).not.toHaveBeenCalled();
+    });
+
+    it("refuses a student's key with no active grant, saying so", async () => {
+      const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-student-key"), {
+        allowGrantedUsers: true,
+      });
+      expect(gate.response?.status).toBe(403);
+      expect(await parseBody(gate.response!)).toEqual({
+        error: "Forbidden: this account has no active API access",
+      });
+      expect(logSecurityEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ actionCode: "API_KEY_DENIED", entityId: "s1" }),
+      );
+    });
+
+    it("refuses a deactivated student's key without looking up a grant", async () => {
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ ...student, isActive: false } as never);
+      vi.mocked(getActiveApiAccessGrant).mockResolvedValue(grant);
+      const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-student-key"), {
+        allowGrantedUsers: true,
+      });
+      expect(gate.response?.status).toBe(403);
+      expect(getActiveApiAccessGrant).not.toHaveBeenCalled();
+    });
+
+    it("gives an admin's key no grant", async () => {
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...student,
+        id: "a1",
+        role: "ADMIN",
+      } as never);
+      const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-admin-key"), {
+        allowGrantedUsers: true,
+      });
+      expect(gate.response).toBeNull();
+      expect(gate.apiKey).toEqual({ id: "k-student", grant: null });
+      expect(getActiveApiAccessGrant).not.toHaveBeenCalled();
+    });
   });
 
   it("admits a verified active ADMIN-owned x-api-key", async () => {

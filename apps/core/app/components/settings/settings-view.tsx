@@ -38,6 +38,7 @@ import {
   getApiKeyExpirationStatus,
   type ApiKeyExpirationChoice,
 } from "~/lib/api-keys/expiration";
+import { formatUsage, secondsUntilGrantEnds } from "~/lib/api-keys/api-access";
 
 type ServerApiKey = {
   id: string;
@@ -49,6 +50,23 @@ type ServerApiKey = {
 };
 
 const FIXED_PREFIX = "eduai";
+
+/**
+ * A non-admin's active API access (#2039), from the settings loader. With it the
+ * user gets the API Keys tab, limited to what the grant allows.
+ */
+export type SettingsApiAccess = {
+  expiresAt: string;
+  dailyRequestLimit: number;
+  dailyTokenLimit: number;
+  usageLast24h: { requests: number; tokens: number };
+};
+
+/** A grantee's extra lifetime choice: as long as the grant itself. */
+const UNTIL_ACCESS_ENDS = "grant-end";
+type KeyExpirationChoice = ApiKeyExpirationChoice | typeof UNTIL_ACCESS_ENDS;
+
+const accessEndFormat = new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" });
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"]);
 
 /**
@@ -67,6 +85,7 @@ interface SettingsViewProps {
   studentNumber?: string | null;
   passwordExpired?: boolean;
   providerExpiries?: Record<string, string>;
+  apiAccess?: SettingsApiAccess | null;
 }
 
 export function SettingsView({
@@ -74,6 +93,7 @@ export function SettingsView({
   studentNumber = null,
   passwordExpired = false,
   providerExpiries = {},
+  apiAccess = null,
 }: SettingsViewProps) {
   const { isEnabled } = usePolicyGate();
   const roleHasCanvas = CANVAS_SETTINGS_ROLES.has(role ?? "");
@@ -83,14 +103,28 @@ export function SettingsView({
     isEnabled("instructors.canManageCanvasIntegration");
   const showCanvasSettings = roleHasCanvas && canvasEnabled;
   const showStudentNumberSettings = role === "STUDENT";
-  const showApiKeySettings = role === "ADMIN";
+  const isAdmin = role === "ADMIN";
+  // #2039: a non-admin sees API keys only while an admin's grant is active.
+  const grantee = isAdmin ? null : apiAccess;
+  const showApiKeySettings = isAdmin || grantee !== null;
+  const grantSecondsLeft = grantee ? secondsUntilGrantEnds(grantee.expiresAt) : 0;
+  const expirationOptions = grantee
+    ? [
+        ...API_KEY_EXPIRATION_OPTIONS.filter((option) => option.seconds <= grantSecondsLeft),
+        {
+          value: UNTIL_ACCESS_ENDS,
+          label: `Until access ends (${accessEndFormat.format(new Date(grantee.expiresAt))})`,
+        },
+      ]
+    : API_KEY_EXPIRATION_OPTIONS;
   const { updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-  const [expirationChoice, setExpirationChoice] = useState<ApiKeyExpirationChoice>(
-    DEFAULT_API_KEY_EXPIRATION_CHOICE,
+  const [expirationChoice, setExpirationChoice] = useState<KeyExpirationChoice>(
+    grantee ? UNTIL_ACCESS_ENDS : DEFAULT_API_KEY_EXPIRATION_CHOICE,
   );
+  const [createError, setCreateError] = useState<string | null>(null);
   const [createdKeyPlain, setCreatedKeyPlain] = useState<string | null>(null);
   const [copyOk, setCopyOk] = useState(false);
 
@@ -113,7 +147,11 @@ export function SettingsView({
     try {
       setCreating(true);
       setCreatedKeyPlain(null);
-      const expiresIn = expirationChoiceToSeconds(expirationChoice);
+      setCreateError(null);
+      const expiresIn =
+        expirationChoice === UNTIL_ACCESS_ENDS
+          ? grantSecondsLeft
+          : expirationChoiceToSeconds(expirationChoice);
       const { data, error } = await authClient.apiKey.create({
         name: newKeyName || undefined,
         prefix: FIXED_PREFIX,
@@ -128,6 +166,7 @@ export function SettingsView({
       setNewKeyName("");
     } catch (e) {
       console.error("Failed to create key", e);
+      setCreateError(e instanceof Error ? e.message : "Could not create the key");
     } finally {
       setCreating(false);
     }
@@ -260,6 +299,7 @@ export function SettingsView({
                 icon: <IconKey className="h-4 w-4" />,
                 content: (
                   <>
+                    {grantee && <ApiAccessSummaryCard access={grantee} />}
                     <Card>
                       <CardHeader>
                         <CardTitle>Server API Keys</CardTitle>
@@ -288,14 +328,15 @@ export function SettingsView({
                               <Select
                                 value={expirationChoice}
                                 onValueChange={(value) =>
-                                  setExpirationChoice(value as ApiKeyExpirationChoice)
+                                  // SAFETY: the Select only offers `expirationOptions` values.
+                                  setExpirationChoice(value as KeyExpirationChoice)
                                 }
                               >
                                 <SelectTrigger id="key-expiration">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {API_KEY_EXPIRATION_OPTIONS.map((option) => (
+                                  {expirationOptions.map((option) => (
                                     <SelectItem key={option.value} value={option.value}>
                                       {option.label}
                                     </SelectItem>
@@ -317,6 +358,12 @@ export function SettingsView({
                             string.
                           </p>
                         </div>
+
+                        {createError && (
+                          <p className="text-sm text-destructive" role="alert">
+                            {createError}
+                          </p>
+                        )}
 
                         {createdKeyPlain && (
                           <div className="p-3 border rounded-md bg-muted/30 flex items-center justify-between">
@@ -402,29 +449,33 @@ export function SettingsView({
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>How to use API Keys</CardTitle>
-                        <CardDescription>
-                          Send your key in the <span className="font-mono">x-api-key</span> header
-                          when calling supported API endpoints (
-                          {API_KEY_SUPPORTED_ROUTES.map((route, index) => (
-                            <span key={route}>
-                              {index > 0 ? ", " : ""}
-                              <span className="font-mono">{route}</span>
-                            </span>
-                          ))}
-                          ). Note: x-api-key usage is restricted to active ADMIN users; students
-                          should use the web UI.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -N -X POST "http://localhost:5173/api/chat" \\
+                    {grantee ? (
+                      <GranteeApiKeyUsageCard />
+                    ) : (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>How to use API Keys</CardTitle>
+                          <CardDescription>
+                            Send your key in the <span className="font-mono">x-api-key</span> header
+                            when calling supported API endpoints (
+                            {API_KEY_SUPPORTED_ROUTES.map((route, index) => (
+                              <span key={route}>
+                                {index > 0 ? ", " : ""}
+                                <span className="font-mono">{route}</span>
+                              </span>
+                            ))}
+                            ). Note: x-api-key usage is restricted to active ADMIN users; students
+                            should use the web UI.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -N -X POST "http://localhost:5173/api/chat" \\
                     -H "Content-Type: application/json" \\
                     -H "x-api-key: YOUR_API_KEY" \\
                     -d '{"messages":[{"role":"user","content":"hello"}],"chatMode":"admin","model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
-                      </CardContent>
-                    </Card>
+                        </CardContent>
+                      </Card>
+                    )}
                   </>
                 ),
               },
@@ -557,5 +608,63 @@ export function SettingsView({
           : []),
       ]}
     />
+  );
+}
+
+/** What a grantee's access allows and how much of today's allowance is left (#2039). */
+function ApiAccessSummaryCard({ access }: { access: SettingsApiAccess }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Your API access</CardTitle>
+        <CardDescription>
+          An admin gave you access until {accessEndFormat.format(new Date(access.expiresAt))}. After
+          that your keys stop working.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-md border px-3 py-2">
+            <div className="text-xs text-muted-foreground">Requests, last 24 hours</div>
+            <div className="font-medium tabular-nums">
+              {formatUsage(access.usageLast24h.requests, access.dailyRequestLimit)}
+            </div>
+          </div>
+          <div className="rounded-md border px-3 py-2">
+            <div className="text-xs text-muted-foreground">Tokens, last 24 hours</div>
+            <div className="font-medium tabular-nums">
+              {formatUsage(access.usageLast24h.tokens, access.dailyTokenLimit)}
+            </div>
+          </div>
+        </div>
+        <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+          <li>Keep your key private. Don't commit it to a repository or share it.</li>
+          <li>Don't send participant or personal data unless your ethics approval covers it.</li>
+          <li>Every request is logged against your account (not its content).</li>
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** How a grantee calls the API: completion only, campus models only. */
+function GranteeApiKeyUsageCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>How to use your key</CardTitle>
+        <CardDescription>
+          Send your key in the <span className="font-mono">x-api-key</span> header to{" "}
+          <span className="font-mono">POST /api/completion</span>. Only the campus models (
+          <span className="font-mono">vllm:…</span>) are available.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -X POST "https://my.eduai.ok.ubc.ca/api/completion" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: YOUR_API_KEY" \\
+  -d '{"model":"vllm:qwen3.5-2b-instruct","apiKeys":{},"systemPrompt":"You are helpful.","messages":[{"role":"user","content":"hello"}],"maxTokens":256}'`}</pre>
+      </CardContent>
+    </Card>
   );
 }

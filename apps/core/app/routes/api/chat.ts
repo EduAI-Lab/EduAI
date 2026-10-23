@@ -1164,10 +1164,14 @@ export async function action({ request }: ActionFunctionArgs) {
           // admin preview), so topics are loaded unconditionally here — gating
           // this fetch the same way the classifier is gated below previously left
           // admin preview rendering "Topics: none listed" even though the policy
-          // block was injected. See #1152 review (yta3216).
+          // block was injected. See #1152 review (yta3216). A student's prompt
+          // lists only the topics shown to students (#2002).
           let courseTopics: CourseTopicNames = { accepted: [], suggested: [] };
           try {
-            courseTopics = await getCourseTopicNamesCached(effectiveCourseId);
+            courseTopics = await getCourseTopicNamesCached(
+              effectiveCourseId,
+              access.level === "student",
+            );
           } catch (error) {
             console.warn("[course-scope] failed to load course topics", error);
           }

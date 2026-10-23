@@ -237,6 +237,77 @@ describe("SettingsView — server API key management (ADMIN)", () => {
     await waitFor(() => expect(screen.getByText("No API keys yet.")).toBeInTheDocument());
   });
 
+  describe("API access grants (#2039)", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const access = (daysLeft: number) => ({
+      expiresAt: new Date(Date.now() + daysLeft * DAY_MS).toISOString(),
+      dailyRequestLimit: 200,
+      dailyTokenLimit: 200_000,
+      usageLast24h: { requests: 12, tokens: 3_400 },
+    });
+
+    it("hides the API Keys tab from a student without access", () => {
+      renderView({ role: "STUDENT" });
+      expect(screen.queryByRole("tab", { name: /api keys/i })).not.toBeInTheDocument();
+      expect(authClient.apiKey.list).not.toHaveBeenCalled();
+    });
+
+    it("shows a granted student their access, usage and the completion example", async () => {
+      renderView({ role: "STUDENT", apiAccess: access(60) });
+      clickTab(/api keys/i);
+      await waitFor(() => expect(authClient.apiKey.list).toHaveBeenCalled());
+
+      expect(screen.getByText("Your API access")).toBeInTheDocument();
+      expect(screen.getByText("12 / 200")).toBeInTheDocument();
+      expect(screen.getByText("3.4K / 200K")).toBeInTheDocument();
+      expect(screen.getByText("How to use your key")).toBeInTheDocument();
+      expect(screen.queryByText("How to use API Keys")).not.toBeInTheDocument();
+    });
+
+    it("creates a granted student's key to last until access ends by default", async () => {
+      vi.mocked(authClient.apiKey.create).mockResolvedValue({
+        data: { key: "eduai-student-secret" },
+        error: null,
+      } as never);
+      renderView({ role: "STUDENT", apiAccess: access(10) });
+      clickTab(/api keys/i);
+      await waitFor(() => expect(authClient.apiKey.list).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByRole("button", { name: /create/i }));
+
+      await waitFor(() => expect(screen.getByText("eduai-student-secret")).toBeInTheDocument());
+      const { expiresIn } = vi.mocked(authClient.apiKey.create).mock.calls[0][0] as {
+        expiresIn: number;
+      };
+      expect(expiresIn).toBeGreaterThan((9 * DAY_MS) / 1000);
+      expect(expiresIn).toBeLessThanOrEqual((10 * DAY_MS) / 1000);
+    });
+
+    it("shows why a key could not be created", async () => {
+      vi.mocked(authClient.apiKey.create).mockResolvedValue({
+        data: null,
+        error: { message: "Your key can't expire after your API access ends (2026-12-31)" },
+      } as never);
+      renderView({ role: "STUDENT", apiAccess: access(60) });
+      clickTab(/api keys/i);
+      await waitFor(() => expect(authClient.apiKey.list).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByRole("button", { name: /create/i }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Your key can't expire after your API access ends",
+      );
+    });
+
+    it("ignores apiAccess for an admin", async () => {
+      renderView({ role: "ADMIN", apiAccess: access(60) });
+      clickTab(/api keys/i);
+      await waitFor(() => expect(authClient.apiKey.list).toHaveBeenCalled());
+      expect(screen.queryByText("Your API access")).not.toBeInTheDocument();
+      expect(screen.getByText("How to use API Keys")).toBeInTheDocument();
+    });
+  });
+
   it("logs and swallows a failed key list load", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(authClient.apiKey.list).mockRejectedValue(new Error("network down"));

@@ -10,8 +10,9 @@
  *   "nothing published yet", never "default to everything".
  * - Course access and the per-material read are the SAME rules the materials
  *   API applies (`canViewMaterial`, `readMaterialForViewer`) — one rule, not a
- *   second copy. Students never see a course's files (#1962), so no student gets
- *   material context here either; course chat is their way into a course.
+ *   second copy. A student gets material context only where the course shares
+ *   its files with students (#2002) and is published — as the materials API
+ *   lets them read those files — and never otherwise (#1962).
  * - A course whose instructor opted it out of the assistant contributes nothing.
  * - {@link buildMaterialContext} never throws: any failure degrades to "this
  *   material contributed nothing", so an unreadable material can never be the
@@ -90,12 +91,15 @@ export async function resolveCourseContext(input: {
     code: string;
     name: string;
     aiAssistantEnabled: boolean;
+    studentFilesVisible: boolean;
+    isPublished: boolean;
   };
   access: AccessLevel | null;
 }): Promise<ResolvedPageContext> {
   const { course, access } = input;
-  // #1962: the materials API's staff allow-list, so a student is refused here too.
-  const canView = access !== null && canViewMaterial(access.level);
+  // The materials API's read gate (#2002): a student needs a published course
+  // that shares its files.
+  const canView = access !== null && canViewMaterial(access.level, course);
   return {
     kind: "resolved",
     courseId: course.id,

@@ -178,6 +178,21 @@ describe("UsersTable — row actions", () => {
     expect(onToggleActive).toHaveBeenCalledWith(baseUser);
   });
 
+  it("links an active non-admin to the API access page (#2039)", () => {
+    render(<UsersTable {...defaultProps} users={[baseUser]} />);
+    openRowMenu();
+    expect(screen.getByRole("menuitem", { name: /give api access/i })).toHaveAttribute(
+      "href",
+      `/admin/api-access?grantFor=${baseUser.id}`,
+    );
+  });
+
+  it("offers no API access item for an admin (#2039)", () => {
+    render(<UsersTable {...defaultProps} users={[{ ...baseUser, role: "ADMIN" as never }]} />);
+    openRowMenu();
+    expect(screen.queryByRole("menuitem", { name: /give api access/i })).not.toBeInTheDocument();
+  });
+
   it("disables the delete and deactivate actions for the current user", () => {
     render(
       <UsersTable
