@@ -224,6 +224,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 **Notes:**
 - TAs can only delete materials they personally uploaded (`CourseMaterial.uploadedBy === user.id`). Instructors can delete any material in their course.
 - Students cannot upload, list, preview or download materials (#1962). Course chat is their way into a course.
+- A published course whose instructor turned on file sharing (#2002) lets its students list and preview materials, each still behind its own student visibility gate. Upload, rename and delete stay staff-only. The setting is changed by ADMIN, UNIT_ADMIN(D) or INSTRUCTOR(C) (`PATCH /api/courses/:id/student-visibility`).
 
 ---
 
@@ -582,7 +583,7 @@ Enforcement in `app/routes/api/courses.materials.$.ts`.
 | Operation | Target | Current | Notes |
 |---|---|---|---|
 | Upload material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target (TA behind `tas.canManageMaterials`) | Students refused on every materials path (#1962) |
-| View / download material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target | Students refused on every materials path (#1962) |
+| View / download material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(C) | Same as target | Students refused (#1962) unless the published course shares its files, then read-only through the student gate (#2002) |
 | Delete material | ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C), TA(O) | **Not implemented as a separate delete route** | No DELETE /materials endpoint found |
 
 ---
@@ -718,7 +719,7 @@ Known limitations: list/aggregate endpoints without a `courseId` (e.g. the cross
 | Instructor-floor invariant unenforced | Core, AI Tutor | High — schema allows zero-instructor courses; enforcement specced in #305 |
 | Course list / detail has no auth gate in Core | Core | Medium — all courses visible to anonymous callers |
 | AI provider / model GET endpoints are public | Core | Medium — model metadata visible without auth |
-| Students can upload course materials | Core | Medium — contradicts target (`—` for students) |
+| Students can upload course materials | Core | Resolved by #1962: student uploads are refused |
 | Instructors cannot create topics in Core | Core | Medium — only ADMIN can; target allows INSTRUCTOR(C) |
 | ~~Question Maker has no RBAC at all~~ | Question Maker | Resolved — Sections 16–18 enforced via session-role + course-access middleware (#296, #311–#314); see [§20.12](#2012-question-maker--role-architecture) |
 | Core chat endpoint has no course enrollment or publish check | Core | Medium — any authenticated user can start a chat in any course |

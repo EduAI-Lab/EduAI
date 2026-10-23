@@ -153,6 +153,17 @@ export function describeStudentChatError(error: Error | undefined): ChatErrorNot
   const rateLimit = describeRateLimit(body);
   if (rateLimit) return rateLimit;
 
+  // #2009: the question plus the course material retrieved for it overflowed
+  // the model's window. Retrying can't help; something shorter can.
+  if (body.code === "CONTEXT_LENGTH_EXCEEDED") {
+    return {
+      kind: "generic",
+      title: "That's too long for this model",
+      description:
+        "Your message, together with the course material it pulled in, is longer than this AI model can read at once. Try a shorter question, or start a new chat.",
+    };
+  }
+
   if (isProviderDown(body)) {
     return {
       kind: "provider-down",

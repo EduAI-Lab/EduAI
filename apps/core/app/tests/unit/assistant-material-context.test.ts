@@ -3,7 +3,8 @@
  * #1821: the course-material context source.
  * - an invalid hint degrades the WHOLE context, an empty hint means "nothing";
  * - access is re-derived from the database for this reader — the hint widens
- *   nothing, and a student gets no material at all (#1962);
+ *   nothing, and a student gets no material (#1962) unless a published course
+ *   shares its files with students (#2002);
  * - a course opted out of AI contributes nothing;
  * - secret-bearing fields of a real material row never reach the built block;
  * - nothing in this path throws.
@@ -19,6 +20,7 @@ vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
 const prismaMock = vi.hoisted(() => ({
   course: { findUnique: vi.fn() },
   courseMaterial: { findFirst: vi.fn() },
+  canvasMaterialExclusion: { findMany: vi.fn() },
 }));
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
@@ -43,6 +45,7 @@ const COURSE = {
   isPublished: true,
   instructorId: "u-teacher",
   deletedAt: null,
+  studentFilesVisible: false,
 };
 
 /** A realistic material row, carrying every field a leak would come from. */
@@ -131,6 +134,36 @@ describe("resolvePageContext — re-derived for this reader", () => {
       expect(materialSourceAvailable(availability, resolution)).toBe(false);
     }
     // The hint never reaches the material table for a student.
+    expect(prismaMock.courseMaterial.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("a student gets material where a published course shares its files, through the student gate (#2002)", async () => {
+    setCourse(accessLevelFor("student"), { studentFilesVisible: true });
+    prismaMock.canvasMaterialExclusion.findMany.mockResolvedValue([]);
+    prismaMock.courseMaterial.findFirst.mockResolvedValue(MATERIAL_ROW);
+
+    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: "m1" });
+
+    expect(resolution).toMatchObject({ kind: "resolved", canView: true, material: { id: "m1" } });
+    expect(prismaMock.courseMaterial.findFirst.mock.calls[0][0].where).toMatchObject({
+      id: "m1",
+      courseId: "c1",
+      unpublishedAt: null,
+      visibleToStudents: true,
+    });
+    const studentQuestionsOn = {
+      ...availability,
+      settings: { ...settings, enableStudentMaterialQuestions: true },
+    };
+    expect(materialSourceAvailable(studentQuestionsOn, resolution)).toBe(true);
+  });
+
+  it("a student gets no material from an unpublished course, even one that shares its files (#2002)", async () => {
+    setCourse(accessLevelFor("student"), { studentFilesVisible: true, isPublished: false });
+
+    const resolution = await resolvePageContext(student, { courseId: "c1", materialId: "m1" });
+
+    expect(resolution).toMatchObject({ kind: "resolved", canView: false, material: null });
     expect(prismaMock.courseMaterial.findFirst).not.toHaveBeenCalled();
   });
 

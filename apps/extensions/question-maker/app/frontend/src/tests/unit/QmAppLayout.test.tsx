@@ -42,6 +42,8 @@ let capturedAppShellProps: any = null;
 // its one-request-per-open contract is what the history wiring below asserts,
 // and a stub would assert nothing.
 vi.mock("@eduai/ui", async (importOriginal) => ({
+  OnboardingChecklist: (await importOriginal<any>()).OnboardingChecklist,
+  PageTourButton: (await importOriginal<any>()).PageTourButton,
   useHistoryOnOpen: (await importOriginal<any>()).useHistoryOnOpen,
   BugReportTriggerButton: (await importOriginal<any>()).BugReportTriggerButton,
   // Real help button + resolver: the modal's tour wiring is what's asserted below.

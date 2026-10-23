@@ -81,6 +81,17 @@ All EduAI production jobs run in UTC (enforced by the Core scheduler via `{ time
 
 Both thresholds are settings on the job in Admin → Cron Jobs. To test it on a server, lower **Warn at** below the current usage, click **Run now**, check the email and Admin → Logs, then reset the setting. `DISK_ALERT_PATHS` and `DISK_ALERT_EMAILS` are in `docs/ENVIRONMENT.md`.
 
+## API usage report (#2039)
+
+`api-usage-report` is a Core-handler job that runs daily at 15:00 UTC (08:00 Pacific in summer). It looks at the last 24 hours of requests made with the keys of people an administrator gave API access (Admin → API Access), and:
+
+- On a day with no such use, does nothing; the run message says so.
+- Otherwise emails a summary to `API_USAGE_REPORT_EMAILS`, or to every active admin when that is unset: each person's requests and tokens against their daily limits, requests refused for being over a limit, requests turned away because the models were busy, and their purpose. A request is charged an estimate when it starts, replaced by the provider's count when one arrives, so aborted and failed calls still count.
+- Flags **heavy use**: at or above **Heavy use at** (default 80%) of either daily limit, or any request refused for being over a limit. Busy refusals (`503`) are shown but are not heavy use, since they can happen at any level of use. Heavy use leads the email and is written to Admin → Logs (`API`, `API_ACCESS_HEAVY_USE`).
+- Fails the run when every email fails to send, so the next run tries again. Mail that isn't set up is noted in the run message but doesn't fail the run.
+
+Old request records are deleted by the log-retention sweep, on the audit-log window (Admin → Settings).
+
 ---
 
 ## Viewing job status
@@ -260,6 +271,8 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 
 | Job | Schedule | Type | Purpose |
 |---|---|---|---|
+| `ai-status-probe` | every `AI_STATUS_POLL_MINUTES` minutes (default 15) | Core handler (`execution: "CORE"`) | Sample UBC fleet health per model and store a status history point for the AI status indicators |
+| `disk-usage-check` | `*/30 * * * *` (every 30 minutes) | Core handler (`execution: "CORE"`) | Log and email the admins when this server's disk passes **Warn at** (85%) or **Critical at** (95%); both admin-editable. See [Disk usage alerts](#disk-usage-alerts-1869) |
 | `backup-nightly` | `0 2 * * *` (02:00 UTC) | Infra | pg_dump all three databases |
 | `backup-offsite` | `45 2 * * *` (02:45 UTC) | Infra | Sync dumps to off-site storage |
 | `backup-rotate` | `15 3 * * *` (03:15 UTC) | Infra | Delete local dumps past retention window |

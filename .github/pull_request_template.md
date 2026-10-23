@@ -27,7 +27,6 @@ Closes #
 - [ ] Tests written or updated for all non-trivial code changes
 - [ ] Full applicable test suite passes with no inappropriate skipped tests
 - [ ] `TESTS.md` updated for added or changed test files
-- [ ] `CHANGELOG.md` updated with the PR-open date and PR link
 - [ ] `README.md` updated, or no README changes were needed
 - [ ] `.claude/memory/MEMORY.md` updated, or no memory update was needed
 - [ ] PR assignees include everyone who contributed
@@ -38,8 +37,8 @@ Items a reviewer verifies by reading the code -- naming, structure, comment qual
 separation of concerns -- are deliberately not checkboxes. That is what the review
 itself is for; a tickbox asking whether the code is good only ever collects a tick.
 
-The four items above that a machine could verify (linked issue open, branch up to
-date, TESTS.md, CHANGELOG.md) stay on this list until CI actually enforces them.
+The three items above that a machine could verify (linked issue open, branch up to
+date, TESTS.md) stay on this list until CI actually enforces them.
 -->
 
 ## Reviewer Notes

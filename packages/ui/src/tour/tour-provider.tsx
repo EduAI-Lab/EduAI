@@ -75,8 +75,8 @@ export interface TourProviderProps {
  * A tour can span pages: each step names its route, the provider navigates
  * there, waits for the target, and skips steps whose target never appears
  * (a role without that panel, an empty course) so one definition serves every
- * viewer. Finishing or skipping marks the tour seen, which only governs
- * `useAutoStartTour` — any tour can always be restarted from the (?) button.
+ * viewer. Finishing or skipping marks the tour seen. Tours never start on their
+ * own (#2004): they run from the (?) button, Help, or a page's ▶ button.
  */
 export function TourProvider({ tours, location, navigate, children }: TourProviderProps) {
   const [run, setRun] = React.useState<TourRun | null>(null);
@@ -234,28 +234,4 @@ export function TourProvider({ tours, location, navigate, children }: TourProvid
 
 export function useTour(): TourContextValue {
   return React.useContext(TourContext);
-}
-
-/**
- * Start `tourId` once for a viewer who has never seen it, on the first idle
- * tick so it never competes with the page's first paint.
- */
-export function useAutoStartTour(tourId: string, { enabled = true }: { enabled?: boolean } = {}) {
-  const { startTour, isRunning, hasSeenTour: seen } = useTour();
-  const startedRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (!enabled || isRunning || startedRef.current || seen(tourId)) return;
-    const start = () => {
-      startedRef.current = true;
-      startTour(tourId);
-    };
-    if (window.requestIdleCallback) {
-      // Called on `window`: a detached reference throws "Illegal invocation".
-      const id = window.requestIdleCallback(start, { timeout: 2000 });
-      return () => window.cancelIdleCallback?.(id);
-    }
-    const timer = window.setTimeout(start, 300);
-    return () => window.clearTimeout(timer);
-  }, [enabled, isRunning, seen, startTour, tourId]);
 }

@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
   AppShell,
+  OnboardingChecklist,
+  PageTourButton,
   ThemeToggle,
   Breadcrumb,
   BreadcrumbList,
@@ -322,6 +324,12 @@ function QmAppLayoutInner() {
             coreCourseId={coreCourseId ?? null}
             placement="floating"
           />
+          <PageTourButton
+            platform="question-maker"
+            pathname={pathname}
+            role={questionMakerRole}
+            dashboardTour="main"
+          />
           {/* Last, so it sits in the header's top-right corner (#1754). The
               guided tour is launched from its modal. */}
           <QmPageHelp showIndicator={courses.length === 0 && !isCoursesLoading} />
@@ -339,6 +347,14 @@ function QmAppLayoutInner() {
         </>
       }
     >
+      {pathname === "/dashboard" && user && (
+        <OnboardingChecklist
+          platform="question-maker"
+          userId={String(user.id)}
+          role={questionMakerRole}
+          navigate={navigate}
+        />
+      )}
       <Outlet />
     </AppShell>
   );

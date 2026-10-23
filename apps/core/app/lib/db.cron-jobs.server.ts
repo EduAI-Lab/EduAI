@@ -165,6 +165,28 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     execution: "CORE",
   },
   {
+    name: "api-usage-report",
+    description:
+      "Email the last 24 hours of API key use by people given API access, flagging heavy use (#2039)",
+    // 08:00 Pacific in summer, 07:00 in winter: in the inbox at the start of the day.
+    schedule: "0 15 * * *",
+    scheduleLabel: "Daily at 15:00 UTC",
+    script: "Core handler",
+    execution: "CORE",
+    settings: [
+      {
+        key: "heavyUsePercent",
+        label: "Heavy use at (% of a daily limit)",
+        description:
+          "A person at or above this share of their request or token limit is flagged, as is anyone refused for being over a limit.",
+        type: "int",
+        min: 10,
+        max: 100,
+        default: 80,
+      },
+    ],
+  },
+  {
     name: "purge-deleted-materials",
     description: "Permanently delete course materials soft-deleted more than N days ago",
     // After backup-nightly (02:00) so a purged material is still in that night's dump.
@@ -691,6 +713,18 @@ const CORE_JOB_HANDLERS = {
           ? `Re-indexed ${result.pages} guide page(s) as ${result.chunks} chunk(s)`
           : "Help docs index already current",
       };
+    };
+  },
+  "api-usage-report": async () => {
+    const { formatApiUsageReportMessage, runApiUsageReport } =
+      await import("~/lib/cron-api-usage-report.server");
+    return async () => {
+      const result = await runApiUsageReport();
+      const message = formatApiUsageReportMessage(result);
+      // A configured mailer that failed every send fails the run, so Admin →
+      // Cron Jobs shows it and the next run sends again.
+      if (result.undelivered) throw new Error(message);
+      return { message };
     };
   },
   "disk-usage-check": async () => {

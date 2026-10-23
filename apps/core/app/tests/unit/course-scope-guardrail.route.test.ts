@@ -263,8 +263,8 @@ beforeEach(() => {
     code: "COSC101",
   } as never);
   vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
-    { name: "Functions", reviewStatus: "ACCEPTED" },
-    { name: "Variables", reviewStatus: "ACCEPTED" },
+    { name: "Functions", reviewStatus: "ACCEPTED", visibleToStudents: true },
+    { name: "Variables", reviewStatus: "ACCEPTED", visibleToStudents: true },
   ] as never);
   // Retrieval covers the base question, so turns that pass the guardrail reach
   // the model instead of the #1936 no-coverage reply.
@@ -600,8 +600,8 @@ describe("POST /api/chat — course-scope guardrail", () => {
       name: null,
     } as never);
     vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
-      { name: "Functions", reviewStatus: "ACCEPTED" },
-      { name: "Variables", reviewStatus: "ACCEPTED" },
+      { name: "Functions", reviewStatus: "ACCEPTED", visibleToStudents: true },
+      { name: "Variables", reviewStatus: "ACCEPTED", visibleToStudents: true },
     ] as never);
 
     const res = await action(

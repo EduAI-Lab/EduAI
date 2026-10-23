@@ -22,6 +22,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
+import { StudentCourseMaterials } from "~/components/courses/student-course-materials";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
 import {
@@ -52,9 +53,10 @@ function ThemedPanel({ children }: { children: ReactNode }) {
 }
 
 /**
- * A student's course page (#1962). Students never see the course's files —
- * course chat is their way into a course — so there is no Materials tab and no
- * material count, and the page's main action opens course chat on this course.
+ * A student's course page (#1962). Course chat is a student's way into a
+ * course, so the page's main action opens course chat on this course. The
+ * course's files are listed only where the course shares them with students
+ * (#2002); otherwise there is no file list and no material count.
  */
 export function CourseDetailStudentView({ course, topics, tas = [] }: Props) {
   // #1841: every instructor of record, falling back to the single legacy field.
@@ -215,6 +217,9 @@ export function CourseDetailStudentView({ course, topics, tas = [] }: Props) {
           </ScrollReveal>
         )}
       </div>
+      {course.studentFilesVisible && (
+        <StudentCourseMaterials key={course.id} courseId={course.id} />
+      )}
     </DetailPageScaffold>
   );
 }

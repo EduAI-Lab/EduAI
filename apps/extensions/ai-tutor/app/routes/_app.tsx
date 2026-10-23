@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
   AppShell,
+  OnboardingChecklist,
+  PageTourButton,
   AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
@@ -235,6 +237,7 @@ function AppLayoutInner() {
             coreCourseId={coreCourseId}
             placement={assistantPlacementFor(pathname, CHAT_SCREEN_PREFIXES)}
           />
+          <PageTourButton platform="ai-tutor" pathname={pathname} role={user.role} />
           {/* Last, so it sits in the header's top-right corner (#1754). */}
           <AiTutorPageHelp role={user.role} />
         </>
@@ -252,6 +255,14 @@ function AppLayoutInner() {
         </>
       }
     >
+      {pathname === "/dashboard" && (
+        <OnboardingChecklist
+          platform="ai-tutor"
+          userId={user.id}
+          role={user.role}
+          navigate={navigate}
+        />
+      )}
       <Outlet />
     </AppShell>
   );

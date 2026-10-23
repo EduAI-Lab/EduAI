@@ -2,8 +2,11 @@
  * Process-local FIFO admission for interactive local-GPU chat (vLLM / Ollama).
  *
  * Env:
- *   AI_MAX_INFLIGHT       max concurrent LLM slots (default 8; 0 = disabled)
- *   AI_ADMISSION_WAIT_MS  max wait for a slot (default 15000)
+ *   AI_MAX_INFLIGHT           max concurrent LLM slots (default 8; 0 = disabled)
+ *   AI_ADMISSION_WAIT_MS      max wait for a slot (default 15000)
+ *   AI_ADMISSION_MAX_HOLD_MS  longest one request may hold a slot before it is
+ *                             reclaimed (default 600000; 0 = no limit) (#2009)
+ *   AI_REQUEST_TIMEOUT_MS     deadline for one completion request (default 300000)
  */
 
 import { parseEnvInt } from "~/lib/auth/rate-limit.server";
@@ -32,6 +35,18 @@ function maxInflight(): number {
 
 function waitMs(): number {
   return parseEnvInt(process.env.AI_ADMISSION_WAIT_MS, 15_000);
+}
+
+function maxHoldMs(): number {
+  return parseEnvInt(process.env.AI_ADMISSION_MAX_HOLD_MS, 600_000);
+}
+
+/**
+ * Deadline for one local-model completion request (#2009). Past it the request
+ * is aborted, so a call that never ends cannot keep its slot.
+ */
+export function aiRequestTimeoutMs(): number {
+  return parseEnvInt(process.env.AI_REQUEST_TIMEOUT_MS, 300_000);
 }
 
 function abortError(): Error {
@@ -108,7 +123,37 @@ function releaseSlot(): void {
   clearTimeout(next.timer);
   next.cleanup?.();
   inflight += 1;
-  next.resolve(releaseSlot);
+  next.resolve(holdSlot());
+}
+
+/**
+ * The release function for one granted slot. Releasing twice is a no-op, and a
+ * slot held past AI_ADMISSION_MAX_HOLD_MS is reclaimed with a warning (#2009):
+ * a request that never ends, through a bug like the one that leaked every slot
+ * on prod, then costs one slot for a while instead of the gate until a restart.
+ */
+function holdSlot(): () => void {
+  let released = false;
+  const limit = maxHoldMs();
+  const timer =
+    limit > 0
+      ? setTimeout(() => {
+          if (released) return;
+          released = true;
+          console.warn("[ai-admission] reclaimed a slot held longer than the limit", {
+            maxHoldMs: limit,
+            ...getAiAdmissionStats(),
+          });
+          releaseSlot();
+        }, limit)
+      : undefined;
+  timer?.unref?.();
+  return () => {
+    if (released) return;
+    released = true;
+    if (timer) clearTimeout(timer);
+    releaseSlot();
+  };
 }
 
 /**
@@ -135,7 +180,7 @@ export async function acquireAiAdmission(signal?: AbortSignal): Promise<{
   const started = Date.now();
   if (inflight < max) {
     inflight += 1;
-    return { release: releaseSlot, waitedMs: 0 };
+    return { release: holdSlot(), waitedMs: 0 };
   }
 
   const timeout = waitMs();
@@ -153,6 +198,11 @@ export async function acquireAiAdmission(signal?: AbortSignal): Promise<{
         const idx = waiters.indexOf(waiter);
         if (idx >= 0) waiters.splice(idx, 1);
         waiter.cleanup?.();
+        // These used to be silent; a full gate with nothing running is a leak (#2009).
+        console.warn("[ai-admission] request turned away: no slot freed in time", {
+          waitedMs: timeout,
+          ...getAiAdmissionStats(),
+        });
         reject(new AdmissionTimeoutError());
       }, timeout),
     };

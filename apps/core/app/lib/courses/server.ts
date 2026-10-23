@@ -186,7 +186,11 @@ export function invalidateCourseRagSettingsCache(courseId: string): void {
 // settings cache above to avoid a DB round-trip on that critical path.
 // ---------------------------------------------------------------------------
 
-/** Live topic names split by review state, both minus the "Uncategorized" fallback. */
+/**
+ * Live topic names, both minus the "Uncategorized" fallback: `accepted` is what
+ * the chat prompt lists; `suggested` is classifier-only — unreviewed
+ * suggestions, plus on a learner read the topics hidden from students (#2002).
+ */
 export type CourseTopicNames = { accepted: string[]; suggested: string[] };
 
 type CourseTopicNamesCacheEntry = {
@@ -196,6 +200,14 @@ type CourseTopicNamesCacheEntry = {
 
 const courseTopicNamesCache = new Map<string, CourseTopicNamesCacheEntry>();
 
+/**
+ * Bumped on every invalidation (#2002). A read caches its result only if the
+ * course's generation is unchanged since the read began, so a read already in
+ * flight when a topic was hidden cannot cache the old list after the
+ * invalidation has run.
+ */
+const courseTopicNamesGeneration = new Map<string, number>();
+
 function pruneCourseTopicNamesCache(): void {
   const now = Date.now();
   for (const [key, entry] of courseTopicNamesCache) {
@@ -203,9 +215,14 @@ function pruneCourseTopicNamesCache(): void {
   }
 }
 
-/** Drop a single course's cached topic names so the next read fetches fresh data. */
+/**
+ * Drop a single course's cached topic names, staff and learner, so the next
+ * read fetches fresh data. Call it after the write has committed.
+ */
 export function invalidateCourseTopicNamesCache(courseId: string): void {
+  courseTopicNamesGeneration.set(courseId, (courseTopicNamesGeneration.get(courseId) ?? 0) + 1);
   courseTopicNamesCache.delete(courseId);
+  courseTopicNamesCache.delete(`${courseId}:learner`);
 }
 
 /**
@@ -219,28 +236,40 @@ export function invalidateCourseTopicNamesCache(courseId: string): void {
  * since a small chat model reads that list as course content, while the scope
  * classifier also gets unreviewed suggestions so a course nobody has reviewed
  * yet still has a scope. The "Uncategorized" fallback is in neither.
- * `accepted` is the learner view (#1937), the same set as LEARNER_TOPIC_WHERE.
+ *
+ * A `learner` read (a student's turn) lists the learner view (#1937), the same
+ * set as LEARNER_TOPIC_WHERE: a topic the instructor hid from students (#2002)
+ * leaves the prompt's list but stays in the classifier's, because hiding a
+ * topic hides its name, not the course content it covers.
  */
-export async function getCourseTopicNamesCached(courseId: string): Promise<CourseTopicNames> {
+export async function getCourseTopicNamesCached(
+  courseId: string,
+  learner = false,
+): Promise<CourseTopicNames> {
+  const cacheKey = learner ? `${courseId}:learner` : courseId;
   pruneCourseTopicNamesCache();
 
   const now = Date.now();
-  const cached = courseTopicNamesCache.get(courseId);
+  const cached = courseTopicNamesCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
     return cached.value;
   }
 
+  const generation = courseTopicNamesGeneration.get(courseId) ?? 0;
   const topics = await getCourseTopics(courseId);
   const value: CourseTopicNames = { accepted: [], suggested: [] };
   for (const topic of topics) {
     if (topic.name === FALLBACK_TOPIC_NAME) continue;
-    (topic.reviewStatus === "ACCEPTED" ? value.accepted : value.suggested).push(topic.name);
+    const listed = topic.reviewStatus === "ACCEPTED" && (!learner || topic.visibleToStudents);
+    (listed ? value.accepted : value.suggested).push(topic.name);
   }
 
-  courseTopicNamesCache.set(courseId, {
-    value,
-    expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS,
-  });
+  if ((courseTopicNamesGeneration.get(courseId) ?? 0) === generation) {
+    courseTopicNamesCache.set(cacheKey, {
+      value,
+      expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS,
+    });
+  }
   return value;
 }
 

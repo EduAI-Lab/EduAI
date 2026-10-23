@@ -27,6 +27,8 @@ export const COURSE_PUBLIC_SELECT = {
   startDate: true,
   endDate: true,
   department: true,
+  // #2002: whether students may browse the course's files — the student page reads it.
+  studentFilesVisible: true,
 } satisfies Prisma.CourseSelect;
 
 /**
@@ -128,6 +130,7 @@ export type CoursePublicDto = {
   startDate?: string | null;
   endDate?: string | null;
   department?: string | null;
+  studentFilesVisible?: boolean;
   deletedAt?: Date | null;
   callerEnrollmentRole?: string | null;
   hasAiConfig?: boolean;
@@ -183,6 +186,7 @@ export function serializeCourseForApi(
   if (hasOwn(row, "startDate")) dto.startDate = isoDate(row.startDate);
   if (hasOwn(row, "endDate")) dto.endDate = isoDate(row.endDate);
   if (hasOwn(row, "department")) dto.department = row.department ?? null;
+  if (hasOwn(row, "studentFilesVisible")) dto.studentFilesVisible = row.studentFilesVisible;
 
   // `deletedAt` is useful to trusted service/admin forensics responses, but it
   // is not part of the public student projection.  Narrow test doubles from

@@ -196,6 +196,7 @@ describe("resolveCourseAccessGate", () => {
       isPublished: true,
       instructorId: true,
       deletedAt: true,
+      studentFilesVisible: true,
     });
   });
 
