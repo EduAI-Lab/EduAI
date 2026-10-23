@@ -46,7 +46,40 @@ type MaterialTopicsEditorProps = {
   canCreate?: boolean;
   /** Shown instead of "No topic" while the file is still processing. */
   pendingLabel?: string;
+  /**
+   * Whether a person has set or confirmed this file's topics (#1998). Until
+   * then, topics automatic matching chose are labelled as such.
+   */
+  setManually?: boolean;
 };
+
+/**
+ * The label for a topic automatic matching chose (#1998), or null for one a
+ * person chose. The model's confidence is its own estimate, so it is shown as
+ * a hint ("AI · 70%"), never as an accuracy.
+ */
+export function autoMatchLabel(topic: MaterialTopic): { text: string; title: string } | null {
+  if (topic.matchedBy === "NAME") {
+    return {
+      text: "Matched by name",
+      title: "Filed automatically: the file's Canvas module or first heading names this topic.",
+    };
+  }
+  if (topic.matchedBy === "AI") {
+    const confidence =
+      topic.matchConfidence === null || topic.matchConfidence === undefined
+        ? null
+        : topic.matchConfidence;
+    return {
+      text: confidence === null ? "AI" : `AI · ${confidence}%`,
+      title:
+        "Suggested by AI and filed automatically" +
+        (confidence === null ? "." : `; the model's own estimate is ${confidence}%.`) +
+        " Confirm or change it.",
+    };
+  }
+  return null;
+}
 
 /**
  * A material's topics as tags, with a picker to change them (#1965).
@@ -62,6 +95,7 @@ export function MaterialTopicsEditor({
   onSave,
   canCreate = false,
   pendingLabel,
+  setManually = false,
 }: MaterialTopicsEditorProps) {
   const [open, setOpen] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -114,6 +148,25 @@ export function MaterialTopicsEditor({
     setNewName("");
   };
 
+  // #1998: until a person confirms them, automatically chosen topics are labelled.
+  const labelled = setManually ? [] : topics.filter((topic) => autoMatchLabel(topic) !== null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  /** Keep the topics exactly as they are; saving them marks them as a person's choice. */
+  const confirm = async () => {
+    if (!onSave) return;
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await onSave(topics.map((topic) => ({ topicId: topic.id })));
+    } catch (e) {
+      setConfirmError(saveErrorMessage(e instanceof Error ? e.message : ""));
+    } finally {
+      setConfirming(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!onSave) return;
     setSaving(true);
@@ -134,19 +187,45 @@ export function MaterialTopicsEditor({
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
       {topics.length > 0 ? (
-        topics.map((topic, index) => (
-          <Badge
-            key={topic.id}
-            variant={index === 0 ? "secondary" : "outline"}
-            size="sm"
-            title={index === 0 ? "Main topic" : undefined}
-          >
-            {topic.name}
-          </Badge>
-        ))
+        topics.map((topic, index) => {
+          const auto = setManually ? null : autoMatchLabel(topic);
+          return (
+            <Badge
+              key={topic.id}
+              variant={index === 0 ? "secondary" : "outline"}
+              size="sm"
+              title={index === 0 ? "Main topic" : undefined}
+              className="gap-1"
+            >
+              {topic.name}
+              {auto && (
+                <span
+                  className="rounded-sm bg-primary/10 px-1 text-[10px] font-medium text-primary"
+                  title={auto.title}
+                >
+                  {auto.text}
+                </span>
+              )}
+            </Badge>
+          );
+        })
       ) : (
         <span className="text-[11px] text-muted-foreground">{pendingLabel ?? "No topic"}</span>
       )}
+
+      {onSave && labelled.length > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5 text-[11px]"
+          onClick={() => void confirm()}
+          disabled={confirming}
+          title="Keep these topics as they are"
+        >
+          {confirming ? "Confirming…" : "Confirm"}
+        </Button>
+      )}
+      {confirmError && <span className="text-[11px] text-destructive">{confirmError}</span>}
 
       {onSave && (
         // `modal`: opened from inside a dialog (e.g. upload), a non-modal popover's

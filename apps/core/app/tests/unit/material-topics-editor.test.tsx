@@ -79,6 +79,70 @@ describe("MaterialTopicsEditor (#1965)", () => {
     );
   });
 
+  // #1998: automatic topics are labelled until a person confirms or changes them.
+  describe("automatic topics (#1998)", () => {
+    const AUTO = [
+      { id: "t1", name: "Limits", matchedBy: "AI" as const, matchConfidence: 70 },
+      { id: "t2", name: "Derivatives", matchedBy: "NAME" as const, matchConfidence: null },
+    ];
+
+    it("labels AI and name matches, and confirms them as they are", async () => {
+      const onSave = vi.fn(async () => {});
+      render(<MaterialTopicsEditor topics={AUTO} courseTopics={COURSE_TOPICS} onSave={onSave} />);
+
+      expect(screen.getByText("AI · 70%")).toHaveAttribute(
+        "title",
+        expect.stringContaining("the model's own estimate is 70%"),
+      );
+      expect(screen.getByText("Matched by name")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+      await waitFor(() =>
+        expect(onSave).toHaveBeenCalledWith([{ topicId: "t1" }, { topicId: "t2" }]),
+      );
+    });
+
+    it("shows plain AI when the model gave no confidence", () => {
+      render(
+        <MaterialTopicsEditor
+          topics={[{ id: "t1", name: "Limits", matchedBy: "AI", matchConfidence: null }]}
+          courseTopics={COURSE_TOPICS}
+        />,
+      );
+      expect(screen.getByText("AI")).toBeInTheDocument();
+    });
+
+    it("drops the labels and Confirm once a person has set the topics", () => {
+      render(
+        <MaterialTopicsEditor
+          topics={AUTO}
+          courseTopics={COURSE_TOPICS}
+          onSave={vi.fn()}
+          setManually
+        />,
+      );
+      expect(screen.queryByText("AI · 70%")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    });
+
+    it("offers no Confirm to a viewer who can't change the topics", () => {
+      render(<MaterialTopicsEditor topics={AUTO} courseTopics={COURSE_TOPICS} />);
+      expect(screen.getByText("AI · 70%")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    });
+
+    it("has nothing to confirm when no topic is automatic", () => {
+      render(
+        <MaterialTopicsEditor
+          topics={[{ id: "t1", name: "Limits" }]}
+          courseTopics={COURSE_TOPICS}
+          onSave={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    });
+  });
+
   it("stops at three topics", () => {
     render(<MaterialTopicsEditor topics={[]} courseTopics={COURSE_TOPICS} onSave={vi.fn()} />);
 

@@ -137,6 +137,7 @@ Do not put passwords, API keys, private student information, or other secrets in
 
 - Students and TAs can view materials made available to their course access.
 - Instructors can upload supported material files and may connect/sync Canvas content.
+- **Materials are course learning materials only:** lecture notes, slides, readings and assignments. Don't upload rosters, grades or admin documents. Course chat, Penny and topic matching read every file here.
 - Uploaded material is processed and indexed before it becomes useful to course-aware chat. A processing failure means the file may not be available to retrieval.
 - If Canvas is unavailable or a sync is rate-limited, wait and retry rather than starting multiple simultaneous syncs.
 

@@ -89,6 +89,8 @@ import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
 import { MaterialTopicsEditor } from "~/components/courses/material-topics-editor";
 import { TopicFiles } from "~/components/courses/topic-files";
+import { MATERIALS_SCOPE_COPY } from "~/lib/courses/materials-scope";
+import { TopicSuggestionsReview } from "~/components/courses/topic-suggestions-review";
 import type { MaterialTopic, MaterialTopicChoice } from "~/hooks/api/use-course-materials";
 import type { MaterialFailureCode } from "~/hooks/api/use-course-materials";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
@@ -562,6 +564,28 @@ export function CourseDetailManagerView({
   // #1965: the topics a material can be filed under — accepted ones only. An
   // unreviewed suggestion is approved on the Topics tab first, and the SYSTEM
   // placeholder is not a subject.
+  // #1998: a reviewer sees suggestions in their own window; the list holds the rest.
+  const topicSuggestions = topics.filter(isSuggestion);
+  const listedTopics = canReviewTopicSuggestions ? topics.filter((t) => !isSuggestion(t)) : topics;
+
+  // #1998: after an instructor runs Suggest topics, the review window opens
+  // once the new suggestions arrive. Automatic runs (after an upload) don't
+  // open it; their suggestions wait behind the "to review" banner.
+  const [suggestionReviewRequest, setSuggestionReviewRequest] = useState(0);
+  const suggestBaselineRef = useRef<number | null>(null);
+  const suggestCount = topicSuggestions.length;
+  useEffect(() => {
+    const baseline = suggestBaselineRef.current;
+    if (baseline !== null && !topicAnalysisInFlight && suggestCount > baseline) {
+      suggestBaselineRef.current = null;
+      setSuggestionReviewRequest((n) => n + 1);
+    }
+  }, [suggestCount, topicAnalysisInFlight]);
+  const suggestAndReview: typeof suggestTopics = async (...args) => {
+    suggestBaselineRef.current = suggestCount;
+    return suggestTopics(...args);
+  };
+
   // #1997: accepted topics with no file filed under them, flagged on the Topics tab.
   const topicsWithoutFiles = topics.filter(
     (t) =>
@@ -578,6 +602,7 @@ export function CourseDetailManagerView({
   const renderMaterialTopics = (material: CourseMaterial) => (
     <MaterialTopicsEditor
       topics={material.topics ?? []}
+      setManually={material.topicsSetManually ?? false}
       courseTopics={fileableTopics}
       canCreate
       onSave={
@@ -1514,6 +1539,8 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
+          {/* #1998: say what belongs here; chat and topic matching read these files. */}
+          <p className="mb-2 text-xs text-muted-foreground">{MATERIALS_SCOPE_COPY}</p>
           <MaterialList
             title={
               <span className="inline-flex items-center gap-1.5">
@@ -1662,7 +1689,7 @@ export function CourseDetailManagerView({
               <SuggestTopicsBar
                 unfiledMaterials={topicAnalysis.unfiledMaterials}
                 busy={topicAnalysisInFlight}
-                onSuggest={suggestTopics}
+                onSuggest={suggestAndReview}
               />
             )}
             <TopicAnalysisBanner
@@ -1714,11 +1741,44 @@ export function CourseDetailManagerView({
                 some.
               </p>
             )}
-            {topics.length === 0 ? (
-              <EmptyState title="No topics yet." size="sm" />
+            {/* #1998: suggestions are reviewed in their own window, apart from
+                the approved topics. The review endpoints are rank >= 2: a TA with
+                \`tas.canManageTopics\` may manage topics but not review suggestions,
+                so for them suggestions stay in the list. */}
+            {canReviewTopicSuggestions && (
+              <TopicSuggestionsReview
+                suggestions={topicSuggestions}
+                mergeTargets={topics.filter((candidate) => !isSuggestion(candidate))}
+                openRequest={suggestionReviewRequest}
+                onApprove={async (id) => {
+                  await approveTopic(id);
+                  await onRefreshTopics?.();
+                }}
+                onDismiss={async (id) => {
+                  await dismissTopic(id);
+                  await onRefreshTopics?.();
+                }}
+                onMerge={async (id, intoId) => {
+                  await mergeTopic(id, intoId);
+                  await onRefreshTopics?.();
+                }}
+                onRename={
+                  onRenameTopic &&
+                  (async (id, name) => {
+                    await onRenameTopic(id, name);
+                    await onRefreshTopics?.();
+                  })
+                }
+              />
+            )}
+            {listedTopics.length === 0 ? (
+              <EmptyState
+                title={topicSuggestions.length > 0 ? "No approved topics yet." : "No topics yet."}
+                size="sm"
+              />
             ) : (
               <div className="grid gap-2">
-                {topics.map((t) => (
+                {listedTopics.map((t) => (
                   <Card key={t.id}>
                     <CardContent className="flex items-center justify-between gap-3 py-3">
                       <span className="flex min-w-0 flex-col gap-0.5 text-sm">
@@ -1740,37 +1800,9 @@ export function CourseDetailManagerView({
                           />
                         )}
                       </span>
-                      {/* #1624: an unreviewed suggestion gets rename/approve/merge/
-                          dismiss instead of the plain delete — dismissing is a soft
-                          delete that also stops the name being re-proposed next sync.
-                          Gated on rank >= 2 to match the endpoint: a TA with
-                          `tas.canManageTopics` may manage topics but not review
-                          suggestions, and would only get a 403 from these. */}
-                      {canReviewTopicSuggestions && isSuggestion(t) ? (
-                        <TopicSuggestionControls
-                          topic={t}
-                          mergeTargets={topics.filter((candidate) => !isSuggestion(candidate))}
-                          onApprove={async (id) => {
-                            await approveTopic(id);
-                            await onRefreshTopics?.();
-                          }}
-                          onDismiss={async (id) => {
-                            await dismissTopic(id);
-                            await onRefreshTopics?.();
-                          }}
-                          onMerge={async (id, intoId) => {
-                            await mergeTopic(id, intoId);
-                            await onRefreshTopics?.();
-                          }}
-                          onRename={
-                            onRenameTopic &&
-                            (async (id, name) => {
-                              await onRenameTopic(id, name);
-                              await onRefreshTopics?.();
-                            })
-                          }
-                        />
-                      ) : canManage ? (
+                      {/* #1998: a reviewer handles suggestions in their review window,
+                          so the list only offers delete. */}
+                      {canManage ? (
                         <Button
                           variant="ghost"
                           size="icon"
