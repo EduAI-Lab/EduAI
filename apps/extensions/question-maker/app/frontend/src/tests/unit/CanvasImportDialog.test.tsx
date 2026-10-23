@@ -8,7 +8,7 @@
  * and no course cascade — quizzes come from the Canvas course this course is
  * linked to, and the assessment lands in this course.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 
 // jsdom doesn't implement scrollIntoView; Radix Select's viewport-scroll effect calls it.
@@ -102,8 +102,11 @@ async function completeForm(quizLabel = "Week 1 Quiz (Published)") {
 }
 
 describe("CanvasImportDialog", () => {
+  // globals are off in this config, so RTL does not auto-unmount. Unmount after each
+  // test so no dialog is left loading when jsdom is torn down at the end of the file.
+  afterEach(cleanup);
+
   beforeEach(() => {
-    cleanup();
     canManageCanvas = true;
     getIntegration.mockReset();
     getCourseMapping.mockReset();
