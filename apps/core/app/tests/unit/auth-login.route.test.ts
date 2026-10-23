@@ -27,6 +27,11 @@ vi.mock("~/lib/deployment-safety.server", () => ({
   isLocalDemoEnabled: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock("~/lib/auth/dev-quick-login.server", () => ({
+  devQuickLoginOptions: vi.fn().mockReturnValue(null),
+  resolveDevQuickLogin: vi.fn(),
+}));
+
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn((p: Promise<unknown>) => p),
   logSecurityEvent: vi.fn().mockResolvedValue(undefined),
@@ -48,6 +53,7 @@ import { loader, action } from "~/routes/auth/login";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
+import { devQuickLoginOptions, resolveDevQuickLogin } from "~/lib/auth/dev-quick-login.server";
 import { describeSelfEnrollmentLinkForVisitor } from "~/lib/courses/self-enrollment.server";
 import {
   redeemPendingSelfEnrollments,
@@ -81,6 +87,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getPolicy).mockResolvedValue(true);
   vi.mocked(redeemPendingSelfEnrollments).mockResolvedValue([]);
+  vi.mocked(devQuickLoginOptions).mockReturnValue(null);
   delete process.env.COOKIE_DOMAIN;
   authServerMocks.authBaseURL = "http://localhost:3000";
 });
@@ -142,6 +149,7 @@ describe("auth/login loader", () => {
       forceReauth: false,
       showDemoLogin: false,
       demoPassword: null,
+      devQuickLogin: null,
     });
   });
 });
@@ -534,5 +542,66 @@ describe("auth/login action — joins that waited for activation (#1961)", () =>
     await action(makeActionArgs({ ...CREDENTIALS, redirectTo: JOIN_REDIRECT }));
 
     expect(rememberPendingSelfEnrollmentForEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("auth/login — dev quick login (#1900)", () => {
+  it("offers the dev buttons as keys and labels only, never a password", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(devQuickLoginOptions).mockReturnValue([
+      { key: "student", label: "Student" },
+      { key: "instructor", label: "Instructor" },
+    ]);
+    const data = (await loader(makeLoaderArgs())) as { devQuickLogin: unknown };
+    expect(data.devQuickLogin).toEqual([
+      { key: "student", label: "Student" },
+      { key: "instructor", label: "Instructor" },
+    ]);
+    expect(JSON.stringify(data)).not.toMatch(/password":"[^"]+/);
+  });
+
+  it("signs in with the server's credentials for a button that names only an account", async () => {
+    vi.mocked(resolveDevQuickLogin).mockResolvedValue({
+      ok: true,
+      email: "student1@eduai.local",
+      password: "server-held-password",
+    });
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "s1", role: "STUDENT", emailVerified: true } }), {
+        status: 200,
+        headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({ devQuickLogin: "student", redirectTo: "/dashboard" }),
+    )) as Response;
+
+    expect(resolveDevQuickLogin).toHaveBeenCalledWith("student");
+    expect(res.status).toBe(302);
+    const sent = await vi.mocked(auth.handler).mock.calls[0][0].json();
+    expect(sent).toMatchObject({ email: "student1@eduai.local", password: "server-held-password" });
+  });
+
+  it("refuses without reaching sign-in when the server won't allow it", async () => {
+    vi.mocked(resolveDevQuickLogin).mockResolvedValue({
+      ok: false,
+      error: "Quick login is never available for admin accounts.",
+    });
+    const result = await action(
+      makeActionArgs({ devQuickLogin: "admin", redirectTo: "/dashboard" }),
+    );
+    expect(result).toEqual({ formError: "Quick login is never available for admin accounts." });
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
+  it("ignores quick login on an ordinary sign-in", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT", emailVerified: true } }), {
+        status: 200,
+      }),
+    );
+    await action(makeActionArgs({ email: "a@ubc.ca", password: "correct-password-123" }));
+    expect(resolveDevQuickLogin).not.toHaveBeenCalled();
   });
 });

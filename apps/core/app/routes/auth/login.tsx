@@ -3,6 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
 import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
+import { DevQuickLoginButtons } from "~/components/auth/dev-quick-login-buttons";
 import { JoinCourseNotice } from "~/components/auth/join-course-notice";
 import { LoginForm } from "~/components/login-form";
 import { signInSchema, type SignInInput } from "~/lib/auth";
@@ -14,6 +15,7 @@ import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getLocalSeedPassword, isLocalDemoEnabled } from "~/lib/deployment-safety.server";
+import { devQuickLoginOptions, resolveDevQuickLogin } from "~/lib/auth/dev-quick-login.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -141,6 +143,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // server so production never renders the controls or receives the password.
     showDemoLogin: demoPassword !== null,
     demoPassword,
+    // #1900: non-admin test accounts on the shared dev server. Keys and labels
+    // only; the password stays on the server. Local demo mode shows its own buttons.
+    devQuickLogin: demoPassword === null ? devQuickLoginOptions() : null,
   };
 }
 
@@ -162,6 +167,17 @@ export async function action({ request }: ActionFunctionArgs) {
     email: String(values.email || ""),
     password: String(values.password || ""),
   };
+
+  // #1900: a dev quick-login button names an account; the server supplies the
+  // password after re-checking that quick login is allowed and the account
+  // isn't an admin. Everything after this is the ordinary sign-in.
+  const quickLoginKey = String(values.devQuickLogin ?? "").trim();
+  if (quickLoginKey) {
+    const quick = await resolveDevQuickLogin(quickLoginKey);
+    if (!quick.ok) return { formError: quick.error };
+    input.email = quick.email;
+    input.password = quick.password;
+  }
 
   const result = signInSchema.safeParse(input);
   if (!result.success) {
@@ -315,6 +331,7 @@ export default function LoginPage() {
     forceReauth,
     showDemoLogin,
     demoPassword,
+    devQuickLogin,
     registrationSubmitted,
   } = useLoaderData() as {
     redirectTo: string;
@@ -325,6 +342,7 @@ export default function LoginPage() {
     registrationSubmitted: boolean;
     showDemoLogin: boolean;
     demoPassword: string | null;
+    devQuickLogin: Array<{ key: string; label: string }> | null;
   };
 
   return (
@@ -409,6 +427,7 @@ export default function LoginPage() {
         {showDemoLogin && demoPassword && (
           <DemoLoginButtons redirectTo={redirectTo} password={demoPassword} />
         )}
+        {devQuickLogin && <DevQuickLoginButtons redirectTo={redirectTo} accounts={devQuickLogin} />}
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">
