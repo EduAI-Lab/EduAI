@@ -184,6 +184,7 @@ The table above covers what `apps/core/.env.example` ships. The groups below are
 | `BEDROCK_RATE_LIMIT` / `BEDROCK_RATE_WINDOW_MS` | `20` / `60000` | Aggregate AWS cost cap (global, not per user) |
 | `VLLM_CHAT_TOOLS` | off | `1` honours the DB `supportsTools` flag for vLLM models instead of forcing hybrid RAG |
 | `VLLM_DISABLE_THINKING` | on | `0` preserves `<think>` output from Qwen3.5 |
+| `VLLM_IMAGE_MAX_PIXELS` | `1500000` | #1999: a vLLM chat request that carries an image (chat attachments, image course materials) asks the server to downscale it to at most this many pixels (`mm_processor_kwargs.max_pixels`); `0` turns the cap off. A full-resolution phone photo is about 16,400 image tokens (more than the 2B/9B's 16,384-token window) and made the 27B's transcription 2–3× slower; capped, any image is about 1,600 tokens. Measured on prod 2026-10-23: receipt photo 30 s → 17 s, whiteboard photo 26 s → 10 s, with the same transcription. |
 | `VLLM_DEGRADED_WAITING` / `VLLM_DEGRADED_CACHE_PCT` | `4` / `0.9` | Thresholds for the header "degraded" model-status chip |
 | `CMPS01_INTERNAL_KEY` / `CMPS01_INTERNAL_BASE_URL` | — | Shared secret and allowlisted origin for the nginx edge in front of cmps01. The key is attached only to deployment-owned URLs, never client-supplied ones |
 
