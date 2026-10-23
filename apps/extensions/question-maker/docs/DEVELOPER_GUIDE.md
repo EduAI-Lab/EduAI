@@ -157,7 +157,8 @@ question/variant/assessment authoring data and reaches everything else through C
 ### 3) Guided tour
 - UI: launched from the header (?) help button and the Help page; steps live in `tour/qmTours.ts`
   and run on the shared `@eduai/ui` tour engine (the same one Core and AI Tutor use).
-- Behavior: auto-starts once for a new user; follows the first course card (`data-tour-route`) from
+- Behavior: starts only on request, from (?) → Take the tour, the Help page, or ▶ on the dashboard
+  (#2004); follows the first course card (`data-tour-route`) from
   `/courses` into that course's `?tab=questions` and `?tab=assessments`. Started inside a course, it
   tours that course.
 

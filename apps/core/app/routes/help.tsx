@@ -3,7 +3,7 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { HelpView } from "~/components/help/help-view";
-import { requestAssistantOpen } from "~/components/assistant/assistant-events";
+import { requestAssistantOpen } from "@eduai/ui/assistant";
 import { useAssistantVisibility } from "~/components/assistant/help-assistant";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import prisma from "~/lib/prisma.server";

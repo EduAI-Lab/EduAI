@@ -344,6 +344,8 @@ jobs:
       # the expected output out from under this gate.
       - name: Format check
         run: npm run format:check
+      - name: Check generated onboarding copy
+        run: npm run onboarding:check
       # The sweep commit recorded in .git-blame-ignore-revs has to keep resolving
       # — a rebase mints a new SHA and would silently strand the entry, leaving
       # `git blame` pointing every line at the sweep forever.

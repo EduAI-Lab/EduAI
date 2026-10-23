@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LocalTour } from "../tour/local-tour";
 import type { TourDefinition } from "../tour/tour-engine";
-import { TourProvider, useAutoStartTour, useTour } from "../tour/tour-provider";
+import { TourProvider, useTour } from "../tour/tour-provider";
 
 const TOURS = {
   basic: {
@@ -68,7 +68,7 @@ function Capture() {
   return null;
 }
 
-function Harness({ initial = "/", autoStart }: { initial?: string; autoStart?: string }) {
+function Harness({ initial = "/" }: { initial?: string }) {
   const [location, setLocation] = React.useState(() => {
     const [pathname, search = ""] = initial.split("?");
     return { pathname, search: search ? `?${search}` : "" };
@@ -80,16 +80,10 @@ function Harness({ initial = "/", autoStart }: { initial?: string; autoStart?: s
   return (
     <TourProvider tours={TOURS} location={location} navigate={navigate}>
       <Capture />
-      {autoStart ? <AutoStart id={autoStart} /> : null}
       <span data-testid="location">{location.pathname + location.search}</span>
       <Page path={location.pathname} />
     </TourProvider>
   );
-}
-
-function AutoStart({ id }: { id: string }) {
-  useAutoStartTour(id);
-  return null;
 }
 
 describe("TourProvider", () => {
@@ -152,17 +146,6 @@ describe("TourProvider", () => {
     act(() => controls.startTour("journey"));
     expect(await screen.findByText("Inside the course")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/courses/3?tab=questions");
-  });
-
-  it("auto-starts once for a viewer who hasn't seen the tour", async () => {
-    const { unmount } = render(<Harness autoStart="basic" />);
-    expect(await screen.findByText("Welcome")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
-    unmount();
-
-    render(<Harness autoStart="basic" />);
-    await new Promise((r) => setTimeout(r, 400));
-    expect(screen.queryByText("Welcome")).not.toBeInTheDocument();
   });
 });
 

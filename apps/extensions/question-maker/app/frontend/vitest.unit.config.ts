@@ -33,6 +33,14 @@ export default defineConfig({
         frontendDir,
         "../../../../../packages/ui/src/bug-report-capture.ts",
       ),
+      "@eduai/ui/assistant/shared": path.resolve(
+        frontendDir,
+        "../../../../../packages/ui/src/assistant/shared.ts",
+      ),
+      "@eduai/ui/assistant": path.resolve(
+        frontendDir,
+        "../../../../../packages/ui/src/assistant/index.ts",
+      ),
       "@eduai/ui": path.resolve(frontendDir, "../../../../../packages/ui/src/index.ts"),
     },
     dedupe: ["react", "react-dom"],
