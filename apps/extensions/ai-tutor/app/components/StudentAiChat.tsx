@@ -56,6 +56,8 @@ import { StudentChatHistoryPanel } from "~/components/StudentChatHistoryPanel";
 import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import { useApiKeys } from "~/hooks/use-api-keys";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { loadStudyBuddyModel, saveStudyBuddyModel } from "~/lib/study-buddy-model";
 import {
   getProviderFromModelId,
   getProviderLabel,
@@ -240,7 +242,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
+  // Empty until the catalog loads, so a hardcoded model never shows first (#2025).
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
+  const { user } = useLocalUser();
+  const userId = user?.id ?? null;
   const [modelsFetched, setModelsFetched] = useState(false);
   const [modelLoadError, setModelLoadError] = useState(false);
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
@@ -374,7 +379,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         setAvailableModels(selectableModels);
         setStudentModelPolicyActive(policyActive);
         setSelectedModelId((current) => {
-          if (selectableModels.some((model) => model.modelId === current)) return current;
+          // The student's own pick wins, then the admin's default tutor model (#2025).
+          const preferred = [current, loadStudyBuddyModel(userId)];
+          const picked = preferred.find((id) =>
+            selectableModels.some((model) => model.modelId === id),
+          );
+          if (picked) return picked;
           const defaultModel = selectableModels.find((model) => model.isDefaultTutor);
           return defaultModel?.modelId ?? selectableModels[0]?.modelId ?? DEFAULT_MODEL_ID;
         });
@@ -383,6 +393,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (!isMounted) return;
         console.error("Failed to load AI models:", error);
         setModelLoadError(true);
+        setSelectedModelId((current) => current || DEFAULT_MODEL_ID);
         setStudentModelPolicyActive(false);
       } finally {
         if (isMounted) setModelsFetched(true);
@@ -391,7 +402,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [userId]);
 
   // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
   // held BYOK key never adds models the admin left off the allow-list — the
@@ -399,6 +410,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   // serve without one, and Core falls back to a keyed provider when the fleet
   // is down), not a way to pick a model policy forbids.
   const pickerModels = availableModels as StudentSelectableModel[];
+
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      setSelectedModelId(modelId);
+      saveStudyBuddyModel(userId, modelId);
+    },
+    [userId],
+  );
 
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
@@ -941,7 +960,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               </p>
             </div>
           ) : !modelUsable ? (
-            apiKeysLoaded ? (
+            apiKeysLoaded && selectedModelId ? (
               <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
                   <IconKey className="h-7 w-7" aria-hidden />
@@ -1055,7 +1074,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
               <Select
                 value={selectedModelId}
-                onValueChange={setSelectedModelId}
+                onValueChange={handleModelChange}
                 disabled={!pickerModels.length}
               >
                 <SelectTrigger
