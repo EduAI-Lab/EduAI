@@ -59,6 +59,7 @@ function renderView(overrides: Partial<React.ComponentProps<typeof LessonActivit
         onSubmit={vi.fn()}
         result={null}
         wasCorrect={false}
+        awaitingReview={false}
         submitState="allowed"
         isUserReady
         onGuideMe={vi.fn()}
@@ -86,6 +87,19 @@ describe("LessonActivityView", () => {
   it("keeps Submit enabled for an ungraded selected answer", () => {
     renderView();
     expect(screen.getByRole("button", { name: /submit answer/i })).not.toBeDisabled();
+  });
+
+  it("shows an answer awaiting staff grading as neutral, not wrong (#1982)", () => {
+    renderView({
+      result: "Submitted. Your instructor will review this answer.",
+      awaitingReview: true,
+      mcq: 0,
+    });
+    const status = screen.getByText("Submitted. Your instructor will review this answer.");
+    expect(status.parentElement?.className).not.toContain("destructive");
+    expect(screen.getByRole("radio", { name: "Option A" }).className).not.toContain(
+      "border-destructive",
+    );
   });
 
   it("marks the picked option red only while a wrong grade stands (#1644 bug 4)", () => {
@@ -116,6 +130,7 @@ describe("LessonActivityView", () => {
           onSubmit={vi.fn()}
           result={null}
           wasCorrect={false}
+          awaitingReview={false}
           submitState="allowed"
           isUserReady
           onGuideMe={vi.fn()}

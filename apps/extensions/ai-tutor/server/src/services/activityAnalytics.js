@@ -176,18 +176,18 @@ export async function recordSubmissionMetrics({ userId, activityId, isCorrect })
           increment: 1,
         },
         incorrectSubmissionCount: {
-          increment: isCorrect ? 0 : 1,
+          increment: isCorrect === false ? 1 : 0,
         },
         correctSubmissionCount: {
-          increment: isCorrect ? 1 : 0,
+          increment: isCorrect === true ? 1 : 0,
         },
       },
       create: {
         userId,
         activityId,
         submissionCount: 1,
-        incorrectSubmissionCount: isCorrect ? 0 : 1,
-        correctSubmissionCount: isCorrect ? 1 : 0,
+        incorrectSubmissionCount: isCorrect === false ? 1 : 0,
+        correctSubmissionCount: isCorrect === true ? 1 : 0,
       },
     });
 

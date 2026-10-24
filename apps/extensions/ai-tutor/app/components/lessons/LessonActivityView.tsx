@@ -67,6 +67,8 @@ type LessonActivityViewProps = {
   onSubmit: () => void;
   result: string | null;
   wasCorrect: boolean;
+  /** The last submission has no answer key and waits for staff grading (#1982). */
+  awaitingReview: boolean;
   /**
    * The caller's answer-submission capability for this course (#1626).
    * Recording a graded attempt is a STUDENT-enrolment path; a course TA keeps
@@ -115,6 +117,7 @@ export function LessonActivityView({
   onSubmit,
   result,
   wasCorrect,
+  awaitingReview,
   submitState,
   isUserReady,
   onGuideMe,
@@ -256,7 +259,7 @@ export function LessonActivityView({
             Array.isArray(activity?.options?.choices) ? (
               <div className="space-y-3" role="radiogroup" aria-label="Answer choices">
                 {activity.options.choices.map((choice, i) => {
-                  const graded = result !== null;
+                  const graded = result !== null && !awaitingReview;
                   const state = graded
                     ? mcq === i
                       ? wasCorrect
@@ -355,7 +358,9 @@ export function LessonActivityView({
                 "flex items-center gap-3 rounded-[var(--radius-lg)] p-4",
                 wasCorrect
                   ? "border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]"
-                  : "border border-destructive/40 bg-destructive/10 text-destructive",
+                  : awaitingReview
+                    ? "border border-border bg-muted/60 text-foreground"
+                    : "border border-destructive/40 bg-destructive/10 text-destructive",
               )}
             >
               {wasCorrect ? (

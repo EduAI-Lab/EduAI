@@ -1209,6 +1209,14 @@ router.post("/questions/:id/answer", async (req, res) => {
       answerOption,
     });
 
+    // `null` = no answer key, so the submission waits for staff grading (#1982).
+    const message =
+      isCorrect === null
+        ? "Submitted. Your instructor will review this answer."
+        : isCorrect
+          ? "Nice! That looks right."
+          : "Not quite. Try another angle.";
+
     const submission = await createSubmissionWithNextAttempt({
       userId: authUser.id,
       activityId,
@@ -1216,13 +1224,11 @@ router.post("/questions/:id/answer", async (req, res) => {
         answerText: typeof answerText === "string" ? answerText : null,
         answerOption: typeof answerOption === "number" ? answerOption : null,
       },
-      aiFeedback: isCorrect
-        ? { message: "Nice! That looks right." }
-        : { message: "Not quite. Try another angle." },
+      aiFeedback: { message },
       isCorrect,
     });
 
-    await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
+    await trackSubmissionMetrics(authUser.id, activityId, isCorrect);
     const feedbackAlreadySubmitted = await hasActivityFeedback({
       userId: authUser.id,
       activityId,
@@ -1231,7 +1237,7 @@ router.post("/questions/:id/answer", async (req, res) => {
     res.json({
       ok: true,
       isCorrect,
-      message: isCorrect ? "Nice! That looks right." : "Not quite. Try another angle.",
+      message,
       submissionId: submission.id,
       feedbackRequired: !feedbackAlreadySubmitted,
       feedbackAlreadySubmitted,
