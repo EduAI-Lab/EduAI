@@ -686,6 +686,44 @@ describe("Activities routes", () => {
       expect(res.body.isCorrect).toBe(false);
     });
 
+    it("leaves a short answer with no answer key for staff grading, not marked wrong (#1982)", async () => {
+      const openEndedActivity = await createActivityInDb({
+        config: {
+          question: "Explain your reasoning",
+          questionType: "SHORT_TEXT",
+          options: [],
+          hints: [],
+        },
+      });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .post(`/api/questions/${openEndedActivity.id}/answer`)
+        .send({ answerText: "Because of entropy" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isCorrect).toBeNull();
+      expect(res.body.message).toBe("Submitted. Your instructor will review this answer.");
+
+      const submission = await prisma.submission.findFirst({
+        where: { userId: student.id, activityId: openEndedActivity.id },
+      });
+      expect(submission.isCorrect).toBeNull();
+      expect(submission.aiFeedback).toEqual({
+        message: "Submitted. Your instructor will review this answer.",
+      });
+
+      const metric = await prisma.activityStudentMetric.findUnique({
+        where: { userId_activityId: { userId: student.id, activityId: openEndedActivity.id } },
+      });
+      expect(metric).toMatchObject({
+        submissionCount: 1,
+        correctSubmissionCount: 0,
+        incorrectSubmissionCount: 0,
+      });
+    });
+
     it("rejects answers that do not match the activity", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
