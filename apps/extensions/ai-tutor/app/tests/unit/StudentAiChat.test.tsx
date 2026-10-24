@@ -23,6 +23,7 @@
 import { createRef } from "react";
 import { MemoryRouter } from "react-router";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { saveStudyBuddyModel } from "~/lib/study-buddy-model";
 import StudentAiChat, { type StudentAiChatHandle } from "~/components/StudentAiChat";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import type { Activity } from "~/lib/types";
@@ -55,6 +56,10 @@ vi.mock("~/hooks/use-api-keys", () => ({
     setKey: mockSetKey,
     validateKey: mockValidateKey,
   }),
+}));
+
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({ user: { id: "s1", name: "Student", role: "STUDENT" } }),
 }));
 
 // ── StudentChatHistoryPanel: capture onSelect for restoration tests ────────
@@ -251,6 +256,55 @@ describe("StudentAiChat — default model selection from isDefaultTutor (#1004)"
     expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({
       modelId: "google:gemini-2.5-pro",
     });
+  });
+});
+
+// ── #2025 ─────────────────────────────────────────────────────────────────
+
+describe("StudentAiChat — admin default and the student's pick (#2025)", () => {
+  const CATALOG = [
+    { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
+    { id: "m2", modelId: "ollama:qwen2.5:3b", modelName: "Qwen 2.5 3B", isDefaultTutor: true },
+    { id: "m3", modelId: "vllm:llama-3", modelName: "Llama 3" },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    listAiModels.mockResolvedValue(CATALOG);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+  });
+
+  it("starts on the admin's default tutor model even when Gemini is allowed", async () => {
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).toHaveTextContent("Qwen 2.5 3B"));
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({ modelId: "ollama:qwen2.5:3b" });
+  });
+
+  it("never shows the Gemini key prompt while the catalog is still loading", () => {
+    listAiModels.mockReturnValue(new Promise(() => {}));
+    renderChat();
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+  });
+
+  it("keeps the student's saved pick across chats (each activity remounts the chat)", async () => {
+    saveStudyBuddyModel("s1", "vllm:llama-3");
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).toHaveTextContent("Llama 3"));
+  });
+
+  it("falls back to the admin default when the saved pick is no longer allowed", async () => {
+    saveStudyBuddyModel("s1", "openai:gpt-4o-mini");
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).toHaveTextContent("Qwen 2.5 3B"));
   });
 });
 
