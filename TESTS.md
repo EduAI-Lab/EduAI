@@ -1273,6 +1273,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`CourseDetail.test.tsx`](apps/core/app/tests/unit/CourseDetail.test.tsx) | (#2002) The student course page lists the course's files only when the course shares them; otherwise it shows no file list and never asks for one. |
 | [`permissions.test.ts`](apps/core/app/tests/unit/permissions.test.ts) | (#2002) `canViewMaterial` lets a student read files only in a published course that shares them, and staff whatever either flag says. |
 | [`assistant-material-context.test.ts`](apps/core/app/tests/unit/assistant-material-context.test.ts) | (#2002) The help assistant gives a student material from a published course that shares its files, read through the per-file student gate, and none from an unpublished course even when it shares them. |
+| [`course-student-visibility-settings.test.tsx`](apps/core/app/tests/unit/course-student-visibility-settings.test.tsx) | (#2002) "What students see" is one **Show topics to students** switch: it is off and says how many are shown when only some are, one click sends just the approved topics that differ (not suggestions, Uncategorized or the file setting) and stays on when the refetch is stale, and it is disabled until a topic is approved. The file setting and single topics move into **File and topic settings**, which closes on save and drops unsaved choices when closed. |
 
 ## EduAI Integration Tests
 
