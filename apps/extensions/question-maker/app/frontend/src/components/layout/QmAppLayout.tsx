@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
   AppShell,
+  GettingStartedButton,
   OnboardingChecklist,
   PageTourButton,
   ThemeToggle,
@@ -324,6 +325,13 @@ function QmAppLayoutInner() {
             coreCourseId={coreCourseId ?? null}
             placement="floating"
           />
+          <GettingStartedButton
+            platform="question-maker"
+            userId={user ? String(user.id) : ""}
+            role={questionMakerRole}
+            pathname={pathname}
+            navigate={navigate}
+          />
           <PageTourButton
             platform="question-maker"
             pathname={pathname}
@@ -347,15 +355,18 @@ function QmAppLayoutInner() {
         </>
       }
     >
-      {pathname === "/dashboard" && user && (
+      {pathname === "/dashboard" && user ? (
         <OnboardingChecklist
           platform="question-maker"
           userId={String(user.id)}
           role={questionMakerRole}
           navigate={navigate}
-        />
+        >
+          <Outlet />
+        </OnboardingChecklist>
+      ) : (
+        <Outlet />
       )}
-      <Outlet />
     </AppShell>
   );
 }

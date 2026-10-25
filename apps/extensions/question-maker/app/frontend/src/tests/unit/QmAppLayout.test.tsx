@@ -43,6 +43,7 @@ let capturedAppShellProps: any = null;
 // and a stub would assert nothing.
 vi.mock("@eduai/ui", async (importOriginal) => ({
   OnboardingChecklist: (await importOriginal<any>()).OnboardingChecklist,
+  GettingStartedButton: (await importOriginal<any>()).GettingStartedButton,
   PageTourButton: (await importOriginal<any>()).PageTourButton,
   useHistoryOnOpen: (await importOriginal<any>()).useHistoryOnOpen,
   BugReportTriggerButton: (await importOriginal<any>()).BugReportTriggerButton,
