@@ -4,7 +4,7 @@
 **Audience:** Facilitator only (do not give to participants)  
 **Last updated:** 2026-06-22 (includes #708 course UX: colours, term filter, material preview, motion)
 
-**Related docs:** [Phase 3 User Testing Guide](../eduai-summer-2026/PHASE_3_USER_TESTING_GUIDE.md) · Qualtrics item list: [adhd-pilot-qualtrics-items.md](./adhd-pilot-qualtrics-items.md)
+**Related docs:** [Phase 3 User Testing Guide](../../eduai-summer-2026/PHASE_3_USER_TESTING_GUIDE.md) · Qualtrics item list: [adhd-pilot-qualtrics-items.md](./adhd-pilot-qualtrics-items.md)
 
 ---
 

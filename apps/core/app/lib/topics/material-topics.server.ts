@@ -19,7 +19,14 @@ export const MATERIAL_TOPIC_WHERE = {
   reviewStatus: "ACCEPTED",
 } satisfies Prisma.CourseTopicWhereInput;
 
-export type MaterialTopic = { id: string; name: string };
+export type MaterialTopic = {
+  id: string;
+  name: string;
+  /** How automatic matching chose this topic (#1998); absent or null when a person did. */
+  matchedBy?: "NAME" | "AI" | null;
+  /** The model's own 0–100 estimate for an AI match. */
+  matchConfidence?: number | null;
+};
 
 /** Each material's topics, main topic first. Materials with none are absent from the map. */
 export async function topicsForMaterials(
@@ -30,11 +37,21 @@ export async function topicsForMaterials(
 
   const links = await prisma.courseTopicSource.findMany({
     where: { materialId: { in: materialIds }, topic: MATERIAL_TOPIC_WHERE },
-    select: { materialId: true, topic: { select: { id: true, name: true } } },
+    select: {
+      materialId: true,
+      matchedBy: true,
+      matchConfidence: true,
+      topic: { select: { id: true, name: true } },
+    },
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
   });
   for (const link of links) {
-    byMaterial.set(link.materialId, [...(byMaterial.get(link.materialId) ?? []), link.topic]);
+    const topic: MaterialTopic = {
+      ...link.topic,
+      matchedBy: link.matchedBy,
+      matchConfidence: link.matchConfidence,
+    };
+    byMaterial.set(link.materialId, [...(byMaterial.get(link.materialId) ?? []), topic]);
   }
   return byMaterial;
 }
@@ -276,8 +293,9 @@ export async function setMaterialTopics(
       for (const [position, topic] of topics.entries()) {
         await tx.courseTopicSource.upsert({
           where: { topicId_materialId: { topicId: topic.id, materialId: args.materialId } },
+          // A person chose these topics, so none is automatic any more (#1998).
           create: { topicId: topic.id, materialId: args.materialId, position },
-          update: { position },
+          update: { position, matchedBy: null, matchConfidence: null },
         });
       }
       await tx.courseMaterial.update({

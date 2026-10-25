@@ -20,6 +20,12 @@ vi.mock("~/lib/auth/password-expiry.server", () => ({
   getPasswordChangedAt: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("~/lib/api-keys/access-grants.server", () => ({
+  API_ACCESS_USAGE_WINDOW_MS: 24 * 60 * 60 * 1000,
+  getActiveApiAccessGrant: vi.fn().mockResolvedValue(null),
+  getApiUsageSince: vi.fn(),
+}));
+
 vi.mock("~/lib/canvas/student-id.server", () => ({
   readStoredStudentId: vi.fn((stored: string | null) => stored),
 }));
@@ -28,6 +34,7 @@ import { loader, action } from "~/routes/settings";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { isPasswordExpired } from "~/lib/auth/password-expiry.server";
+import { getActiveApiAccessGrant, getApiUsageSince } from "~/lib/api-keys/access-grants.server";
 
 function makeLoaderArgs(url = "http://localhost/settings") {
   return {
@@ -54,6 +61,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.userProviderSettings.findMany).mockResolvedValue([]);
   vi.mocked(isPasswordExpired).mockReturnValue(false);
+  vi.mocked(getActiveApiAccessGrant).mockResolvedValue(null);
 });
 
 describe("settings loader", () => {
@@ -112,6 +120,46 @@ describe("settings loader", () => {
       providerExpiries: Record<string, string>;
     };
     expect(result.providerExpiries).toEqual({ openai: "2026-06-01" });
+  });
+});
+
+describe("settings loader — API access (#2039)", () => {
+  it("passes a granted student's access and last-24h usage to the view", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ studentId: null } as never);
+    vi.mocked(getActiveApiAccessGrant).mockResolvedValue({
+      id: "g1",
+      userId: "u1",
+      expiresAt: new Date("2026-12-31T23:59:59.000Z"),
+      dailyRequestLimit: 200,
+      dailyTokenLimit: 200_000,
+    });
+    vi.mocked(getApiUsageSince).mockResolvedValue({ requests: 3, tokens: 900 });
+
+    const result = (await loader(makeLoaderArgs())) as { apiAccess: unknown };
+    expect(result.apiAccess).toEqual({
+      expiresAt: "2026-12-31T23:59:59.000Z",
+      dailyRequestLimit: 200,
+      dailyTokenLimit: 200_000,
+      usageLast24h: { requests: 3, tokens: 900 },
+    });
+    expect(getActiveApiAccessGrant).toHaveBeenCalledWith("u1");
+  });
+
+  it("gives no apiAccess without a grant, and never looks one up for an admin", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as never);
+    expect(((await loader(makeLoaderArgs())) as { apiAccess: unknown }).apiAccess).toBeNull();
+
+    vi.mocked(getActiveApiAccessGrant).mockClear();
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    expect(((await loader(makeLoaderArgs())) as { apiAccess: unknown }).apiAccess).toBeNull();
+    expect(getActiveApiAccessGrant).not.toHaveBeenCalled();
   });
 });
 

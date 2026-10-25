@@ -1,4 +1,10 @@
-import { asJsonObject, asText, parseJsonText } from "~/lib/json-value";
+import {
+  asFiniteNumber,
+  asJsonObject,
+  asText,
+  parseJsonText,
+  type JsonValue,
+} from "~/lib/json-value";
 
 /** How much of the material's text is shown to the model. */
 export const MATCH_EXCERPT_CHARS = 4000;
@@ -18,7 +24,7 @@ export const TOPIC_MATCH_SYSTEM_PROMPT = [
   "- A topic fits when it covers the material's main subject, even if the wording differs (abbreviations, plurals, synonyms).",
   "- If no topic clearly fits, answer none. A wrong topic is worse than none.",
   "- Respond with JSON only. No prose, no code fences.",
-  '- When a topic fits: {"match": "<the topic name exactly as listed>"}',
+  '- When a topic fits: {"match": "<the topic name exactly as listed>", "confidence": <0-100, how sure you are it fits>}',
   '- When none fits: {"match": null}',
 ].join("\n");
 
@@ -53,7 +59,22 @@ function stripCodeFence(raw: string): string {
 }
 
 /** The model's verdict on one material, before it is checked against the course. */
-export type TopicMatchDecision = { kind: "match"; name: string } | { kind: "none" };
+export type TopicMatchDecision =
+  | {
+      kind: "match";
+      name: string;
+      /** The model's own 0–100 estimate (#1998); null when it gave none or an unusable one. */
+      confidence: number | null;
+    }
+  | { kind: "none" };
+
+/** A 0–100 whole number from the model's reply, or null. A 0–1 fraction is scaled up. */
+function parseConfidence(raw: JsonValue | undefined): number | null {
+  const value = asFiniteNumber(raw);
+  if (value === null || value < 0) return null;
+  const percent = value > 0 && value <= 1 && !Number.isInteger(value) ? value * 100 : value;
+  return percent > 100 ? null : Math.round(percent);
+}
 
 /**
  * Parse the model's reply, or null when it is not one of the two allowed shapes.
@@ -66,5 +87,5 @@ export function parseTopicMatchResponse(content: string): TopicMatchDecision | n
   if (!reply || !("match" in reply)) return null;
   if (reply.match === null) return { kind: "none" };
   const name = asText(reply.match)?.trim();
-  return name ? { kind: "match", name } : null;
+  return name ? { kind: "match", name, confidence: parseConfidence(reply.confidence) } : null;
 }

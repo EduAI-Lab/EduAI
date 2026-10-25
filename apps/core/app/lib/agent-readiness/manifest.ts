@@ -1135,6 +1135,30 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "triggerCronJob",
     routeFile: "routes/api/admin.cron-jobs.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/admin/api-access",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/admin/api-access",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/admin/api-access/:id",
+    readiness: "excluded",
+    reason:
+      "Granting API access is a security decision an admin makes by hand (#2039); not an agent operation",
+    routeFile: "routes/api/admin.api-access.ts",
+  }),
 
   // ── Dashboard & test hooks ──────────────────────────────────────────────────
   entry({
@@ -1172,6 +1196,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "excluded",
     reason: "Signed-in reader's help question; grounded per-session, not platform ops",
     routeFile: "routes/api/assistant.ask.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/assistant/gate",
+    readiness: "excluded",
+    reason: "Extension widget's render condition for the signed-in reader — not platform ops",
+    routeFile: "routes/api/assistant.gate.ts",
   }),
   entry({
     method: "GET",

@@ -14,6 +14,9 @@ vi.mock("~/lib/prisma.server", () => ({
     systemLog: {
       deleteMany: vi.fn(),
     },
+    apiRequestLog: {
+      deleteMany: vi.fn(),
+    },
   },
 }));
 
@@ -49,6 +52,7 @@ describe("db.log-retention-policy.server", () => {
 
     vi.mocked(prisma.auditLog.deleteMany).mockResolvedValue({ count: 4 } as any);
     vi.mocked(prisma.systemLog.deleteMany).mockResolvedValue({ count: 2 } as any);
+    vi.mocked(prisma.apiRequestLog.deleteMany).mockResolvedValue({ count: 3 } as any);
   });
 
   it("returns existing singleton policy when already present", async () => {
@@ -150,7 +154,18 @@ describe("db.log-retention-policy.server", () => {
     expect(result).toMatchObject({
       deletedAuditRows: 4,
       deletedSystemRows: 2,
+      deletedApiRequestRows: 3,
     });
+  });
+
+  // #2039: API key request rows are an accountability record, kept as long as audit logs.
+  it("deletes API request log rows on the audit window", async () => {
+    const before = Date.now();
+    await runConfiguredLogRetention({ auditRetentionDays: 30, systemRetentionDays: 7 });
+    const [{ where }] = vi.mocked(prisma.apiRequestLog.deleteMany).mock.calls[0];
+    const cutoff = where.createdAt.lt.getTime();
+    expect(cutoff).toBeGreaterThanOrEqual(before - 30 * 24 * 60 * 60 * 1000 - 1000);
+    expect(cutoff).toBeLessThanOrEqual(Date.now() - 30 * 24 * 60 * 60 * 1000);
   });
 
   // Review on #1291: the sweep only ever fails on a DB error, which is exactly the error whose

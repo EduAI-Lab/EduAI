@@ -43,6 +43,13 @@ type MatchMaterial = {
 
 type MatchTopic = { id: string; name: string };
 
+/** A topic chosen for a material, and how (#1998): by name, or by the model with its confidence. */
+type TopicChoice = {
+  topic: MatchTopic;
+  matchedBy: "NAME" | "AI";
+  confidence: number | null;
+};
+
 /**
  * File each processed material under the course's existing topics (#1965).
  *
@@ -108,10 +115,10 @@ export async function matchMaterialsToTopics(args: MatchArgs): Promise<TopicMatc
   const canvasNames = await canvasModuleNamesByMaterial(args, pending);
 
   for (const material of pending) {
-    const topic = await chooseTopic(args, material, canvasNames, byKey, topics);
-    if (topic && (await linkAutomatically(material.id, topic.id))) {
+    const choice = await chooseTopic(args, material, canvasNames, byKey, topics);
+    if (choice && (await linkAutomatically(material.id, choice))) {
       result.matched += 1;
-    } else if (!topic) {
+    } else if (!choice) {
       result.unmatched += 1;
     }
     await args.heartbeat?.();
@@ -126,11 +133,11 @@ async function chooseTopic(
   canvasNames: Map<string, string[]>,
   byKey: Map<string, MatchTopic>,
   topics: MatchTopic[],
-): Promise<MatchTopic | null> {
+): Promise<TopicChoice | null> {
   // 1. The course's own structure already names a topic: no model needed.
   for (const name of structureNames(material, canvasNames)) {
     const topic = byKey.get(looseTopicKey(name));
-    if (topic) return topic;
+    if (topic) return { topic, matchedBy: "NAME", confidence: null };
   }
 
   // 2. Ask the model to choose from the list.
@@ -144,7 +151,8 @@ async function chooseTopic(
   const decision = content ? parseTopicMatchResponse(content) : null;
   if (decision?.kind !== "match") return null;
   // A name that is not a real topic is not trusted.
-  return byKey.get(looseTopicKey(decision.name)) ?? null;
+  const topic = byKey.get(looseTopicKey(decision.name));
+  return topic ? { topic, matchedBy: "AI", confidence: decision.confidence } : null;
 }
 
 /** The structure names for one material, most trusted first: its Canvas module, then its first heading. */
@@ -191,7 +199,10 @@ async function alreadyFiledMaterialIds(materials: MatchMaterial[]): Promise<Set<
  * Re-checked inside a transaction because an instructor can set the material's
  * topics while a long batch is still running, and their choice must win.
  */
-async function linkAutomatically(materialId: string, topicId: string): Promise<boolean> {
+async function linkAutomatically(materialId: string, choice: TopicChoice): Promise<boolean> {
+  const topicId = choice.topic.id;
+  // #1998: kept so the link is labelled as automatic until a person confirms it.
+  const provenance = { matchedBy: choice.matchedBy, matchConfidence: choice.confidence };
   return prisma.$transaction(async (tx) => {
     const material = await tx.courseMaterial.findUnique({
       where: { id: materialId },
@@ -211,8 +222,8 @@ async function linkAutomatically(materialId: string, topicId: string): Promise<b
     // topic was soft-deleted and restored.
     await tx.courseTopicSource.upsert({
       where: { topicId_materialId: { topicId, materialId } },
-      create: { topicId, materialId, position },
-      update: { position, createdAt: new Date() },
+      create: { topicId, materialId, position, ...provenance },
+      update: { position, createdAt: new Date(), ...provenance },
     });
     return true;
   });

@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 
-import type { PublishedAssistantContext } from "~/lib/assistant/assistant-visibility";
+import type { PublishedAssistantContext } from "./shared";
 
 export const threadSourceSchema = z.object({ id: z.string(), title: z.string(), url: z.string() });
 export type ThreadSource = z.infer<typeof threadSourceSchema>;

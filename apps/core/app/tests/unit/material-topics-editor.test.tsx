@@ -42,6 +42,107 @@ describe("MaterialTopicsEditor (#1965)", () => {
     );
   });
 
+  // #1997: the list used to sit in a short box that showed only about four
+  // topics; every topic is now reachable by search, and the count is shown.
+  it("lists every course topic, searchable, with a count", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `m${i}`,
+      name: `Week ${i + 1} topic`,
+    }));
+    render(<MaterialTopicsEditor topics={[]} courseTopics={many} onSave={vi.fn()} />);
+    openPicker();
+
+    const list = screen.getByRole("group", { name: "Course topics" });
+    expect(list.querySelectorAll('button[role="checkbox"]')).toHaveLength(12);
+    expect(screen.getByText("12 topics")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search topics"), { target: { value: "week 1" } });
+    // "Week 1", "Week 10", "Week 11", "Week 12".
+    expect(list.querySelectorAll('button[role="checkbox"]')).toHaveLength(4);
+    expect(screen.getByText("4 of 12 topics")).toBeInTheDocument();
+    expect(screen.getByLabelText("Week 12 topic")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search topics"), { target: { value: "zzz" } });
+    expect(screen.getByText("No topic matches.")).toBeInTheDocument();
+  });
+
+  it("keeps a picked topic picked while searching for another", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<MaterialTopicsEditor topics={[]} courseTopics={COURSE_TOPICS} onSave={onSave} />);
+    openPicker();
+    fireEvent.click(screen.getByLabelText("Limits"));
+    fireEvent.change(screen.getByLabelText("Search topics"), { target: { value: "ser" } });
+    fireEvent.click(screen.getByLabelText("Series"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith([{ topicId: "t1" }, { topicId: "t4" }]),
+    );
+  });
+
+  // #1998: automatic topics are labelled until a person confirms or changes them.
+  describe("automatic topics (#1998)", () => {
+    const AUTO = [
+      { id: "t1", name: "Limits", matchedBy: "AI" as const, matchConfidence: 70 },
+      { id: "t2", name: "Derivatives", matchedBy: "NAME" as const, matchConfidence: null },
+    ];
+
+    it("labels AI and name matches, and confirms them as they are", async () => {
+      const onSave = vi.fn(async () => {});
+      render(<MaterialTopicsEditor topics={AUTO} courseTopics={COURSE_TOPICS} onSave={onSave} />);
+
+      expect(screen.getByText("AI · 70%")).toHaveAttribute(
+        "title",
+        expect.stringContaining("the model's own estimate is 70%"),
+      );
+      expect(screen.getByText("Matched by name")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+      await waitFor(() =>
+        expect(onSave).toHaveBeenCalledWith([{ topicId: "t1" }, { topicId: "t2" }]),
+      );
+    });
+
+    it("shows plain AI when the model gave no confidence", () => {
+      render(
+        <MaterialTopicsEditor
+          topics={[{ id: "t1", name: "Limits", matchedBy: "AI", matchConfidence: null }]}
+          courseTopics={COURSE_TOPICS}
+        />,
+      );
+      expect(screen.getByText("AI")).toBeInTheDocument();
+    });
+
+    it("drops the labels and Confirm once a person has set the topics", () => {
+      render(
+        <MaterialTopicsEditor
+          topics={AUTO}
+          courseTopics={COURSE_TOPICS}
+          onSave={vi.fn()}
+          setManually
+        />,
+      );
+      expect(screen.queryByText("AI · 70%")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    });
+
+    it("offers no Confirm to a viewer who can't change the topics", () => {
+      render(<MaterialTopicsEditor topics={AUTO} courseTopics={COURSE_TOPICS} />);
+      expect(screen.getByText("AI · 70%")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    });
+
+    it("has nothing to confirm when no topic is automatic", () => {
+      render(
+        <MaterialTopicsEditor
+          topics={[{ id: "t1", name: "Limits" }]}
+          courseTopics={COURSE_TOPICS}
+          onSave={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    });
+  });
+
   it("stops at three topics", () => {
     render(<MaterialTopicsEditor topics={[]} courseTopics={COURSE_TOPICS} onSave={vi.fn()} />);
 

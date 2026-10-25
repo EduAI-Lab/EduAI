@@ -32,6 +32,7 @@ export type NavItemKey =
   | "admin-logs"
   | "unitadmin-invites"
   | "admin-cron"
+  | "admin-api-access"
   | "settings"
   | "help"
   | "ai-tutor";

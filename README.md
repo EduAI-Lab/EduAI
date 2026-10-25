@@ -47,7 +47,7 @@ EduAI/
 ├── docker-compose.dev.yml           # Dev-only Postgres + Redis containers (apps run on the host)
 ├── docker-compose.test.yml          # Containerized unit/integration suites
 ├── docker-compose.e2e.yml           # Containerized end-to-end stack
-├── CHANGELOG.md                     # Unified changelog across all apps
+├── docs/deprecated/CHANGELOG.md     # Historical changelog (archived)
 ├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
 ```
@@ -102,6 +102,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | Document | Description |
 |----------|-------------|
 | [`USER_GUIDE.md`](docs/USER_GUIDE.md) | User-facing guide to navigation, roles, and common workflows across Core, AI Tutor, and Question Maker |
+| [`STUDENT_API_GUIDE.md`](docs/STUDENT_API_GUIDE.md) | For students and researchers given API access (#2039): creating and protecting a key, request examples, the campus models' context windows, limits and token charging, errors and retries, and running batches |
 | [`DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Developer entry point covering the stack, trust boundaries, conventions, testing, and documentation map |
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every `.env.example` in the monorepo, which mechanism loads it, and what each variable does |
@@ -118,7 +119,9 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) | Adding a second or third instructor to an existing course without demoting the current one — the **Add instructor** control, the console fallback, and what an `INSTRUCTOR` enrollment does *not* buy an ADMIN account |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
 | [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
+| [`ONBOARDING.md`](docs/ONBOARDING.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
+| [`implementations/extension-platform-design.md`](docs/implementations/extension-platform-design.md) | Proposed design for adding honours projects as extensions (#2000) — what Core owns vs the extension, scoped extension keys, the starter template, porting options and delivery order; decisions in [`extension-platform-review.md`](docs/implementations/extension-platform-review.md) |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deployment source-of-truth index for local development, s378, production, inference, backups, health checks, and rollback |
@@ -133,7 +136,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 
 ## Changelog
 
-All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
+Current changes are recorded in linked issues and pull requests. The [historical changelog](docs/deprecated/CHANGELOG.md) is archived.
 
 ## Chat latency benchmarking (EduAI Core)
 

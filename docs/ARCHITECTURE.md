@@ -393,7 +393,6 @@ EduAI/
 ├── docker-compose.test.yml          → Containerized unit/integration suites
 ├── docker-compose.e2e.yml           → Containerized end-to-end stack
 ├── lefthook.yml                     → Git hooks (format/lint on commit)
-├── CHANGELOG.md                     → Unified changelog across apps
 └── TESTS.md                         → Canonical test inventory across apps
 ```
 

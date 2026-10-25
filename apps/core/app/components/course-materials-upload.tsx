@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from "@eduai/ui";
 import { IconUpload, IconFile, IconAlertCircle, IconCircleCheck } from "@tabler/icons-react";
 import { MATERIAL_INPUT_ACCEPT } from "~/lib/materials/accepted-types";
 import type { MaterialFailureCode, MaterialTopic } from "~/hooks/api/use-course-materials";
+import { MATERIALS_SCOPE_COPY } from "~/lib/courses/materials-scope";
 
 export interface CourseMaterial {
   id: string;
@@ -41,6 +42,8 @@ export interface CourseMaterial {
   failureCode?: MaterialFailureCode | null;
   /** The material's topics, main topic first (#1965). Staff-only. */
   topics?: MaterialTopic[];
+  /** Whether a person set or confirmed the topics; until then automatic ones are labelled (#1998). */
+  topicsSetManually?: boolean;
 }
 
 /** Where one file of a batch upload (#1748) stands. */
@@ -193,6 +196,7 @@ export function CourseMaterialsUpload({
           <p className="mt-1 text-xs text-muted-foreground">
             PDF, DOCX, PPTX, TXT, MD, PNG, JPG, WebP · select several to upload them together
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">{MATERIALS_SCOPE_COPY}</p>
         </div>
       </button>
 
