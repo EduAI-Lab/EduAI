@@ -47,7 +47,7 @@ export function DashboardUnitAdminView({
 
   const analytics =
     totalCourses > 0 ? (
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @2xl/dashboard:grid-cols-2">
         <PanelCard title="Publish status">
           <DonutChart data={statusSegments} centerValue={totalCourses} centerLabel="Courses" />
         </PanelCard>

@@ -445,9 +445,9 @@ export function DashboardView({
   const newChatHref = hasTaughtCourse ? "/instructor/chat" : chatHref;
 
   return (
-    <div className="flex flex-col gap-6 px-4 lg:px-6 pb-8">
+    <div className="@container/dashboard flex flex-col gap-6 px-4 lg:px-6 pb-8">
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 @xl/dashboard:grid-cols-4">
         {stats.map((s, index) => (
           <ScrollReveal key={s.label} index={index} parallax={false}>
             <StatCard label={s.label} value={s.value} trend={s.trend} trendLabel={s.trendLabel} />
@@ -463,7 +463,7 @@ export function DashboardView({
       )}
 
       {/* 2-column body */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
+      <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_360px] @3xl/dashboard:items-stretch">
         {/* Left — courses or quick actions */}
         <ScrollReveal index={4} parallax={false}>
           <div>

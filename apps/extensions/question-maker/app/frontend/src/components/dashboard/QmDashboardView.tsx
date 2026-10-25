@@ -125,7 +125,7 @@ function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
           </Button>
         </div>
       </div>
-      <ol className="grid gap-px bg-border sm:grid-cols-3">
+      <ol className="grid gap-px bg-border @xl/dashboard:grid-cols-3">
         {steps.map((s) => (
           <li key={s.n} className="bg-card p-5">
             <div
@@ -268,7 +268,7 @@ export function QmDashboardView({
   const showAnalytics = Boolean(analytics && analytics.totalQuestions > 0);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
+    <div className="@container/dashboard flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
       {/* Hero */}
       <div>
         <h1 className="text-xl font-semibold text-foreground">{hello}</h1>
@@ -286,7 +286,7 @@ export function QmDashboardView({
       ) : (
         <>
           {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 @xl/dashboard:grid-cols-4">
             {stats.map((s) => (
               <StatCard key={s.label} label={s.label} value={s.value} />
             ))}
@@ -296,7 +296,7 @@ export function QmDashboardView({
           {showAnalytics && analytics && <AnalyticsSection analytics={analytics} />}
 
           {/* 2-column body */}
-          <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
+          <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_360px] @3xl/dashboard:items-stretch">
             <div className="flex flex-col gap-6">
               <div>
                 <div className="mb-3.5 flex items-center justify-between">
