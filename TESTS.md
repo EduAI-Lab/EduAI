@@ -1273,6 +1273,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`CourseDetail.test.tsx`](apps/core/app/tests/unit/CourseDetail.test.tsx) | (#2002) The student course page lists the course's files only when the course shares them; otherwise it shows no file list and never asks for one. |
 | [`permissions.test.ts`](apps/core/app/tests/unit/permissions.test.ts) | (#2002) `canViewMaterial` lets a student read files only in a published course that shares them, and staff whatever either flag says. |
 | [`assistant-material-context.test.ts`](apps/core/app/tests/unit/assistant-material-context.test.ts) | (#2002) The help assistant gives a student material from a published course that shares its files, read through the per-file student gate, and none from an unpublished course even when it shares them. |
+| [`dashboard-analytics.test.tsx`](apps/core/app/tests/unit/dashboard-analytics.test.tsx) | (#2070) The one-, two- and three-panel analytics rows switch columns on the dashboard's own width (`@2xl/dashboard:grid-cols-N`), so they reflow beside the Getting started column instead of following the window width. |
 
 ## EduAI Integration Tests
 
@@ -1455,6 +1456,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`combobox.test.tsx`](packages/ui/src/tests/combobox.test.tsx) | (#1974) `MultiSelect` forwards `id` so a `<label htmlFor>` names the trigger, and `aria-label` overrides the selection text as its accessible name. |
 | [`tool.test.tsx`](packages/ui/src/tests/tool.test.tsx) | (#1963) `Tool` expands to show input and output by default; with `collapsible={false}` it renders only the status row, with no button, output or call id. |
 | [`onboarding.test.tsx`](packages/ui/src/tests/onboarding.test.tsx) | (#2004) The Getting started checklist and page tours: five tasks per app, no Question Maker tasks for students or TAs, route matching that skips dashboards and unknown nested routes, AI Tutor TAs get staff copy that promises no authoring, per-account browser progress that survives remounts, tolerates corrupted storage and says when it cannot be saved, opening a task never ticks it, a page tour starts only from its button, renders outside the header (portalled to the body) and closes on navigation, and the dashboard button plays the app's existing tour only when one is passed and never auto-starts it. |
+| [`onboarding.test.tsx`](packages/ui/src/tests/onboarding.test.tsx) | (#2070) The Getting started card reads "N of 5 done"; Collapse hides the tasks and Expand brings them back, and both Collapse and close are remembered per account across remounts while another account still sees the card. Closing keeps the dashboard it sits beside on screen and shows the "Getting started is hidden" popup; the header's checklist button reopens it in place on the dashboard, or saves it as open and goes to `/dashboard` from any other page. |
 
 ---
 
@@ -2109,6 +2111,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`GenerateAssessmentModal.test.tsx`](apps/extensions/question-maker/app/frontend/src/tests/unit/GenerateAssessmentModal.test.tsx) | Topic selection (#1974): chosen topics are sent as `primaryTopicIds`, the saved selection is prefilled in edit mode (dropping topics the course no longer has), conflicting questions are listed when a save is refused, saving still works when topics fail to load, and the selection survives parent re-renders. |
 | [`assessmentTopicScope.test.ts`](apps/extensions/question-maker/app/frontend/src/tests/unit/assessmentTopicScope.test.ts) | Client-side assessment topic scope (#1974): `getAssessmentTopicIds` returns the chosen topics and `[]` for a missing, null or malformed blueprint; `assessmentCoversTopic` admits only the chosen topics when limited, every topic when unrestricted, and rules nothing out before a topic is picked. |
 | [`QuestionComposerPage.test.tsx`](apps/extensions/question-maker/app/frontend/src/tests/unit/QuestionComposerPage.test.tsx) | (#1974 review) Editing a question onto a new primary topic runs the topic-scope preflight before the variant write: a refused change leaves an approved variant untouched (no variant or question update) and shows the error, an allowed one checks first and then saves, and an unchanged topic skips the check. |
+| [`QmAppLayout.test.tsx`](apps/extensions/question-maker/app/frontend/src/tests/unit/QmAppLayout.test.tsx) | (#2070) The shell's `@eduai/ui` mock passes the real `GettingStartedButton` through, so the header's checklist button renders beside Page tour on every route. |
 
 ---
 
