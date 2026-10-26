@@ -28,7 +28,7 @@ import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
 import { HelpHint, MaterialList, type MaterialListItem } from "@eduai/ui";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { CORE_HELP } from "~/components/help/help-hints";
 
 /**
@@ -57,7 +57,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@eduai/ui";
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
+import { PageTabs, PageTabsContent } from "@eduai/ui";
 import { CourseHeroCard } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
 import { resolvePaletteAccent } from "@eduai/ui";
@@ -110,7 +110,12 @@ import {
 } from "~/components/courses/topic-suggestion-controls";
 import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
-import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
+import {
+  COURSE_TAB_PARAM,
+  getCourseNavItems,
+  resolveCourseNavKey,
+} from "~/lib/courses/course-nav-items";
+import { PolicyTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
 
 /**
@@ -517,9 +522,7 @@ export function CourseDetailManagerView({
   const {
     canManage,
     canAssignInstructor,
-    showStaffTab,
     canManageStaff,
-    showChatTab,
     canViewChats,
     canManageStudentEnrollments,
     canManageRagSettings,
@@ -527,6 +530,11 @@ export function CourseDetailManagerView({
     canPublishCourse,
     canDeleteMaterial: canDeleteMaterialForUploader,
   } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
+  const [searchParams] = useSearchParams();
+  const activeTab = resolveCourseNavKey(
+    searchParams.get(COURSE_TAB_PARAM),
+    getCourseNavItems(access, isEnabled),
+  );
 
   // #1939: one control, shown beside the Published badge and in the draft notice.
   const publishControl =
@@ -1373,30 +1381,17 @@ export function CourseDetailManagerView({
         />
       )}
 
-      <PageTabs defaultValue="overview">
-        <PageTabsList>
-          <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
-          <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
-          <PageTabsTrigger value="enrollments">Enrollments</PageTabsTrigger>
-          {/* §807: a qualifying role keeps the tab visible but greyed when the
-              policy is off; non-qualifying roles don't see it at all. */}
-          {showStaffTab && (
-            <DisabledTooltip disabled={!canManageStaff}>
-              <PageTabsTrigger value="staff">TAs</PageTabsTrigger>
-            </DisabledTooltip>
-          )}
-          {canManageRagSettings && <PageTabsTrigger value="settings">Settings</PageTabsTrigger>}
-          {showChatTab && (
-            <DisabledTooltip disabled={!canViewChats}>
-              <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
-            </DisabledTooltip>
-          )}
-        </PageTabsList>
-
+      {/* The course menu in the shell (CourseNavMenu) picks the section via
+          `?tab=`; this only shows the matching panel. */}
+      <PageTabs value={activeTab}>
         {/* ── Overview ── */}
         <PageTabsContent
           value="overview"
+          // Named after its course menu entry; the tab triggers that used
+          // to label the panel moved out to the shell's course menu.
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Overview"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -1449,7 +1444,7 @@ export function CourseDetailManagerView({
                       <StatusBadge
                         active={course.isPublished}
                         activeLabel="Published"
-                        inactiveLabel="Draft"
+                        inactiveLabel="Unpublished"
                       />
                       {publishControl}
                     </div>
@@ -1536,6 +1531,9 @@ export function CourseDetailManagerView({
         {/* ── Materials — A1+A2 rework ── */}
         <PageTabsContent
           value="materials"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Materials"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -1679,6 +1677,9 @@ export function CourseDetailManagerView({
         {/* ── Topics ── */}
         <PageTabsContent
           value="topics"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Topics"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -1835,6 +1836,9 @@ export function CourseDetailManagerView({
         {/* ── Enrollments ── */}
         <PageTabsContent
           value="enrollments"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Enrollments"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -2124,6 +2128,9 @@ export function CourseDetailManagerView({
         {canManageStaff && (
           <PageTabsContent
             value="staff"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="TAs"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
@@ -2297,6 +2304,9 @@ export function CourseDetailManagerView({
         {canManageRagSettings && (
           <PageTabsContent
             value="settings"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Settings"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
@@ -2435,6 +2445,9 @@ export function CourseDetailManagerView({
         {canViewChats && (
           <PageTabsContent
             value="chat-history"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Chat history"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >

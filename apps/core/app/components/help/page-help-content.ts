@@ -11,7 +11,7 @@ const STAFF_ROLES = new Set(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
 const FALLBACK: PageHelpContent = {
   title: "Getting around EduAI",
   summary:
-    "Use the sidebar to move between pages, and the search button (⌘K / Ctrl K) to jump anywhere.",
+    "Use the navigation bar on the left to move between pages, and the search button (⌘K / Ctrl K) to jump anywhere.",
   tips: [
     "Your dashboard is home base — it lists your courses and recent conversations.",
     "The full help guide walks through every part of EduAI.",

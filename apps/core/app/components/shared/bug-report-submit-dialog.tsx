@@ -1,24 +1,27 @@
-import { useState } from "react";
-
-import { BugReportDialog, BugReportTriggerButton } from "@eduai/ui";
+import { BugReportDialog } from "@eduai/ui";
 import type { BugReportSubmitData } from "@eduai/ui";
 import { useBugReportCaptureContext } from "~/contexts/bug-report-capture";
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
 
 type BugReportSubmitDialogProps = {
-  triggerClassName?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
-export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialogProps) {
-  const [open, setOpen] = useState(false);
+/**
+ * Core's bug report dialog, wired to submission and diagnostics capture. It has
+ * no trigger of its own: the shell opens it from the Help tray (desktop) or the
+ * Help accordion (mobile drawer).
+ */
+export function BugReportSubmitDialog({ open, onOpenChange }: BugReportSubmitDialogProps) {
   const { submitBugReport } = useSubmitBugReport();
   // The capture hook lives in root.tsx's provider so its buffers survive
-  // client-side navigation; this header remounts with every route's shell.
+  // client-side navigation; this dialog remounts with every route's shell.
   const capture = useBugReportCaptureContext();
 
   const handleOpenChange = (next: boolean) => {
     if (!next) capture?.clearScreenshot();
-    setOpen(next);
+    onOpenChange(next);
   };
 
   // The dialog only fills the diagnostics fields when the toggle is on, so the
@@ -29,15 +32,12 @@ export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialo
   };
 
   return (
-    <>
-      <BugReportTriggerButton className={triggerClassName} onClick={() => setOpen(true)} />
-      <BugReportDialog
-        open={open}
-        onOpenChange={handleOpenChange}
-        onSubmit={handleSubmit}
-        captureScreenshot={capture?.captureScreenshot}
-        getCapturedData={capture?.getCapturedData}
-      />
-    </>
+    <BugReportDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      onSubmit={handleSubmit}
+      captureScreenshot={capture?.captureScreenshot}
+      getCapturedData={capture?.getCapturedData}
+    />
   );
 }

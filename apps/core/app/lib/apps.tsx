@@ -5,7 +5,7 @@ import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from "@edu
 import { getEduAiAppUrl, getAiTutorAppUrl } from "~/lib/extension-urls";
 import { getQuestionMakerUrl } from "~/lib/extensions/question-maker";
 
-/** Stable id for the app rendering this sidebar — passed to AppLauncher. */
+/** Stable id for this app — marks it as current in the nav rail's Switch app tray. */
 export const CURRENT_APP_ID = "core";
 
 /**
@@ -58,7 +58,7 @@ export function parseExtraExtensions(): LauncherApp[] {
 }
 
 /**
- * Every EduAI app/extension, for the sidebar app switcher. Names/icons/colors/
+ * Every EduAI app/extension, for the nav rail's app switcher. Names/icons/colors/
  * role-gating for the three built-in apps live in the shared `@eduai/ui`
  * registry (issue #764) so Core, AI Tutor, and Question Maker agree on one
  * canonical list; this app resolves its own per-env URLs and injects them.
