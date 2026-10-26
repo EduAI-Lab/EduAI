@@ -258,11 +258,13 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
 
-    const crumbs = page.getByRole("navigation");
-    await expect(crumbs.getByRole("link", { name: "Courses" })).toBeVisible();
+    // A course page's breadcrumb is the course crumb then its section
+    // (`course › Content`); the rail's Courses tray replaced a Courses crumb.
     // The course crumb is the switcher, not a plain label — covered as its own
     // workflow in instructor-course-detail.spec.ts.
-    await expect(page.getByRole("button", { name: fx.course.name })).toBeVisible();
+    const crumbs = page.getByRole("navigation", { name: "breadcrumb" });
+    await expect(crumbs.getByRole("button", { name: fx.course.name })).toBeVisible();
+    await expect(crumbs.getByText("Content", { exact: true })).toBeVisible();
   });
 
   test("signing out returns to Core and drops the session", async ({ page }) => {

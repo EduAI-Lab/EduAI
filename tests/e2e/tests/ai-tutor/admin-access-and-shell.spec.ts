@@ -46,7 +46,8 @@ test.describe("AI Tutor ADMIN — sign-in and landing", () => {
 
     await page.waitForURL(/localhost:3001/, { timeout: 30_000 });
     await expect(page.getByText("Platform overview")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(user.email)).toBeVisible();
+    // The signed-in user is shown in the rail's Account tray.
+    await expect((await openRailTray(page, "Account")).getByText(user.email)).toBeVisible();
   });
 
   test("root path routes an admin to the shared dashboard", async ({ page }) => {

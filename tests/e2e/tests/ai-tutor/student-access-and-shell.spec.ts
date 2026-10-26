@@ -43,7 +43,11 @@ test.describe("AI Tutor STUDENT — sign-in and landing", () => {
     await page.getByRole("button", { name: /^sign in$/i }).click();
 
     await page.waitForURL(/localhost:3001/, { timeout: 30_000 });
-    await expect(page.getByText(user.email)).toBeVisible({ timeout: 30_000 });
+    // The signed-in user is shown in the rail's Account tray.
+    await expect(sidebar(page).getByRole("button", { name: "Account", exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect((await openRailTray(page, "Account")).getByText(user.email)).toBeVisible();
   });
 
   test("root path routes a student to the shared dashboard", async ({ page }) => {
