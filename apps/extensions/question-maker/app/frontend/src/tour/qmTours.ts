@@ -69,7 +69,7 @@ export const QM_TOURS = {
         route: courseTab("questions"),
         target: "assessment-tab",
         title: "Switch to assessments",
-        body: "The Assessments tab is where you build exams and quizzes from your questions.",
+        body: "Assessments, in the course menu, is where you build exams and quizzes from your questions.",
       },
       {
         id: "add-assessment",
