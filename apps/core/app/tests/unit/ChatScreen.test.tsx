@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
@@ -88,9 +88,25 @@ vi.mock("~/hooks/api/use-courses", () => ({
   useCourses: () => coursesState,
 }));
 
+// The conversations the History tray lists; empty unless a test fills it.
+const historyState = vi.hoisted(() => ({
+  chats: [] as Array<
+    Record<"id" | "updatedAt" | "createdAt" | "userId", string> & {
+      title: string | null;
+      preview: string | null;
+      courseId: string | null;
+      courseCode: string | null;
+      courseName: string | null;
+      userName: string | null;
+      userEmail: string | null;
+      messageCount: number;
+    }
+  >,
+}));
+
 vi.mock("~/hooks/api/use-chat-history", () => ({
   useChatHistory: () => ({
-    chats: [],
+    chats: historyState.chats,
     isLoading: false,
     error: null,
     refresh: vi.fn(),
@@ -185,6 +201,7 @@ const autoRoutingData: ChatBaseData = {
 beforeEach(() => {
   vi.clearAllMocks();
   resetCoursesState();
+  historyState.chats = [];
   // append returns a Promise in the real AI SDK; the chip handler chains
   // .finally() on it to clear its in-flight guard, so the mock must resolve.
   appendMock.mockResolvedValue(undefined);
@@ -1413,5 +1430,111 @@ describe("ChatScreen — student course chat (#1963)", () => {
     expect(captureCourseViewProps.mock.calls.at(-1)?.[0].ragTopicsByMessageId).toEqual({
       "assistant-1": ["Labs"],
     });
+  });
+});
+
+describe("ChatScreen — inside the Course Chat app (#1996)", () => {
+  it("renders no history column or history sheet button", () => {
+    renderChatScreen();
+    expect(screen.queryByRole("complementary", { name: "Chat history" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open chat history" })).toBeNull();
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(within(rail).getByRole("button", { name: "History" })).toBeInTheDocument();
+  });
+
+  it("selecting a conversation from the History tray navigates to it", async () => {
+    const now = new Date().toISOString();
+    historyState.chats = [
+      {
+        id: "chat-9",
+        title: "Recursion help",
+        preview: "Recursion help",
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        userId: "user-1",
+        userName: "Test User",
+        userEmail: "test@eduai.test",
+        messageCount: 2,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+    const { router } = renderChatScreen();
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    fireEvent.click(within(rail).getByRole("button", { name: "History" }));
+    const tray = await screen.findByRole("dialog", { name: "History" });
+    fireEvent.click(within(tray).getByText("Recursion help"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/chat/chat-9"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "History" })).toBeNull());
+  });
+
+  it("applies a courseId that arrives after mount", async () => {
+    const { router } = renderBlankChat();
+    await waitFor(() =>
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "COSC 101" }),
+      ),
+    );
+    await act(async () => {
+      await router.navigate("/chat?courseId=c2");
+    });
+    await waitFor(() =>
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "PHYS 121" }),
+      ),
+    );
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+  });
+
+  it("ignores a courseId the user cannot see", async () => {
+    const { router } = renderBlankChat();
+    await waitFor(() =>
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "COSC 101" }),
+      ),
+    );
+    await act(async () => {
+      await router.navigate("/chat?courseId=nope");
+    });
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({ selectedCourseCode: "COSC 101" }),
+    );
+  });
+
+  it("a course change during a streaming reply starts a new chat", async () => {
+    const { router } = renderBlankChat();
+    await waitFor(() =>
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "COSC 101" }),
+      ),
+    );
+    const responseOptions = captureUseChatOptions.mock.lastCall?.[0];
+    await act(async () => {
+      await responseOptions.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-in-flight" } }),
+      );
+    });
+    chatState.isLoading = true;
+    await act(async () => {
+      await router.navigate("/chat?courseId=c2");
+    });
+    await waitFor(() => expect(stopChat).toHaveBeenCalled());
+    expect(setChatMessages).toHaveBeenCalledWith([]);
+  });
+
+  it("a read-only transcript still gets the Course Chat shell", async () => {
+    renderChatScreen({ ...makePersistedTranscript(), canEdit: false });
+    // The read-only transcript is a modal sheet, so the shell behind it is
+    // aria-hidden while it is open.
+    const rail = screen.getByRole("navigation", { name: "Global", hidden: true });
+    expect(
+      within(rail).getByRole("button", {
+        name: "Switch app, current app: Course Chat",
+        hidden: true,
+      }),
+    ).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "History", hidden: true })).toBeInTheDocument();
   });
 });

@@ -9,13 +9,10 @@ import {
   useOutletContext,
   useSearchParams,
 } from "react-router";
-import { IconHistory } from "@tabler/icons-react";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import type { ChatSubmitOptions } from "~/components/chat/chat-input";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
-import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
-import { ChatHistoryRail } from "~/components/chat/chat-history-rail";
 import { ChatPrivacyNoticeDialog } from "~/components/chat/chat-privacy-notice-dialog";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import type { ChatCourseOption, ChatModelOption } from "~/components/chat/chat-view-types";
@@ -24,8 +21,18 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import { useChatHistory } from "~/hooks/api/use-chat-history";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
-import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@eduai/ui";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@eduai/ui";
 import { describeStudentChatError } from "~/lib/chat-error-copy";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
@@ -103,14 +110,13 @@ function useChatCourseSelection({
   // #1963: a student in this course sees topics and a status-only search chip.
   const learnerView = selectedCourse?.isLearner === true;
   const selectedCourseCode = selectedCourse?.code ?? editableTranscript?.chat.courseCode ?? null;
-  const courseParamApplied = useRef(false);
-
-  // The state initializer applies direct course params before the default-course
-  // effect can run. Strip the one-shot handoff parameters after mount.
+  // A course id handed over in the URL. The state initializer applies the one
+  // present on first load; one that arrives later (the Course Chat rail's
+  // Courses tray, #1996) is applied by ChatScreen through its course-change
+  // rule. Either way the handoff parameters are stripped once read.
+  const incomingCourseId = searchParams.get("courseId");
   useEffect(() => {
-    if (courseParamApplied.current) return;
     if (!searchParams.has("courseId") && !searchParams.has("courseCode")) return;
-    courseParamApplied.current = true;
     const next = new URLSearchParams(searchParams);
     next.delete("courseId");
     next.delete("courseCode");
@@ -138,6 +144,7 @@ function useChatCourseSelection({
     setSelectedCourseId,
     selectedCourseCode,
     learnerView,
+    incomingCourseId,
   };
 }
 
@@ -160,6 +167,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     setSelectedCourseId,
     selectedCourseCode,
     learnerView,
+    incomingCourseId,
   } = useChatCourseSelection({
     editableTranscript,
     lastCourseCode,
@@ -321,7 +329,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // repeatedly resetting the store until React trips its update-depth guard.
   const { getValidApiKeys } = useApiKeys(user.id);
   const prefsFetcher = useFetcher();
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
   const layoutHistory = useOutletContext<OwnChatHistory | undefined>();
   // Component tests and other isolated renders do not have the route layout.
@@ -888,6 +895,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     navigate("/chat");
   }, [chatRequestError, navigate, stopActiveChatRequest]);
 
+  // The Course Chat rail's Courses tray hands a course over as `?courseId=`
+  // while this page stays mounted; switch through the same rule as the
+  // composer's course chip. Unknown or inaccessible ids are ignored.
+  useEffect(() => {
+    if (!incomingCourseId) return;
+    if (!availableCourses.some((course) => course.id === incomingCourseId)) return;
+    handleCourseChange(incomingCourseId);
+  }, [incomingCourseId, availableCourses, handleCourseChange]);
+
   const historyListProps = {
     chats,
     isLoading: historyLoading,
@@ -1058,35 +1074,27 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     <CoreAppShell
       user={user}
       title="Course Chat"
-      actions={
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setHistoryOpen((prev) => !prev)}
-                aria-label="Open chat history"
-                className="h-8 w-8 md:hidden"
-              >
-                <IconHistory className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Chat history</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+      breadcrumbs={
+        selectedCourseCode ? (
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>Course Chat</BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{selectedCourseCode}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        ) : undefined
       }
+      chatApp={{ history: historyListProps, onNewChat: handleNewChat }}
       insetClassName="min-h-0 h-svh max-h-svh overflow-hidden"
       mainClassName="flex flex-1 min-h-0 flex-col overflow-hidden"
       providerClassName="h-svh max-h-svh overflow-hidden"
     >
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <ChatHistoryRail {...historyListProps} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <ChatCourseScopedView {...sharedViewProps} />
-        </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <ChatCourseScopedView {...sharedViewProps} />
       </div>
-      <ChatHistoryPanel open={historyOpen} onOpenChange={setHistoryOpen} {...historyListProps} />
       {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
       <Sheet
         open={readOnlyTranscript !== null}
