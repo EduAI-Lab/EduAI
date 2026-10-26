@@ -13,7 +13,16 @@
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { createAdmin, DEFAULT_PASSWORD, promoteUser, registerUser, signOut } from "../helpers/auth";
-import { gotoAiTutor, loginAsAdmin, openHelpTourEntry, openTab, sidebar } from "../helpers/at-ui";
+import {
+  gotoAiTutor,
+  loginAsAdmin,
+  openAppSwitcher,
+  openBugReport,
+  openHelpTourEntry,
+  openRailTray,
+  openTab,
+  sidebar,
+} from "../helpers/at-ui";
 import { seedAtCourse, seedCourseWithActivity } from "../helpers/at-admin-fixtures";
 
 test.describe("AI Tutor ADMIN — sign-in and landing", () => {
@@ -54,7 +63,15 @@ test.describe("AI Tutor ADMIN — sidebar navigation", () => {
 
     const nav = sidebar(page);
     for (const label of ["Dashboard", "Courses", "Admin", "Help"]) {
-      await expect(nav.getByRole("link", { name: label, exact: true }).first()).toBeVisible();
+      // Courses and Help open trays, so they are buttons; the rest are links.
+      await expect(
+        nav
+          .getByRole(label === "Courses" || label === "Help" ? "button" : "link", {
+            name: label,
+            exact: true,
+          })
+          .first(),
+      ).toBeVisible();
     }
     // The student shell's own entry point must not be offered to an admin.
     await expect(nav.getByRole("link", { name: "My courses", exact: true })).toHaveCount(0);
@@ -62,7 +79,7 @@ test.describe("AI Tutor ADMIN — sidebar navigation", () => {
 
   test("Courses in the sidebar opens the platform-wide course list", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-nav-courses");
-    await sidebar(page).getByRole("link", { name: "Courses", exact: true }).first().click();
+    await (await openRailTray(page, "Courses")).getByRole("link", { name: "All courses" }).click();
     await expect(page).toHaveURL(/\/instructor$/);
     await expect(page.getByText("Browse your courses and manage their content.")).toBeVisible();
   });
@@ -76,9 +93,7 @@ test.describe("AI Tutor ADMIN — sidebar navigation", () => {
 
   test("the user menu exposes Settings and Log out", async ({ page }) => {
     const admin = await loginAsAdmin(page, "at-admin-usermenu");
-    await page.locator("button").filter({ hasText: admin.email }).first().click();
-    const menu = page.locator('[role="menu"]');
-    await expect(menu).toBeVisible();
+    const menu = await openRailTray(page, "Account");
     await expect(menu.getByText("Settings")).toBeVisible();
     await expect(menu.getByText(/log out/i)).toBeVisible();
   });
@@ -122,20 +137,18 @@ test.describe("AI Tutor ADMIN — command palette", () => {
 test.describe("AI Tutor ADMIN — suite switcher and chrome", () => {
   test("the app launcher lists the whole suite and marks AI Tutor as current", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-launcher");
-    await page.getByRole("button", { name: /switch app/i }).click();
-
-    const menu = page.locator('[role="menu"]');
-    await expect(menu).toBeVisible();
+    const menu = await openAppSwitcher(page);
     // Core and QM are links out; the current app carries no href.
-    await expect(menu.getByRole("menuitem", { name: /EduAI Core/ })).toHaveAttribute(
+    await expect(menu.getByRole("link", { name: /EduAI Core/ })).toHaveAttribute(
       "href",
       /localhost:3000/,
     );
-    await expect(menu.getByRole("menuitem", { name: /Question Maker/ })).toHaveAttribute(
+    await expect(menu.getByRole("link", { name: /Question Maker/ })).toHaveAttribute(
       "href",
       /localhost:5173/,
     );
-    await expect(menu.getByRole("menuitem", { name: /AI Tutor/ })).not.toHaveAttribute("href", /./);
+    // The current app is listed but is not a link.
+    await expect(menu.locator('[aria-current="page"]', { hasText: "AI Tutor" })).toBeVisible();
   });
 
   test("the theme toggle flips the shell between light and dark", async ({ page }) => {
@@ -148,8 +161,8 @@ test.describe("AI Tutor ADMIN — suite switcher and chrome", () => {
 
   test("the bug-report dialog is available from every shell page", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-bugbutton");
-    await page.getByRole("button", { name: /report a bug/i }).click();
-    const dialog = page.locator('[role="dialog"]');
+    await openBugReport(page);
+    const dialog = page.getByRole("dialog", { name: "Report a bug" });
     await expect(dialog.getByText("Report a bug")).toBeVisible();
     await expect(dialog.getByTestId("bug-type")).toBeVisible();
     await expect(dialog.getByTestId("bug-description")).toBeVisible();
@@ -159,7 +172,7 @@ test.describe("AI Tutor ADMIN — suite switcher and chrome", () => {
 test.describe("AI Tutor ADMIN — Help", () => {
   test("Help shows the administrator guidance section", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-help");
-    await sidebar(page).getByRole("link", { name: "Help", exact: true }).first().click();
+    await (await openRailTray(page, "Help")).getByRole("link", { name: "Help & guide" }).click();
 
     await expect(page).toHaveURL(/\/help$/);
     await expect(page.getByRole("heading", { name: /Help & guide/i })).toBeVisible();

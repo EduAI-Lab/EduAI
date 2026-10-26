@@ -74,7 +74,7 @@ test.beforeAll(async ({ playwright }) => {
 // ===========================================================================
 
 test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
-  test("sidebar shows the full Administration group; every admin page loads without redirect", async ({
+  test("rail's Administration tray lists every admin page; each loads without redirect", async ({
     page,
     playwright,
   }) => {
@@ -85,20 +85,20 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      // The Administration group (rbac/nav.ts ADMIN_NAV) renders collapsed
-      // by default (nav-main.tsx's shouldAutoExpandGroup only auto-opens it
-      // when the current path matches a child) — expand it with a real click
-      // before its children ("User Management", etc.) exist in the DOM.
-      const adminGroupToggle = page.getByRole("button", { name: "Administration" });
-      await expect(adminGroupToggle).toBeVisible();
-      await adminGroupToggle.click();
+      // The Administration entry (rbac/nav.ts ADMIN_NAV) opens a flyout tray
+      // beside the rail; its links only exist while the tray is open, and
+      // choosing one closes it — so every link below reopens the tray first.
+      const adminTrayTrigger = page.getByRole("button", { name: "Administration" });
+      const adminTray = page.getByRole("dialog", { name: "Administration" });
+      await expect(adminTrayTrigger).toBeVisible();
+      await adminTrayTrigger.click();
 
       // Click through, not just goto, for at least the first link to prove
       // the expanded nav itself is wired up correctly. `exact: true` is
       // required — the dashboard's admin-console card also has an accessible
       // name starting with "User management" (its description text folds in),
       // which a plain substring match would also hit.
-      const userManagementNavLink = page.getByRole("link", {
+      const userManagementNavLink = adminTray.getByRole("link", {
         name: "User Management",
         exact: true,
       });
@@ -120,7 +120,8 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
         { path: "/admin/cron-jobs", navName: "Cron Jobs", pageTitle: "Cron Jobs" },
       ];
       for (const { path, navName, pageTitle } of adminLinks) {
-        const navLink = page.getByRole("link", { name: navName, exact: true });
+        await adminTrayTrigger.click();
+        const navLink = adminTray.getByRole("link", { name: navName, exact: true });
         await expect(navLink).toBeVisible();
         await navLink.click();
         await page.waitForURL(new RegExp(path.replace(/\//g, "\\/")));
@@ -131,7 +132,7 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
         // not a heading — assert on that, the page's own breadcrumb title. Most
         // titles match their sidebar nav label verbatim (e.g. "Settings"), so
         // scope to the breadcrumb nav itself to avoid a strict-mode collision
-        // with the still-visible sidebar link of the same name.
+        // with a nav link of the same name.
         const breadcrumb = page.getByRole("navigation", { name: "breadcrumb" });
         await expect(breadcrumb.getByRole("link", { name: pageTitle, exact: true })).toBeVisible();
       }
@@ -333,7 +334,10 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
         .first()
         .click();
       await page.waitForLoadState("networkidle");
-      await page.getByRole("tab", { name: "Chat history" }).click();
+      await page
+        .getByRole("navigation", { name: "Course" })
+        .getByRole("link", { name: "Chat history" })
+        .click();
 
       // The chat list button shows the owner's name (course-chats-panel.tsx),
       // not the chat content — proves the oversight list is really wired to
@@ -560,15 +564,16 @@ test.describe("Instructor (instructor.cs@eduai.local) — own-course console UI"
         timeout: 15_000,
       });
 
-      // Enrollments tab: the student roster surface (TA/instructor assignment
-      // lives on the Staff tab, which is admin/unit_admin-only per
+      // Enrollments section: the student roster surface (TA/instructor
+      // assignment lives in the TAs section, which is admin/unit_admin-only per
       // `canManageStaff` — out of scope for an INSTRUCTOR, hence this test's
-      // narrower "roster" claim).
-      await page.getByRole("tab", { name: "Enrollments" }).click();
+      // narrower "roster" claim). Sections are links in the course menu.
+      const courseMenu = page.getByRole("navigation", { name: "Course" });
+      await courseMenu.getByRole("link", { name: "Enrollments" }).click();
       await expect(page.getByText("Enrolled users", { exact: true })).toBeVisible();
 
-      // Materials tab.
-      await page.getByRole("tab", { name: "Materials" }).click();
+      // Materials section.
+      await courseMenu.getByRole("link", { name: "Materials" }).click();
       await expect(page.getByRole("button", { name: "Upload material" })).toBeVisible();
 
       await page.screenshot({

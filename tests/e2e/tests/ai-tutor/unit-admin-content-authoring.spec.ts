@@ -160,7 +160,7 @@ test.describe("UNIT_ADMIN content authoring", () => {
     await addModule(page, title);
 
     // New content always starts as a draft, whatever the parent's state.
-    await expect(moduleCard(page, title)).toContainText("Draft");
+    await expect(moduleCard(page, title)).toContainText("Unpublished");
   });
 
   test("the module kebab publishes a module once its course is published", async ({ page }) => {
@@ -264,7 +264,7 @@ test.describe("UNIT_ADMIN content authoring", () => {
     await addLesson(page, lessonTitle);
 
     const card = lessonCard(page, lessonTitle);
-    await expect(card).toContainText("Draft");
+    await expect(card).toContainText("Unpublished");
 
     await lessonKebab(page, lessonTitle).click();
     const menu = page.getByRole("menu");

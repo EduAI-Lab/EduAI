@@ -17,7 +17,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { openTab } from "../helpers/at-ui";
+import { courseMenuLink, openTab } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 let coursePath: string;
@@ -83,7 +83,7 @@ test.describe("UNIT_ADMIN course detail", () => {
     // Read-only badge. The one course-publish control in the app lives on the
     // dashboard's drafts panel; this page shows state without an action, so a
     // toggle appearing here would be a second, unreviewed entry point.
-    await expect(page.getByText("Draft", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /^(Publish|Unpublish) course/ })).toHaveCount(0);
   });
 
@@ -91,7 +91,7 @@ test.describe("UNIT_ADMIN course detail", () => {
     await signInThroughPage(page, ua, coursePath);
 
     for (const tab of ["Content", "Submissions", "Feedback", "Analytics"]) {
-      await expect(page.getByRole("tab", { name: tab })).toBeVisible();
+      await expect(courseMenuLink(page, tab)).toBeVisible();
     }
   });
 

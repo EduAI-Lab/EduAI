@@ -537,7 +537,9 @@ test.describe("Bug report — UI submission", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+      // The bug report lives in the rail's Help tray (Canvas-style nav).
+      await page.getByRole("button", { name: "Help", exact: true }).click();
+      await page.getByRole("button", { name: "Report a bug" }).click();
       await expect(page.getByRole("heading", { name: "Report a bug" })).toBeVisible();
 
       await page.getByTestId("bug-type").click();
@@ -580,7 +582,8 @@ test.describe("Bug report — UI submission", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+      await page.getByRole("button", { name: "Help", exact: true }).click();
+      await page.getByRole("button", { name: "Report a bug" }).click();
       await page.getByTestId("bug-type").click();
       await page.getByRole("option", { name: "Other" }).click();
       await page.getByTestId("bug-description").fill("short"); // under the 10-char minimum (@eduai/ui BugReportDialog)

@@ -11,7 +11,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { createAdmin } from "../helpers/auth";
-import { gotoAiTutor, loginAsAdmin, openTab } from "../helpers/at-ui";
+import { gotoAiTutor, loginAsAdmin, openBugReport, openTab } from "../helpers/at-ui";
 import {
   captureAiPolicy,
   seedAiModelCatalogue,
@@ -31,8 +31,8 @@ async function submitBugReport(
   description: string,
   opts: { type?: string; anonymous?: boolean } = {},
 ) {
-  await page.getByRole("button", { name: /report a bug/i }).click();
-  const dialog = page.locator('[role="dialog"]');
+  await openBugReport(page);
+  const dialog = page.getByRole("dialog", { name: "Report a bug" });
   await dialog.getByTestId("bug-type").click();
   // The dialog and the triage toolbar now read from one label map, so the same
   // words name the same type on both surfaces.

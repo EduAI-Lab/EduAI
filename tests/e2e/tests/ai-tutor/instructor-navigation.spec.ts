@@ -18,10 +18,12 @@ import { createTeachingInstructor, type InstructorFixture } from "../helpers/at-
 import {
   commandPalette,
   gotoAiTutor,
+  openAppSwitcher,
+  openBugReport,
   openHelpTourEntry,
+  openRailTray,
   sidebar,
   sidebarHrefs,
-  userMenuButton,
 } from "../helpers/at-ui";
 
 let fx: InstructorFixture;
@@ -48,26 +50,34 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     await expect(page.getByRole("heading", { name: /Welcome back/ })).toBeVisible({
       timeout: 30_000,
     });
-    // The role is named in the sidebar footer, so the reader can tell which
-    // view of the app they are looking at without inferring it from content.
-    await expect(sidebar(page).getByText("Instructor", { exact: true })).toBeVisible();
+    // The rail's Account tray carries the signed-in user; only an ADMIN gets a
+    // role badge there.
+    const account = await openRailTray(page, "Account");
+    await expect(account.getByRole("button", { name: "Log out" })).toBeVisible();
+    await expect(account.getByText("Admin", { exact: true })).toHaveCount(0);
   });
 
-  test("the sidebar offers exactly Dashboard, Courses, Help and Back to EduAI", async ({
-    page,
-  }) => {
+  test("the rail offers exactly Dashboard, Courses, Help and Back to EduAI", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    // Addressed by href, not label: an ADMIN gets two entries both labelled
-    // "Courses", so the label alone is not a stable identity. The first
-    // `/dashboard` is the sidebar logo, which links to the role's home; the
-    // last is the footer's "Back to EduAI" link to Core's dashboard.
-    // Core's origin comes from AI Tutor's build-time VITE_CORE_URL, which need
-    // not match this runner's CORE_URL, so only its path is pinned.
+    // The only link is the Dashboard entry: the top tile opens the app
+    // switcher, and Courses and Help open trays, so they are buttons.
     const hrefs = await sidebarHrefs(page);
-    expect(hrefs.slice(0, 4)).toEqual(["/dashboard", "/dashboard", "/instructor", "/help"]);
-    expect(hrefs).toHaveLength(5);
-    expect(hrefs[4]).toMatch(/^https?:\/\/[^/]+\/dashboard$/);
+    expect(hrefs).toEqual(["/dashboard"]);
+    for (const tray of ["Courses", "Help"]) {
+      await expect(sidebar(page).getByRole("button", { name: tray, exact: true })).toBeVisible();
+    }
+    await (await openRailTray(page, "Courses")).getByRole("link", { name: "All courses" }).click();
+    await page.waitForURL(`${AI_TUTOR_URL}/instructor`);
+
+    // "Back to EduAI" sits in the Account tray. Core's origin comes from AI
+    // Tutor's build-time VITE_CORE_URL, which need not match this runner's
+    // CORE_URL, so only its path is pinned.
+    const account = await openRailTray(page, "Account");
+    await expect(account.getByRole("link", { name: "Back to EduAI" })).toHaveAttribute(
+      "href",
+      /^https?:\/\/[^/]+\/dashboard$/,
+    );
   });
 
   test("the sidebar carries no admin entry", async ({ page }) => {
@@ -131,13 +141,12 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     await expect(page.getByText(second.code).first()).toBeVisible();
   });
 
-  test("the sidebar user menu reaches Settings", async ({ page }) => {
+  test("the Account tray reaches Settings", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    // The only Settings route a mouse-only user is likely to find: the sidebar
-    // nav itself has no Settings entry.
-    await userMenuButton(page).click();
-    await page.getByRole("menuitem", { name: "Settings" }).click();
+    // The only Settings route a mouse-only user is likely to find: the rail
+    // itself has no Settings entry.
+    await (await openRailTray(page, "Account")).getByRole("link", { name: "Settings" }).click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/settings`);
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
@@ -146,15 +155,18 @@ test.describe("INSTRUCTOR shell and navigation", () => {
   test("the app launcher offers the other EduAI apps", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await sidebar(page).getByRole("button", { name: "Switch app" }).click();
-    await expect(page.getByRole("menuitem", { name: /EduAI Core/ })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: /Question Maker/ })).toBeVisible();
+    const apps = await openAppSwitcher(page);
+    await expect(apps.getByRole("link", { name: /EduAI Core/ })).toBeVisible();
+    await expect(apps.getByRole("link", { name: /Question Maker/ })).toBeVisible();
     // AI Tutor marks itself as the current app rather than offering a no-op
-    // jump. The badge reads "Now" in the DOM and is uppercased by CSS, so match
-    // the text case-insensitively rather than the rendered casing.
-    const current = page.getByRole("menuitem", { name: /AI Tutor/ });
-    await expect(current).toContainText(/now/i);
-    await expect(current).toHaveAttribute("aria-current", "page");
+    // jump: listed, marked "Current", and not a link.
+    const current = apps.locator('[aria-current="page"]', { hasText: "AI Tutor" });
+    await expect(current).toContainText("Current");
+    await expect(apps.getByRole("link", { name: /AI Tutor/ })).toHaveCount(0);
+    // The Account tray no longer carries the switcher.
+    await page.keyboard.press("Escape");
+    const account = await openRailTray(page, "Account");
+    await expect(account.getByRole("link", { name: /EduAI Core/ })).toHaveCount(0);
   });
 
   test("the header reports AI service availability", async ({ page }) => {
@@ -181,7 +193,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
   test("the header files a bug report, and refuses an incomplete one first", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+    await openBugReport(page);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Report a bug");
     // Available to every role, with an anonymous option and diagnostics off by
@@ -258,8 +270,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     // so signing out here drops this context's cookie, not the account.
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await userMenuButton(page).click();
-    await page.getByRole("menuitem", { name: "Log out" }).click();
+    await (await openRailTray(page, "Account")).getByRole("button", { name: "Log out" }).click();
 
     // Logout navigates to "/", which bounces to Core's login because there is
     // no session left to route on.
