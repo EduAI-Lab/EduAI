@@ -10,6 +10,7 @@ import {
   type CourseNavConfig,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import type { CourseChatNavOptions } from "~/components/layout/course-chat-nav-model";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { buildCourseNavConfig } from "~/lib/courses/course-nav-items";
 import type { User } from "~/lib/auth/types";
@@ -100,7 +101,8 @@ const STAFF_COURSE_NAV: CourseNavConfig = buildCourseNavConfig({
 function renderShell({
   courseNav,
   path = "/courses/c1?tab=materials",
-}: { courseNav?: CourseNavConfig; path?: string } = {}) {
+  chatApp,
+}: { courseNav?: CourseNavConfig; path?: string; chatApp?: CourseChatNavOptions } = {}) {
   const router = createMemoryRouter(
     [
       {
@@ -108,7 +110,12 @@ function renderShell({
         element: (
           <ThemeProvider>
             <PolicyProvider policies={{}}>
-              <CoreAppShell user={USER} title="Intro Biology" courseNav={courseNav}>
+              <CoreAppShell
+                user={USER}
+                title="Intro Biology"
+                courseNav={courseNav}
+                chatApp={chatApp}
+              >
                 <p>Page content</p>
               </CoreAppShell>
             </PolicyProvider>
@@ -215,6 +222,37 @@ describe("CoreAppShell — course pages (desktop)", () => {
     await screen.findByRole("dialog", { name: "Help" });
     await act(() => router.navigate("/help"));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("CoreAppShell — Course Chat as its own app (#1996)", () => {
+  const history: CourseChatNavOptions["history"] = {
+    chats: [],
+    isLoading: false,
+    error: null,
+    activeChatId: null,
+    onSelect: vi.fn(),
+    onNewChat: vi.fn(),
+    onRefresh: vi.fn().mockResolvedValue(undefined),
+  };
+
+  it("presents Course Chat as the current app on its pages, with a History tray", () => {
+    renderShell({ path: "/chat", chatApp: { history } });
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(
+      within(rail).getByRole("button", { name: "Switch app, current app: Course Chat" }),
+    ).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "History" })).toBeInTheDocument();
+    expect(within(rail).queryByRole("link", { name: "Dashboard" })).toBeNull();
+  });
+
+  it("stays Core everywhere else", () => {
+    renderShell({ path: "/dashboard" });
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(
+      within(rail).getByRole("button", { name: "Switch app, current app: EduAI Core" }),
+    ).toBeInTheDocument();
+    expect(within(rail).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
   });
 });
 

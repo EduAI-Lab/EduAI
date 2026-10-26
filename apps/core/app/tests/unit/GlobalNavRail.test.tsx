@@ -49,7 +49,15 @@ function RailHarness({ user, onReportBug }: { user: User; onReportBug: () => voi
 
 function renderRail(
   role: string,
-  { policies = {}, path = "/dashboard" }: { policies?: PolicyValues; path?: string } = {},
+  {
+    policies = {},
+    path = "/dashboard",
+    rootData,
+  }: {
+    policies?: PolicyValues;
+    path?: string;
+    rootData?: { canUseCourseAssistant?: boolean };
+  } = {},
 ) {
   const user = {
     id: "user-1",
@@ -66,7 +74,10 @@ function renderRail(
   const router = createMemoryRouter(
     [
       {
+        // Named "root" so `rootData` stands in for the root loader's flags.
+        id: "root",
         path: "*",
+        loader: () => rootData ?? null,
         element: (
           <PolicyProvider policies={policies}>
             <RailHarness user={user} onReportBug={onReportBug} />
@@ -74,7 +85,7 @@ function renderRail(
         ),
       },
     ],
-    { initialEntries: [path] },
+    { initialEntries: [path], hydrationData: { loaderData: { root: rootData ?? null } } },
   );
   render(<RouterProvider router={router} />);
   return { onReportBug, rail: screen.getByRole("navigation", { name: "Global" }) };
@@ -94,7 +105,7 @@ function railLabels(rail: HTMLElement): string[] {
 describe("GlobalNavRail — entries", () => {
   it("lists the student's entries in Canvas order, with no Administration", () => {
     const { rail } = renderRail("STUDENT");
-    expect(railLabels(rail)).toEqual(["Account", "Dashboard", "Courses", "Course Chat", "Help"]);
+    expect(railLabels(rail)).toEqual(["Account", "Dashboard", "Courses", "Help"]);
   });
 
   it("adds Administration and Admin Chatbot for ADMIN, in order", () => {
@@ -104,7 +115,6 @@ describe("GlobalNavRail — entries", () => {
       "Dashboard",
       "Courses",
       "Administration",
-      "Course Chat",
       "Admin Chatbot",
       "Help",
     ]);
@@ -118,7 +128,12 @@ describe("GlobalNavRail — entries", () => {
   it("marks the current page's link with aria-current", () => {
     renderRail("STUDENT", { path: "/dashboard" });
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Course Chat" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("leaves Course Chat and Course Assistant to the Course Chat app (#1996)", () => {
+    renderRail("INSTRUCTOR", { rootData: { canUseCourseAssistant: true } });
+    expect(screen.queryByRole("link", { name: "Course Chat" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Course Assistant" })).toBeNull();
   });
 
   it("shows the UNIT_ADMIN Invitations entry as a link when unitAdmins.canInvite is on", () => {

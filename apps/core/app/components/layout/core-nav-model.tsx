@@ -68,14 +68,20 @@ type ApiCourse = {
   year?: number | null;
 };
 
-/** The Courses tray list. `/api/courses` already scopes it to what this user may see. */
-async function loadNavCourses(): Promise<NavShellCourse[]> {
+/**
+ * The Courses tray list, each course linked by `hrefFor` (its course page in
+ * Core, its chat in Course Chat). `/api/courses` already scopes it to what
+ * this user may see.
+ */
+export async function loadNavCourses(
+  hrefFor: (courseId: string) => string,
+): Promise<NavShellCourse[]> {
   const res = await fetch(`/api/courses?page=1&pageSize=${NAV_COURSES_PAGE_SIZE}`);
   if (!res.ok) throw new Error(String(res.status));
   const data = (await res.json()) as { data?: ApiCourse[] };
   return (data.data ?? []).map((course) => ({
     id: course.id,
-    href: `/courses/${course.id}`,
+    href: hrefFor(course.id),
     code: course.code,
     name: course.name,
     subtitle: course.term || course.year != null ? termLabel(course.term, course.year) : "",
@@ -107,11 +113,41 @@ export function CronBadgeDot({ color }: { color: CronStatusColor }) {
  * a tray holding the guide and the bug report, and the user menu becomes the
  * Account tray.
  */
-export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellModel {
-  const { isEnabled } = usePolicyGate();
+/**
+ * What Core's and Course Chat's nav models share: the signed-in user, the
+ * Account and Help trays, the app switcher's list, and logging out.
+ */
+export function useSharedNavParts(
+  user: User,
+  onReportBug?: () => void,
+): Omit<NavShellModel, "entries" | "adminLinks" | "currentAppId"> {
   const { pathname } = useLocation();
   const submit = useSubmit();
+  const rootData = useRouteLoaderData<typeof rootLoader>("root");
   const coreCourseId = pathname.match(/^\/courses\/([^/]+)/)?.[1] ?? null;
+  const launcherRole = rootData?.hasTeachingAssistantEnrollment ? "TA" : user.role;
+  const onLogout = React.useCallback(
+    () => submit(null, { method: "post", action: "/auth/logout", replace: true }),
+    [submit],
+  );
+  return {
+    pathname,
+    user: { name: user.name, email: user.email, image: user.image, role: user.role },
+    accountLinks: [{ key: "settings", label: "Settings", href: "/settings", icon: IconSettings }],
+    helpLinks: [{ key: "help", label: "Help & guide", href: "/help", icon: IconHelp }],
+    launcherApps: visibleAppsForRole(getLauncherApps(coreCourseId), launcherRole),
+    onLogout,
+    onReportBug,
+  };
+}
+
+/** Rail entries that belong to the Course Chat app instead of Core's rail (#1996). */
+const COURSE_CHAT_KEYS = new Set<NavItemKey>(["chat", "instructor-chat"]);
+
+export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellModel {
+  const { isEnabled } = usePolicyGate();
+  const shared = useSharedNavParts(user, onReportBug);
+  const { pathname } = shared;
   // Prefer the server-resolved flags from the root loader (authoritative,
   // default-aware, no paint flash); fall back to the SSR-seeded policy gate.
   const rootData = useRouteLoaderData<typeof rootLoader>("root");
@@ -153,6 +189,7 @@ export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellM
   }
 
   for (const item of secondaryItems) {
+    if (COURSE_CHAT_KEYS.has(item.key)) continue;
     if (item.key === "help") {
       entries.push({ kind: "tray", tray: "help", label: "Help", icon: NAV_ICONS.help });
     } else {
@@ -160,27 +197,17 @@ export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellM
     }
   }
 
-  const launcherRole = rootData?.hasTeachingAssistantEnrollment ? "TA" : user.role;
-  const onLogout = React.useCallback(
-    () => submit(null, { method: "post", action: "/auth/logout", replace: true }),
-    [submit],
-  );
-
   return {
-    pathname,
-    user: { name: user.name, email: user.email, image: user.image, role: user.role },
+    ...shared,
     entries,
-    accountLinks: [{ key: "settings", label: "Settings", href: "/settings", icon: IconSettings }],
     adminLinks,
-    helpLinks: [{ key: "help", label: "Help & guide", href: "/help", icon: IconHelp }],
     coursesHref: "/courses",
-    loadCourses: loadNavCourses,
-    launcherApps: visibleAppsForRole(getLauncherApps(coreCourseId), launcherRole),
+    loadCourses: loadCoreNavCourses,
     currentAppId: CURRENT_APP_ID,
-    onLogout,
-    onReportBug,
   };
 }
+
+const loadCoreNavCourses = () => loadNavCourses((courseId) => `/courses/${courseId}`);
 
 function toNavLink(item: ReturnType<typeof getNavSecondaryForUser>[number]): NavShellLink {
   return {

@@ -16,6 +16,11 @@ import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command
 import { CorePageHelp } from "~/components/help/core-page-help";
 import { AssistantHeaderButton, HelpAssistant } from "~/components/assistant/help-assistant";
 import { useCoreNavModel } from "~/components/layout/core-nav-model";
+import {
+  isCourseChatPath,
+  useCourseChatNavModel,
+  type CourseChatNavOptions,
+} from "~/components/layout/course-chat-nav-model";
 import { CurrentUserIdProvider } from "~/contexts/current-user";
 import type { User } from "~/lib/auth/types";
 
@@ -115,6 +120,11 @@ export interface CoreAppShellProps {
   insetClassName?: string;
   mainClassName?: string;
   providerClassName?: string;
+  /**
+   * Course Chat pages only: the page's history list and new-chat action, for
+   * the Course Chat rail (#1996).
+   */
+  chatApp?: CourseChatNavOptions;
   children: React.ReactNode;
 }
 
@@ -132,12 +142,18 @@ export function CoreAppShell({
   insetClassName,
   mainClassName,
   providerClassName,
+  chatApp,
   children,
 }: CoreAppShellProps) {
   const location = useLocation();
-  const [bugReportOpen, setBugReportOpen] = React.useState(false);
-  const model = useCoreNavModel(user, () => setBugReportOpen(true));
   const { pathname } = location;
+  const [bugReportOpen, setBugReportOpen] = React.useState(false);
+  const openBugReport = () => setBugReportOpen(true);
+  // Both hooks run on every page so hook order never changes; the path picks
+  // which app the shell presents.
+  const coreModel = useCoreNavModel(user, openBugReport);
+  const chatModel = useCourseChatNavModel(user, openBugReport, chatApp ?? {});
+  const model = isCourseChatPath(pathname) ? chatModel : coreModel;
   const navigate = useNavigate();
 
   return (
