@@ -6,12 +6,15 @@
  * the single source of truth for the shared part; each app's `lib/apps.tsx`
  * shrinks to: resolve its 3 URLs from env, then call `getLauncherApps`.
  */
-import { IconBooks, IconMessageChatbot, IconSchool } from "@tabler/icons-react";
+import { IconBooks, IconMessageChatbot, IconMessages, IconSchool } from "@tabler/icons-react";
 
 import { QUESTION_MAKER_ROLES, type LauncherApp } from "./app-launcher";
 
-/** Stable ids for the three EduAI apps/extensions (mirrors each app's own `CURRENT_APP_ID`). */
-export type LauncherAppId = "core" | "ai-tutor" | "question-maker";
+/**
+ * Stable ids for the EduAI apps (mirrors each app's own `CURRENT_APP_ID`).
+ * `course-chat` is Core's chat, presented as an app of its own.
+ */
+export type LauncherAppId = "core" | "course-chat" | "ai-tutor" | "question-maker";
 
 /** Absolute URLs for each app, resolved by the caller from its own env. */
 export interface LauncherAppUrls {
@@ -23,7 +26,7 @@ export interface LauncherAppUrls {
 export interface GetLauncherAppsOptions {
   /**
    * The app that will render the switcher. The returned list always contains
-   * all three apps — including "self" — same as today's three copies;
+   * every app — including "self";
    * `BrandSwitcher` (not this helper) marks the current entry from its own
    * `currentAppId` prop. Typing it here keeps the call site symmetric with
    * `BrandSwitcherProps.currentAppId` and catches a typo'd id at compile time.
@@ -40,14 +43,15 @@ function courseUrl(base: string, appId: LauncherAppId, coreCourseId?: string | n
   if (!id || !base) return base;
   const url = new URL(base);
   if (appId === "core") url.pathname = `/courses/${encodeURIComponent(id)}`;
+  else if (appId === "course-chat") url.searchParams.set("courseId", id);
   else url.searchParams.set("coreCourseId", id);
   return url.toString();
 }
 
 /**
- * The canonical 3-app list (Core, AI Tutor, Question Maker) with shared
+ * The canonical app list (Core, Course Chat, AI Tutor, Question Maker) with shared
  * names/icons/colors/roles. Question Maker is gated to `QUESTION_MAKER_ROLES`
- * (reused from `app-launcher`, the RBAC source of truth); Core and AI Tutor
+ * (reused from `app-launcher`, the RBAC source of truth); the other apps
  * are open to every role. URLs come from `options.urls` so this stays
  * environment-agnostic — each app resolves its own env vars and injects them.
  */
@@ -63,11 +67,25 @@ export function getLauncherApps({ urls, coreCourseId }: GetLauncherAppsOptions):
       color: "oklch(0.580 0.150 250)",
     },
     {
+      // Part of Core (its `/chat` routes), but presented as an app of its own
+      // so students find it in the switcher beside AI Tutor (#1996).
+      id: "course-chat",
+      name: "Course Chat",
+      url: courseUrl(
+        urls.core && `${urls.core.replace(/\/$/, "")}/chat`,
+        "course-chat",
+        coreCourseId,
+      ),
+      icon: <IconMessages className="size-4" />,
+      description: "Ask questions about your course materials",
+      color: "oklch(0.570 0.170 340)",
+    },
+    {
       id: "ai-tutor",
       name: "AI Tutor",
       url: courseUrl(urls.aiTutor, "ai-tutor", coreCourseId),
       icon: <IconMessageChatbot className="size-4" />,
-      description: "Chat-based study assistant",
+      description: "Guided lessons with an AI tutor",
       color: "oklch(0.560 0.130 165)",
     },
     {
