@@ -1524,6 +1524,52 @@ describe("ChatScreen — inside the Course Chat app (#1996)", () => {
     expect(setChatMessages).toHaveBeenCalledWith([]);
   });
 
+  it("cancels a streaming reply when the rail leaves a saved chat (#1996 review)", async () => {
+    const originalSendBeacon = navigator.sendBeacon;
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", { configurable: true, value: sendBeacon });
+    try {
+      // In the app /chat and /chat/:chatId are separate route modules, so
+      // leaving a saved chat unmounts its ChatScreen; a different element on
+      // /chat reproduces that here (shared wrappers would reuse the instance).
+      const router = createMemoryRouter(
+        [
+          {
+            path: "/chat/:chatId",
+            element: (
+              <PolicyProvider policies={{}}>
+                <SidebarProvider>
+                  <ChatScreen data={baseData} initialTranscript={makePersistedTranscript()} />
+                </SidebarProvider>
+              </PolicyProvider>
+            ),
+          },
+          { path: "/chat", element: <div data-testid="other-chat-route" /> },
+        ],
+        { initialEntries: ["/chat/chat-1"] },
+      );
+      render(<RouterProvider router={router} />);
+      const options = captureUseChatOptions.mock.lastCall?.[0] as { fetch: typeof fetch };
+      await act(async () => {
+        await options.fetch("/api/chat", { method: "POST" });
+      });
+      chatState.isLoading = true;
+      stopChat.mockClear();
+
+      await act(async () => {
+        await router.navigate("/chat?courseId=c2");
+      });
+
+      expect(sendBeacon).toHaveBeenCalledWith("/api/chat/cancel", expect.any(Blob));
+      expect(stopChat).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
+    }
+  });
+
   it("a read-only transcript still gets the Course Chat shell", async () => {
     renderChatScreen({ ...makePersistedTranscript(), canEdit: false });
     // The read-only transcript is a modal sheet, so the shell behind it is

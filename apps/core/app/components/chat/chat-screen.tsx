@@ -752,6 +752,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     stop();
   }, [stop]);
 
+  // Leaving the page is an exit path too: the Course Chat rail's Courses tray,
+  // Course Assistant and the app switcher all unmount this screen (#1996), and
+  // useChat does not abort on unmount. The ref keeps the cleanup on the latest
+  // callback without re-running the effect.
+  const stopActiveChatRequestRef = useRef(stopActiveChatRequest);
+  useEffect(() => {
+    stopActiveChatRequestRef.current = stopActiveChatRequest;
+  }, [stopActiveChatRequest]);
+  useEffect(() => () => stopActiveChatRequestRef.current(), []);
+
   const handleCourseChange = useCallback(
     (courseId: string | null) => {
       const course = availableCourses.find((candidate) => candidate.id === courseId);
