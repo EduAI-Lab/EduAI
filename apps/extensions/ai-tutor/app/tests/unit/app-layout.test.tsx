@@ -60,6 +60,7 @@ vi.mock("~/components/layout/ShellBreadcrumbs", () => ({
 }));
 const mockStartTour = vi.fn();
 let capturedModel: NavShellModel | null = null;
+let capturedHeadingInPage: boolean | undefined;
 
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
@@ -106,16 +107,19 @@ vi.mock("@eduai/ui", async (importOriginal) => {
     // and the Help tray's Report a bug, all driven by the model under test.
     NavShell: ({
       model,
+      headingInPage,
       headerActions,
       overlays,
       children,
     }: {
       model: NavShellModel;
+      headingInPage?: boolean;
       headerActions: React.ReactNode;
       overlays: React.ReactNode;
       children: React.ReactNode;
     }) => {
       capturedModel = model;
+      capturedHeadingInPage = headingInPage;
       return (
         <div>
           <button type="button" onClick={model.onLogout}>
@@ -263,6 +267,11 @@ describe("_app layout — authenticated shell", () => {
 
     expect(mockLogout).toHaveBeenCalled();
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+  });
+
+  it("tells the shell its pages draw their own h1, so the header adds no second one", () => {
+    wrap();
+    expect(capturedHeadingInPage).toBe(true);
   });
 
   it("makes Courses and Help trays, keeping other entries as links", () => {

@@ -245,6 +245,9 @@ function AppLayoutInner() {
       // The mobile header's title (and the sr-only heading beside the trail).
       title={breadcrumbItems.at(-1)?.label ?? "AI Tutor"}
       breadcrumbs={<HeaderBreadcrumbs />}
+      // Pages own their headings, as they did before the shared shell; the
+      // header's title only labels the mobile bar.
+      headingInPage
       courseNav={courseNav}
       headerActions={
         <>

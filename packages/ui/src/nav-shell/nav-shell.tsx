@@ -44,6 +44,12 @@ export interface NavShellProps {
   /** Breadcrumb trail rendered in place of the plain title. */
   breadcrumbs?: React.ReactNode;
   /**
+   * The app's pages draw their own `<h1>` (AI Tutor's do), so the header's
+   * title must not be a second one: it is left out beside a breadcrumb and
+   * shown as plain text otherwise.
+   */
+  headingInPage?: boolean;
+  /**
    * Course pages only: draws the course menu column, the hamburger that
    * toggles it, and the `CODE · term › Section` breadcrumb (which replaces
    * `breadcrumbs`).
@@ -89,6 +95,7 @@ export function NavShell({
   locationKey,
   title,
   breadcrumbs,
+  headingInPage = false,
   courseNav,
   headerActions,
   overlays,
@@ -111,6 +118,7 @@ export function NavShell({
     setCourseDrawerOpen(false);
   }, [breakpoint, locationKey]);
 
+  const TitleTag = headingInPage ? "p" : "h1";
   const iconOnly = railCollapsed || breakpoint === "tablet";
   const hasCourseMenu = Boolean(courseNav && courseNav.items.length > 0);
   const courseMenuShown = breakpoint === "tablet" ? courseDrawerOpen : courseMenuOpen;
@@ -171,12 +179,12 @@ export function NavShell({
                 )}
                 {courseNav ? (
                   <>
-                    <h1 className="sr-only">{title}</h1>
+                    {!headingInPage && <h1 className="sr-only">{title}</h1>}
                     <CourseBreadcrumb config={courseNav} />
                   </>
                 ) : breadcrumbs ? (
                   <>
-                    <h1 className="sr-only">{title}</h1>
+                    {!headingInPage && <h1 className="sr-only">{title}</h1>}
                     <div
                       className="min-w-0 flex-1 overflow-hidden"
                       style={{
@@ -188,9 +196,9 @@ export function NavShell({
                     </div>
                   </>
                 ) : (
-                  <h1 className="min-w-0 flex-1 truncate text-sm font-normal text-foreground">
+                  <TitleTag className="min-w-0 flex-1 truncate text-sm font-normal text-foreground">
                     {title}
-                  </h1>
+                  </TitleTag>
                 )}
                 <div className="ml-auto flex h-full shrink-0 items-center gap-3 overflow-x-auto sm:gap-4">
                   {headerActions}

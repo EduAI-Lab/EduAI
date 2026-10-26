@@ -433,3 +433,30 @@ describe("NavShell — app-supplied trays and link actions", () => {
     expect(within(tray).queryByText("All courses")).toBeNull();
   });
 });
+
+describe("NavShell — pages that draw their own heading", () => {
+  it("keeps the header's title out of the heading outline with breadcrumbs", () => {
+    renderShell({
+      title: "Settings",
+      breadcrumbs: <span>Settings crumb</span>,
+      headingInPage: true,
+    });
+    expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
+  });
+
+  it("keeps the header's title out of the heading outline on a course page", () => {
+    renderShell({ title: "BIOL 116", courseNav: COURSE_NAV, headingInPage: true });
+    expect(screen.queryByRole("heading", { name: "BIOL 116" })).toBeNull();
+  });
+
+  it("still shows a plain title as text, not a heading", () => {
+    renderShell({ title: "Settings", headingInPage: true });
+    expect(screen.getAllByText("Settings").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
+  });
+
+  it("makes the header's title the page heading by default", () => {
+    renderShell({ title: "Settings", breadcrumbs: <span>Settings crumb</span> });
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+  });
+});
