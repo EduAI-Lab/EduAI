@@ -14,9 +14,9 @@ export const CORE_HELP = {
   },
   coursePublishing: {
     title: "Publishing",
-    summary: "Draft courses are hidden from students until you publish them.",
+    summary: "Unpublished courses are hidden from students until you publish them.",
     details:
-      "While a course is a draft, only course staff and administrators can open it, and self-enrollment links won't let anyone join. Publish it when it's ready; unpublishing removes student access again without deleting anything.",
+      "While a course is unpublished, only course staff and administrators can open it, and self-enrollment links won't let anyone join. Publish it when it's ready; unpublishing removes student access again without deleting anything.",
     href: "/help#publishing",
   },
   materialVisibility: {
