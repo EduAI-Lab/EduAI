@@ -12,11 +12,12 @@ This guide reflects the current repository and the technically traced actor work
 
 A scenario explicitly marked as a bug is evidence of unintended behavior, not a supported workflow.
 
-## The three applications
+## The applications
 
 | Application | Use it for | Main places to look |
 | --- | --- | --- |
-| **EduAI Core** | Signing in, finding courses, course-aware chat, course materials, account settings, and platform administration | Dashboard, Courses, Course Chat, Settings |
+| **EduAI Core** | Signing in, finding courses, course materials, account settings, and platform administration | Dashboard, Courses, Settings |
+| **Course Chat** | Asking questions answered from one course's materials (part of Core, opened like an app) | New chat, History, Courses, Course Assistant for instructors |
 | **AI Tutor** | Working through structured learning activities with guided AI help | Dashboard, Courses, course content, activity chat |
 | **Question Maker** | Creating questions, assessments, exam variants, and Canvas imports/exports | Dashboard, Courses, Question Library, course workspace |
 
@@ -26,7 +27,7 @@ You remain signed in because Core provides the shared session for all three appl
 ## Navigation shared across the platform
 
 - Use the **navigation bar** on the left for the main sections of the current application; on a phone, open it with the menu button in the top bar.
-- Use the **app switcher** (the app icon at the top of the left navigation bar, or in the top bar on a phone) to open Core, AI Tutor, or Question Maker.
+- Use the **app switcher** (the app icon at the top of the left navigation bar, or in the top bar on a phone) to open Core, Course Chat, AI Tutor, or Question Maker.
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
 - Open **Account** in the left navigation bar for Settings and Log out.
 - Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
@@ -125,15 +126,15 @@ If your course already exists in Canvas, you don't need to create it by hand: fe
 
 ### Ask a course-aware question
 
-1. Open **Course Chat**.
-2. Select the course whose materials should ground the response.
+1. Open **Course Chat** from the app switcher. You can also start it from your dashboard or, as a student, with **Chat about this course** on a course page.
+2. Select the course whose materials should ground the response: open **Courses** in Course Chat's navigation bar, or use the course chip under the message box.
 3. Choose an available model if the interface offers a choice.
 4. Enter a clear question and send it.
 5. Continue in the same chat when asking follow-up questions about the same course.
 
 Use the attachment control to add up to three PDF, Word, PowerPoint, Excel, UTF-8 text/code, or PNG/JPEG/WebP files (10 MB each by default) to a message. Images are transcribed before sending; the chat model receives text, not the original image. Wait for extraction to finish and check any warning about truncated content. Message attachments are separate from the course learning-material library.
 
-The selected course controls which material can be retrieved. Start a separate chat when switching course context. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
+The selected course controls which material can be retrieved; changing course starts a separate chat. Use **New chat** to start over, and **History** in the navigation bar to reopen an earlier conversation. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
 
 **Assistive Mode.** Course Chat has an Assist toggle that reformats answers into a predictable structure (top summary, short stages, an explicit "next?" prompt) for readers who find long unbroken prose hard to work through. Turning it on may switch the request to a larger model, so replies can take longer; the progress indicator shows an expected duration and says so when a reply is taking longer than usual. Toggling Assist on the last reply re-generates that reply in place rather than only restyling it. Set your default in
 **Settings → Accessibility**.
@@ -202,7 +203,7 @@ The full link is shown **once**, when you create it. Copy it then; EduAI stores 
 
 ### Instructor: the Course Assistant
 
-Once you teach at least one published course, a second chat entry, **Course Assistant**, appears below Course Chat in the navigation bar, whatever your platform role.
+Once you teach at least one published course, **Course Assistant** appears in Course Chat's navigation bar, below **Courses**, whatever your platform role.
 It is a read-only helper for *running* one of your published courses — it can answer questions about that course's roster, enrollments, and topics, and nothing else.
 
 1. Open **Course Assistant** and pick one of your published courses.

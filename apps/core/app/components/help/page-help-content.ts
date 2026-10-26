@@ -25,8 +25,8 @@ function chatHelp(isStaff: boolean): PageHelpContent {
     summary:
       "Ask questions and get answers grounded in a course's uploaded materials, with citations back to the source.",
     tips: [
-      "Pick a course first — the chatbot only searches that course's materials.",
-      "Your conversations are saved. Reopen one from the history list or your dashboard.",
+      "Pick a course from Courses in the navigation bar first — the chatbot only searches that course's materials.",
+      "Your conversations are saved. Reopen one from History in the navigation bar or your dashboard.",
       // #1962: students cannot open a course's files, so only staff can check one.
       isStaff
         ? "If an answer looks off, open the cited source to check the original material."

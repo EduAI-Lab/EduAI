@@ -53,6 +53,7 @@ const TOPICS: HelpTopic[] = [
       "Click the (?) button in the top-right corner of any page for help with that page, or to start the guided tour.",
       "Your dashboard has a Getting started checklist, and the main pages have a ▶ Page tour button in the header for a short walkthrough of that page.",
       "To jump between the EduAI apps you have access to, select the app icon at the top of the navigation bar to open Switch app, then choose an app. On a phone, tap the app icon in the top bar instead.",
+      "Course Chat opens like an app of its own from Switch app. Its navigation bar has New chat, History, Courses (pick the course to chat about) and, for instructors, Course Assistant.",
     ],
   },
   {
@@ -98,7 +99,7 @@ const TOPICS: HelpTopic[] = [
         to ask questions grounded in your course materials.
       </>,
       "Course Chat conversations are tied to a selected course and use that course's uploaded materials.",
-      "Your conversations are saved — reopen any of them from the dashboard or the chat history.",
+      "Your conversations are saved — reopen any of them from the dashboard or from History in Course Chat's navigation bar.",
     ],
   },
   {

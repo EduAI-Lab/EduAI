@@ -30,7 +30,8 @@ EduAI has three parts:
 
 This guide walks a **happy path** from your invitation email through a first useful setup in each app. Troubleshooting is at the end.
 
-Throughout, Core's left navigation bar starts with **Switch app** (the Core icon) and **Account**, then holds **Dashboard**, **Courses**, **Course Chat**, and **Help**. The header has search (`Ctrl+K` / `Cmd+K`), a platform status indicator, the theme control, and **Report a bug**.
+Throughout, Core's left navigation bar starts with **Switch app** (the Core icon) and **Account**, then holds **Dashboard**, **Courses**, and **Help**; **Report a bug** is under **Help**. The header has search (`Ctrl+K` / `Cmd+K`), a platform status indicator, and the theme control.
+**Course Chat** is part of Core but opens like its own app from **Switch app**. Its navigation bar holds **New chat**, **History**, **Courses** (the course to chat about), and **Course Assistant** once you teach a published course.
 
 ---
 
