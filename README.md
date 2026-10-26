@@ -169,7 +169,7 @@ The repository intentionally does not treat old dated benchmark reports as curre
 
 ## Mobile responsiveness audit (`#805`)
 
-Playwright-driven screenshot audit of Core, AI Tutor, and Question Maker at mobile viewports, checking for horizontal overflow and sidebar `aria-expanded`/`aria-controls` wiring:
+Playwright-driven screenshot audit of Core, AI Tutor, and Question Maker at mobile viewports, checking for horizontal overflow and the navigation menu button's `aria-expanded`/`aria-haspopup` wiring:
 
 ```bash
 cd scripts/mobile-audit

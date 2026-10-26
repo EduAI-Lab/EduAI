@@ -311,6 +311,18 @@ describe("NavShell — course pages", () => {
 });
 
 describe("NavShell — mobile", () => {
+  it("exposes the menu button the mobile audit checks, with its aria wiring", () => {
+    renderShell();
+    setViewportWidth(375);
+    // scripts/mobile-audit/lib.mjs looks the button up by this exact selector.
+    const trigger = document.querySelector('button[aria-label="Open navigation menu"]');
+    expect(trigger).not.toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // aria-controls is added only while the drawer is open (it would point at
+    // nothing otherwise), so a closed trigger announces its popup instead.
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+  });
+
   it("opens a modal drawer holding the account actions, nav, and course menu", async () => {
     renderShell({ courseNav: COURSE_NAV });
     setViewportWidth(375);
