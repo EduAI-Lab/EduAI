@@ -20,19 +20,19 @@ A scenario explicitly marked as a bug is evidence of unintended behavior, not a 
 | **AI Tutor** | Working through structured learning activities with guided AI help | Dashboard, Courses, course content, activity chat |
 | **Question Maker** | Creating questions, assessments, exam variants, and Canvas imports/exports | Dashboard, Courses, Question Library, course workspace |
 
-Use the application switcher in the sidebar footer to move between applications.
+Use the app switcher, the current app's icon at the top of the left navigation bar, to move between applications. On a phone it sits in the top bar next to the menu button.
 You remain signed in because Core provides the shared session for all three applications.
 
 ## Navigation shared across the platform
 
-- Use the **sidebar** for the main sections of the current application.
-- Use the **application switcher** in the sidebar footer to open Core, AI Tutor, or Question Maker.
+- Use the **navigation bar** on the left for the main sections of the current application; on a phone, open it with the menu button in the top bar.
+- Use the **app switcher** (the app icon at the top of the left navigation bar, or in the top bar on a phone) to open Core, AI Tutor, or Question Maker.
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
-- Open the **profile menu** in the sidebar footer for Settings and Log out.
+- Open **Account** in the left navigation bar for Settings and Log out.
 - Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
 - Each app's dashboard has a five-task **Getting started** checklist. **Open** takes you to a task; tick it yourself when you have finished. Progress is saved for your account in this browser only.
 - Five main pages in each app have a ▶ **Page tour** button in the header. Tours start only when you press it. On the Core and Question Maker dashboards, ▶ plays the app's overview tour, the same one **(?) → Take the tour** offers. Question Maker's checklist and page tours are for instructors and administrators.
-- Use **Report a bug** in the header when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
+- Use **Report a bug** under **Help** in the left navigation bar (in the menu on a phone) when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
 
@@ -55,7 +55,7 @@ Penny is a guide, not an answer key: for assessment-style questions it explains 
 2. Sign in through EduAI Core. Students see their courses once an instructor adds them or the course roster syncs; until then the dashboard says your professor hasn't added you yet.
 3. If you opened an extension first, it sends you to Core to sign in and then returns you to the extension.
 4. Students may be asked for their student number during onboarding.
-5. Open **profile menu → Settings** to manage your account.
+5. Open **Account → Settings** to manage your account.
 
 Core Settings contains:
 
@@ -91,7 +91,7 @@ Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can op
 
 ### Find a course
 
-1. Open **Courses** from the sidebar.
+1. Open **Courses** in the left navigation bar and pick the course, or choose **All courses** to see them all.
 2. Select a course card, or use the command palette to search for a course.
 3. The course page shows the features available to your role, such as course information, materials, roster, and course settings.
 
@@ -105,14 +105,14 @@ Students and teaching assistants can't create courses. If you need a course set 
 
 Platform administrators, unit administrators, and instructors can make a new course by hand:
 
-1. Open **Courses** from the sidebar (instructors see it as **My Courses**).
+1. Open **Courses** in the left navigation bar and choose **All courses**.
 2. Choose **Create course** at the top right of the page.
 3. Fill in the **Course name**, pick a **Course Code** (the department or subject, such as `CS`), and enter the **Course number** (such as `101`) and **Section**.
 4. Pick a **Start date**. The **Term** is filled in from the start date; you can't choose it separately.
 5. Administrators and unit administrators also choose the course's **Instructor**. When an instructor creates a course, they become its instructor automatically.
 6. Optionally add **AI instructions** for the course's AI features, then choose **Create course**.
 
-The new course starts as a **Draft**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
+The new course starts **Unpublished**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
 
 If a deleted course has the same code, section, year and term, or the same instructor already teaches that code in another section, year or term, EduAI first shows **This course may already exist**. **Restore** brings the deleted course back with its materials and enrollments; Question Maker and AI Tutor content is not restored. If you can't restore it, the dialog tells you to ask an administrator. **Create new course anyway** makes a separate course.
 
@@ -172,7 +172,7 @@ Uploading the same file again after a failure retries the existing entry rather 
 
 ### Instructor: connect and sync Canvas
 
-1. Open **profile menu → Settings → Canvas** and connect your Canvas account.
+1. Open **Account → Settings → Canvas** and connect your Canvas account.
 2. Open the relevant course.
 3. Start the Canvas course/material or roster sync offered by the course page.
 4. Review the imported course, materials, and enrollments before relying on them.
@@ -202,7 +202,7 @@ The full link is shown **once**, when you create it. Copy it then; EduAI stores 
 
 ### Instructor: the Course Assistant
 
-Once you teach at least one published course, a second chat entry, **Course Assistant**, appears below Course Chat in the sidebar, whatever your platform role.
+Once you teach at least one published course, a second chat entry, **Course Assistant**, appears below Course Chat in the navigation bar, whatever your platform role.
 It is a read-only helper for *running* one of your published courses — it can answer questions about that course's roster, enrollments, and topics, and nothing else.
 
 1. Open **Course Assistant** and pick one of your published courses.
@@ -232,7 +232,7 @@ The **Administration** sidebar group provides:
 - **Cron Jobs** — job status, manual runs, and per-job settings such as how many days deleted course materials are kept before they are purged (**Edit settings → Delete after (days)**).
 - **API Access** — who besides administrators may use an API key, and how much they used in the last 24 hours (see [API access for students and researchers](#api-access-for-students-and-researchers)).
 
-**Admin Chatbot** appears separately near the bottom of the sidebar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
+**Admin Chatbot** appears separately near the bottom of the navigation bar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
 
 **Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
 
@@ -264,7 +264,7 @@ Every request made with an API key is recorded against the person: when, which m
 
 The [student API guide](STUDENT_API_GUIDE.md) has the full details: request examples in curl, Python and JavaScript, each model's context window, how limits and tokens are counted, every error and when to retry, and tips for large batches. The steps in short:
 
-1. Open **profile menu → Settings → API Keys**. The tab appears only while you have access, and shows when it ends and how much of today's allowance you have used.
+1. Open **Account → Settings → API Keys**. The tab appears only while you have access, and shows when it ends and how much of today's allowance you have used.
 2. Name a key and choose **Create**. Copy it right away: it is shown only once. A key can't last longer than your access.
 3. Send the key in the `x-api-key` header to `POST /api/completion` with a campus model, for example `vllm:qwen3.5-2b-instruct`. The tab shows a complete example.
 

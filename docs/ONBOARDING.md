@@ -55,7 +55,7 @@ Task: Find a guide and learn how to report a bug
 Staff task: Find the instructor guide and reporting tools
 
 1. **Read the guide** — Use Help for instructions matched to your role. Penny, when enabled, answers platform how-to questions from the indexed guides.
-2. **Report a problem** — Use Report a bug in the header. Include the app, page, expected result and actual result; diagnostics are optional. Never include passwords or API keys.
+2. **Report a problem** — Use Report a bug under Help in the left navigation bar. Include the app, page, expected result and actual result; diagnostics are optional. Never include passwords or API keys.
 
 ## ai-tutor.courses: Open a course
 
