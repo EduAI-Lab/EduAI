@@ -56,6 +56,7 @@ export function getLauncherApps({ urls, coreCourseId }: GetLauncherAppsOptions):
     {
       id: "core",
       name: "EduAI Core",
+      shortName: "Core",
       url: courseUrl(urls.core, "core", coreCourseId),
       icon: <IconSchool className="size-4" />,
       description: "Courses, materials & class hub",

@@ -147,7 +147,12 @@ export { NavSecondary } from "./nav-secondary";
 export type { NavSecondaryProps, NavSecondaryItem } from "./nav-secondary";
 export { AppSidebar } from "./app-sidebar";
 export type { AppSidebarProps } from "./app-sidebar";
-export { BrandSwitcher, AppSwitcher, QUESTION_MAKER_ROLES } from "./app-launcher";
+export {
+  BrandSwitcher,
+  AppSwitcher,
+  QUESTION_MAKER_ROLES,
+  visibleAppsForRole,
+} from "./app-launcher";
 export type { BrandSwitcherProps, AppSwitcherProps, LauncherApp } from "./app-launcher";
 export { getLauncherApps } from "./launcher-registry";
 export type { LauncherAppId, LauncherAppUrls, GetLauncherAppsOptions } from "./launcher-registry";
@@ -155,6 +160,7 @@ export { SiteHeader } from "./site-header";
 export type { SiteHeaderProps } from "./site-header";
 export { AppShell } from "./app-shell";
 export type { AppShellProps } from "./app-shell";
+export * from "./nav-shell";
 export { CommandPalette, CommandSearchButton, buildAppSwitcherGroup } from "./command-palette";
 export type {
   CommandPaletteProps,
