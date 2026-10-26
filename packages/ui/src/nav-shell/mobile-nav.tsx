@@ -326,15 +326,17 @@ function DrawerNav({
                 </NavAnchor>
               </li>
             ))}
-            <li>
-              <NavAnchor
-                href={model.coursesHref}
-                onClick={onNavigate}
-                className={cn(SUB_ROW, "text-primary-text")}
-              >
-                All courses
-              </NavAnchor>
-            </li>
+            {model.coursesHref && (
+              <li>
+                <NavAnchor
+                  href={model.coursesHref}
+                  onClick={onNavigate}
+                  className={cn(SUB_ROW, "text-primary-text")}
+                >
+                  All courses
+                </NavAnchor>
+              </li>
+            )}
           </ul>
         ) : tray === "admin" ? (
           <ul>
@@ -368,6 +370,17 @@ function DrawerNav({
     <nav aria-label="Global" className="py-2">
       <Accordion type="multiple" value={expanded} onValueChange={setExpanded}>
         {model.entries.map((entry) => {
+          if (entry.kind === "panel") {
+            return (
+              <AccordionItem key={entry.key} value={`panel:${entry.key}`} className="border-b-0">
+                {accordionTrigger(
+                  entry.label,
+                  <entry.icon size={20} strokeWidth={1.75} aria-hidden="true" />,
+                )}
+                <AccordionContent className="pb-1">{entry.render(onNavigate)}</AccordionContent>
+              </AccordionItem>
+            );
+          }
           if (entry.kind === "tray") {
             return trayItem(
               entry.tray,
@@ -416,7 +429,10 @@ function DrawerLink({
     <NavAnchor
       href={link.href}
       external={link.external}
-      onClick={onNavigate}
+      onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+        link.onClick?.(event);
+        onNavigate();
+      }}
       aria-current={!link.external && isNavHrefActive(pathname, link.href) ? "page" : undefined}
       className={ROW}
     >

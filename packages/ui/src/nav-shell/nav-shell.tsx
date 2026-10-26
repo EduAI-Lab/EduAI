@@ -17,7 +17,7 @@ import { GlobalNavRail } from "./global-nav-rail";
 import { MobileNav } from "./mobile-nav";
 import { NavAnchor, NavLinkProvider } from "./nav-shared";
 import { RAIL_WIDTH } from "./nav-trays";
-import type { CourseNavConfig, NavLinkComponent, NavShellModel, NavTrayKey } from "./types";
+import type { CourseNavConfig, NavLinkComponent, NavOpenTray, NavShellModel } from "./types";
 import {
   COURSE_MENU_OPEN_KEY,
   RAIL_COLLAPSED_KEY,
@@ -100,7 +100,7 @@ export function NavShell({
   const breakpoint = useNavBreakpoint();
   const [railCollapsed, setRailCollapsed] = usePersistedFlag(RAIL_COLLAPSED_KEY, false);
   const [courseMenuOpen, setCourseMenuOpen] = usePersistedFlag(COURSE_MENU_OPEN_KEY, true);
-  const [openTray, setOpenTray] = React.useState<NavTrayKey | null>(null);
+  const [openTray, setOpenTray] = React.useState<NavOpenTray | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [courseDrawerOpen, setCourseDrawerOpen] = React.useState(false);
   const hamburgerRef = React.useRef<HTMLButtonElement>(null);

@@ -29,5 +29,6 @@ export type {
   NavShellEntry,
   NavShellLink,
   NavShellModel,
+  NavOpenTray,
   NavTrayKey,
 } from "./types";

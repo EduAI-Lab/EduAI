@@ -24,7 +24,7 @@ import {
   RAIL_WIDTH,
   TRAY_TITLES,
 } from "./nav-trays";
-import type { NavShellLink, NavShellModel, NavTrayKey } from "./types";
+import type { NavOpenTray, NavShellLink, NavShellModel } from "./types";
 
 // Width and the label's visibility follow both the saved collapse choice
 // (`data-collapsed`) and the tablet breakpoint (`max-lg:`), so the right rail
@@ -48,8 +48,8 @@ export interface GlobalNavRailProps {
   onCollapsedChange: (collapsed: boolean) => void;
   /** True when the rail is icon-only for any reason — drives tooltips and the tray offset. */
   iconOnly: boolean;
-  openTray: NavTrayKey | null;
-  onOpenTrayChange: (tray: NavTrayKey | null) => void;
+  openTray: NavOpenTray | null;
+  onOpenTrayChange: (tray: NavOpenTray | null) => void;
   /** The Help tray's "Report a bug"; omitted when the app takes no bug reports. */
   onReportBug?: () => void;
 }
@@ -74,15 +74,16 @@ export function GlobalNavRail({
   const currentApp = currentLauncherApp(model);
   const railWidth = iconOnly ? RAIL_WIDTH.iconOnly : RAIL_WIDTH.full;
 
-  const trayProps = (tray: NavTrayKey) => ({
+  const trayProps = (tray: NavOpenTray, title: string) => ({
     tray,
+    title,
     open: openTray === tray,
     onOpenChange: (open: boolean) => onOpenTrayChange(open ? tray : null),
     railWidth,
-    tooltip: iconOnly ? TRAY_TITLES[tray] : undefined,
+    tooltip: iconOnly ? title : undefined,
   });
 
-  const trayTrigger = (tray: NavTrayKey, label: string, icon: React.ReactNode) => (
+  const trayTrigger = (tray: NavOpenTray, label: string, icon: React.ReactNode) => (
     <button
       type="button"
       data-nav-tray-trigger={tray}
@@ -104,7 +105,7 @@ export function GlobalNavRail({
       >
         <div className="flex shrink-0 justify-center py-1.5">
           <NavTray
-            {...trayProps("apps")}
+            {...trayProps("apps", TRAY_TITLES.apps)}
             // Always tooltipped: in labelled mode the tile shows the app's name,
             // not what choosing it does.
             tooltip={TRAY_TITLES.apps}
@@ -130,7 +131,7 @@ export function GlobalNavRail({
         <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden py-1">
           <li>
             <NavTray
-              {...trayProps("account")}
+              {...trayProps("account", TRAY_TITLES.account)}
               trigger={trayTrigger(
                 "account",
                 "Account",
@@ -157,10 +158,23 @@ export function GlobalNavRail({
               );
             }
             const icon = <entry.icon size={26} strokeWidth={1.6} aria-hidden="true" />;
+            if (entry.kind === "panel") {
+              const tray = `panel:${entry.key}` as const;
+              return (
+                <li key={tray}>
+                  <NavTray
+                    {...trayProps(tray, entry.label)}
+                    trigger={trayTrigger(tray, entry.label, icon)}
+                  >
+                    {entry.render(() => onOpenTrayChange(null))}
+                  </NavTray>
+                </li>
+              );
+            }
             return (
               <li key={entry.tray}>
                 <NavTray
-                  {...trayProps(entry.tray)}
+                  {...trayProps(entry.tray, TRAY_TITLES[entry.tray])}
                   trigger={trayTrigger(entry.tray, entry.label, icon)}
                 >
                   {entry.tray === "courses" ? (
@@ -232,6 +246,7 @@ function RailLink({
       <NavAnchor
         href={link.href}
         external={link.external}
+        onClick={link.onClick}
         aria-current={active ? "page" : undefined}
         className={cn(TILE, active && TILE_ACTIVE)}
       >

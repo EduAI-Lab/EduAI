@@ -10,6 +10,9 @@ import type { LauncherApp } from "../app-launcher";
  */
 export type NavTrayKey = "account" | "apps" | "courses" | "admin" | "help";
 
+/** The open tray: a built-in one, or an app-supplied panel (`panel:<key>`). */
+export type NavOpenTray = NavTrayKey | `panel:${string}`;
+
 export type NavShellLink = {
   key: string;
   label: string;
@@ -22,11 +25,27 @@ export type NavShellLink = {
   disabledReason?: string;
   /** Trailing status marker, e.g. Core's cron-health dot. */
   badge?: React.ReactNode;
+  /**
+   * Runs before the link navigates; call `preventDefault()` to handle it in
+   * place (e.g. Course Chat's New chat, which has to stop a streaming reply).
+   */
+  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
 };
 
 export type NavShellEntry =
   | { kind: "link"; link: NavShellLink }
-  | { kind: "tray"; tray: Exclude<NavTrayKey, "account" | "apps">; label: string; icon: Icon };
+  | { kind: "tray"; tray: Exclude<NavTrayKey, "account" | "apps">; label: string; icon: Icon }
+  /**
+   * A tray whose contents the app draws (e.g. Course Chat's History). `render`
+   * gets a `close` to call once its content has done its job.
+   */
+  | {
+      kind: "panel";
+      key: string;
+      label: string;
+      icon: Icon;
+      render: (close: () => void) => React.ReactNode;
+    };
 
 export type NavShellCourse = {
   id: string;
@@ -64,8 +83,8 @@ export type NavShellModel = {
   adminLinks: NavShellLink[];
   /** Help tray links; "Report a bug" is added after them when `onReportBug` is set. */
   helpLinks: NavShellLink[];
-  /** The Courses tray's "All courses" link. */
-  coursesHref: string;
+  /** The Courses tray's "All courses" link; left out when absent. */
+  coursesHref?: string;
   /**
    * Fetches the Courses tray list. Called on the tray's first open (most visits
    * never open it), and again after a failure. Ignored when `courses` is set.

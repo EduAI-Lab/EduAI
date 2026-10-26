@@ -2,7 +2,13 @@ import * as React from "react";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { IconBooks, IconDashboard, IconHelp, IconShieldLock } from "@tabler/icons-react";
+import {
+  IconBooks,
+  IconDashboard,
+  IconHelp,
+  IconHistory,
+  IconShieldLock,
+} from "@tabler/icons-react";
 
 import { NavShell } from "../nav-shell";
 import type { CourseNavConfig, NavShellModel } from "../nav-shell";
@@ -341,5 +347,89 @@ describe("NavShell — mobile", () => {
       "https://core.test/",
     );
     expect(within(sheet).getByText("Current")).toBeInTheDocument();
+  });
+});
+
+describe("NavShell — app-supplied trays and link actions", () => {
+  /** A model whose rail carries an app-supplied "History" tray. */
+  function modelWithPanel(overrides: Partial<NavShellModel> = {}) {
+    return makeModel({
+      entries: [
+        {
+          kind: "panel",
+          key: "history",
+          label: "History",
+          icon: IconHistory,
+          render: (close) => (
+            <button type="button" onClick={close}>
+              Pick
+            </button>
+          ),
+        },
+        { kind: "tray", tray: "help", label: "Help", icon: IconHelp },
+      ],
+      ...overrides,
+    });
+  }
+
+  it("opens an app-supplied panel tray and lets its content close it", async () => {
+    renderShell({}, modelWithPanel());
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    const trigger = within(rail).getByRole("button", { name: "History" });
+    fireEvent.click(trigger);
+    const tray = await screen.findByRole("dialog", { name: "History" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(within(tray).getByRole("button", { name: "Pick" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "History" })).toBeNull());
+  });
+
+  it("returns focus to a panel trigger on Escape in icon-only mode", async () => {
+    renderShell({}, modelWithPanel());
+    fireEvent.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    const trigger = within(rail).getByRole("button", { name: "History" });
+    fireEvent.focus(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("History");
+    fireEvent.click(trigger);
+    const tray = await screen.findByRole("dialog", { name: "History" });
+    fireEvent.keyDown(tray, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "History" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("shows a panel entry as a drawer section on mobile", async () => {
+    renderShell({}, modelWithPanel());
+    setViewportWidth(375);
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "History" }));
+    fireEvent.click(await within(drawer).findByRole("button", { name: "Pick" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
+  });
+
+  it("calls a link's onClick", () => {
+    const onClick = vi.fn();
+    renderShell(
+      {},
+      makeModel({
+        entries: [
+          { kind: "link", link: { key: "new", label: "New chat", href: "/chat", onClick } },
+        ],
+      }),
+    );
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    fireEvent.click(within(rail).getByRole("link", { name: "New chat" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits All courses without coursesHref", async () => {
+    renderShell(
+      {},
+      makeModel({ coursesHref: undefined, courses: { status: "ready", courses: [] } }),
+    );
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    fireEvent.click(within(rail).getByRole("button", { name: "Courses" }));
+    const tray = await screen.findByRole("dialog", { name: "Courses" });
+    expect(within(tray).queryByText("All courses")).toBeNull();
   });
 });

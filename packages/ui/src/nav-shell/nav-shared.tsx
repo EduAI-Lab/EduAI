@@ -57,7 +57,7 @@ function anyActive(pathname: string, links: NavShellLink[]): boolean {
 export function activeTrayFor(model: NavShellModel): NavTrayKey | null {
   const { pathname } = model;
   if (anyActive(pathname, model.accountLinks)) return "account";
-  if (isNavHrefActive(pathname, model.coursesHref)) return "courses";
+  if (model.coursesHref && isNavHrefActive(pathname, model.coursesHref)) return "courses";
   if (anyActive(pathname, model.helpLinks)) return "help";
   if (anyActive(pathname, model.adminLinks)) return "admin";
   return null;

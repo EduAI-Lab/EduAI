@@ -269,7 +269,7 @@ describe("_app layout — authenticated shell", () => {
     wrap();
 
     const entries = capturedModel?.entries.map((entry) =>
-      entry.kind === "tray" ? `tray:${entry.tray}` : entry.link.label,
+      entry.kind === "link" ? entry.link.label : entry.kind === "tray" ? `tray:${entry.tray}` : "",
     );
     expect(entries).toEqual(["Dashboard", "tray:help"]);
     expect(capturedModel?.helpLinks.map((link) => link.href)).toEqual(["/help"]);

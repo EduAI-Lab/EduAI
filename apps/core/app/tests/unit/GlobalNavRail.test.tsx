@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, Link, RouterProvider } from "react-router";
 
-import { GlobalNavRail, NavLinkProvider, type NavTrayKey } from "@eduai/ui";
+import { GlobalNavRail, NavLinkProvider, type NavOpenTray } from "@eduai/ui";
 import { useCoreNavModel } from "~/components/layout/core-nav-model";
 import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 import type { User } from "~/lib/auth/types";
@@ -31,7 +31,7 @@ afterEach(() => {
 function RailHarness({ user, onReportBug }: { user: User; onReportBug: () => void }) {
   const model = useCoreNavModel(user, onReportBug);
   const [collapsed, setCollapsed] = React.useState(false);
-  const [openTray, setOpenTray] = React.useState<NavTrayKey | null>(null);
+  const [openTray, setOpenTray] = React.useState<NavOpenTray | null>(null);
   return (
     <NavLinkProvider LinkComponent={Link}>
       <GlobalNavRail

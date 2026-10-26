@@ -22,7 +22,7 @@ import {
   useNavCourses,
   useThemeSwitch,
 } from "./nav-shared";
-import type { NavShellLink, NavShellModel, NavTrayKey } from "./types";
+import type { NavOpenTray, NavShellLink, NavShellModel, NavTrayKey } from "./types";
 
 export const TRAY_TITLES = {
   account: "Account",
@@ -49,6 +49,7 @@ const ACCOUNT_ROW =
  */
 export function NavTray({
   tray,
+  title = TRAY_TITLES[tray as NavTrayKey],
   open,
   onOpenChange,
   railWidth,
@@ -56,7 +57,9 @@ export function NavTray({
   trigger,
   children,
 }: {
-  tray: NavTrayKey;
+  tray: NavOpenTray;
+  /** Required for an app-supplied panel; built-in trays use `TRAY_TITLES`. */
+  title?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   railWidth: number;
@@ -77,15 +80,15 @@ export function NavTray({
         className="z-40 w-[300px] max-w-[85vw] gap-0 overflow-y-auto border-r-0 p-0 shadow-xl dark:border-r sm:max-w-[300px] data-[state=closed]:duration-200 data-[state=open]:duration-200 motion-reduce:!animate-none [&>button:last-child]:hidden"
       >
         <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
-          <SheetTitle className="text-lg">{TRAY_TITLES[tray]}</SheetTitle>
+          <SheetTitle className="text-lg">{title}</SheetTitle>
           <SheetClose
-            aria-label={`Close ${TRAY_TITLES[tray]} menu`}
+            aria-label={`Close ${title} menu`}
             className="-mr-2 flex size-11 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <IconX size={20} aria-hidden="true" />
           </SheetClose>
         </div>
-        <SheetDescription className="sr-only">{`${TRAY_TITLES[tray]} navigation`}</SheetDescription>
+        <SheetDescription className="sr-only">{`${title} navigation`}</SheetDescription>
         <div className="flex flex-col gap-1 p-3">{children}</div>
       </SheetContent>
     </Sheet>
@@ -115,6 +118,7 @@ function TrayLinkList({ links, pathname }: { links: NavShellLink[]; pathname: st
             <NavAnchor
               href={link.href}
               external={link.external}
+              onClick={link.onClick}
               aria-current={
                 !link.external && isNavHrefActive(pathname, link.href) ? "page" : undefined
               }
@@ -207,11 +211,13 @@ export function CoursesTrayPanel({ model, open }: { model: NavShellModel; open: 
           ))}
         </ul>
       )}
-      <div className="mt-2 border-t pt-2">
-        <NavAnchor href={model.coursesHref} className={TRAY_LINK}>
-          All courses
-        </NavAnchor>
-      </div>
+      {model.coursesHref && (
+        <div className="mt-2 border-t pt-2">
+          <NavAnchor href={model.coursesHref} className={TRAY_LINK}>
+            All courses
+          </NavAnchor>
+        </div>
+      )}
     </>
   );
 }
