@@ -187,6 +187,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const [result, setResult] = useState<string | null>(null);
   const [wasCorrect, setWasCorrect] = useState(false);
   const [prevActivityId, setPrevActivityId] = useState<number | null>(null);
+  const [hintsRevealed, setHintsRevealed] = useState(false);
 
   // Pre-chat context for AI guidance
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
@@ -307,6 +308,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const currentActivityId = activity?.id ?? null;
   if (currentActivityId !== prevActivityId) {
     setPrevActivityId(currentActivityId);
+    setHintsRevealed(false);
     setWasCorrect(false);
     setResult(null);
     setTempKnowledgeLevel("");
@@ -703,6 +705,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       submitState={submitState}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}
+      hintsRevealed={hintsRevealed}
+      onToggleHints={() => setHintsRevealed((open) => !open)}
       canPrev={canPrev}
       canNext={canNext}
       onPrev={goPrev}

@@ -713,9 +713,23 @@ function buildSystemPrompt(templateContent, context = {}) {
   return systemPrompt;
 }
 
-function buildTeachUserMessage({ topicName, message }) {
+function buildTeachUserMessage({ topicName, message, hints }) {
   const topicText = topicName ? `Topic: ${topicName}\n\n` : "";
-  return `${topicText}Student request: ${message}`;
+  const hintsText = formatActivityHints(hints);
+  return `${topicText}${hintsText ? `${hintsText}\n\n` : ""}Student request: ${message}`;
+}
+
+// Read from the stored activity config, never the client payload.
+function getActivityHints(activity) {
+  const hints = activity?.config?.hints;
+  if (!Array.isArray(hints)) return [];
+  return hints.filter((hint) => typeof hint === "string" && hint.trim()).map((h) => h.trim());
+}
+
+function formatActivityHints(hints) {
+  if (!Array.isArray(hints) || hints.length === 0) return "";
+  const lines = hints.map((hint) => `- ${hint}`).join("\n");
+  return `Instructor-provided hints (use these to nudge the student; the student may already have revealed them):\n${lines}`;
 }
 
 /**
@@ -780,6 +794,9 @@ function buildGuideUserMessage(activity, { message, studentAnswer }) {
     base += `\n\nStudent answer: ${answerText}`;
   }
 
+  const hintsText = formatActivityHints(getActivityHints(activity));
+  if (hintsText) base += `\n\n${hintsText}`;
+
   base += `\n\nStudent request: ${message}`;
   return base;
 }
@@ -823,8 +840,8 @@ function formatAnswerKey(activity, studentAnswer) {
   return "Correct answer: unavailable";
 }
 
-function buildTeachSupervisorContexts({ topicName, knowledgeLevel, message }) {
-  const visibleContext = buildTeachUserMessage({ topicName, message });
+function buildTeachSupervisorContexts({ topicName, knowledgeLevel, message, hints }) {
+  const visibleContext = buildTeachUserMessage({ topicName, message, hints });
   const hiddenContext = `${visibleContext}\n\nKnowledge level: ${knowledgeLevel}\n\nThis is a teaching exchange. The tutor should stay concise, encouraging, and avoid doing the student’s thinking for them.`;
   return { visibleContext, hiddenContext };
 }
@@ -1087,11 +1104,17 @@ export async function generateTeachResponse({
     }
 
     const resolvedTopicName = topicName || activity.mainTopic?.name || "the subject";
-    const baseUserMessage = buildTeachUserMessage({ topicName: resolvedTopicName, message });
+    const hints = getActivityHints(activity);
+    const baseUserMessage = buildTeachUserMessage({
+      topicName: resolvedTopicName,
+      message,
+      hints,
+    });
     const { visibleContext, hiddenContext: baseHiddenContext } = buildTeachSupervisorContexts({
       topicName: resolvedTopicName,
       knowledgeLevel,
       message,
+      hints,
     });
     const questionBankContext = buildQuestionBankContext(testableQuestions);
     const hiddenContext = questionBankContext
@@ -1310,6 +1333,8 @@ export const _testExports = {
   buildSystemPrompt,
   buildTeachUserMessage,
   buildGuideUserMessage,
+  getActivityHints,
+  formatActivityHints,
   formatAnswerKey,
   buildTeachSupervisorContexts,
   buildGuideSupervisorContexts,

@@ -54,6 +54,8 @@ function renderView(submitState: "allowed" | "pending" | "unverified" | "withhel
         submitState={submitState}
         isUserReady
         onGuideMe={vi.fn()}
+        hintsRevealed={false}
+        onToggleHints={vi.fn()}
         canPrev={false}
         canNext
         onPrev={vi.fn()}
