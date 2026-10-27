@@ -961,7 +961,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               </p>
             </div>
           ) : !modelUsable ? (
-            apiKeysLoaded ? (
+            apiKeysLoaded && modelsFetched ? (
               <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
                   <IconKey className="h-7 w-7" aria-hidden />
