@@ -72,9 +72,9 @@ describe("EditActivityPanel", () => {
     render(<EditActivityPanel activity={baseActivity()} onSubmit={onSubmit} onCancel={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("radio", { name: "Short answer" }));
-    fireEvent.change(screen.getByPlaceholderText("Ideal short response"), {
-      target: { value: "Four" },
-    });
+    const field = screen.getByLabelText("Reference answer (for graders)");
+    expect(field).toHaveAccessibleDescription(/Not used for auto-grading/);
+    fireEvent.change(field, { target: { value: "Four" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(onSubmit).toHaveBeenCalledWith(

@@ -123,7 +123,7 @@ describe("AddActivityPanel — an MCQ cannot be saved with no correct answer", (
     pickMainTopic();
     fireEvent.click(screen.getByRole("radio", { name: "Short answer" }));
     fillQuestion();
-    fireEvent.change(screen.getByLabelText(/Expected answer/), { target: { value: "Paris" } });
+    fireEvent.change(screen.getByLabelText(/Reference answer/), { target: { value: "Paris" } });
 
     submit();
 

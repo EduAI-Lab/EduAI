@@ -81,7 +81,7 @@ describe("ActivityDetailsCard with a malformed stored answer", () => {
     });
 
     expect(() => open(activity)).not.toThrow();
-    expect(screen.queryByText(/expected answer/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reference answer/i)).not.toBeInTheDocument();
   });
 
   it("shows the expected answer when it really is a string", () => {
