@@ -51,6 +51,9 @@ function renderView(submitState: "allowed" | "pending" | "unverified" | "withhel
         onSubmit={vi.fn()}
         result={null}
         wasCorrect={false}
+        awaitingReview={false}
+        answerLocked={false}
+        onRetry={vi.fn()}
         submitState={submitState}
         isUserReady
         onGuideMe={vi.fn()}
