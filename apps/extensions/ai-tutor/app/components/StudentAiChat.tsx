@@ -56,12 +56,18 @@ import { StudentChatHistoryPanel } from "~/components/StudentChatHistoryPanel";
 import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import { useApiKeys } from "~/hooks/use-api-keys";
+import { useLocalUser } from "~/hooks/useLocalUser";
 import {
   getProviderFromModelId,
   getProviderLabel,
   maskApiKey,
   providerRequiresByokKey,
 } from "~/lib/provider-keys";
+import {
+  loadStudyBuddyModelId,
+  resolveStudyBuddyModelId,
+  saveStudyBuddyModelId,
+} from "~/lib/study-buddy-model";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
 import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { z } from "zod";
@@ -240,7 +246,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
+  const { user } = useLocalUser();
+  const userId = user?.id ?? null;
+  // #2025: only an explicit pick overrides the admin's default tutor; it is
+  // persisted per account because this component remounts per activity.
+  const [pickedModelId, setPickedModelId] = useState<string | null>(null);
   const [modelsFetched, setModelsFetched] = useState(false);
   const [modelLoadError, setModelLoadError] = useState(false);
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
@@ -286,6 +296,28 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       isMounted = false;
     };
   }, []);
+
+  // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
+  // held BYOK key never adds models the admin left off the allow-list — the
+  // allow-list is absolute. A personal key is a fallback (UBC-hosted models
+  // serve without one, and Core falls back to a keyed provider when the fleet
+  // is down), not a way to pick a model policy forbids.
+  const pickerModels = availableModels as StudentSelectableModel[];
+
+  const selectedModelId = useMemo(
+    () =>
+      resolveStudyBuddyModelId(pickerModels, pickedModelId ?? loadStudyBuddyModelId(userId)) ??
+      DEFAULT_MODEL_ID,
+    [pickerModels, pickedModelId, userId],
+  );
+
+  const handleSelectModel = useCallback(
+    (modelId: string) => {
+      setPickedModelId(modelId);
+      saveStudyBuddyModelId(userId, modelId);
+    },
+    [userId],
+  );
 
   const currentProvider = getProviderFromModelId(selectedModelId);
   const currentApiKey = getKey(currentProvider);
@@ -373,11 +405,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         const selectableModels = policyActive ? models.filter(isStudentSelectableModel) : models;
         setAvailableModels(selectableModels);
         setStudentModelPolicyActive(policyActive);
-        setSelectedModelId((current) => {
-          if (selectableModels.some((model) => model.modelId === current)) return current;
-          const defaultModel = selectableModels.find((model) => model.isDefaultTutor);
-          return defaultModel?.modelId ?? selectableModels[0]?.modelId ?? DEFAULT_MODEL_ID;
-        });
         setModelLoadError(false);
       } catch (error) {
         if (!isMounted) return;
@@ -392,13 +419,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       isMounted = false;
     };
   }, []);
-
-  // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
-  // held BYOK key never adds models the admin left off the allow-list — the
-  // allow-list is absolute. A personal key is a fallback (UBC-hosted models
-  // serve without one, and Core falls back to a keyed provider when the fleet
-  // is down), not a way to pick a model policy forbids.
-  const pickerModels = availableModels as StudentSelectableModel[];
 
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
@@ -1055,7 +1075,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
               <Select
                 value={selectedModelId}
-                onValueChange={setSelectedModelId}
+                onValueChange={handleSelectModel}
                 disabled={!pickerModels.length}
               >
                 <SelectTrigger
