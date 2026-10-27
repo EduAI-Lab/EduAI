@@ -147,6 +147,7 @@ The EduAI call is **not streaming** (`streaming: false` in the request body) —
 | `maxSupervisorIterations` | `3` | Admin AI model policy, clamped 1–5 | Revision attempts before falling back to the supervisor's safe text. |
 | `defaultSupervisorModelId` | falls back to the tutor default | Admin AI model policy | Model used for supervisor review calls. |
 | `EDUAI_CALL_TIMEOUT_MS` | `45000` | Server env var | Hard bound on one logical EduAI call, including its one permitted retry. |
+| `EDUAI_TURN_TIMEOUT_MS` | `50000` | Server env var | Deadline for a whole turn (all tutor + supervisor calls); each call gets the lesser of its own limit and the time left. At the deadline the turn returns the safe fallback if a draft was already reviewed, otherwise a 504. Keep below the client's 60s `CHAT_TIMEOUT_MS`. |
 
 There is no `AI_SUPERVISOR_ENABLED` environment variable — the loop toggle is entirely the admin-configured `dualLoopEnabled` policy field, persisted as part of the `AI_MODEL_POLICY` `SystemSetting` row.
 
