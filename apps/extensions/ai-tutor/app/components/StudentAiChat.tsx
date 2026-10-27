@@ -23,7 +23,6 @@ import {
   Input,
   Loader,
   MarkdownStylesProvider,
-  type MarkdownStyles,
   Message,
   MessageContent,
   PromptInput,
@@ -73,15 +72,7 @@ import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // see MARKDOWN_STYLES below.
 import "~/styles/chat-markdown.css";
 import { randomId } from "@eduai/ui/runtime-env";
-
-/**
- * KaTeX's stylesheet is loaded on demand, only for messages that actually
- * contain math (#1342). Module-level so its identity is stable — the shared
- * markdown renderer caches a Streamdown variant per loader.
- */
-const MARKDOWN_STYLES: MarkdownStyles = {
-  loadKatexStyles: () => import("katex/dist/katex.min.css"),
-};
+import { MARKDOWN_STYLES } from "~/lib/markdown-styles";
 
 type ChatTab = "teach" | "guide" | "custom";
 
