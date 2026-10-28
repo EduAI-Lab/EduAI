@@ -343,6 +343,7 @@ Assert-only: [`ext-ext-isolation.test.ts`](apps/core/app/tests/unit/ext-ext-isol
 | [`core/week15-student-ta-exploration.spec.ts`](tests/e2e/tests/core/week15-student-ta-exploration.spec.ts) | (#1962) An enrolled student gets 403 `{"error":"Forbidden"}` from the materials list and a seeded material's preview. |
 | [`core/student-from-scratch-grounded-chat.spec.ts`](tests/e2e/tests/core/student-from-scratch-grounded-chat.spec.ts) | (#1962) The student's course page has no Materials tab and does not show the uploaded file, the API refuses the student's materials list, and the student reaches chat through "Chat about this course", whose request carries the course. |
 | [`core/student-from-scratch-grounded-chat.spec.ts`](tests/e2e/tests/core/student-from-scratch-grounded-chat.spec.ts) | (#1963) A student's chat reply shows "Topics: <topic>" from the (mocked) `ragTopics` annotation and the uploaded file's name appears nowhere on the page. |
+| [`core/course-student-visibility-settings.spec.ts`](tests/e2e/tests/core/course-student-visibility-settings.spec.ts) | (#2071) As the course's instructor, in a real browser: the **Show topics to students** switch hides every topic from an enrolled student in one click (still hidden after a reload) and shows them again; hiding one topic in **File and topic settings** leaves the switch off with "1 of 2 topics are shown" and the student gets only the other one; turning on course files there takes the student's materials list from 403 to 200 without touching the topics; closing the popup without saving sends nothing; and the switch is disabled until the course has an approved topic. |
 
 ---
 
@@ -1273,6 +1274,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`CourseDetail.test.tsx`](apps/core/app/tests/unit/CourseDetail.test.tsx) | (#2002) The student course page lists the course's files only when the course shares them; otherwise it shows no file list and never asks for one. |
 | [`permissions.test.ts`](apps/core/app/tests/unit/permissions.test.ts) | (#2002) `canViewMaterial` lets a student read files only in a published course that shares them, and staff whatever either flag says. |
 | [`assistant-material-context.test.ts`](apps/core/app/tests/unit/assistant-material-context.test.ts) | (#2002) The help assistant gives a student material from a published course that shares its files, read through the per-file student gate, and none from an unpublished course even when it shares them. |
+| [`course-student-visibility-settings.test.tsx`](apps/core/app/tests/unit/course-student-visibility-settings.test.tsx) | (#2071) "What students see" is one **Show topics to students** switch: it is off and says how many are shown when only some are, one click sends just the approved topics that differ (not suggestions, Uncategorized or the file setting) and stays on when the refetch is stale, and it is disabled until a topic is approved. The file setting and single topics move into **File and topic settings**, which closes on save and drops unsaved choices when closed. |
 
 ## EduAI Integration Tests
 
