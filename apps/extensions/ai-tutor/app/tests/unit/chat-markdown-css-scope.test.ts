@@ -17,6 +17,9 @@ import { describe, it, expect } from "vitest";
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (relative: string) => readFileSync(path.join(appDir, relative), "utf8");
 
+// Every `MessageContent markdown` caller in AI Tutor.
+const MARKDOWN_SURFACES = ["components/StudentAiChat.tsx", "components/lessons/LessonReading.tsx"];
+
 describe("AI Tutor chat markdown CSS scoping", () => {
   it("keeps katex and streamdown out of the global stylesheet", () => {
     const appCss = read("app.css");
@@ -45,11 +48,8 @@ describe("AI Tutor chat markdown CSS scoping", () => {
     expect(chatCss).toContain("[data-streamdown='code-block-actions']");
   });
 
-  it("imports the scoped stylesheet from the only markdown surface", () => {
-    // StudentAiChat is AI Tutor's single `MessageContent markdown` caller.
-    const chat = read("components/StudentAiChat.tsx");
-
-    expect(chat).toMatch(/import\s+['"]~\/styles\/chat-markdown\.css['"];/);
+  it.each(MARKDOWN_SURFACES)("imports the scoped stylesheet from %s", (surface) => {
+    expect(read(surface)).toMatch(/import\s+['"]~\/styles\/chat-markdown\.css['"];/);
   });
 
   it("loads katex on demand rather than statically (#1342)", () => {
@@ -57,8 +57,16 @@ describe("AI Tutor chat markdown CSS scoping", () => {
     const imports = chatCss.match(/^[ \t]*@import\s+.*$/gm) ?? [];
     expect(imports.some((line) => line.includes("katex"))).toBe(false);
 
-    const chat = read("components/StudentAiChat.tsx");
-    expect(chat).toMatch(/loadKatexStyles: \(\) => import\(['"]katex\/dist\/katex\.min\.css['"]\)/);
+    const styles = read("lib/markdown-styles.ts");
+    expect(styles).toMatch(
+      /loadKatexStyles: \(\) => import\(['"]katex\/dist\/katex\.min\.css['"]\)/,
+    );
+  });
+
+  it.each(MARKDOWN_SURFACES)("wires the on-demand katex loader into %s", (surface) => {
+    expect(read(surface)).toMatch(
+      /import \{ MARKDOWN_STYLES \} from ['"]~\/lib\/markdown-styles['"];/,
+    );
   });
 
   it("normalizes assistant markdown before rendering it (#1401)", () => {

@@ -52,7 +52,7 @@ import {
   ResizablePanelGroup,
   useIsMobile,
 } from "@eduai/ui";
-import { contentExcerpt } from "../components/lessons/LessonCard";
+import { LessonReading } from "../components/lessons/LessonReading";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
@@ -764,11 +764,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           orderText={orderText}
           eyebrow="Lesson"
           title={lesson?.title || "Lesson"}
-          description={
-            (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
-            module?.title ||
-            undefined
-          }
+          // The lesson body renders in full under the hero (#2026), so no excerpt here.
+          description={module?.title || undefined}
           accentColor={accentColor}
           stats={
             activitiesTotal > 0
@@ -794,6 +791,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
               : null
           }
         />
+        {/* Capped so a long reading scrolls inside instead of squeezing the split below. */}
+        {lesson?.contentMd?.trim() && (
+          <LessonReading contentMd={lesson.contentMd} className="max-h-[35vh]" />
+        )}
       </div>
 
       {/* The AI study buddy gets equal billing with the question, not a
