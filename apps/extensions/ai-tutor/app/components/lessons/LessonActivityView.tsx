@@ -67,6 +67,8 @@ type LessonActivityViewProps = {
   onSubmit: () => void;
   result: string | null;
   wasCorrect: boolean;
+  /** The result is awaiting staff grading: render it neutral, not as an error. */
+  awaitingReview?: boolean;
   /**
    * The caller's answer-submission capability for this course (#1626).
    * Recording a graded attempt is a STUDENT-enrolment path; a course TA keeps
@@ -115,6 +117,7 @@ export function LessonActivityView({
   onSubmit,
   result,
   wasCorrect,
+  awaitingReview = false,
   submitState,
   isUserReady,
   onGuideMe,
@@ -351,11 +354,14 @@ export function LessonActivityView({
           {/* Result feedback */}
           {result && (
             <div
+              data-result-state={wasCorrect ? "correct" : awaitingReview ? "pending" : "incorrect"}
               className={cn(
                 "flex items-center gap-3 rounded-[var(--radius-lg)] p-4",
                 wasCorrect
                   ? "border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]"
-                  : "border border-destructive/40 bg-destructive/10 text-destructive",
+                  : awaitingReview
+                    ? "border border-border bg-muted/60 text-foreground"
+                    : "border border-destructive/40 bg-destructive/10 text-destructive",
               )}
             >
               {wasCorrect ? (

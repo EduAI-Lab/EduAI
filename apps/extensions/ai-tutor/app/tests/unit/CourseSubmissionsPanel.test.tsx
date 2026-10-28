@@ -154,6 +154,38 @@ describe("CourseSubmissionsPanel", () => {
     });
   });
 
+  it("shows the reference answer to graders and swaps in the override feedback (#2027, #2033)", async () => {
+    mockCourseSubmissions.mockResolvedValue([
+      submission({
+        response: { answerText: "the base case" },
+        answerLabel: null,
+        referenceAnswer: "base case",
+        isCorrect: false,
+        aiFeedback: { message: "Not quite. Try another angle." },
+      }),
+    ]);
+    mockGradeSubmission.mockResolvedValue({
+      isCorrect: true,
+      score: 1,
+      aiFeedback: { message: "Marked correct by your instructor." },
+    });
+    render(<CourseSubmissionsPanel courseId={1} />);
+    await waitFor(() => expect(screen.getByText("Ada Lovelace")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Reference answer")).toBeInTheDocument();
+    expect(within(dialog).getByText("base case")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save grade" }));
+    });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByText("Marked correct by your instructor.")).toBeInTheDocument();
+    expect(screen.queryByText("Not quite. Try another angle.")).not.toBeInTheDocument();
+  });
+
   it("rolls back the optimistic update and shows an error when saving fails", async () => {
     mockCourseSubmissions.mockResolvedValue([submission()]);
     mockGradeSubmission.mockRejectedValue(new Error("boom"));

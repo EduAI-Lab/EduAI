@@ -83,6 +83,9 @@ const PLAYER_ACTIVITY_PAGE_SIZE = 50;
 /** Fetch the next page once the student is this close to the loaded end. */
 const PLAYER_PREFETCH_MARGIN = 5;
 
+/** Shown when a submit returns isCorrect=null (short answers wait for staff grading). */
+const PENDING_REVIEW_MESSAGE = "Submitted. Your instructor will review this answer.";
+
 type StudentFeedbackState = {
   rating: number | null;
   note: string;
@@ -186,6 +189,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [wasCorrect, setWasCorrect] = useState(false);
+  // Last submit returned isCorrect=null: staff will grade it, not a wrong attempt.
+  const [awaitingReview, setAwaitingReview] = useState(false);
   const [prevActivityId, setPrevActivityId] = useState<number | null>(null);
 
   // Pre-chat context for AI guidance
@@ -309,6 +314,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setPrevActivityId(currentActivityId);
     setWasCorrect(false);
     setResult(null);
+    setAwaitingReview(false);
     setTempKnowledgeLevel("");
     setShowKnowledgeModal(false);
     setMcq(null);
@@ -367,20 +373,21 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         if (!text.trim()) return;
         res = await api.submitAnswer(activity.id, { answerText: text });
       }
-      setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
-
-      setOrderedActivities((prev) =>
-        prev.map((a, i) =>
-          i === idx
-            ? { ...a, completionStatus: res.isCorrect ? ("correct" as const) : undefined }
-            : a,
-        ),
-      );
-
-      if (res.isCorrect) {
-        setWasCorrect(true);
+      const pending = res.isCorrect == null;
+      setAwaitingReview(pending);
+      if (pending) {
+        // Not graded yet (#1982): leave completion and wasCorrect untouched.
+        setResult(PENDING_REVIEW_MESSAGE);
       } else {
-        setWasCorrect(false);
+        setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
+        setOrderedActivities((prev) =>
+          prev.map((a, i) =>
+            i === idx
+              ? { ...a, completionStatus: res.isCorrect ? ("correct" as const) : undefined }
+              : a,
+          ),
+        );
+        setWasCorrect(Boolean(res.isCorrect));
       }
 
       setFeedbackByActivity((prev) => {
@@ -419,6 +426,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           : "There was a problem submitting.",
       );
       setWasCorrect(false);
+      setAwaitingReview(false);
     } finally {
       setSubmitting(false);
     }
@@ -429,6 +437,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setText("");
     setResult(null);
     setWasCorrect(false);
+    setAwaitingReview(false);
     setTempKnowledgeLevel("");
   }, []);
 
@@ -693,6 +702,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         // (A correct grade disables the options, so this never clears one.)
         setResult(null);
         setWasCorrect(false);
+        setAwaitingReview(false);
       }}
       text={text}
       onTextChange={setText}
@@ -700,6 +710,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       onSubmit={submit}
       result={result}
       wasCorrect={wasCorrect}
+      awaitingReview={awaitingReview}
       submitState={submitState}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}

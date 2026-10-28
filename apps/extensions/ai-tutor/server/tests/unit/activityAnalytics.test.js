@@ -1,5 +1,17 @@
-import { describe, it, expect } from "vitest";
-import { calculateDifficulty } from "../../src/services/activityAnalytics.js";
+import { describe, it, expect, vi } from "vitest";
+
+const upsert = vi.fn();
+const tx = {
+  activityStudentMetric: { upsert, findMany: vi.fn(async () => []) },
+  activityFeedback: { findMany: vi.fn(async () => []) },
+  activityAnalytics: { upsert: vi.fn() },
+};
+vi.mock("../../src/config/database.js", () => ({
+  prisma: { $transaction: (fn) => fn(tx) },
+}));
+
+const { calculateDifficulty, recordSubmissionMetrics } =
+  await import("../../src/services/activityAnalytics.js");
 
 describe("calculateDifficulty", () => {
   // ── Weighted formula verification ─────────────────────────────────
@@ -115,5 +127,26 @@ describe("calculateDifficulty", () => {
     });
     expect(result.difficultyScore).toBe(0);
     expect(result.difficultyLabel).toBe("LOW");
+  });
+});
+
+describe("recordSubmissionMetrics", () => {
+  it.each([
+    [true, 1, 0],
+    [false, 0, 1],
+    // Awaiting staff grading: a submission, but neither correct nor incorrect.
+    [null, 0, 0],
+  ])("isCorrect=%s counts correct %i / incorrect %i", async (isCorrect, correct, incorrect) => {
+    upsert.mockClear();
+    await recordSubmissionMetrics({ userId: "s1", activityId: 5, isCorrect });
+
+    const { create, update } = upsert.mock.calls[0][0];
+    expect(create).toMatchObject({
+      submissionCount: 1,
+      correctSubmissionCount: correct,
+      incorrectSubmissionCount: incorrect,
+    });
+    expect(update.correctSubmissionCount).toEqual({ increment: correct });
+    expect(update.incorrectSubmissionCount).toEqual({ increment: incorrect });
   });
 });

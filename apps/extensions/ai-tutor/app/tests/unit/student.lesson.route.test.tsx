@@ -147,6 +147,34 @@ describe("student.lesson — answer submission", () => {
     expect(await screen.findByText("Not quite. Keep going!")).toBeInTheDocument();
   });
 
+  it("shows an ungraded short answer as awaiting review, not wrong (#1982)", async () => {
+    mockSubmitAnswer.mockResolvedValue({ isCorrect: null });
+    wrap({
+      activities: [
+        makeActivity({
+          type: "SHORT_TEXT",
+          options: null,
+          answer: { text: "4" },
+          completionStatus: "correct",
+        }),
+      ],
+    });
+
+    const input = await screen.findByPlaceholderText(/type your answer/i);
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.change(input, { target: { value: "four" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
+    });
+
+    const banner = await screen.findByText("Submitted. Your instructor will review this answer.");
+    expect(banner.parentElement).toHaveAttribute("data-result-state", "pending");
+    expect(screen.queryByText(/Not quite/)).not.toBeInTheDocument();
+    // Completion isn't cleared and the student can still revise and resubmit.
+    expect(screen.getByText("1 of 1 activities completed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeEnabled();
+  });
+
   it("shows an inline error when submitAnswer rejects", async () => {
     mockSubmitAnswer.mockRejectedValue(new Error("network down"));
     wrap();

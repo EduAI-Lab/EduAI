@@ -223,13 +223,14 @@ test.describe("AI Tutor STUDENT — short-text activity", () => {
       });
       const input = page.getByPlaceholder(/type your answer/i);
       await expect(page.getByRole("button", { name: /submit answer/i })).toBeDisabled();
-      // Case/whitespace-insensitive match against the seeded answer "base case"
-      // (`activityEvaluation.js` trims + lowercases), so the exact-typed answer
-      // MUST grade correct — asserting the specific "Correct!" proves the
-      // short-text grading ran, not merely that some result card rendered.
-      await input.fill("  Base Case  ");
+      // Short answers are never auto-graded (#2027), even one matching the
+      // reference answer exactly: it goes to staff, not "Correct!"/"Not quite".
+      await input.fill("base case");
       await page.getByRole("button", { name: /submit answer/i }).click();
-      await expect(page.getByText("Correct!")).toBeVisible({ timeout: 20_000 });
+      await expect(
+        page.getByText("Submitted. Your instructor will review this answer."),
+      ).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/Correct!|Not quite/)).toHaveCount(0);
     } finally {
       await seeded.dispose();
     }
