@@ -69,7 +69,7 @@ import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
 import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
-// see MARKDOWN_STYLES below.
+// see lib/markdown-styles.ts.
 import "~/styles/chat-markdown.css";
 import { randomId } from "@eduai/ui/runtime-env";
 import { MARKDOWN_STYLES } from "~/lib/markdown-styles";
