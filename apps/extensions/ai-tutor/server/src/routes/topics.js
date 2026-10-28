@@ -9,13 +9,16 @@
  * Gotchas:
  *   - Core is the source of truth for current CourseOffering rows; topic
  *     creation pushes to Core first, then updates AI Tutor's local mirror.
- *   - Sync is name-keyed and additive — it never deletes local topics that
- *     drift away upstream. Drift is surfaced via the `missingTopics` array on
- *     the deprecated POST .../sync response, but as of #1031 there is no UI
- *     surface left that reads it (TopicSyncMappingDialog was removed) —
- *     drifted local topics now accumulate silently rather than being
- *     resolved. POST .../remap still exists to consolidate them by hand via
+ *   - Sync is name-keyed. It deletes local topics Core no longer has unless an
+ *     activity still uses them (#1956); those are kept, hidden from students,
+ *     and listed in the `missingTopics` array on the deprecated POST .../sync
+ *     response. No UI reads that array since #1031 (TopicSyncMappingDialog was
+ *     removed). POST .../remap still exists to consolidate them by hand via
  *     direct API call, but is otherwise dead code.
+ *   - Students get Core's learner view (#1956): GET returns only topics the
+ *     last sync marked `learnerVisible`, so an unreviewed AI suggestion or
+ *     `Uncategorized` never reaches them. Staff (instructors, TAs, admins)
+ *     keep the full list they author against.
  *   - GET auto-syncs from Core for imported courses (#1031); POST .../sync
  *     and POST .../remap are kept for API compatibility but are no longer
  *     called by the UI. This means any enrolled student's read can now
@@ -48,6 +51,7 @@ import {
 } from "../utils/pagination.js";
 import {
   syncExternalCourseTopics,
+  invalidateTopicSync,
   AUTO_SYNC_TTL_MS,
   AUTO_SYNC_TIMEOUT_MS,
 } from "../services/topicSync.js";
@@ -93,7 +97,7 @@ router.get("/courses/:courseId/topics", async (req, res) => {
   }
 
   try {
-    const { course, authorized } = await ensureCourseTopicAccess(courseId, req.user);
+    const { course, authorized, isInstructor } = await ensureCourseTopicAccess(courseId, req.user);
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
@@ -107,7 +111,14 @@ router.get("/courses/:courseId/topics", async (req, res) => {
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const search = parseSearchParam(req);
     const searchFragment = searchWhere(search, ["name"]);
-    const scope = { courseOfferingId: courseId };
+    // A course TA authors with staff, as in Core; only a STUDENT enrollment reads
+    // the learner view (#1956).
+    const learner =
+      !isInstructor &&
+      course.enrollments.some((e) => e.userId === req.user.id && e.role === "STUDENT");
+    const scope = learner
+      ? { courseOfferingId: courseId, learnerVisible: true }
+      : { courseOfferingId: courseId };
     const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
 
     // For imported courses, run sync for its upsert side-effect (it keeps the
@@ -205,6 +216,8 @@ router.post(
         topic = await prisma.topic.create({ data: { name, courseOfferingId: courseId } });
       }
 
+      // Students see the new topic once a sync confirms Core's learner view has it.
+      invalidateTopicSync(courseId);
       res.status(201).json(mapTopic(topic));
     } catch (e) {
       if (e?.code === "P2002") {

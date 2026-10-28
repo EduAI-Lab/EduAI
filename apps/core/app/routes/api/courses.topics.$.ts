@@ -91,10 +91,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const topicId = params.topicId;
 
       // Service-key path (extensions): unscoped, never goes through user RBAC.
+      // Staff view by default; `?audience=learner` serves what students may see,
+      // so an extension can show its students the same topics Core does (#1956).
       if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
         const serviceKeyGuard = await requireServiceKey(request);
         if (serviceKeyGuard) return serviceKeyGuard;
-        return topicsGetResponse(courseId, topicId);
+        const audience =
+          new URL(request.url).searchParams.get("audience") === "learner" ? "learner" : "staff";
+        return topicsGetResponse(courseId, topicId, false, audience);
       }
 
       const session = await getRequestSession(request);
