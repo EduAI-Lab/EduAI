@@ -27,8 +27,19 @@ export type TopicAnalysisStatus = {
 export type TopicReviewRequest =
   | { action: "approve" | "dismiss"; topicId: string }
   | { action: "merge"; topicId: string; intoTopicId: string }
+  | { action: "approveMany" | "dismissMany"; topicIds: string[] }
   | { action: "retry" }
   | { action: "suggest" };
+
+/**
+ * What a batch approve or dismiss did (#1977). Each topic is reviewed on its
+ * own, so a selection can partly succeed; `failed` names the topics that were
+ * not acted on and the server's reason code for each.
+ */
+export type TopicBatchReviewResult = {
+  succeeded: Array<{ id: string; name: string }>;
+  failed: Array<{ topicId: string; error: string }>;
+};
 
 const EMPTY: TopicAnalysisStatus = { job: null, pendingSuggestions: 0, unfiledMaterials: 0 };
 
@@ -109,8 +120,8 @@ export function useTopicAnalysis(
     void onSettledRef.current?.();
   }, [inFlight, status.job?.id]);
 
-  const post = useCallback(
-    async (body: TopicReviewRequest): Promise<void> => {
+  const send = useCallback(
+    async (body: TopicReviewRequest): Promise<Response> => {
       const res = await fetch(`/api/courses/${courseId}/topic-analysis`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -118,8 +129,16 @@ export function useTopicAnalysis(
       });
       if (!res.ok) throw new Error(await res.text());
       await fetchStatus();
+      return res;
     },
     [courseId, fetchStatus],
+  );
+
+  const post = useCallback(
+    async (body: TopicReviewRequest): Promise<void> => {
+      await send(body);
+    },
+    [send],
   );
 
   const approveTopic = useCallback(
@@ -134,6 +153,20 @@ export function useTopicAnalysis(
     (topicId: string, intoTopicId: string) => post({ action: "merge", topicId, intoTopicId }),
     [post],
   );
+  /** Approve several suggestions in one request (#1977); resolves with what failed. */
+  const approveTopics = useCallback(
+    async (topicIds: string[]) =>
+      // SAFETY: a 2xx batch answer from this route is always `{ succeeded, failed }`.
+      (await (await send({ action: "approveMany", topicIds })).json()) as TopicBatchReviewResult,
+    [send],
+  );
+  /** Dismiss several suggestions in one request (#1977); resolves with what failed. */
+  const dismissTopics = useCallback(
+    async (topicIds: string[]) =>
+      // SAFETY: a 2xx batch answer from this route is always `{ succeeded, failed }`.
+      (await (await send({ action: "dismissMany", topicIds })).json()) as TopicBatchReviewResult,
+    [send],
+  );
   const retryAnalysis = useCallback(() => post({ action: "retry" }), [post]);
   /** Ask for the topics the course is missing (#1966); the status poll reports the run. */
   const suggestTopics = useCallback(() => post({ action: "suggest" }), [post]);
@@ -145,6 +178,8 @@ export function useTopicAnalysis(
     approveTopic,
     dismissTopic,
     mergeTopic,
+    approveTopics,
+    dismissTopics,
     retryAnalysis,
     suggestTopics,
     refetch: fetchStatus,
