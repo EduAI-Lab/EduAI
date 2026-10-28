@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -62,6 +62,8 @@ function renderView(overrides: Partial<React.ComponentProps<typeof LessonActivit
         submitState="allowed"
         isUserReady
         onGuideMe={vi.fn()}
+        hintsRevealed={false}
+        onToggleHints={vi.fn()}
         canPrev={false}
         canNext={false}
         onPrev={vi.fn()}
@@ -119,6 +121,8 @@ describe("LessonActivityView", () => {
           submitState="allowed"
           isUserReady
           onGuideMe={vi.fn()}
+          hintsRevealed={false}
+          onToggleHints={vi.fn()}
           canPrev={false}
           canNext={false}
           onPrev={vi.fn()}
@@ -134,5 +138,42 @@ describe("LessonActivityView", () => {
     expect(screen.getByRole("radio", { name: "Option A" }).className).not.toContain(
       "border-destructive",
     );
+  });
+});
+
+describe("LessonActivityView hints (#2029)", () => {
+  const hinted: Activity = { ...activity, hints: ["Think about when it should stop."] };
+
+  it("hides the hint button when the activity has no hints", () => {
+    renderView({ activity: { ...activity, hints: [" "] } });
+    expect(screen.queryByRole("button", { name: /show hint/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a collapsed Show hint button before any attempt", () => {
+    const onToggleHints = vi.fn();
+    renderView({ activity: hinted, onToggleHints });
+    const button = screen.getByRole("button", { name: "Show hint" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Think about when it should stop.")).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(onToggleHints).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the hint text inline once revealed", () => {
+    renderView({ activity: hinted, hintsRevealed: true });
+    const button = screen.getByRole("button", { name: "Hide hint" });
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    const hint = screen.getByText("Think about when it should stop.");
+    expect(button.getAttribute("aria-controls")).toBe(hint.parentElement?.id);
+  });
+
+  it("lists every hint when there are several", () => {
+    renderView({ activity: { ...activity, hints: ["First", "Second"] }, hintsRevealed: true });
+    expect(screen.getByRole("button", { name: "Hide hints" })).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "First",
+      "Second",
+    ]);
   });
 });

@@ -192,6 +192,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   // Last submit returned isCorrect=null: staff will grade it, not a wrong attempt.
   const [awaitingReview, setAwaitingReview] = useState(false);
   const [prevActivityId, setPrevActivityId] = useState<number | null>(null);
+  const [hintsRevealed, setHintsRevealed] = useState(false);
 
   // Pre-chat context for AI guidance
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
@@ -312,6 +313,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const currentActivityId = activity?.id ?? null;
   if (currentActivityId !== prevActivityId) {
     setPrevActivityId(currentActivityId);
+    setHintsRevealed(false);
     setWasCorrect(false);
     setResult(null);
     setAwaitingReview(false);
@@ -714,6 +716,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       submitState={submitState}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}
+      hintsRevealed={hintsRevealed}
+      onToggleHints={() => setHintsRevealed((open) => !open)}
       canPrev={canPrev}
       canNext={canNext}
       onPrev={goPrev}

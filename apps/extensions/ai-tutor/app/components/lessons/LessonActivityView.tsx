@@ -14,6 +14,7 @@
  * answer state, submission, and feedback.
  */
 import {
+  IconBulb,
   IconChevronLeft,
   IconChevronRight,
   IconCircleCheck,
@@ -86,6 +87,10 @@ type LessonActivityViewProps = {
   isUserReady: boolean;
   onGuideMe: () => void;
 
+  /** Whether the student has revealed this activity's hints (#2029). */
+  hintsRevealed: boolean;
+  onToggleHints: () => void;
+
   canPrev: boolean;
   canNext: boolean;
   onPrev: () => void;
@@ -121,6 +126,8 @@ export function LessonActivityView({
   submitState,
   isUserReady,
   onGuideMe,
+  hintsRevealed,
+  onToggleHints,
   canPrev,
   canNext,
   onPrev,
@@ -154,6 +161,8 @@ export function LessonActivityView({
   // state on every lesson load while the breadcrumb resolves, and should not see
   // the quiz flash greyed.
   const quizMuted = submitState === "withheld" || submitState === "unverified";
+  const hints = (activity?.hints ?? []).filter((hint) => hint.trim());
+  const hintsId = activity ? `activity-${activity.id}-hints` : undefined;
 
   return (
     <div className="flex flex-col gap-5">
@@ -224,6 +233,38 @@ export function LessonActivityView({
               {line}
             </p>
           ))}
+          {hints.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggleHints}
+                aria-expanded={hintsRevealed}
+                aria-controls={hintsId}
+              >
+                <IconBulb className="mr-1 h-4 w-4" aria-hidden="true" />
+                {`${hintsRevealed ? "Hide" : "Show"} hint${hints.length > 1 ? "s" : ""}`}
+              </Button>
+              {hintsRevealed && (
+                <div
+                  id={hintsId}
+                  className="rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4 text-sm text-foreground"
+                >
+                  {hints.length === 1 ? (
+                    <p className="whitespace-pre-wrap">{hints[0]}</p>
+                  ) : (
+                    <ol className="list-decimal list-inside space-y-1">
+                      {hints.map((hint, index) => (
+                        <li key={index} className="whitespace-pre-wrap">
+                          {hint}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
         {activity?.secondaryTopics && activity.secondaryTopics.length > 0 && (
           <CardFooter className="relative flex flex-wrap items-center gap-1.5 border-t border-border">

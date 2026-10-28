@@ -7,6 +7,7 @@ const {
   buildSystemPrompt,
   buildTeachUserMessage,
   buildGuideUserMessage,
+  getActivityHints,
   formatAnswerKey,
   buildTeachSupervisorContexts,
   buildGuideSupervisorContexts,
@@ -548,5 +549,68 @@ describe("buildQuestionBankContext", () => {
     const result = buildQuestionBankContext(questions);
     expect(result).toContain("1. [SA, EASY] Q1");
     expect(result).toContain("2. [SA, EASY] Q2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Activity hints (#2029)
+// ---------------------------------------------------------------------------
+describe("activity hints in tutor context", () => {
+  const activity = {
+    config: {
+      questionType: "MCQ",
+      question: "When does a recursive function stop?",
+      options: ["Never", "At the base case"],
+      answer: { correctIndex: 1 },
+      hints: ["Think about when it should stop.", "  ", 42],
+    },
+  };
+
+  it("getActivityHints keeps only non-blank strings from the stored config", () => {
+    expect(getActivityHints(activity)).toEqual(["Think about when it should stop."]);
+    expect(getActivityHints({ config: { hints: "nope" } })).toEqual([]);
+    expect(getActivityHints({})).toEqual([]);
+  });
+
+  it("guide user message includes instructor hints before the student request", () => {
+    const result = buildGuideUserMessage(activity, { message: "Help", studentAnswer: null });
+    expect(result).toContain(
+      "Instructor-provided hints (use these to nudge the student; the student may already have revealed them):\n- Think about when it should stop.",
+    );
+    expect(result.indexOf("Instructor-provided hints")).toBeLessThan(
+      result.indexOf("Student request: Help"),
+    );
+  });
+
+  it("guide supervisor contexts carry the hints to both tutor and supervisor", () => {
+    const { visibleContext, hiddenContext } = buildGuideSupervisorContexts(activity, {
+      message: "Help",
+      studentAnswer: 0,
+      knowledgeLevel: "beginner",
+    });
+    expect(visibleContext).toContain("- Think about when it should stop.");
+    expect(hiddenContext).toContain("- Think about when it should stop.");
+    expect(hiddenContext).toContain("Correct answer: B. At the base case");
+  });
+
+  it("guide user message has no hints block when the activity has none", () => {
+    const result = buildGuideUserMessage(
+      { config: { question: "Q?", options: ["a"] } },
+      { message: "Help", studentAnswer: null },
+    );
+    expect(result).not.toContain("Instructor-provided hints");
+  });
+
+  it("teach contexts include hints when provided", () => {
+    const { visibleContext, hiddenContext } = buildTeachSupervisorContexts({
+      topicName: "Recursion",
+      knowledgeLevel: "beginner",
+      message: "Explain recursion",
+      hints: getActivityHints(activity),
+    });
+    expect(visibleContext).toBe(
+      "Topic: Recursion\n\nInstructor-provided hints (use these to nudge the student; the student may already have revealed them):\n- Think about when it should stop.\n\nStudent request: Explain recursion",
+    );
+    expect(hiddenContext).toContain(visibleContext);
   });
 });
