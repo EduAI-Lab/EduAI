@@ -242,6 +242,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `CORS_ORIGINS` | optional (`http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed) | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials (e.g. `http://localhost:3001,https://dev.aitutor.eduai.ok.ubc.ca`). Deployments must configure every trusted frontend origin. |
 | `POLICY_CACHE_TTL_MS` | optional (default 30000) | TTL for cached Core RBAC policy flags |
 | `EDUAI_CALL_TIMEOUT_MS` | optional (default 45000) | Timeout for a single EduAI chat completion round-trip in `callEduAI()` |
+| `EDUAI_TURN_TIMEOUT_MS` | optional (default 50000) | Deadline for a whole study buddy turn (all tutor + supervisor calls); must stay below the client's 60s `CHAT_TIMEOUT_MS` |
 
 Additional variables read by `server/src/**` but not all present in the example file:
 
