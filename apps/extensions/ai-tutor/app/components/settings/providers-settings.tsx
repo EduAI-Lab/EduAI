@@ -12,6 +12,7 @@ import {
   Label,
 } from "@eduai/ui";
 import { IconCheck, IconExternalLink, IconTrash } from "@tabler/icons-react";
+import { ProviderAccountNotice } from "~/components/settings/provider-account-notice";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { PROVIDERS, maskApiKey, type ProviderId } from "~/lib/provider-keys";
 
@@ -66,6 +67,7 @@ export function ProvidersSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <ProviderAccountNotice />
         {PROVIDERS.map((p) => {
           const configured = loaded && hasKey(p.id);
           const busy = validating === p.id;
