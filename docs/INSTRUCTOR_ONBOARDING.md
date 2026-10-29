@@ -120,10 +120,15 @@ Each file can have up to three topics, shown as tags under its name on the **Mat
 
 ### What students see
 
-On the **Settings** tab, **What students see** has two choices:
+On the **Settings** tab, **What students see** is the one place to choose which files students can see. A hidden file is not shown to students, and course chat won't use it to answer them. Instructors and TAs always see every file. Each change is saved as soon as you make it.
 
-- **Let students see course files** is off by default, so students reach the course only through course chat. Turn it on to let enrolled students list and preview the course's files on the course page. Files you hid from students or scheduled for later stay hidden. Course chat never names a file to a student either way.
-- **Topics shown to students** lists your approved topics. Untick one to hide its name from the course page and from the topics course chat lists under its answers. Chat still answers from that topic's files. Newly approved topics are shown.
+- **Show course materials to students** shows or hides every file at once. It is ticked when every file is shown, shows a dash when only some are, and is empty when all are hidden; the line under it says how many are shown. EduAI asks you to confirm before it changes every file.
+- Select **Choose by topic** to show or hide one topic at a time. Hiding a topic hides its name and its files, on the course page and in course chat, including files added to the topic later. A file under a hidden topic stays hidden even when another of its topics is shown. Showing the topic again brings back its files, except ones you hid one by one. Files with no approved topic are listed under **No topic**.
+- Select **Files** on a topic to show or hide one file, or **Schedule** to choose the date students can first see it. A scheduled file stays hidden until that date. A file unpublished or excluded in Canvas is marked **Hidden in Canvas**; change it in Canvas.
+- Showing hidden files in bulk (everything, a topic whose box shows a dash, or **No topic**) asks first and says how many files students will get.
+- **Let students browse files** is off by default, so students reach the course only through course chat. Turn it on to let enrolled students list and preview the shown files on the course page. Course chat never names a file to a student either way.
+
+New uploads are shown to students. On the **Materials** tab, a hidden file carries a **Hidden** tag and a scheduled one its date.
 
 Admins, unit admins and the course's instructors can change these; TAs cannot.
 
