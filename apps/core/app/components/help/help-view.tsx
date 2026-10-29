@@ -151,7 +151,7 @@ const TOPICS: HelpTopic[] = [
     points: [
       "A new course starts as a draft. Only course staff and administrators can open a draft, and self-enrollment links won't let students join it.",
       "Publish the course from its Overview tab when it's ready. Unpublishing removes student access again without deleting anything.",
-      "Inside a published course, each material can be hidden from students or scheduled to appear on a date. Hidden and not-yet-available materials are also left out of students' chat answers.",
+      "Choose which files students can see on the course's Settings tab, under What students see: every file at once, by topic, or one file at a time, with an optional date for each. Hidden and not-yet-available files are also left out of students' chat answers.",
       "Instructors and TAs always see every material, whatever its visibility.",
     ],
   },
