@@ -196,7 +196,7 @@ describe("buildUpdatePayload", () => {
     const { error, payload } = buildUpdatePayload(
       mcqValues({ type: "SHORT_TEXT", textAnswer: "   " }),
     );
-    expect(error).toBe("Provide the expected answer.");
+    expect(error).toBe("Provide a reference answer.");
     expect(payload).toBeUndefined();
   });
 

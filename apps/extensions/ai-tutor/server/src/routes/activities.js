@@ -37,7 +37,11 @@ import {
   activitySearchWhere,
   PaginationError,
 } from "../utils/pagination.js";
-import { evaluateQuestion } from "../services/activityEvaluation.js";
+import {
+  evaluateQuestion,
+  overrideFeedbackMessage,
+  submissionResultMessage,
+} from "../services/activityEvaluation.js";
 import { createSubmissionWithNextAttempt } from "../services/submissionAttempts.js";
 import {
   ActivityMutationError,
@@ -1209,6 +1213,7 @@ router.post("/questions/:id/answer", async (req, res) => {
       answerOption,
     });
 
+    const message = submissionResultMessage(isCorrect);
     const submission = await createSubmissionWithNextAttempt({
       userId: authUser.id,
       activityId,
@@ -1216,13 +1221,11 @@ router.post("/questions/:id/answer", async (req, res) => {
         answerText: typeof answerText === "string" ? answerText : null,
         answerOption: typeof answerOption === "number" ? answerOption : null,
       },
-      aiFeedback: isCorrect
-        ? { message: "Nice! That looks right." }
-        : { message: "Not quite. Try another angle." },
+      aiFeedback: { message },
       isCorrect,
     });
 
-    await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
+    await trackSubmissionMetrics(authUser.id, activityId, isCorrect);
     const feedbackAlreadySubmitted = await hasActivityFeedback({
       userId: authUser.id,
       activityId,
@@ -1231,7 +1234,7 @@ router.post("/questions/:id/answer", async (req, res) => {
     res.json({
       ok: true,
       isCorrect,
-      message: isCorrect ? "Nice! That looks right." : "Not quite. Try another angle.",
+      message,
       submissionId: submission.id,
       feedbackRequired: !feedbackAlreadySubmitted,
       feedbackAlreadySubmitted,
@@ -1596,7 +1599,8 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
  *   `Submission` has no free-text grader-feedback column (only `aiFeedback`,
  *   which holds the system-generated hint shown at submit time, a different
  *   concern) — see prisma/schema.prisma Submission model. Adding one would
- *   require a migration, which is out of scope here.
+ *   require a migration, which is out of scope here. When `isCorrect` changes,
+ *   `aiFeedback` is replaced with a message matching the new result.
  * Returns: the updated Submission row (same shape as the GET list above).
  */
 router.patch("/activities/:activityId/submissions/:submissionId", async (req, res) => {
@@ -1680,6 +1684,12 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this submission" });
       }
+    }
+
+    // A changed verdict replaces the submit-time feedback so it can't contradict
+    // the new result (#2033); a score-only edit keeps it.
+    if (typeof isCorrect !== "undefined" && isCorrect !== submission.isCorrect) {
+      updateData.aiFeedback = { message: overrideFeedbackMessage(isCorrect) };
     }
 
     const updated = await prisma.submission.update({

@@ -99,6 +99,9 @@ model Topic {
   id               String         @id @default(cuid())
   name             String
   coreTopicId      String?        @unique
+  /// In Core's learner view (accepted, not hidden, not Uncategorized). Set by
+  /// topic sync; students only see topics where this is true (#1956).
+  learnerVisible   Boolean        @default(false)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)

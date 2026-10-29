@@ -208,6 +208,14 @@ function extractChoices(config) {
   return null;
 }
 
+/** Short-answer reference text (`answer` string or `{ text }`), shown to graders only. */
+function extractReferenceAnswer(config) {
+  if (!config || typeof config !== "object" || config.questionType !== "SHORT_TEXT") return null;
+  const { answer } = config;
+  const text = typeof answer === "string" ? answer : answer?.text;
+  return typeof text === "string" && text.trim() !== "" ? text : null;
+}
+
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
   const mapped = mapEduAiServiceKeyError(error);
   if (mapped) {
@@ -1177,6 +1185,7 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
         lessonTitle: activity?.lesson?.title ?? null,
         questionText: config.question ?? config.prompt ?? null,
         answerLabel,
+        referenceAnswer: extractReferenceAnswer(config),
       };
     });
 

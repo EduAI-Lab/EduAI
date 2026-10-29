@@ -244,14 +244,18 @@ export default function EditActivityPanel({
         <div className="space-y-2">
           <Label htmlFor={`activity-${activity.id}-answer`} className="flex items-center gap-1.5">
             <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
-            Expected answer
+            Reference answer (for graders)
           </Label>
           <Input
             id={`activity-${activity.id}-answer`}
             value={values.textAnswer}
             onChange={(event) => setValues((prev) => ({ ...prev, textAnswer: event.target.value }))}
-            placeholder="Ideal short response"
+            placeholder="A model answer staff can compare against"
+            aria-describedby={`activity-${activity.id}-answer-help`}
           />
+          <p id={`activity-${activity.id}-answer-help`} className="text-xs text-muted-foreground">
+            Not used for auto-grading. Short answers go to Needs grading for staff to mark.
+          </p>
         </div>
       )}
 
