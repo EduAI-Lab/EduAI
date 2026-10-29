@@ -4,7 +4,7 @@
  * course-switch group, then hands them to the shared component so the look and
  * ⌘K behaviour match QuestionMaker and AI Tutor exactly.
  *
- * Mounted once in `AppSidebar`, so it rides along on every authenticated page.
+ * Mounted once in `CoreAppShell`, so it rides along on every authenticated page.
  * Courses load lazily the first time the palette opens (via the shared
  * `onOpenChange` hook) — no extra `/api/courses` request on pages that never
  * trigger it.

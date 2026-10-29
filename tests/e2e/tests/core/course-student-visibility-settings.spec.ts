@@ -115,11 +115,14 @@ async function openSettings(page: Page, course: CourseSetup): Promise<void> {
   await page.addInitScript(() => window.localStorage.setItem("eduai:tour:dashboard:v1", "1"));
   await page.goto(`${CORE_URL}/courses/${course.courseId}`);
   await expect(page).not.toHaveURL(/\/auth\/login/);
-  await page.getByRole("tab", { name: "Settings" }).click();
+  await settingsLink(page).click();
   // Present whether or not the course has topics yet, once the card has loaded.
   await expect(browseSwitch(page)).toBeVisible({ timeout: 15_000 });
 }
 
+// Course sections are links in the shell's course menu (`?tab=settings`), not tabs.
+const settingsLink = (page: Page) =>
+  page.getByRole("navigation", { name: "Course" }).getByRole("link", { name: "Settings" });
 const allCheckbox = (page: Page) =>
   page.getByRole("checkbox", { name: "Show course materials to students" });
 const browseSwitch = (page: Page) =>
@@ -154,7 +157,7 @@ test.describe("What students see: one checkbox, then by topic (#2061)", () => {
 
     // Stored, not just on screen.
     await page.reload();
-    await page.getByRole("tab", { name: "Settings" }).click();
+    await settingsLink(page).click();
     await expect(allCheckbox(page)).toHaveAttribute("data-state", "unchecked");
 
     await allCheckbox(page).click();
@@ -231,7 +234,7 @@ test.describe("What students see: one checkbox, then by topic (#2061)", () => {
 
     await addTopics(course, ["Recursion"]);
     await page.reload();
-    await page.getByRole("tab", { name: "Settings" }).click();
+    await settingsLink(page).click();
     await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
   });
 });

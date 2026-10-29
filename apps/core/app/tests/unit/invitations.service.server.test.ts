@@ -9,7 +9,7 @@ const prismaMock = vi.hoisted(() => {
     invitation: { update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() },
   };
   return {
-    invitation: { findUnique: vi.fn(), updateMany: vi.fn() },
+    invitation: { findUnique: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     user: { findUnique: vi.fn(), delete: vi.fn() },
     $transaction: vi.fn(async <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx)),
     __tx: tx,
@@ -39,9 +39,15 @@ vi.mock("~/lib/auth/forward-session-cookies", () => ({
 
 vi.mock("~/lib/email/mailer.server", () => ({
   sendEmail: vi.fn(),
+  isSmtpConfigured: vi.fn(() => true),
 }));
 
-import { getInvitationByToken, acceptInvitation } from "~/lib/invitations/service.server";
+import {
+  getInvitationByToken,
+  acceptInvitation,
+  createInvitation,
+} from "~/lib/invitations/service.server";
+import { isSmtpConfigured, sendEmail } from "~/lib/email/mailer.server";
 import { hashToken } from "~/lib/invitations/token.server";
 import { auth } from "~/lib/auth/server";
 
@@ -167,5 +173,61 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
     });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(prismaMock.user.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("createInvitation email status (#1860)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    prismaMock.invitation.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.invitation.create.mockImplementation(async ({ data }) =>
+      baseInvitation({ ...data, id: "inv-new" }),
+    );
+  });
+
+  const create = () =>
+    createInvitation({ email: "invitee@ubc.ca", role: "INSTRUCTOR" }, { id: "admin1" });
+
+  it("reports SENT when the email goes out", async () => {
+    vi.mocked(sendEmail).mockResolvedValue({ delivered: true });
+
+    const result = await create();
+
+    expect(result).toMatchObject({ ok: true, emailDelivered: true, emailStatus: "SENT" });
+  });
+
+  it("reports NOT_CONFIGURED when SMTP is unset (dev skips the send)", async () => {
+    vi.mocked(sendEmail).mockResolvedValue({ delivered: false });
+
+    const result = await create();
+
+    expect(result).toMatchObject({
+      ok: true,
+      emailDelivered: false,
+      emailStatus: "NOT_CONFIGURED",
+    });
+  });
+
+  it("reports NOT_CONFIGURED when production refuses to send without SMTP", async () => {
+    vi.mocked(sendEmail).mockRejectedValue(new Error("SMTP must be configured"));
+    vi.mocked(isSmtpConfigured).mockReturnValueOnce(false);
+
+    const result = await create();
+
+    expect(result).toMatchObject({
+      ok: true,
+      emailDelivered: false,
+      emailStatus: "NOT_CONFIGURED",
+    });
+  });
+
+  it("reports FAILED when a configured relay rejects the send, and still returns the link", async () => {
+    vi.mocked(sendEmail).mockRejectedValue(new Error("smtp down"));
+
+    const result = await create();
+
+    expect(result).toMatchObject({ ok: true, emailDelivered: false, emailStatus: "FAILED" });
+    expect(result.ok && result.acceptUrl).toContain("/accept-invitation");
   });
 });

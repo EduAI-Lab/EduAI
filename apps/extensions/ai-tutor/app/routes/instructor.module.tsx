@@ -535,7 +535,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const heroStats = [
     { label: oLessons.length === 1 ? "Lesson" : "Lessons", value: oLessons.length, accent: true },
     { label: "Published", value: publishedCount },
-    { label: "Drafts", value: oLessons.length - publishedCount },
+    { label: "Unpublished", value: oLessons.length - publishedCount },
   ];
 
   return (

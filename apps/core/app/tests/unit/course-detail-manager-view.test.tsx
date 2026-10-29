@@ -1,7 +1,8 @@
 /**
  * Real render+interaction tests for CourseDetailManagerView (#1587 coverage
- * gap). CourseDetail.test.tsx already covers the basic shape (tabs present,
- * simple prop rendering); this file drives the tabs/dialogs/forms that pull
+ * gap). CourseDetail.test.tsx already covers the basic shape (sections present,
+ * simple prop rendering); this file drives the sections (via the course menu
+ * the shell renders beside the view)/dialogs/forms that pull
  * the bulk of the component's statements: materials rename/delete/visibility,
  * TAs-tab instructor+TA management, student enrollment, and RAG settings save.
  *
@@ -19,6 +20,13 @@ import {
   type CourseDetailManagerCourse,
 } from "~/components/courses/course-detail-manager-view";
 import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
+import {
+  TEST_COURSE_PATH,
+  TestCourseNav,
+  getCourseNavEntry,
+  openCourseSection,
+  queryCourseNavEntry,
+} from "~/tests/helpers/course-nav";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
@@ -177,8 +185,9 @@ function renderView(
 ) {
   const props = baseProps(overrides);
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[TEST_COURSE_PATH]}>
       <PolicyProvider policies={policies}>
+        <TestCourseNav access={props.access} />
         <CourseDetailManagerView {...props} />
       </PolicyProvider>
     </MemoryRouter>,
@@ -204,25 +213,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function clickTab(name: RegExp) {
-  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0 });
-}
-
 describe("CourseDetailManagerView — tabs and overview", () => {
   it("shows all tabs for admin access including TAs, settings, and chat history", () => {
     renderView();
-    expect(screen.getByRole("tab", { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /materials/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /topics/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /enrollments/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^TAs$/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /chat history/i })).toBeInTheDocument();
+    expect(getCourseNavEntry(/overview/i)).toBeInTheDocument();
+    expect(getCourseNavEntry(/materials/i)).toBeInTheDocument();
+    expect(getCourseNavEntry(/topics/i)).toBeInTheDocument();
+    expect(getCourseNavEntry(/enrollments/i)).toBeInTheDocument();
+    expect(getCourseNavEntry(/^TAs$/)).toBeInTheDocument();
+    expect(getCourseNavEntry(/settings/i)).toBeInTheDocument();
+    expect(getCourseNavEntry(/chat history/i)).toBeInTheDocument();
   });
 
   it("shows instructor and TA info on Overview when an instructor is assigned", () => {
     renderView();
-    const overview = within(screen.getByRole("tabpanel", { name: /overview/i }));
+    const overview = within(screen.getByRole("region", { name: /overview/i }));
     expect(overview.getByText("Dr. Instructor")).toBeInTheDocument();
     expect(overview.getByText("Terry Assistant")).toBeInTheDocument();
   });
@@ -359,8 +364,8 @@ describe("CourseDetailManagerView — materials tab", () => {
     expect(screen.getByText("Hidden")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /student visibility/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "What students see in Settings" }));
-    expect(screen.getByRole("tab", { name: /settings/i })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("link", { name: "What students see in Settings" }));
+    expect(getCourseNavEntry(/settings/i)).toHaveAttribute("aria-current", "page");
     expect(await screen.findByText(/No files yet/)).toBeInTheDocument();
     expect(mockFetch).toHaveBeenCalledWith("/api/courses/c1/student-visibility");
   });
@@ -376,7 +381,7 @@ describe("CourseDetailManagerView — materials tab", () => {
 describe("CourseDetailManagerView — topics tab", () => {
   it("creates a topic via the add-topic form", async () => {
     const props = renderView();
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     fireEvent.change(screen.getByPlaceholderText(/new topic name/i), {
       target: { value: "Recursion" },
     });
@@ -386,14 +391,14 @@ describe("CourseDetailManagerView — topics tab", () => {
 
   it("deletes a topic", () => {
     const props = renderView();
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     fireEvent.click(screen.getByRole("button", { name: /delete topic/i }));
     expect(props.onDeleteTopic).toHaveBeenCalledWith("t1");
   });
 
   it("shows the empty-topics state when there are no topics", () => {
     renderView({ topics: [] });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     expect(screen.getByText("No topics yet.")).toBeInTheDocument();
   });
 });
@@ -416,7 +421,7 @@ describe("CourseDetailManagerView — topic files (#1997)", () => {
 
   it("lists an accepted topic's files and counts the topics with none", () => {
     renderView({ topics: [WITH_FILES, EMPTY] });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     expect(screen.getByText("Week 1 Reading")).toBeInTheDocument();
     expect(screen.getByText("No files yet")).toBeInTheDocument();
     expect(screen.getByText(/1 topic has no\s+files yet/)).toBeInTheDocument();
@@ -426,12 +431,12 @@ describe("CourseDetailManagerView — topic files (#1997)", () => {
 
   it("offers Link files only when the viewer can change file topics", () => {
     renderView({ topics: [EMPTY], onSetMaterialTopics: vi.fn() });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     expect(screen.getByRole("button", { name: /link files/i })).toBeInTheDocument();
     cleanup();
 
     renderView({ topics: [EMPTY], onSetMaterialTopics: undefined });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     expect(screen.queryByRole("button", { name: /link files/i })).toBeNull();
   });
 });
@@ -455,9 +460,9 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
 
   it("keeps suggestions out of the topic list, behind a review banner (#1998)", () => {
     renderView({ topics: [TOPIC, SUGGESTION] });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     // Every tab stays mounted, so look inside the Topics panel only.
-    const panel = screen.getByRole("tabpanel", { name: /topics/i });
+    const panel = screen.getByRole("region", { name: /topics/i });
     expect(within(panel).getByText(/1 topic suggestion to review/)).toBeInTheDocument();
     expect(within(panel).queryByText("Chapter 1 — Recursion")).toBeNull();
     expect(within(panel).getByText(TOPIC.name)).toBeInTheDocument();
@@ -469,13 +474,13 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
 
   it("says no topics are approved yet when only suggestions exist (#1998)", () => {
     renderView({ topics: [SUGGESTION] });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     expect(screen.getByText("No approved topics yet.")).toBeInTheDocument();
   });
 
   it("names the materials a suggestion came from", () => {
     renderView({ topics: [SUGGESTION] });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     openReview();
     // The projection is capped, so the overflow is reported rather than hidden.
     expect(screen.getByText(/From Week 1 Reading and 2 more/)).toBeInTheDocument();
@@ -484,7 +489,7 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
   it("renames a suggestion through the topics PATCH path", async () => {
     const onRenameTopic = vi.fn().mockResolvedValue(undefined);
     renderView({ topics: [SUGGESTION], onRenameTopic });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     openReview();
 
     fireEvent.click(screen.getByRole("button", { name: /rename chapter 1/i }));
@@ -498,7 +503,7 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
 
   it("offers no rename affordance when no handler is supplied", () => {
     renderView({ topics: [SUGGESTION] });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     openReview();
     expect(screen.queryByRole("button", { name: /rename chapter 1/i })).toBeNull();
   });
@@ -527,7 +532,7 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
 
   it("shows them to an instructor", () => {
     renderView({ topics: [SUGGESTION], access: "instructor" });
-    clickTab(/topics/i);
+    openCourseSection(/topics/i);
     openReview();
     expect(screen.getByRole("button", { name: /approve chapter 1/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /dismiss chapter 1/i })).toBeInTheDocument();
@@ -537,19 +542,19 @@ describe("CourseDetailManagerView — topic suggestions (#1624)", () => {
 describe("CourseDetailManagerView — enrollments tab", () => {
   it("shows a loading state", () => {
     renderView({ enrollmentsLoading: true });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     expect(screen.getByText(/loading enrollments/i)).toBeInTheDocument();
   });
 
   it("shows an error state", () => {
     renderView({ enrollmentsError: "Could not load enrollments" });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     expect(screen.getByText("Could not load enrollments")).toBeInTheDocument();
   });
 
   it("shows an empty state when there are no active students", () => {
     renderView({ enrollments: [] });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     expect(screen.getByText(/no students enrolled yet/i)).toBeInTheDocument();
   });
 
@@ -561,7 +566,7 @@ describe("CourseDetailManagerView — enrollments tab", () => {
         { ...STUDENT_ENROLLMENT, id: "enr-3", userName: "TA As Enrollment", role: "TA" },
       ],
     });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     expect(screen.getByText("Student One")).toBeInTheDocument();
     expect(screen.queryByText("Inactive Stu")).not.toBeInTheDocument();
     expect(screen.queryByText("TA As Enrollment")).not.toBeInTheDocument();
@@ -569,7 +574,7 @@ describe("CourseDetailManagerView — enrollments tab", () => {
 
   it("removes a student enrollment and shows a success message", async () => {
     const props = renderView();
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /remove student/i }));
     expect(props.onRemoveEnrollment).not.toHaveBeenCalled();
     fireEvent.click(
@@ -584,7 +589,7 @@ describe("CourseDetailManagerView — enrollments tab", () => {
   it("shows an error message when removing an enrollment fails", async () => {
     const onRemoveEnrollment = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onRemoveEnrollment });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /remove student/i }));
     fireEvent.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }),
@@ -601,9 +606,9 @@ describe("CourseDetailManagerView — enrollments tab", () => {
       search: searchCandidates,
     };
     const props = renderView();
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
 
-    const panel = within(screen.getByRole("tabpanel", { name: /enrollments/i }));
+    const panel = within(screen.getByRole("region", { name: /enrollments/i }));
     fireEvent.click(panel.getByRole("combobox"));
     // The MultiSelect's popover content is portalled to document.body, outside `panel`.
     fireEvent.click(screen.getByText("New Student"));
@@ -615,7 +620,7 @@ describe("CourseDetailManagerView — enrollments tab", () => {
   it("renders a load-more-enrollments button and reports the click upward", () => {
     const onLoadMoreEnrollments = vi.fn();
     renderView({ hasMoreEnrollments: true, onLoadMoreEnrollments });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     fireEvent.click(screen.getByRole("button", { name: /load more students/i }));
     expect(onLoadMoreEnrollments).toHaveBeenCalled();
   });
@@ -624,21 +629,21 @@ describe("CourseDetailManagerView — enrollments tab", () => {
 describe("CourseDetailManagerView — TA tab wording (#1727)", () => {
   it("labels the tab 'TAs' rather than the ambiguous 'Staff'", () => {
     renderView();
-    expect(screen.getByRole("tab", { name: /^TAs$/ })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /staff/i })).not.toBeInTheDocument();
+    expect(getCourseNavEntry(/^TAs$/)).toBeInTheDocument();
+    expect(queryCourseNavEntry(/staff/i)).not.toBeInTheDocument();
   });
 
   it("titles the tab's section 'Instructor & TAs' rather than 'Course staff'", () => {
     renderView();
-    clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    openCourseSection(/^TAs$/);
+    const panel = within(screen.getByRole("region", { name: /^TAs$/ }));
     expect(panel.getByText("Instructor & TAs")).toBeInTheDocument();
     expect(screen.queryByText(/course staff/i)).not.toBeInTheDocument();
   });
 
   it("points the enrollments hint at the TAs tab rather than the Staff tab", () => {
     renderView();
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     expect(
       screen.getByText(
         "Manage student enrollments here. Instructor and TA assignments are on the TAs tab.",
@@ -664,8 +669,8 @@ describe("CourseDetailManagerView — TAs tab", () => {
         },
       ],
     });
-    clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    openCourseSection(/^TAs$/);
+    const panel = within(screen.getByRole("region", { name: /^TAs$/ }));
 
     expect(panel.getByText("Dr. Instructor")).toBeInTheDocument();
     expect(panel.getByText("Dr. Mostafa")).toBeInTheDocument();
@@ -675,8 +680,8 @@ describe("CourseDetailManagerView — TAs tab", () => {
 
   it("offers no Replace control at all — the regression this issue exists for", () => {
     renderView();
-    clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    openCourseSection(/^TAs$/);
+    const panel = within(screen.getByRole("region", { name: /^TAs$/ }));
 
     expect(panel.queryByRole("button", { name: /replace/i })).not.toBeInTheDocument();
     expect(panel.queryByText(/will replace the current one/i)).not.toBeInTheDocument();
@@ -690,8 +695,8 @@ describe("CourseDetailManagerView — TAs tab", () => {
       search: searchCandidates,
     };
     const props = renderView();
-    clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    openCourseSection(/^TAs$/);
+    const panel = within(screen.getByRole("region", { name: /^TAs$/ }));
 
     // The instructor picker is the first combobox on the tab; its dropdown
     // portals outside the panel, so the option is matched on `screen`.
@@ -719,7 +724,7 @@ describe("CourseDetailManagerView — TAs tab", () => {
         },
       ],
     });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
 
     fireEvent.click(screen.getByRole("button", { name: /remove instructor dr\. mostafa/i }));
 
@@ -730,7 +735,7 @@ describe("CourseDetailManagerView — TAs tab", () => {
     // A 409 here can never succeed on retry, so "Please try again" would be a lie.
     const onRemoveInstructor = vi.fn().mockRejectedValue(new Error("INSTRUCTOR_FLOOR_VIOLATION"));
     renderView({ onRemoveInstructor });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
 
     fireEvent.click(screen.getByRole("button", { name: /remove instructor dr\. instructor/i }));
 
@@ -745,7 +750,7 @@ describe("CourseDetailManagerView — TAs tab", () => {
   it("falls back to a generic message for an unrecognised failure", async () => {
     const onRemoveInstructor = vi.fn().mockRejectedValue(new Error("SOMETHING_ELSE"));
     renderView({ onRemoveInstructor });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
 
     fireEvent.click(screen.getByRole("button", { name: /remove instructor dr\. instructor/i }));
 
@@ -770,7 +775,7 @@ describe("CourseDetailManagerView — TAs tab", () => {
         },
       ],
     });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
 
     fireEvent.click(screen.getByRole("button", { name: /make primary/i }));
 
@@ -784,13 +789,13 @@ describe("CourseDetailManagerView — TAs tab", () => {
 
   it("shows the empty state when the course has no instructor yet", () => {
     renderView({ courseInstructors: [] });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
     expect(screen.getByText(/no instructor assigned yet/i)).toBeInTheDocument();
   });
 
   it("removes a TA", async () => {
     const props = renderView();
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
     fireEvent.click(screen.getByRole("button", { name: /remove ta/i }));
     await waitFor(() => expect(props.onRemoveTA).toHaveBeenCalledWith("user-ta"));
   });
@@ -798,14 +803,14 @@ describe("CourseDetailManagerView — TAs tab", () => {
   it("shows an error message when removing a TA fails", async () => {
     const onRemoveTA = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onRemoveTA });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
     fireEvent.click(screen.getByRole("button", { name: /remove ta/i }));
     await waitFor(() => expect(screen.getByText(/could not remove ta/i)).toBeInTheDocument());
   });
 
   it("shows the no-TAs-assigned empty state on the TAs tab", () => {
     renderView({ tas: [] });
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
     expect(screen.getByText("No TAs assigned.")).toBeInTheDocument();
   });
 
@@ -816,9 +821,9 @@ describe("CourseDetailManagerView — TAs tab", () => {
       search: searchCandidates,
     };
     const props = renderView();
-    clickTab(/^TAs$/);
+    openCourseSection(/^TAs$/);
 
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    const panel = within(screen.getByRole("region", { name: /^TAs$/ }));
     const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[combos.length - 1]);
     fireEvent.click(screen.getByText("New TA"));
@@ -836,8 +841,8 @@ describe("CourseDetailManagerView — TAs tab", () => {
     };
     const onAddTA = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onAddTA });
-    clickTab(/^TAs$/);
-    const panel = within(screen.getByRole("tabpanel", { name: /^TAs$/ }));
+    openCourseSection(/^TAs$/);
+    const panel = within(screen.getByRole("region", { name: /^TAs$/ }));
     const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[combos.length - 1]);
     fireEvent.click(screen.getByText("New TA"));
@@ -850,7 +855,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
   it("shows the course-scope toggle off by default and persists it when enabled", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
 
     const toggle = screen.getByRole("switch", {
       name: /restrict course chat to this course/i,
@@ -879,7 +884,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
   it("preserves an enabled course-scope toggle when saving only RAG top-k", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView({ course: { ...COURSE, courseScopeGuardrailEnabled: true } });
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
 
     const toggle = screen.getByRole("switch", {
       name: /restrict course chat to this course/i,
@@ -909,7 +914,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
       { course: { ...COURSE, courseScopeGuardrailEnabled: true } },
       { "chat.courseScopeGuardrailEnabled": false },
     );
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
 
     expect(screen.getByText(/turned off for the whole platform/i)).toBeInTheDocument();
     // Still editable, so an instructor can set it ahead of the platform switch.
@@ -920,7 +925,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
 
   it("shows no platform warning while the platform policy is on (#1938)", () => {
     renderView({}, { "chat.courseScopeGuardrailEnabled": true });
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
 
     expect(screen.queryByText(/turned off for the whole platform/i)).toBeNull();
   });
@@ -928,7 +933,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
   it("saves RAG search-tuning settings", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
 
     fireEvent.change(screen.getByLabelText(/results per question/i), {
       target: { value: "6" },
@@ -954,7 +959,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
       json: () => Promise.resolve({ error: "Invalid value" }),
     });
     renderView();
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
     fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
     await waitFor(() => expect(screen.getByText("Invalid value")).toBeInTheDocument());
   });
@@ -962,7 +967,7 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
   it("shows a network-error message when the RAG save request throws", async () => {
     mockFetch.mockRejectedValue(new Error("network down"));
     renderView();
-    clickTab(/settings/i);
+    openCourseSection(/settings/i);
     fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
     await waitFor(() => expect(screen.getByText("Network error.")).toBeInTheDocument());
   });
@@ -1005,19 +1010,19 @@ describe("CourseDetailManagerView — instructor candidate fetch gating (#1840 r
 describe("CourseDetailManagerView — access-gated visibility", () => {
   it("shows the settings tab for unit-admin course access", () => {
     renderView({ access: "unit" });
-    expect(screen.getByRole("tab", { name: /^settings$/i })).toBeInTheDocument();
+    expect(getCourseNavEntry(/^settings$/i)).toBeInTheDocument();
   });
 
   it("hides instructor enrollment controls when the manage-enrollments grant is off", () => {
     renderView({ access: "instructor" }, { "instructors.canManageEnrollments": false });
-    clickTab(/enrollments/i);
+    openCourseSection(/enrollments/i);
     expect(screen.queryByRole("button", { name: /remove student/i })).not.toBeInTheDocument();
     expect(screen.queryByText("Add students")).not.toBeInTheDocument();
   });
 
   it("hides the TAs and settings tabs for a plain TA access level", () => {
     renderView({ access: "ta" });
-    expect(screen.queryByRole("tab", { name: /^settings$/i })).not.toBeInTheDocument();
+    expect(queryCourseNavEntry(/^settings$/i)).not.toBeInTheDocument();
   });
 
   it("keeps the TAs tab visible but greyed-out for an instructor without the manage-enrollments grant", () => {
@@ -1025,7 +1030,7 @@ describe("CourseDetailManagerView — access-gated visibility", () => {
     // access (showStaffTab true, canManageStaff false) to exercise the
     // disabled-tooltip branch (#807) instead of unmounting the tab.
     renderView({ access: "ta" });
-    const taTab = screen.queryByRole("tab", { name: /^TAs$/ });
+    const taTab = queryCourseNavEntry(/^TAs$/);
     // TA access never shows the TAs tab at all — assert the alternate path:
     // topics add form is disabled by default (tas.canManageTopics off).
     expect(taTab).not.toBeInTheDocument();

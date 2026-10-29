@@ -36,13 +36,13 @@ export function DashboardUnitAdminView({
   const stats = [
     { label: "Unit courses", value: totalCourses },
     { label: "Published", value: publishedCount },
-    { label: "Drafts", value: draftCount },
+    { label: "Unpublished", value: draftCount },
     { label: "Synced from EduAI", value: syncedCount },
   ];
 
   const statusSegments: DonutSegment[] = [
     { label: "Published", value: publishedCount, color: PUBLISHED_COLOR },
-    { label: "Draft", value: draftCount, color: DRAFT_COLOR },
+    { label: "Unpublished", value: draftCount, color: DRAFT_COLOR },
   ];
 
   const analytics =
@@ -51,11 +51,11 @@ export function DashboardUnitAdminView({
         <PanelCard title="Publish status">
           <DonutChart data={statusSegments} centerValue={totalCourses} centerLabel="Courses" />
         </PanelCard>
-        <PanelCard title="Draft courses">
+        <PanelCard title="Unpublished courses">
           <p className="py-6 text-center text-sm text-muted-foreground">
             {draftCount === 0
               ? "Every course in your units is published."
-              : `${draftCount} of ${totalCourses} unit courses are still in draft.`}
+              : `${draftCount} of ${totalCourses} unit courses are still unpublished.`}
           </p>
         </PanelCard>
       </div>

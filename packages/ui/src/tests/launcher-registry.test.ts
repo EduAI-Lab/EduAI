@@ -10,18 +10,37 @@ const URLS: LauncherAppUrls = {
 };
 
 describe("getLauncherApps", () => {
-  it("returns the canonical 3-app list with the injected URLs", () => {
+  it("returns the canonical 4-app list with the injected URLs", () => {
     const apps = getLauncherApps({ currentAppId: "core", urls: URLS });
-    expect(apps.map((a) => a.id)).toEqual(["core", "ai-tutor", "question-maker"]);
-    expect(apps.map((a) => a.url)).toEqual([URLS.core, URLS.aiTutor, URLS.questionMaker]);
-    expect(apps.map((a) => a.name)).toEqual(["EduAI Core", "AI Tutor", "Question Maker"]);
+    expect(apps.map((a) => a.id)).toEqual(["core", "course-chat", "ai-tutor", "question-maker"]);
+    expect(apps.map((a) => a.url)).toEqual([
+      URLS.core,
+      `${URLS.core}/chat`,
+      URLS.aiTutor,
+      URLS.questionMaker,
+    ]);
+    expect(apps.map((a) => a.name)).toEqual([
+      "EduAI Core",
+      "Course Chat",
+      "AI Tutor",
+      "Question Maker",
+    ]);
   });
 
-  it("gates Question Maker behind QUESTION_MAKER_ROLES, leaving Core/AI Tutor open", () => {
+  it("describes Course Chat and AI Tutor differently", () => {
+    const byId = Object.fromEntries(
+      getLauncherApps({ currentAppId: "core", urls: URLS }).map((a) => [a.id, a]),
+    );
+    expect(byId["course-chat"].description).toBe("Ask questions about your course materials");
+    expect(byId["ai-tutor"].description).toBe("Guided lessons with an AI tutor");
+  });
+
+  it("gates Question Maker behind QUESTION_MAKER_ROLES, leaving the other apps open", () => {
     const apps = getLauncherApps({ currentAppId: "core", urls: URLS });
     const byId = Object.fromEntries(apps.map((a) => [a.id, a]));
     expect(byId["question-maker"].roles).toEqual(QUESTION_MAKER_ROLES);
     expect(byId.core.roles).toBeUndefined();
+    expect(byId["course-chat"].roles).toBeUndefined();
     expect(byId["ai-tutor"].roles).toBeUndefined();
   });
 
@@ -39,6 +58,7 @@ describe("getLauncherApps", () => {
     const apps = getLauncherApps({ currentAppId: "core", urls: URLS, coreCourseId: "core/7 8" });
     expect(apps.map((app) => app.url)).toEqual([
       `https://core.example.edu/courses/${encodeURIComponent("core/7 8")}`,
+      "https://core.example.edu/chat?courseId=core%2F7+8",
       "https://tutor.example.edu/?coreCourseId=core%2F7+8",
       "https://qm.example.edu/?coreCourseId=core%2F7+8",
     ]);
@@ -53,6 +73,15 @@ describe("getLauncherApps", () => {
 
     expect(apps.find((app) => app.id === "ai-tutor")?.url).toBe("");
   });
+
+  it("leaves Course Chat's URL empty when Core's URL is", () => {
+    const apps = getLauncherApps({
+      currentAppId: "ai-tutor",
+      urls: { ...URLS, core: "" },
+      coreCourseId: "course-1",
+    });
+    expect(apps.find((app) => app.id === "course-chat")?.url).toBe("");
+  });
 });
 
 // ── RBAC gate, composed with the existing visibleAppsForRole ──────────────────
@@ -61,7 +90,7 @@ describe("getLauncherApps + visibleAppsForRole — RBAC gate", () => {
 
   it("hides Question Maker from students", () => {
     const ids = visibleAppsForRole(apps, "STUDENT").map((a) => a.id);
-    expect(ids).toEqual(["core", "ai-tutor"]);
+    expect(ids).toEqual(["core", "course-chat", "ai-tutor"]);
     expect(ids).not.toContain("question-maker");
   });
 
