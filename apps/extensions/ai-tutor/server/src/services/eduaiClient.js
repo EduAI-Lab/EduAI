@@ -540,7 +540,9 @@ export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   if (!serviceKey) {
     throw new Error("EDUAI_API_KEY not configured");
   }
-  const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
+  // `audience: "learner"` asks Core for only the topics students may see (#1956).
+  const query = options.audience === "learner" ? "?audience=learner" : "";
+  const data = await requestEduAi(`/courses/${externalCourseId}/topics${query}`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
     signal: options.signal,
   });

@@ -728,14 +728,18 @@ export default function AddActivityPanel({
               <div className="space-y-2">
                 <Label htmlFor="new-activity-answer" className="flex items-center gap-1.5">
                   <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
-                  Expected answer
+                  Reference answer (for graders)
                 </Label>
                 <Input
                   id="new-activity-answer"
                   value={textAnswer}
                   onChange={(event) => setTextAnswer(event.target.value)}
-                  placeholder="Ideal short response…"
+                  placeholder="A model answer staff can compare against…"
+                  aria-describedby="new-activity-answer-help"
                 />
+                <p id="new-activity-answer-help" className="text-xs text-muted-foreground">
+                  Not used for auto-grading. Short answers go to Needs grading for staff to mark.
+                </p>
               </div>
             )}
           </div>

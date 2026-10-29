@@ -20,9 +20,27 @@ export const AUTO_SYNC_TIMEOUT_MS = 3_000;
 
 const lastAutoSyncAt = new Map();
 
+/** Forget a course's last sync so the next TTL-gated read pulls from Core again. */
+export function invalidateTopicSync(courseOfferingId) {
+  lastAutoSyncAt.delete(courseOfferingId);
+}
+
+function topicNames(topics) {
+  return Array.from(
+    new Set(
+      topics
+        .map((t) => (t && typeof t.name === "string" ? t.name.trim() : ""))
+        .filter((n) => n.length > 0),
+    ),
+  );
+}
+
 /**
  * Sync topics from EduAI for an imported course into local DB.
- * - No deletes; ensures presence by name within the course offering.
+ * - Ensures presence by name within the course offering, and marks which
+ *   topics are in Core's learner view (`learnerVisible`, #1956).
+ * - Deletes local topics Core no longer has (dismissed, merged, cleaned up),
+ *   unless an activity still uses them; those stay, hidden from students.
  * - Returns the up-to-date list of local topics for the course.
  * - Pass `options.ttlMs` to skip the Core call (and just return the local
  *   mirror) if a sync for this course succeeded within the last `ttlMs` ms.
@@ -56,24 +74,37 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
     }
   }
 
-  // Fetch topics from Core using the service key
+  // Fetch both views from Core using the service key: the staff view is what
+  // instructors author against, the learner view is what students may see.
   let externalTopics;
+  let learnerTopics;
   try {
-    externalTopics = await listEduAiCourseTopics(course.coreOfferingId, { signal: options.signal });
+    [externalTopics, learnerTopics] = await Promise.all([
+      listEduAiCourseTopics(course.coreOfferingId, { signal: options.signal }),
+      listEduAiCourseTopics(course.coreOfferingId, {
+        signal: options.signal,
+        audience: "learner",
+      }),
+    ]);
   } catch (e) {
     e.phase = e.phase || "fetch";
     throw e;
   }
-  const upstreamNames = Array.from(
-    new Set(
-      externalTopics
-        .map((t) => (t && typeof t.name === "string" ? t.name.trim() : ""))
-        .filter((n) => n.length > 0),
-    ),
-  );
+  const upstreamNames = topicNames(externalTopics);
+  const learnerNames = topicNames(learnerTopics);
 
   if (upstreamNames.length === 0) {
-    // Nothing to import; return current local topics
+    // Nothing to import, and nothing to prune: Core always has at least its
+    // Uncategorized topic, so an empty list is not trusted for deletes.
+    try {
+      await prisma.topic.updateMany({
+        where: { courseOfferingId, learnerVisible: true },
+        data: { learnerVisible: false },
+      });
+    } catch (e) {
+      e.phase = "write";
+      throw e;
+    }
     lastAutoSyncAt.set(courseOfferingId, Date.now());
     const local = await prisma.topic.findMany({
       where: { courseOfferingId },
@@ -82,25 +113,44 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
     return { topics: local, upstreamNames: [] };
   }
 
-  // Ensure existing topics by name; create missing ones
-  const existing = await prisma.topic.findMany({
-    where: { courseOfferingId, name: { in: upstreamNames } },
-    select: { id: true, name: true },
-  });
-  const have = new Set(existing.map((t) => t.name));
-  const toCreate = upstreamNames.filter((n) => !have.has(n));
-
-  if (toCreate.length > 0) {
-    try {
-      // Create missing topics
-      await prisma.topic.createMany({
-        data: toCreate.map((name) => ({ name, courseOfferingId })),
-        skipDuplicates: true,
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Ensure existing topics by name; create missing ones
+      const existing = await tx.topic.findMany({
+        where: { courseOfferingId, name: { in: upstreamNames } },
+        select: { name: true },
       });
-    } catch (e) {
-      e.phase = "write";
-      throw e;
-    }
+      const have = new Set(existing.map((t) => t.name));
+      const toCreate = upstreamNames.filter((n) => !have.has(n));
+      if (toCreate.length > 0) {
+        await tx.topic.createMany({
+          data: toCreate.map((name) => ({ name, courseOfferingId })),
+          skipDuplicates: true,
+        });
+      }
+
+      await tx.topic.updateMany({
+        where: { courseOfferingId, name: { in: learnerNames }, learnerVisible: false },
+        data: { learnerVisible: true },
+      });
+      await tx.topic.updateMany({
+        where: { courseOfferingId, name: { notIn: learnerNames }, learnerVisible: true },
+        data: { learnerVisible: false },
+      });
+
+      // An activity's main topic is required, so a topic in use is kept.
+      await tx.topic.deleteMany({
+        where: {
+          courseOfferingId,
+          name: { notIn: upstreamNames },
+          mainActivities: { none: {} },
+          secondaryActivities: { none: {} },
+        },
+      });
+    });
+  } catch (e) {
+    e.phase = "write";
+    throw e;
   }
 
   lastAutoSyncAt.set(courseOfferingId, Date.now());

@@ -421,6 +421,8 @@ export function CourseDetailManagerView({
     approveTopic,
     dismissTopic,
     mergeTopic,
+    approveTopics,
+    dismissTopics,
     retryAnalysis,
     suggestTopics,
     inFlight: topicAnalysisInFlight,
@@ -1762,6 +1764,16 @@ export function CourseDetailManagerView({
                 onMerge={async (id, intoId) => {
                   await mergeTopic(id, intoId);
                   await onRefreshTopics?.();
+                }}
+                onApproveMany={async (ids) => {
+                  const result = await approveTopics(ids);
+                  await onRefreshTopics?.();
+                  return result;
+                }}
+                onDismissMany={async (ids) => {
+                  const result = await dismissTopics(ids);
+                  await onRefreshTopics?.();
+                  return result;
                 }}
                 onRename={
                   onRenameTopic &&

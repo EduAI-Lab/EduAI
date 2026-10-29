@@ -25,6 +25,7 @@ import { MemoryRouter } from "react-router";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import StudentAiChat, { type StudentAiChatHandle } from "~/components/StudentAiChat";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
+import { getStudyBuddyModelStorageKey } from "~/lib/study-buddy-model";
 import type { Activity } from "~/lib/types";
 import type api from "~/lib/api";
 
@@ -55,6 +56,10 @@ vi.mock("~/hooks/use-api-keys", () => ({
     setKey: mockSetKey,
     validateKey: mockValidateKey,
   }),
+}));
+
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({ user: { id: "student-1" } }),
 }));
 
 // ── StudentChatHistoryPanel: capture onSelect for restoration tests ────────
@@ -223,6 +228,7 @@ beforeEach(() => {
   ]);
   vi.mocked(loadSessionMessages).mockResolvedValue([]);
   capturedHistoryOnSelect = undefined;
+  localStorage.clear();
 });
 
 // ── #1004 ─────────────────────────────────────────────────────────────────
@@ -251,6 +257,53 @@ describe("StudentAiChat — default model selection from isDefaultTutor (#1004)"
     expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({
       modelId: "google:gemini-2.5-pro",
     });
+  });
+});
+
+// ── #2025 ─────────────────────────────────────────────────────────────────
+
+describe("StudentAiChat — admin default tutor vs. the student's pick (#2025)", () => {
+  const MODELS = [
+    { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
+    { id: "m2", modelId: "ollama:qwen2.5:3b", modelName: "Qwen 2.5 3B", isDefaultTutor: true },
+  ];
+
+  async function sentModelId() {
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    return sendGuideMessage.mock.calls[0][1].modelId;
+  }
+
+  it("opens on the default tutor even when Gemini 2.5 Flash is also allowed", async () => {
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    listAiModels.mockResolvedValue(MODELS);
+    renderChat();
+
+    expect(await sentModelId()).toBe("ollama:qwen2.5:3b");
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+  });
+
+  it("carries an explicit pick over to the next activity's chat", async () => {
+    listAiModels.mockResolvedValue(MODELS);
+    const { unmount } = renderChat();
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    fireEvent.click(screen.getByLabelText("Model"));
+    fireEvent.click(screen.getByRole("option", { name: "Gemini 2.5 Flash" }));
+    unmount();
+
+    renderChat(undefined, { ...ACTIVITY, id: 2 });
+    expect(await sentModelId()).toBe("google:gemini-2.5-flash");
+  });
+
+  it("falls back to the default tutor when the stored pick is no longer allowed", async () => {
+    localStorage.setItem(getStudyBuddyModelStorageKey("student-1"), "openai:gpt-4o-mini");
+    listAiModels.mockResolvedValue(MODELS);
+    renderChat();
+
+    expect(await sentModelId()).toBe("ollama:qwen2.5:3b");
   });
 });
 

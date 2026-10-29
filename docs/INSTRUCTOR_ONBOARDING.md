@@ -121,10 +121,12 @@ Each file can have up to three topics, shown as tags under its name on the **Mat
 
 ### What students see
 
-On the **Settings** tab, **What students see** has two choices:
+On the **Settings** tab, **What students see** has one switch, **Show topics to students**. It shows or hides the names of all your approved topics at once, on the course page and in the topics course chat lists under its answers. Chat still answers from the topics' files either way. Newly approved topics are shown. The switch saves as soon as you flip it; when only some topics are shown it is off and says how many.
+
+Select **File and topic settings** for the rest, then **Save**:
 
 - **Let students see course files** is off by default, so students reach the course only through course chat. Turn it on to let enrolled students list and preview the course's files on the course page. Files you hid from students or scheduled for later stay hidden. Course chat never names a file to a student either way.
-- **Topics shown to students** lists your approved topics. Untick one to hide its name from the course page and from the topics course chat lists under its answers. Chat still answers from that topic's files. Newly approved topics are shown.
+- **Topics shown to students** lists your approved topics. Untick one to hide just that topic's name.
 
 Admins, unit admins and the course's instructors can change these; TAs cannot.
 

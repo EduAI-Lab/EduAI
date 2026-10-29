@@ -81,8 +81,7 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
       icon: IconChecklist,
       points: [
         "A multiple-choice answer is checked against the correct option as soon as you submit it.",
-        "A short answer is compared with the instructor's answer key, ignoring capitals and extra spaces.",
-        "A short answer with no answer key can't be checked automatically, so it waits for your instructor or TA to grade it.",
+        "A short answer isn't checked automatically. It waits for your instructor or TA to grade it.",
         "You can keep trying until you get it right. Every attempt is recorded.",
         <>
           Staff see every attempt on a course&rsquo;s <strong>Submissions</strong> tab, where they
