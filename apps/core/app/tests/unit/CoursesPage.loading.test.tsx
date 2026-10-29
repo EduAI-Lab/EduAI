@@ -6,7 +6,6 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 // The shared shell pulls in sidebar/site-header hooks; stub them so the page
 // under test isn't coupled to the app chrome.
-vi.mock("~/components/app-sidebar", () => ({ AppSidebar: () => null }));
 vi.mock("~/components/site-header", () => ({ SiteHeader: () => null }));
 vi.mock("~/components/layout/core-app-shell", () => ({
   CoreAppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,

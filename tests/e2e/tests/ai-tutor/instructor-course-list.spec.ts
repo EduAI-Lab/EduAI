@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { createInstructor, signInThroughPage } from "../helpers/auth";
 import { createTeachingInstructor, type InstructorFixture } from "../helpers/at-instructor";
-import { courseLink, gotoAiTutor } from "../helpers/at-ui";
+import { courseLink, courseMenuLink, gotoAiTutor } from "../helpers/at-ui";
 
 let fx: InstructorFixture;
 
@@ -65,7 +65,7 @@ test.describe("INSTRUCTOR course list", () => {
 
     await courseLink(page, fx.course.atCourseId).click();
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${fx.course.atCourseId}`);
-    await expect(page.getByRole("tab", { name: "Content" })).toBeVisible();
+    await expect(courseMenuLink(page, "Content")).toBeVisible();
   });
 
   test("search narrows the list and is mirrored into the URL", async ({ page }) => {
@@ -119,7 +119,7 @@ test.describe("INSTRUCTOR course list", () => {
     // does not carry. (Term is absent here: `buildTermFilterGroup` hides a
     // dimension with a single value, and the fixture's courses share a term.)
     await page.getByRole("combobox").filter({ hasText: "Status" }).click();
-    await page.getByRole("option", { name: "Draft" }).click();
+    await page.getByRole("option", { name: "Unpublished" }).click();
 
     // Only the unpublished course survives the filter.
     await expect(courseLink(page, fx.second!.atCourseId)).toBeVisible({ timeout: 15_000 });

@@ -7,7 +7,7 @@ import { Input } from "@eduai/ui";
 import { StatCard } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
 import { HelpHint, MaterialList, type MaterialListItem } from "@eduai/ui";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { CORE_HELP } from "~/components/help/help-hints";
 import {
   Dialog,
@@ -27,7 +27,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@eduai/ui";
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
+import { PageTabs, PageTabsContent } from "@eduai/ui";
 import { CourseHeroCard } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
 import { resolvePaletteAccent } from "@eduai/ui";
@@ -48,6 +48,11 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { PolicyTooltip, usePolicyGate } from "~/components/policy/policy-gate";
+import {
+  COURSE_TAB_PARAM,
+  getCourseNavItems,
+  resolveCourseNavKey,
+} from "~/lib/courses/course-nav-items";
 
 interface Props {
   course: CourseDetail;
@@ -117,6 +122,11 @@ export function CourseDetailTaView({
   const displayInstructors = resolveDisplayInstructors(course);
 
   const { isEnabled } = usePolicyGate();
+  const [searchParams] = useSearchParams();
+  const activeTab = resolveCourseNavKey(
+    searchParams.get(COURSE_TAB_PARAM),
+    getCourseNavItems("ta", isEnabled),
+  );
   // §2 / issue #807: controls an admin turned off stay visible but greyed-out
   // with a tooltip rather than vanishing.
   // tas.canManageMaterials (default true): upload and own-material controls.
@@ -336,17 +346,17 @@ export function CourseDetailTaView({
         </Dialog>
       )}
 
-      <PageTabs defaultValue="overview">
-        <PageTabsList>
-          <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
-          <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
-          {/* No Enrollments tab for TA — §6 */}
-        </PageTabsList>
-
+      {/* The course menu in the shell (CourseNavMenu) picks the section via
+          `?tab=`; this only shows the matching panel. §6: no Enrollments for TAs. */}
+      <PageTabs value={activeTab}>
         {/* ── Overview ── */}
         <PageTabsContent
           value="overview"
+          // Named after its course menu entry; the tab triggers that used
+          // to label the panel moved out to the shell's course menu.
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Overview"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -477,6 +487,9 @@ export function CourseDetailTaView({
         {/* ── Materials (TA may upload when tas.canManageMaterials is on) — A1+A2 rework ── */}
         <PageTabsContent
           value="materials"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Materials"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -582,6 +595,9 @@ export function CourseDetailTaView({
         {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}
         <PageTabsContent
           value="topics"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Topics"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >

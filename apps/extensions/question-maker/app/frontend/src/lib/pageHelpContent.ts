@@ -11,14 +11,14 @@ const FALLBACK: PageHelpContent = {
   title: "Getting around Question Maker",
   summary:
     "Write and review questions, organize them into banks, and build assessments for your courses.",
-  tips: ["Use the sidebar or ⌘K / Ctrl K to jump to any page or course."],
+  tips: ["Use the navigation rail or ⌘K / Ctrl K to jump to any page or course."],
 };
 
 const COURSE_TABS = {
   overview: {
     title: "Course overview",
     summary: "A summary of this course's questions, banks and assessments.",
-    tips: ["Use the tabs above to move between questions, banks and assessments."],
+    tips: ["Use the course menu to move between questions, banks and assessments."],
   },
   questions: {
     title: "Questions",
@@ -173,7 +173,7 @@ export const QM_ACCESS_HELP: PageHelpContent = {
   summary:
     "Question Maker is for instructors, administrators and assigned teaching assistants. Students use EduAI Core and AI Tutor for coursework.",
   tips: [
-    "Use Back to EduAI in the sidebar to return to your dashboard.",
+    "Use Back to EduAI in the Account menu to return to your dashboard.",
     "If you teach a course and expected access, ask an administrator to check your role.",
   ],
 };

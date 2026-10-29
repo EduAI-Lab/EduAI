@@ -62,7 +62,6 @@ export default function UnitChatsPage() {
   return (
     <CoreAppShell
       user={user}
-      sidebarVariant="inset"
       title="Unit Chats"
       breadcrumbs={
         <Breadcrumb>

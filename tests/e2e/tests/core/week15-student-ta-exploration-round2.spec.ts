@@ -11,7 +11,7 @@
  * not here. Kept as a separate file from round 1 rather than growing that
  * file past ~500 lines.
  */
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
 import { registerUser } from "../helpers/auth";
 
@@ -310,8 +310,36 @@ test.describe("TA — canManageTopics policy edge cases", () => {
 // Chat: delete, switch between threads, IDOR, rename-not-implemented
 // ===========================================================================
 
+/**
+ * Reveal the open conversation's hover-only Delete button in the History tray
+ * and return it. The tray scrolls, and with a long history the active row can
+ * sit below the fold, where a forced click lands outside the tray and closes
+ * it — so scroll the row into view and hover it the way a user would.
+ */
+async function revealActiveDelete(tray: Locator): Promise<Locator> {
+  const active = tray.locator('button[aria-current="true"]');
+  await active.scrollIntoViewIfNeeded();
+  await active.hover();
+  return active
+    .locator("..")
+    .getByRole("button", { name: "Delete conversation", exact: true })
+    .first();
+}
+
+/** Chat history lives in Course Chat's History tray in the rail (#1996). */
+async function openChatHistory(page: Page): Promise<Locator> {
+  await page
+    .getByRole("navigation", { name: "Global" })
+    .first()
+    .getByRole("button", { name: "History", exact: true })
+    .click();
+  const tray = page.getByRole("dialog", { name: "History" });
+  await expect(tray).toBeVisible();
+  return tray;
+}
+
 test.describe("Chat history — delete, switch, IDOR, rename", () => {
-  test("two real chats appear in the history rail and switching between them via the UI works", async ({
+  test("two real chats appear in the History tray and switching between them via the UI works", async ({
     page,
     playwright,
   }) => {
@@ -325,7 +353,7 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
       await page.waitForLoadState("networkidle");
       await dismissChatPrivacyNoticeIfPresent(page);
 
-      const historyRail = page.locator('aside[aria-label="Chat history"]');
+      const historyRail = await openChatHistory(page);
       // >= 2, not just "not 0" — the test claims both chatIdA and chatIdB
       // showed up, and the list also carries older seeded/leftover chats.
       await expect
@@ -346,7 +374,9 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
       // rows show "New conversation" for these zero-message probe chats
       // (chatHistoryRowLabel falls back to that when preview/title are unset),
       // so identify a row structurally rather than by unique text.
-      const firstRow = historyRail.getByRole("button").first();
+      // The tray closed when the page navigated; reopen it to pick a row.
+      const reopened = await openChatHistory(page);
+      const firstRow = reopened.getByRole("button").filter({ hasText: /./ }).first();
       await firstRow.waitFor({ state: "visible", timeout: 10_000 });
       await firstRow.click();
       await page.waitForLoadState("networkidle");
@@ -377,17 +407,9 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
       const beforeIds = ((await beforeRes.json()).chats ?? []).map((c: any) => c.id);
       expect(beforeIds).toContain(chatId);
 
-      const deleteBtn = page
-        .locator('aside[aria-label="Chat history"]')
-        .locator('button[aria-current="true"]')
-        .locator("..")
-        .getByRole("button", { name: "Delete conversation", exact: true })
-        .first();
-      await deleteBtn.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {
-        // Delete affordance is hover-revealed (opacity-0 -> group-hover) — force
-        // click if Playwright doesn't consider it independently visible.
-      });
-      await deleteBtn.click({ force: true });
+      const tray = await openChatHistory(page);
+      const deleteBtn = await revealActiveDelete(tray);
+      await deleteBtn.click();
       await expect(page.getByRole("alertdialog")).toBeVisible();
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
@@ -397,7 +419,7 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
       );
       expect(afterCancelIds).toContain(chatId);
 
-      await deleteBtn.click({ force: true });
+      await (await revealActiveDelete(tray)).click();
       const deleteResponsePromise = page.waitForResponse(
         (res) =>
           res.url() === `${CORE_URL}/api/chats/${chatId}` && res.request().method() === "DELETE",
@@ -434,13 +456,7 @@ test.describe("Chat history — delete, switch, IDOR, rename", () => {
       await page.waitForLoadState("networkidle");
       await dismissChatPrivacyNoticeIfPresent(page);
 
-      await page
-        .locator('aside[aria-label="Chat history"]')
-        .locator('button[aria-current="true"]')
-        .locator("..")
-        .getByRole("button", { name: "Delete conversation", exact: true })
-        .first()
-        .click({ force: true });
+      await (await revealActiveDelete(await openChatHistory(page))).click();
       await page.getByRole("button", { name: "Delete", exact: true }).click();
 
       await expect(page.getByText("Could not delete conversation", { exact: true })).toBeVisible();
@@ -537,7 +553,14 @@ test.describe("Bug report — UI submission", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+      // The bug report lives in the rail's Help tray (Canvas-style nav).
+      await page.getByRole("button", { name: "Help", exact: true }).click();
+      // Exact and inside the tray: the dashboard's Getting started checklist
+      // also has a button whose name mentions reporting a bug.
+      await page
+        .getByRole("dialog", { name: "Help" })
+        .getByRole("button", { name: "Report a bug", exact: true })
+        .click();
       await expect(page.getByRole("heading", { name: "Report a bug" })).toBeVisible();
 
       await page.getByTestId("bug-type").click();
@@ -580,7 +603,13 @@ test.describe("Bug report — UI submission", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+      await page.getByRole("button", { name: "Help", exact: true }).click();
+      // Exact and inside the tray: the dashboard's Getting started checklist
+      // also has a button whose name mentions reporting a bug.
+      await page
+        .getByRole("dialog", { name: "Help" })
+        .getByRole("button", { name: "Report a bug", exact: true })
+        .click();
       await page.getByTestId("bug-type").click();
       await page.getByRole("option", { name: "Other" }).click();
       await page.getByTestId("bug-description").fill("short"); // under the 10-char minimum (@eduai/ui BugReportDialog)

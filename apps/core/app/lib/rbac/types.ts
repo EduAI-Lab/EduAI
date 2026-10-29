@@ -15,7 +15,7 @@ export interface RbacCourse {
   department: string | null;
 }
 
-/** Icons are mapped in `app-sidebar.tsx`. */
+/** Icons are mapped in `components/layout/core-nav-model.tsx`. */
 export type NavItemKey =
   | "dashboard"
   | "courses"

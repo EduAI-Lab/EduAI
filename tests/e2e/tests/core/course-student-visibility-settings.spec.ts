@@ -1,5 +1,5 @@
 /**
- * #2071: the course Settings tab's "What students see" card, clicked through as
+ * #2071: the course Settings section's "What students see" card, clicked through as
  * the course's instructor. One switch shows or hides every approved topic;
  * "File and topic settings" opens the file switch and the per-topic choices.
  * Each test then checks what an enrolled student gets from the API, so a card
@@ -113,10 +113,13 @@ async function openSettings(page: Page, course: CourseSetup): Promise<void> {
   await page.addInitScript(() => window.localStorage.setItem("eduai:tour:dashboard:v1", "1"));
   await page.goto(`${CORE_URL}/courses/${course.courseId}`);
   await expect(page).not.toHaveURL(/\/auth\/login/);
-  await page.getByRole("tab", { name: "Settings" }).click();
+  await settingsLink(page).click();
   await expect(topicsSwitch(page)).toBeVisible({ timeout: 15_000 });
 }
 
+// Course sections are links in the shell's course menu (`?tab=settings`), not tabs.
+const settingsLink = (page: Page) =>
+  page.getByRole("navigation", { name: "Course" }).getByRole("link", { name: "Settings" });
 const topicsSwitch = (page: Page) => page.getByRole("switch", { name: "Show topics to students" });
 const detailsDialog = (page: Page) => page.getByRole("dialog", { name: "File and topic settings" });
 
@@ -158,7 +161,7 @@ test.describe("What students see: one topics switch, the rest in File and topic 
 
     // Stored, not just on screen.
     await page.reload();
-    await page.getByRole("tab", { name: "Settings" }).click();
+    await settingsLink(page).click();
     await expect(topicsSwitch(page)).not.toBeChecked();
 
     await topicsSwitch(page).click();
@@ -250,7 +253,7 @@ test.describe("What students see: one topics switch, the rest in File and topic 
 
     await addTopics(course, ["Recursion"]);
     await page.reload();
-    await page.getByRole("tab", { name: "Settings" }).click();
+    await settingsLink(page).click();
     await expect(topicsSwitch(page)).toBeEnabled();
     await expect(topicsSwitch(page)).toBeChecked();
   });

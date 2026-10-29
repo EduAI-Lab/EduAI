@@ -46,7 +46,7 @@ test.describe("UNIT_ADMIN dashboard", () => {
 
     // The four tiles defined by DashboardUnitAdminView — "Unit courses" is the
     // label no other role's dashboard uses.
-    for (const label of ["Unit courses", "Published", "Drafts", "Synced from EduAI"]) {
+    for (const label of ["Unit courses", "Published", "Unpublished", "Synced from EduAI"]) {
       await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
   });
@@ -55,7 +55,7 @@ test.describe("UNIT_ADMIN dashboard", () => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
     await expect(page.getByRole("heading", { name: "Publish status" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Draft courses" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Unpublished courses" })).toBeVisible();
     await expect(page.getByText("Courses", { exact: true }).first()).toBeVisible();
   });
 

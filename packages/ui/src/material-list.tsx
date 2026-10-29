@@ -79,7 +79,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[16px] font-semibold text-foreground">{title}</p>
           {items.length > 0 && (
@@ -88,7 +88,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
             </p>
           )}
         </div>
-        {headerActions && <div className="flex items-center gap-2">{headerActions}</div>}
+        {headerActions && <div className="flex flex-wrap items-center gap-2">{headerActions}</div>}
       </div>
 
       {items.length === 0 ? (
@@ -106,7 +106,7 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
             return (
               <div
                 key={item.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card"
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 rounded-lg border border-border bg-card"
               >
                 <div
                   className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0"
@@ -138,7 +138,9 @@ export function MaterialList<T extends MaterialListItem = MaterialListItem>({
                     )
                   )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Below 640px the status and actions drop to their own line, lined
+                    up under the name, so a phone-width row keeps a readable title. */}
+                <div className="flex items-center gap-2 shrink-0 max-sm:basis-full max-sm:flex-wrap max-sm:pl-11">
                   {showChip && <MaterialStatusChip status={item.status} />}
                   <MaterialStatusIcon status={item.status} />
                   {renderStatusDetail?.(item)}

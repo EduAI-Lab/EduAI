@@ -5,17 +5,11 @@ import { resolveCoreHeaderTitle, CoreHeaderActions } from "~/components/layout/c
 import { ThemeProvider } from "@eduai/ui";
 
 /**
- * Core's bespoke `~/components/site-header` was retired in favor of composing
- * the shared `@eduai/ui` `AppShell`/`SiteHeader` (issue #764 core-shell
- * parity). The GENERIC header rendering behavior this file used to cover
- * (title-as-h1, sr-only h1 alongside breadcrumbs, actions slot, breadcrumbs
- * slot) now lives in and is tested by the shared package itself
- * (`packages/ui/src/tests/site-header.test.tsx` and `app-shell.test.tsx`).
- *
- * What's left to cover HERE is Core-specific: the route → title fallback map
- * `CoreAppShell` resolves before handing a title to the shared shell (ported
- * verbatim from the old SiteHeader so no route's heading changed), and the
- * fixed header action bundle (`CoreHeaderActions`) every Core page renders.
+ * Core's header pieces: the route → title fallback map `CoreAppShell`
+ * resolves for every page (ported verbatim from the old SiteHeader so no
+ * route's heading changed), and the fixed header action bundle
+ * (`CoreHeaderActions`) every Core page renders. The shell's own layout —
+ * rail, course menu, mobile drawer — is covered in `CoreAppShell.test.tsx`.
  */
 describe("resolveCoreHeaderTitle", () => {
   it("falls back to EduAI for an unmapped route with no explicit title", () => {
@@ -52,7 +46,7 @@ describe("resolveCoreHeaderTitle", () => {
 });
 
 describe("CoreHeaderActions", () => {
-  it("renders the common action bundle: search, theme toggle, bug report", () => {
+  it("renders the common action bundle: search and theme toggle, without the bug report (now in the Help tray)", () => {
     render(
       <ThemeProvider>
         <CoreHeaderActions />
@@ -60,7 +54,7 @@ describe("CoreHeaderActions", () => {
     );
     expect(screen.getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Report a bug" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Report a bug" })).not.toBeInTheDocument();
   });
 
   it("carries the dashboard tour's theme-toggle anchor", () => {

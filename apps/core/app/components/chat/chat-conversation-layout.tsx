@@ -104,8 +104,8 @@ export function ChatConversationLayout({
   return (
     <div
       className={cn(
-        // Fill the AppShell main pane — do NOT use 100vh here. Nested inside
-        // SiteHeader + main, a viewport calc makes the page taller than the
+        // Fill the shell's main pane — do NOT use 100vh here. Nested inside
+        // the header + main, a viewport calc makes the page taller than the
         // screen and lets you scroll past the composer (#1060 follow-up).
         "flex h-full min-h-0 flex-1 flex-col bg-background",
         assistive && ASSISTIVE_CHAT_SURFACE_CLASS,

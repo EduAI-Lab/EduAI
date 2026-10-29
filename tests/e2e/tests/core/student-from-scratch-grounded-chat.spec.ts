@@ -225,7 +225,8 @@ test.describe("Student from scratch → grounded course chat (#1786)", () => {
       await expect(page).not.toHaveURL(/\/auth\/login/);
       const openChat = page.getByRole("link", { name: "Chat about this course" });
       await expect(openChat).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByRole("tab", { name: "Materials" })).toHaveCount(0);
+      // A student's course page has no course menu, so no Materials section.
+      await expect(page.getByRole("navigation", { name: "Course" })).toHaveCount(0);
       await expect(page.getByText(MATERIAL_TITLE, { exact: true })).toHaveCount(0);
 
       // Refused by the API too, not only hidden in the UI.

@@ -16,7 +16,7 @@ This is a guided first-run walkthrough. For a full reference on every screen, ro
 
 Ask your pilot coordinator which environment to use; do not mix production and dev during a walkthrough.
 
-You sign in once on Core, and the other two apps reuse that session in the same browser. Move between them with **Switch app** at the bottom of the sidebar.
+You sign in once on Core, and the other two apps reuse that session in the same browser. Move between them with **Switch app**: the app icon at the top of the left navigation bar.
 
 ---
 
@@ -30,7 +30,8 @@ EduAI has three parts:
 
 This guide walks a **happy path** from your invitation email through a first useful setup in each app. Troubleshooting is at the end.
 
-Throughout, the Core sidebar holds **Dashboard**, **Courses**, and **Course Chat**, with **Help & guide**, **Switch app**, and your profile menu pinned at the bottom. The header has search (`Ctrl+K` / `Cmd+K`), a platform status indicator, the theme control, and **Report a bug**.
+Throughout, Core's left navigation bar starts with **Switch app** (the Core icon) and **Account**, then holds **Dashboard**, **Courses**, and **Help**; **Report a bug** is under **Help**. The header has search (`Ctrl+K` / `Cmd+K`), a platform status indicator, and the theme control.
+**Course Chat** is part of Core but opens like its own app from **Switch app**. Its navigation bar holds **New chat**, **History**, **Courses** (the course to chat about), and **Course Assistant** once you teach a published course.
 
 ---
 
@@ -69,7 +70,7 @@ The token needs permission to read the courses you teach.
 
 ### Connect it in EduAI
 
-Open the **profile menu** at the bottom of the Core sidebar, choose **Settings**, then the **Canvas** tab. Settings has four tabs: Account, Accessibility, Providers, and Canvas.
+Open **Account** in Core's left navigation bar, choose **Settings**, then the **Canvas** tab. Settings has four tabs: Account, Accessibility, Providers, and Canvas.
 
 Fill in the **Canvas Integration** card:
 
@@ -85,7 +86,7 @@ Go back to **Dashboard** and scroll to the **Canvas courses** card at the bottom
 
 A dialog lists the Canvas courses you teach, each with a checkbox. Tick the ones you want and choose **Fetch selected**. Clicking a course that has already been fetched opens it instead.
 
-Your fetched courses now appear under **Courses**, grouped by term, each card showing its code, title, term, and a **Published** or **Draft** badge. The page has a search box, Status and Term filters, and paging controls at the bottom — search covers your whole course list, not just the page you are looking at.
+Your fetched courses now appear under **Courses**, grouped by term, each card showing its code, title, term, and a **Published** or **Unpublished** badge. The page has a search box, Status and Term filters, and paging controls at the bottom — search covers your whole course list, not just the page you are looking at.
 
 Open the course you will teach.
 
@@ -147,7 +148,7 @@ Use **Publish course** on the course page, or, on the **Courses** page, open the
 
 ### Open AI Tutor
 
-Choose **Switch app** at the bottom of the sidebar and pick **AI Tutor**.
+Choose **Switch app** (the app icon at the top of the left navigation bar) and pick **AI Tutor**.
 
 You do not import anything. The courses you teach in Core appear in AI Tutor automatically the first time you sign in, and each one keeps Core's published state.
 
@@ -155,7 +156,7 @@ You do not import anything. The courses you teach in Core appear in AI Tutor aut
 
 Open your course. The course page has **Content**, **Submissions**, **Feedback**, and **Analytics** tabs.
 
-On **Content**, use **Add module** to create one. New modules start as **Draft** and are marked *Hidden from students*. Open the module's **⋮** menu and choose **Publish module**.
+On **Content**, use **Add module** to create one. New modules start **Unpublished** and are marked *Hidden from students*. Open the module's **⋮** menu and choose **Publish module**.
 
 Lessons and activities publish the same way, and students only see them when the parent course and module are published too.
 
@@ -186,7 +187,7 @@ The composer's AI can draft new questions (set **Number of questions** for up to
 
 ### Confirm it appears in the bank
 
-Open **Questions** for the course, or the cross-course **Question Library** in the sidebar, and find the new item.
+Open **Questions** for the course, or the cross-course **Question Library** in the navigation bar, and find the new item.
 
 **If you're stuck:** Generation fails — the campus model may be busy; retry or ask your coordinator. Approval fails — the linked Core course or topic changed; refresh the course data, fix the topic mapping, and retry.
 
