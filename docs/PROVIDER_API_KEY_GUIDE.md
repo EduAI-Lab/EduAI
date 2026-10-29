@@ -19,7 +19,7 @@ You need an account **with that company**, not with EduAI. Create it before you 
 - **Core:** **Account → Settings → Providers**. Paste the key next to the provider and save. You can add an expiry date so EduAI reminds you before it runs out.
 - **AI Tutor:** when the study buddy shows *"Connect an AI provider to start"*, choose **Add API key** and paste it.
 
-**Where it's kept:** Core encrypts the key and keeps it on EduAI's server, so it works on any device and is never shown back to anyone. The AI Tutor keeps its copy **only in this browser**, so you'll add it again on another computer, and you should remove it on a shared one.
+**Where it's kept:** both save the key, encrypted, to your EduAI account on the server. You add it once, it works on any device, and it's never shown to anyone else.
 
 ## 3. Keep it safe
 
