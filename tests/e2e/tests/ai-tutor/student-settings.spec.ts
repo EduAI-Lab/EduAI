@@ -43,7 +43,7 @@ test.describe("AI Tutor STUDENT — Settings", () => {
 
     await expect(page.getByText("Model providers", { exact: true })).toBeVisible();
     await expect(page.getByText(/stored securely in Core for this account/)).toBeVisible();
-    await expect(page.getByText("Gemini")).toBeVisible();
-    await expect(page.getByText("OpenAI")).toBeVisible();
+    await expect(page.getByText("Gemini", { exact: true })).toBeVisible();
+    await expect(page.getByText("OpenAI", { exact: true })).toBeVisible();
   });
 });

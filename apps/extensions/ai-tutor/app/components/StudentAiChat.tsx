@@ -79,6 +79,7 @@ import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 import "~/styles/chat-markdown.css";
 import { randomId } from "@eduai/ui/runtime-env";
 import { MARKDOWN_STYLES } from "~/lib/markdown-styles";
+import { ProviderKeyGuideLink } from "~/components/settings/provider-account-notice";
 
 type ChatTab = "teach" | "guide" | "custom";
 
@@ -963,7 +964,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     Add your {getProviderLabel(currentProvider)} API key to chat with your study
-                    buddy. It stays on this device.
+                    buddy. It's saved to your EduAI account.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    You need an account with {getProviderLabel(currentProvider)} first to create the
+                    key. A ChatGPT or Gemini app subscription is not an API key.{" "}
+                    <ProviderKeyGuideLink />
                   </p>
                 </div>
                 <div className="flex flex-col items-center gap-2">
@@ -1136,9 +1142,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored for your account on this device and sent through EduAI services to{" "}
-              {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
-              device. You can also manage keys in Settings → Providers.
+              Saved securely to your EduAI account and sent through EduAI services to{" "}
+              {getProviderLabel(currentProvider)} when you use AI. You can also manage keys in
+              Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
