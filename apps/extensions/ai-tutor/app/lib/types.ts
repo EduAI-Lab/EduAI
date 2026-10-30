@@ -319,6 +319,17 @@ export type Activity = {
   customPrompt: string | null;
   customPromptTitle: string | null;
   completionStatus?: CompletionStatus;
+  /** The requesting student's latest attempt (#2030); absent for staff views. */
+  lastSubmission?: ActivityLastSubmission | null;
+};
+
+export type ActivityLastSubmission = {
+  answer: { answerText: string | null; answerOption: number | null };
+  /** Current grade, including staff overrides; `null` = awaiting review. */
+  isCorrect: boolean | null;
+  score: number | null;
+  aiFeedback: { message?: string } | null;
+  createdAt: string;
 };
 
 export type PromptTemplate = {

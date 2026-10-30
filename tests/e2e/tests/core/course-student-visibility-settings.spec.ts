@@ -1,9 +1,11 @@
 /**
- * #2071: the course Settings section's "What students see" card, clicked through as
- * the course's instructor. One switch shows or hides every approved topic;
- * "File and topic settings" opens the file switch and the per-topic choices.
+ * #2071, #2061: the course Settings tab's "What students see" card, clicked
+ * through as the course's instructor. One "Show course materials to students"
+ * checkbox shows or hides every file and topic after asking; "Choose by topic"
+ * opens each topic; "Let students browse files" saves as soon as it is flipped.
  * Each test then checks what an enrolled student gets from the API, so a card
- * that only looks right cannot pass.
+ * that only looks right cannot pass. Files under a hidden topic are covered
+ * against real Postgres by student-file-visibility.integration.test.ts.
  *
  * Setup mirrors student-from-scratch-grounded-chat.spec.ts (createAdmin /
  * createInstructor / registerUser / enroll / publish / injectSession).
@@ -114,19 +116,18 @@ async function openSettings(page: Page, course: CourseSetup): Promise<void> {
   await page.goto(`${CORE_URL}/courses/${course.courseId}`);
   await expect(page).not.toHaveURL(/\/auth\/login/);
   await settingsLink(page).click();
-  await expect(topicsSwitch(page)).toBeVisible({ timeout: 15_000 });
+  // Present whether or not the course has topics yet, once the card has loaded.
+  await expect(browseSwitch(page)).toBeVisible({ timeout: 15_000 });
 }
 
 // Course sections are links in the shell's course menu (`?tab=settings`), not tabs.
 const settingsLink = (page: Page) =>
   page.getByRole("navigation", { name: "Course" }).getByRole("link", { name: "Settings" });
-const topicsSwitch = (page: Page) => page.getByRole("switch", { name: "Show topics to students" });
-const detailsDialog = (page: Page) => page.getByRole("dialog", { name: "File and topic settings" });
-
-async function openDetails(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "File and topic settings" }).click();
-  await expect(detailsDialog(page)).toBeVisible();
-}
+const allCheckbox = (page: Page) =>
+  page.getByRole("checkbox", { name: "Show course materials to students" });
+const browseSwitch = (page: Page) =>
+  page.getByRole("switch", { name: "Let students browse files" });
+const confirmDialog = (page: Page) => page.getByRole("alertdialog");
 
 let course: CourseSetup;
 
@@ -139,122 +140,99 @@ test.afterEach(async () => {
   await course.dispose();
 });
 
-test.describe("What students see: one topics switch, the rest in File and topic settings (#2071)", () => {
-  test("the switch hides every topic from students in one click, and shows them again", async ({
+test.describe("What students see: one checkbox, then by topic (#2061)", () => {
+  test("the checkbox hides everything from students after asking, and shows it again", async ({
     page,
   }) => {
     await addTopics(course, TOPICS);
     await openSettings(page, course);
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
 
-    await expect(topicsSwitch(page)).toBeChecked();
-    await expect(
-      page.getByText("Students see every approved topic", { exact: false }),
-    ).toBeVisible();
-
-    await topicsSwitch(page).click();
+    await allCheckbox(page).click();
+    await expect(confirmDialog(page)).toContainText("Hide all materials from students?");
+    await confirmDialog(page).getByRole("button", { name: "Hide all materials" }).click();
     await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
-    await expect(topicsSwitch(page)).not.toBeChecked();
-    await expect(
-      page.getByText("Topic names are hidden from students", { exact: false }),
-    ).toBeVisible();
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "unchecked");
     expect(await studentTopics(course)).toEqual([]);
 
     // Stored, not just on screen.
     await page.reload();
     await settingsLink(page).click();
-    await expect(topicsSwitch(page)).not.toBeChecked();
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "unchecked");
 
-    await topicsSwitch(page).click();
-    await expect(topicsSwitch(page)).toBeChecked();
+    await allCheckbox(page).click();
+    await expect(confirmDialog(page)).toContainText("2 hidden topics will be shown to students.");
+    await confirmDialog(page).getByRole("button", { name: "Show files" }).click();
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
     await expect.poll(() => studentTopics(course)).toEqual(TOPICS);
   });
 
-  test("hiding one topic in File and topic settings leaves the switch off and says how many are shown", async ({
+  test("hiding one topic under Choose by topic leaves the checkbox part-ticked", async ({
     page,
   }) => {
     await addTopics(course, TOPICS);
     await openSettings(page, course);
 
-    await openDetails(page);
-    await detailsDialog(page).getByRole("checkbox", { name: "Sorting" }).click();
-    await detailsDialog(page).getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Choose by topic" }).click();
+    const sorting = page.getByRole("checkbox", { name: "Sorting" });
+    await sorting.click();
 
-    await expect(detailsDialog(page)).toBeHidden();
     await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
-    await expect(topicsSwitch(page)).not.toBeChecked();
-    await expect(
-      page.getByText("1 of 2 topics are shown. Choose which in File and topic settings."),
-    ).toBeVisible();
+    await expect(sorting).toHaveAttribute("data-state", "unchecked");
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "indeterminate");
+    await expect(page.getByText("1 topic is hidden.", { exact: false })).toBeVisible();
     expect(await studentTopics(course)).toEqual(["Recursion"]);
 
-    // From the mixed state, one click shows them all.
-    await topicsSwitch(page).click();
-    await expect(topicsSwitch(page)).toBeChecked();
+    // Showing the topic again needs no confirmation: no file was hidden on its own.
+    await sorting.click();
+    await expect(sorting).toHaveAttribute("data-state", "checked");
     await expect.poll(() => studentTopics(course)).toEqual(TOPICS);
   });
 
-  test("turning on course files in File and topic settings lets students list them", async ({
+  test("the browse switch lets students list the course's files, and nothing else changes", async ({
     page,
   }) => {
     await addTopics(course, TOPICS);
     expect(await studentMaterialsStatus(course)).toBe(403);
     await openSettings(page, course);
 
-    await openDetails(page);
-    const filesSwitch = detailsDialog(page).getByRole("switch", {
-      name: "Let students see course files",
-    });
-    await expect(filesSwitch).not.toBeChecked();
-    await filesSwitch.click();
-    await detailsDialog(page).getByRole("button", { name: "Save" }).click();
+    await expect(browseSwitch(page)).not.toBeChecked();
+    await browseSwitch(page).click();
 
-    await expect(detailsDialog(page)).toBeHidden();
     await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
     expect(await studentMaterialsStatus(course)).toBe(200);
-    // Only the file setting was sent: every topic is still shown.
-    await expect(topicsSwitch(page)).toBeChecked();
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
     expect(await studentTopics(course)).toEqual(TOPICS);
   });
 
-  test("closing File and topic settings without saving changes nothing", async ({ page }) => {
+  test("cancelling the confirmation changes nothing", async ({ page }) => {
     await addTopics(course, TOPICS);
     await openSettings(page, course);
     const saves: string[] = [];
     page.on("request", (request) => {
-      if (request.url().endsWith("/student-visibility")) saves.push(request.method());
+      if (request.url().endsWith("/student-visibility") && request.method() !== "GET") {
+        saves.push(request.method());
+      }
     });
 
-    await openDetails(page);
-    await detailsDialog(page).getByRole("checkbox", { name: "Recursion" }).click();
-    await detailsDialog(page)
-      .getByRole("switch", { name: "Let students see course files" })
-      .click();
-    await detailsDialog(page).getByRole("button", { name: "Close" }).click();
-    await expect(detailsDialog(page)).toBeHidden();
+    await allCheckbox(page).click();
+    await confirmDialog(page).getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmDialog(page)).toBeHidden();
 
-    await expect(topicsSwitch(page)).toBeChecked();
-    await openDetails(page);
-    await expect(detailsDialog(page).getByRole("checkbox", { name: "Recursion" })).toBeChecked();
-    await expect(
-      detailsDialog(page).getByRole("switch", { name: "Let students see course files" }),
-    ).not.toBeChecked();
-    await expect(detailsDialog(page).getByRole("button", { name: "Save" })).toBeDisabled();
-
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
     expect(saves).toEqual([]);
     expect(await studentTopics(course)).toEqual(TOPICS);
-    expect(await studentMaterialsStatus(course)).toBe(403);
   });
 
-  test("the switch is disabled until the course has an approved topic", async ({ page }) => {
+  test("a course with no files or topics points to the Materials tab", async ({ page }) => {
     await openSettings(page, course);
 
-    await expect(topicsSwitch(page)).toBeDisabled();
-    await expect(page.getByText("No approved topics yet", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("No files yet. Upload them on the Materials tab.")).toBeVisible();
+    await expect(allCheckbox(page)).toHaveCount(0);
 
     await addTopics(course, ["Recursion"]);
     await page.reload();
     await settingsLink(page).click();
-    await expect(topicsSwitch(page)).toBeEnabled();
-    await expect(topicsSwitch(page)).toBeChecked();
+    await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
   });
 });

@@ -149,6 +149,7 @@ Do not put passwords, API keys, private student information, or other secrets in
 
 - Students use course chat rather than the course Materials tab. Course-material files and their names are hidden from students; staff retain materials access according to their course permissions.
 - Instructors and TAs can upload learning materials, several files at once with progress shown for each, and instructors may connect/sync Canvas content. Materials are the reference content used to ground course chat, not a place for student submissions.
+- Instructors choose which files students can see in the course's **Settings** tab, under **What students see**: every file at once, by topic, or one file at a time, with an optional date for each file. A hidden file is not used to answer students in course chat.
 - **Materials are course learning materials only:** lecture notes, slides, readings and assignments. Don't upload rosters, grades or admin documents. Course chat, Penny and topic matching read every file here.
 - PNG, JPEG and WebP images are transcribed by a vision model before indexing. Check the transcription and retrieval with real examples; handwriting and charts can be misread. A scanned PDF without a text layer still needs OCR or conversion to a supported image.
 - A file may be linked to up to three approved topics. Automatic matching uses existing accepted topics; it does not invent new topics on upload. Instructors can change the links on the file. Use **Topics → Suggest topics** to request new suggestions, then review them. Core and course chat show students approved topics only, never suggestions or Uncategorized. AI Tutor's course page can still list suggestions that were never approved, and keeps listing one after it is dismissed; this is a known bug ([#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)).
@@ -254,7 +255,7 @@ Only administrators can use an EduAI API key until an administrator gives someon
 
 1. Open **Administration → API Access** and choose **Give API access**, or open the person's **⋮** menu in **User Management** and choose **Give API access**.
 2. Pick the person, enter the purpose (for example the project or course), and choose when access ends. It defaults to the end of the current term.
-3. Set the daily limits. They start at 200 requests and 200,000 tokens, counted over the last 24 hours across all of the person's keys.
+3. Set the daily limits. They start at 200 requests and 500,000 tokens, counted over the last 24 hours across all of the person's keys.
 4. Choose **Give access**. The person can now create their own key in **Settings → API Keys**.
 
 The API Access page shows each person's last 24 hours of use against their limits. **Revoke** stops their keys at once and disables them; to give access again later, grant it anew and they create a new key. Access also ends by itself on its end date, and their keys stop working then.

@@ -26,6 +26,7 @@ import { Label } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { SettingsPageScaffold } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
+import { ProviderAccountNotice } from "~/components/settings/provider-account-notice";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 import { authClient } from "~/lib/auth/client";
@@ -495,6 +496,7 @@ export function SettingsView({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                <ProviderAccountNotice />
                 {SETTINGS_KEY_PROVIDERS.map((provider) => (
                   <div key={provider.id} className="space-y-2">
                     <Label className="mb-1">{provider.label}</Label>

@@ -59,6 +59,9 @@ function renderView(overrides: Partial<React.ComponentProps<typeof LessonActivit
         onSubmit={vi.fn()}
         result={null}
         wasCorrect={false}
+        awaitingReview={false}
+        answerLocked={false}
+        onRetry={vi.fn()}
         submitState="allowed"
         isUserReady
         onGuideMe={vi.fn()}
@@ -90,6 +93,33 @@ describe("LessonActivityView", () => {
     expect(screen.getByRole("button", { name: /submit answer/i })).not.toBeDisabled();
   });
 
+  it("locks a restored wrong answer behind a Try again button (#2030)", () => {
+    const onRetry = vi.fn();
+    renderView({ result: "Not quite. Keep going!", answerLocked: true, onRetry });
+    expect(screen.queryByRole("button", { name: /submit answer/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Option A" })).toBeDisabled();
+    screen.getByRole("button", { name: /try again/i }).click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a restored ungraded answer as awaiting review with Edit answer (#2030)", () => {
+    renderView({
+      result: "Submitted. Your instructor will review this answer.",
+      awaitingReview: true,
+      answerLocked: true,
+    });
+    expect(screen.getByText("Awaiting review")).toBeInTheDocument();
+    const status = screen.getByText("Submitted. Your instructor will review this answer.");
+    expect(status.parentElement?.className).not.toContain("destructive");
+    expect(screen.getByRole("button", { name: /edit answer/i })).toBeInTheDocument();
+  });
+
+  it("offers no retry once a restored answer is correct (#2030)", () => {
+    renderView({ result: "Correct!", wasCorrect: true, answerLocked: true });
+    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeDisabled();
+  });
+
   it("marks the picked option red only while a wrong grade stands (#1644 bug 4)", () => {
     // A wrong grade in effect: the selected option renders in the error palette.
     const { rerender } = renderView({
@@ -118,6 +148,9 @@ describe("LessonActivityView", () => {
           onSubmit={vi.fn()}
           result={null}
           wasCorrect={false}
+          awaitingReview={false}
+          answerLocked={false}
+          onRetry={vi.fn()}
           submitState="allowed"
           isUserReady
           onGuideMe={vi.fn()}

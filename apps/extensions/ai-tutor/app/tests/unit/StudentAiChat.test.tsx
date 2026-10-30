@@ -718,6 +718,46 @@ describe("StudentAiChat — 403 message only for an actual previewer (#1660 revi
   });
 });
 
+// ── #1757: a rate limit says so, instead of "not available right now" ─────
+
+describe("StudentAiChat — rate-limit message (#1757)", () => {
+  it("shows the server's rate-limit sentence for a 429", async () => {
+    sendGuideMessage.mockRejectedValue(
+      new ApiHttpError(
+        429,
+        JSON.stringify({
+          error: "You're sending messages too quickly. Wait 30 seconds and try again.",
+          code: "AI_TUTOR_RATE_LIMITED",
+          retryAfter: 30,
+        }),
+      ),
+    );
+    renderChat();
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("You're sending messages too quickly. Wait 30 seconds and try again."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/not available right now/i)).not.toBeInTheDocument();
+  });
+
+  it("still names the rate limit when a 429 carries no readable body", async () => {
+    sendGuideMessage.mockRejectedValue(new ApiHttpError(429, "Too Many Requests"));
+    renderChat();
+
+    await typeAndSend("My question");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("You're sending messages too quickly. Wait a moment and try again."),
+      ).toBeInTheDocument(),
+    );
+  });
+});
+
 // ── #1003: chatId threading ───────────────────────────────────────────────
 
 describe("StudentAiChat — chatId threading (#1003)", () => {

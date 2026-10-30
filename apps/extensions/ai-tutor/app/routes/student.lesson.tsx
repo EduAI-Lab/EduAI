@@ -57,7 +57,14 @@ import { ModuleHero } from "../components/lessons/ModuleHero";
 import { LessonActivityView } from "../components/lessons/LessonActivityView";
 import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
 import api, { ApiHttpError } from "../lib/api";
-import type { Activity, Course, EnrollmentRole, Lesson, ModuleDetail } from "../lib/types";
+import type {
+  Activity,
+  ActivityLastSubmission,
+  Course,
+  EnrollmentRole,
+  Lesson,
+  ModuleDetail,
+} from "../lib/types";
 import type { Route } from "./+types/student.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "~/hooks/useLocalUser";
@@ -103,6 +110,12 @@ type FeedbackApi = typeof api & {
     payload: { rating: number; note?: string },
   ) => Promise<{ ok?: boolean }>;
 };
+
+/** `null` = no answer key, so the submission waits for staff grading (#1982). */
+function resultMessage(isCorrect: boolean | null) {
+  if (isCorrect === null) return PENDING_REVIEW_MESSAGE;
+  return isCorrect ? "Correct!" : "Not quite. Keep going!";
+}
 
 /** Fresh per-activity feedback record. Use this rather than a shared module
  * constant so each activity entry is a distinct mutable object. */
@@ -191,6 +204,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const [wasCorrect, setWasCorrect] = useState(false);
   // Last submit returned isCorrect=null: staff will grade it, not a wrong attempt.
   const [awaitingReview, setAwaitingReview] = useState(false);
+  // A restored answer is read-only until the student chooses to retry (#2030).
+  const [answerLocked, setAnswerLocked] = useState(false);
   const [prevActivityId, setPrevActivityId] = useState<number | null>(null);
   const [hintsRevealed, setHintsRevealed] = useState(false);
 
@@ -308,19 +323,23 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const isUserReady = Boolean(user);
 
   // Reset per-activity scratch state (answer inputs, last result, modal) the
-  // moment the active activity changes. Done during render rather than in an
-  // effect so the new activity never renders with the previous answer.
+  // moment the active activity changes, restoring the student's last answer and
+  // its current grade if they already submitted one (#2030). Done during render
+  // rather than in an effect so the new activity never renders with the
+  // previous answer.
   const currentActivityId = activity?.id ?? null;
   if (currentActivityId !== prevActivityId) {
     setPrevActivityId(currentActivityId);
     setHintsRevealed(false);
-    setWasCorrect(false);
-    setResult(null);
-    setAwaitingReview(false);
     setTempKnowledgeLevel("");
     setShowKnowledgeModal(false);
-    setMcq(null);
-    setText("");
+    const last = activity?.lastSubmission;
+    setMcq(last?.answer.answerOption ?? null);
+    setText(last?.answer.answerText ?? "");
+    setResult(last ? resultMessage(last.isCorrect) : null);
+    setWasCorrect(last?.isCorrect === true);
+    setAwaitingReview(last ? last.isCorrect === null : false);
+    setAnswerLocked(Boolean(last));
   }
 
   // Answer submission is a STUDENT-only capability scoped to THIS course, not a
@@ -375,22 +394,38 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         if (!text.trim()) return;
         res = await api.submitAnswer(activity.id, { answerText: text });
       }
-      const pending = res.isCorrect == null;
-      setAwaitingReview(pending);
-      if (pending) {
-        // Not graded yet (#1982): leave completion and wasCorrect untouched.
-        setResult(PENDING_REVIEW_MESSAGE);
-      } else {
-        setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
-        setOrderedActivities((prev) =>
-          prev.map((a, i) =>
-            i === idx
-              ? { ...a, completionStatus: res.isCorrect ? ("correct" as const) : undefined }
-              : a,
-          ),
-        );
-        setWasCorrect(Boolean(res.isCorrect));
-      }
+      const isCorrect = res.isCorrect ?? null;
+      const pendingReview = isCorrect === null;
+      setAwaitingReview(pendingReview);
+      setResult(resultMessage(isCorrect));
+
+      // Keep the answer on the row so leaving and returning restores it (#2030).
+      // A pending answer isn't a wrong attempt, so leave the prior status alone;
+      // completion is sticky like the server's (#1187).
+      const lastSubmission: ActivityLastSubmission = {
+        answer: {
+          answerText: activity.type === "MCQ" ? null : text,
+          answerOption: activity.type === "MCQ" ? mcq : null,
+        },
+        isCorrect,
+        score: null,
+        aiFeedback: null,
+        createdAt: new Date().toISOString(),
+      };
+      setOrderedActivities((prev) =>
+        prev.map((a, i) => {
+          if (i !== idx) return a;
+          const updated: Activity = { ...a, lastSubmission };
+          if (!pendingReview) {
+            updated.completionStatus =
+              isCorrect || a.completionStatus === "correct" ? "correct" : "incorrect";
+          }
+          return updated;
+        }),
+      );
+
+      // Not graded yet (#1982): leave wasCorrect untouched.
+      if (!pendingReview) setWasCorrect(Boolean(isCorrect));
 
       setFeedbackByActivity((prev) => {
         const current = prev[activity.id] ?? createFeedbackState();
@@ -440,7 +475,16 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setResult(null);
     setWasCorrect(false);
     setAwaitingReview(false);
+    setAnswerLocked(false);
     setTempKnowledgeLevel("");
+  }, []);
+
+  // Deliberate resubmission: unlock the restored answer for editing (#2030).
+  const handleRetry = useCallback(() => {
+    setAnswerLocked(false);
+    setResult(null);
+    setWasCorrect(false);
+    setAwaitingReview(false);
   }, []);
 
   // Direct set from the chat's inline chips — no dialog, no wall.
@@ -713,6 +757,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       result={result}
       wasCorrect={wasCorrect}
       awaitingReview={awaitingReview}
+      answerLocked={answerLocked}
+      onRetry={handleRetry}
       submitState={submitState}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}

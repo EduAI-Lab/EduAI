@@ -353,38 +353,21 @@ describe("CourseDetailManagerView — materials tab", () => {
     await waitFor(() => expect(screen.getByText(/could not rename material/i)).toBeInTheDocument());
   });
 
-  it("opens the student-visibility dialog, toggles visibility, and saves", async () => {
-    const props = renderView();
-    fireEvent.click(screen.getByRole("button", { name: /student visibility/i }));
-    expect(screen.getByText("Student visibility")).toBeInTheDocument();
-
-    const toggle = screen.getByRole("switch", { name: /visible to students/i });
-    fireEvent.click(toggle);
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(mockFetch).toHaveBeenCalledWith(
-        "/api/courses/c1/materials/m1",
-        expect.objectContaining({ method: "PATCH" }),
-      ),
-    );
-    await waitFor(() => expect(props.onRefreshMaterials).toHaveBeenCalled());
-  });
-
-  it("clears a scheduled availability date from the visibility dialog", () => {
-    renderView({
-      materials: [{ ...MATERIAL, availableAt: new Date(Date.now() + 86_400_000).toISOString() }],
+  it("shows which files are hidden but leaves the choosing to Settings (#2061)", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ studentFilesVisible: false, topics: [], files: [] }),
     });
-    fireEvent.click(screen.getByRole("button", { name: /student visibility/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect((screen.getByLabelText(/available from/i) as HTMLInputElement).value).toBe("");
-  });
+    renderView({ materials: [{ ...MATERIAL, visibleToStudents: false }] });
 
-  it("cancels the visibility dialog without saving", () => {
-    renderView();
-    fireEvent.click(screen.getByRole("button", { name: /student visibility/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByText("Student visibility")).not.toBeInTheDocument();
+    expect(screen.getByText("Hidden")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /student visibility/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "What students see in Settings" }));
+    expect(getCourseNavEntry(/settings/i)).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByText(/No files yet/)).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenCalledWith("/api/courses/c1/student-visibility");
   });
 
   it("renders a load-more-materials button and reports the click upward", () => {

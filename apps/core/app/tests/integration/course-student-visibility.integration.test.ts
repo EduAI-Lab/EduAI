@@ -43,6 +43,7 @@ async function seedUsers() {
 
 let users: Awaited<ReturnType<typeof seedUsers>>;
 let shownFileId: string;
+let plainFileId: string;
 let hiddenFileId: string;
 let shownTopicId: string;
 let hiddenTopicId: string;
@@ -113,6 +114,7 @@ beforeAll(async () => {
       },
     });
   shownFileId = (await file("Shown")).id;
+  plainFileId = (await file("Plain")).id;
   hiddenFileId = (await file("Hidden", { visibleToStudents: false })).id;
   await file("Scheduled", { availableAt: new Date("2099-01-01") });
   await file("Canvas unpublished", { unpublishedAt: new Date() });
@@ -195,13 +197,18 @@ describe("course student visibility (#2002)", () => {
   it("shares only the files a student may see, read-only", async () => {
     mockSession(users.student);
 
-    expect(await listedIds()).toEqual([shownFileId]);
-    expect(await listedIds(`?ids=${shownFileId},${hiddenFileId}`)).toEqual([shownFileId]);
-    expect((await readFiles(filesArgs("GET", shownFileId))).status).toBe(200);
+    // #2061: Shown is filed under the topic hidden above, and a hidden topic
+    // hides its files, so only the unfiled Plain file is shared.
+    expect(await listedIds()).toEqual([plainFileId]);
+    expect(await listedIds(`?ids=${plainFileId},${shownFileId},${hiddenFileId}`)).toEqual([
+      plainFileId,
+    ]);
+    expect((await readFiles(filesArgs("GET", plainFileId))).status).toBe(200);
+    expect((await readFiles(filesArgs("GET", shownFileId))).status).toBe(404);
     expect((await readFiles(filesArgs("GET", hiddenFileId))).status).toBe(404);
-    expect((await changeFile(filesArgs("DELETE", shownFileId))).status).toBe(403);
+    expect((await changeFile(filesArgs("DELETE", plainFileId))).status).toBe(403);
     expect(
-      await prisma.courseMaterial.findUniqueOrThrow({ where: { id: shownFileId } }),
+      await prisma.courseMaterial.findUniqueOrThrow({ where: { id: plainFileId } }),
     ).toMatchObject({ deletedAt: null });
   });
 

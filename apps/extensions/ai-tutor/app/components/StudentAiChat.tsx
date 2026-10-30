@@ -79,6 +79,7 @@ import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 import "~/styles/chat-markdown.css";
 import { randomId } from "@eduai/ui/runtime-env";
 import { MARKDOWN_STYLES } from "~/lib/markdown-styles";
+import { ProviderKeyGuideLink } from "~/components/settings/provider-account-notice";
 
 type ChatTab = "teach" | "guide" | "custom";
 
@@ -211,6 +212,29 @@ function getInitialChatState() {
     guide: { messages: [], input: "", loading: false, chatId: null },
     custom: { messages: [], input: "", loading: false, chatId: null },
   } satisfies ChatState;
+}
+
+const RATE_LIMIT_FALLBACK = "You're sending messages too quickly. Wait a moment and try again.";
+
+const rateLimitBodySchema = z.object({
+  code: z.literal("AI_TUTOR_RATE_LIMITED"),
+  error: z.string().min(1),
+});
+
+/**
+ * #1757: a 429 used to read as "not available right now", which sends the
+ * student off to report an outage when all they need to do is wait. The
+ * server words the wait (`AI_TUTOR_RATE_LIMITED`); any other 429 body (a
+ * proxy, the auth middleware) still gets a sentence that names the limit.
+ */
+function rateLimitMessage(responseText: string): string {
+  let parsed;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    return RATE_LIMIT_FALLBACK;
+  }
+  return rateLimitBodySchema.safeParse(parsed).data?.error ?? RATE_LIMIT_FALLBACK;
 }
 
 const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(function StudentAiChat(
@@ -594,6 +618,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         } else if (error instanceof ApiTimeoutError) {
           console.error("AI chat timed out:", error);
           appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
+        } else if (error instanceof ApiHttpError && error.status === 429) {
+          console.error("AI chat rate limited:", error);
+          appendMessage(tab, "assistant", rateLimitMessage(error.message));
         } else {
           console.error("AI chat failed:", error);
           // #1660 review (ariqmuldi): the server 403s these endpoints for
@@ -963,7 +990,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     Add your {getProviderLabel(currentProvider)} API key to chat with your study
-                    buddy. It stays on this device.
+                    buddy. It's saved to your EduAI account.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    You need an account with {getProviderLabel(currentProvider)} first to create the
+                    key. A ChatGPT or Gemini app subscription is not an API key.{" "}
+                    <ProviderKeyGuideLink />
                   </p>
                 </div>
                 <div className="flex flex-col items-center gap-2">
@@ -1136,9 +1168,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored for your account on this device and sent through EduAI services to{" "}
-              {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
-              device. You can also manage keys in Settings → Providers.
+              Saved securely to your EduAI account and sent through EduAI services to{" "}
+              {getProviderLabel(currentProvider)} when you use AI. You can also manage keys in
+              Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
