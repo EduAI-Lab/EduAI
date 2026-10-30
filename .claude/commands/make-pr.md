@@ -4,7 +4,7 @@ You are helping the user create a pull request that follows the EduAI project co
 
 First, read these to load the current conventions:
 - `docs/CONVENTIONS.md` — PR rules and checklist
-- `docs/ISSUE-CONVENTIONS.md` — where issue facts live (title, board fields, epic labels, hours)
+- `docs/ISSUE-CONVENTIONS.md` — where issue facts live (title, board fields)
 - `.github/pull_request_template.md` — the PR body to fill in
 
 Then run these commands to understand the current state:
@@ -36,16 +36,14 @@ Work through each item in order. For each item:
 - Ask the user: what GitHub issue number(s) does this PR close? (A PR can close more than one issue — ask if there are multiple.)
 - If they don't have one, draft the issue for them using the **EduAI Task** issue form (`.github/ISSUE_TEMPLATE/task.yml`):
   - **Title** — a plain description of the work. Do **not** put a size or week in the title (no `M: Week 4 - …` prefix); see `docs/ISSUE-CONVENTIONS.md`
-  - **Size** (S/M/L), **Week**, **Description**, **Epic link** (`EPIC: <link>` — ask the user which epic), and **Hours** — one line per contributor per week in exactly this format: `Hours to complete (Week N): X hours [github-handle]` (bracketed GitHub handles only, not names)
+  - **Size** (S/M/L), **Week** and **Description**
   - Print the fields clearly so the user can paste them into https://github.com/EduAI-Lab/EduAI/issues/new/choose
-  - Remind them to assign everyone working on it (do not leave unassigned), add the matching `epic/*` label, add it to the **Edu AI Core** board (https://github.com/orgs/EduAI-Lab/projects/8), and set its Size, Priority and Iteration fields there
+  - Remind them to assign everyone working on it (do not leave unassigned), add it to the **Edu AI Core** board (https://github.com/orgs/EduAI-Lab/projects/8), and set its Size and Priority fields there
   - Wait for them to create the issue and give you the issue number(s) before continuing
 - If they have one, confirm each issue exists using `gh issue view <number> --repo EduAI-Lab/EduAI` and check:
   - The issue is **open** (not closed — if it's closed, flag it and ask the user to confirm this is the right issue)
-  - The issue body contains an `EPIC:` link and the issue carries an `epic/*` label (if missing, remind the user to add them)
   - The issue has assignees set (if none, remind the user to assign everyone working on it)
-  - The issue body has hours lines in the required format
-- Remind the user: every issue must be on the Edu AI Core board with Size, Priority and Iteration set
+- Remind the user: every issue must be on the Edu AI Core board with Size and Priority set
 
 ### Item 2 — Tests (most important)
 - Look at the changed files and identify what logic was added or modified
@@ -74,8 +72,6 @@ Work through each item in order. For each item:
   - Code comments are added only where the WHY is non-obvious (not every line)
   - New files are grouped with related files, not dumped in the root
   - The implementation follows modularity and separation of concerns
-
-> `CHANGELOG.md` is deprecated (archived at `docs/deprecated/CHANGELOG.md`). Do not add entries to it — the PR and linked issues are the record of the change.
 
 ---
 
