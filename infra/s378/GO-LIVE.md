@@ -141,6 +141,37 @@ restart units, so Core keeps running the previous process until
 Question Maker builds finish (1–3 min). Run step 2 as soon as step 1 prints
 `BUILD_OK`. Do not manually reorder these steps around a migration or frontend build.
 
+### Keeping dev current (#2050)
+
+Dev drifted 489 commits behind `development` in September and October 2026
+because nobody ran the deploy for three and a half weeks. Anything "checked on
+dev" in that window was checked against old code. Two things prevent a repeat:
+
+- **The nightly update.** `eduai-dev-update.timer` runs `eduai-dev-update.service`
+  at 04:00 Pacific. As `service_eduai`, it skips at once when the latest
+  `development` commit is already deployed. Otherwise it runs
+  `eduai-dev-build`, then `go-live-build.sh --restart-only`, and records the
+  commit only after every port is up. A failed build leaves the running
+  services alone, fails the unit, and is retried the next night.
+  `go-live-systemd-install.sh` installs the units but does not enable the timer:
+
+  ```bash
+  sudo systemctl enable --now eduai-dev-update.timer   # switch nightly updates on
+  sudo systemctl start eduai-dev-update.service        # update now (same job)
+  journalctl -u eduai-dev-update.service -n 50         # what the last run did
+  systemctl list-timers eduai-dev-update.timer         # when it runs next
+  ```
+
+- **Update after a merge you want to test.** Run the job by hand (above), or
+  the two deploy steps, instead of testing on whatever dev happens to run.
+
+To check how far behind dev is:
+
+```bash
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore && git fetch -q origin \
+  && git rev-list --count "$(cat /var/lib/service_eduai/dev-deployed-commit)..origin/development"
+```
+
 Supported scoped options include:
 
 ```bash
