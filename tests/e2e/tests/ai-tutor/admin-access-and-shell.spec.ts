@@ -296,8 +296,8 @@ test.describe("AI Tutor ADMIN — Settings", () => {
     // validated or used.
     await expect(page.getByText(/stored securely in Core for this account/)).toBeVisible();
     await expect(page.getByText(/sent through EduAI services/)).toBeVisible();
-    await expect(page.getByText("Gemini")).toBeVisible();
-    await expect(page.getByText("OpenAI")).toBeVisible();
+    await expect(page.getByText("Gemini", { exact: true })).toBeVisible();
+    await expect(page.getByText("OpenAI", { exact: true })).toBeVisible();
   });
 });
 
