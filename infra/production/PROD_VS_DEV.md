@@ -33,7 +33,7 @@ It prints setting names, never values, so the output is safe to share.
 
 Each item is drift to fix, not a design choice.
 
-- **Course deletes don't reach the extensions on prod.** Prod's `eduai-core.env`
+- **Course deletes don't reach the extensions on prod (#2091).** Prod's `eduai-core.env`
   has no `AI_TUTOR_SERVER_URL` or `QM_BACKEND_URL`. Core skips an extension whose
   URL is unset, so deleting a course leaves its AI Tutor and Question Maker data
   behind. Both are now in `core.env.example`.
@@ -45,9 +45,9 @@ Each item is drift to fix, not a design choice.
 - **Prod's Core vhost** is `eduai.ok.ubc.ca.conf` with no `CustomLog`/`ErrorLog`
   (it logs to Apache's shared log). The repo's `install-apache-vhost` writes
   `my.eduai.ok.ubc.ca.conf`, which would add a second vhost for the same site.
-- **Dev has no fleet model map**, so a 9B request can be routed to CMPS02, which
+- **Dev has no fleet model map (#2092)**, so a 9B request can be routed to CMPS02, which
   doesn't serve the 9B.
-- **Dev's `service_eduai` crontab** still runs four jobs for the old standalone
+- **Dev's `service_eduai` crontab (#2093)** still runs four jobs for the old standalone
   Question Maker (`/srv/www/questionmaker.ok.ubc.ca/scripts/`), including a
   nightly deploy.
 - **Dev settings clutter:** `VLLM_EMBED_MAX_CONCURRENCY` and `CHAT_SMALL_MODEL` are
