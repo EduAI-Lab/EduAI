@@ -2,20 +2,23 @@ You are helping the user create a pull request that follows the EduAI project co
 
 ## Setup
 
-First, read `eduai-summer-2026/CONVENTIONS.md` to load the full conventions reference.
+First, read these to load the current conventions:
+- `docs/CONVENTIONS.md` — PR rules and checklist
+- `docs/ISSUE-CONVENTIONS.md` — where issue facts live (title, board fields, epic labels, hours)
+- `.github/pull_request_template.md` — the PR body to fill in
 
 Then run these commands to understand the current state:
 - `git branch --show-current` — current branch name
 - `git status --short` — any uncommitted changes
 - `git log --oneline -10` — recent commits
-- `git diff origin/development...HEAD --name-only 2>/dev/null || git diff origin/main...HEAD --name-only` — files changed on this branch
-- `gh pr list --head $(git branch --show-current) --repo EduAI-Lab/EduAI 2>/dev/null` — check if a PR already exists for this branch
+- `git fetch origin development && git diff origin/development...HEAD --name-only` — files changed on this branch
+- `gh pr list --head $(git branch --show-current) --repo EduAI-Lab/EduAI` — check if a PR already exists for this branch
 
 **Before starting the checklist, flag any of these blocking issues and ask the user to resolve them first:**
 - **Uncommitted changes exist** — `git status` shows modified or untracked files that should be part of this PR. Ask the user to commit them first. Remind them to commit in **logical groups with meaningful messages** — do not `git add .` and dump everything into one commit. Each commit should represent one coherent change (e.g. "feat: add user auth endpoint" and "test: add auth endpoint tests" as separate commits, not combined). Confirm they are done before continuing.
 - **No commits on branch** — if the branch is 0 commits ahead of the base, there is nothing to PR yet. Stop and tell the user.
 - **PR already exists** — if `gh pr list` returns a result, show the existing PR URL and ask the user if they want to update it instead of creating a new one.
-- **Branch behind base** — run `git log HEAD..origin/development --oneline 2>/dev/null | wc -l` to check. If the branch is behind, warn the user they should rebase or merge from development before creating the PR to avoid conflicts.
+- **Branch behind base** — run `git log HEAD..origin/development --oneline | wc -l` to check. If the branch is behind, warn the user they should rebase or merge from development before creating the PR to avoid conflicts.
 
 Report a brief summary (branch name, commits ahead, files changed, any blocking issues found) before starting the checklist.
 
@@ -31,20 +34,18 @@ Work through each item in order. For each item:
 
 ### Item 1 — Linked Issue
 - Ask the user: what GitHub issue number(s) does this PR close? (A PR can close more than one issue — ask if there are multiple.)
-- If they don't have one, draft the issue for them to create manually:
-  - **Title** following the format `Size: Week N - Task` (determine size S/M/L and current week from the scope of changes)
-  - **Body** with: a brief description of what was done and why, hours worked (ask the user how many people are working on it — if multiple, format is `Hours to complete (Week m): n hours [person name]` per person), and the epic link (ask the user)
-  - Print the title and body clearly so the user can copy-paste it into https://github.com/EduAI-Lab/EduAI/issues/new
-  - Remind them to assign all correct assignees on the issue (one or more people; do not leave unassigned)
-  - Remind them to add the week label matching the week in the title (e.g. `Week 4`, `Week 5`); an issue can have more than one week label
-  - Remind them to add the issue to the project board at https://github.com/orgs/EduAI-Lab/projects/8
+- If they don't have one, draft the issue for them using the **EduAI Task** issue form (`.github/ISSUE_TEMPLATE/task.yml`):
+  - **Title** — a plain description of the work. Do **not** put a size or week in the title (no `M: Week 4 - …` prefix); see `docs/ISSUE-CONVENTIONS.md`
+  - **Size** (S/M/L), **Week**, **Description**, **Epic link** (`EPIC: <link>` — ask the user which epic), and **Hours** — one line per contributor per week in exactly this format: `Hours to complete (Week N): X hours [github-handle]` (bracketed GitHub handles only, not names)
+  - Print the fields clearly so the user can paste them into https://github.com/EduAI-Lab/EduAI/issues/new/choose
+  - Remind them to assign everyone working on it (do not leave unassigned), add the matching `epic/*` label, add it to the **Edu AI Core** board (https://github.com/orgs/EduAI-Lab/projects/8), and set its Size, Priority and Iteration fields there
   - Wait for them to create the issue and give you the issue number(s) before continuing
 - If they have one, confirm each issue exists using `gh issue view <number> --repo EduAI-Lab/EduAI` and check:
   - The issue is **open** (not closed — if it's closed, flag it and ask the user to confirm this is the right issue)
-  - The issue body contains an `EPIC:` link (if missing, remind the user to add it)
-  - The issue has assignees set (if none, remind the user to assign everyone working on it — one or more people)
-  - The issue has at least one week label (e.g. `Week 4`, `Week 5`) matching the week in the title; multiple week labels are allowed (if missing entirely, remind the user to add one)
-- Remind the user: every issue must be on the project board at https://github.com/orgs/EduAI-Lab/projects/8 and linked to an epic
+  - The issue body contains an `EPIC:` link and the issue carries an `epic/*` label (if missing, remind the user to add them)
+  - The issue has assignees set (if none, remind the user to assign everyone working on it)
+  - The issue body has hours lines in the required format
+- Remind the user: every issue must be on the Edu AI Core board with Size, Priority and Iteration set
 
 ### Item 2 — Tests (most important)
 - Look at the changed files and identify what logic was added or modified
@@ -59,21 +60,22 @@ Work through each item in order. For each item:
 - If TESTS.md is missing entries, identify exactly which rows need to be added (filename linked to path, plain-English description of what it tests)
 - Help the user add the missing rows if needed
 
-
 ### Item 4 — README.md
 - Read `README.md`
 - Check if any changes in this PR require README updates (new features, changed setup steps, new env vars, new commands, etc.)
 - Report what you find and ask the user to confirm the README is up to date
 
 ### Item 5 — MEMORY.md
-- Remind the user: MEMORY.md is not git-tracked — it lives in `.claude/memory/MEMORY.md`
-- Ask: "Have you updated MEMORY.md with anything non-obvious about this implementation that would help AI agents in future sessions?"
+- `MEMORY.md` at the repo root is git-tracked working memory for AI agents
+- Ask: "Is there anything non-obvious about this implementation that should be added to MEMORY.md to help AI agents in future sessions?" If so, help add it as part of this PR
 
 ### Item 6 — Code quality
 - Ask the user to confirm:
   - Code comments are added only where the WHY is non-obvious (not every line)
   - New files are grouped with related files, not dumped in the root
   - The implementation follows modularity and separation of concerns
+
+> `CHANGELOG.md` is deprecated (archived at `docs/deprecated/CHANGELOG.md`). Do not add entries to it — the PR and linked issues are the record of the change.
 
 ---
 
@@ -85,36 +87,14 @@ Once all 6 items are confirmed, do the following:
 
 2. **Draft a PR title** — clear and descriptive, explaining what was implemented (not just what files changed). Show it to the user and ask for approval.
 
-3. **Draft the PR description** using this template:
-   ```
-   ## Summary
-   [What was implemented and why]
-
-   ## Changes
-   - [bullet per meaningful change]
-
-   ## Testing
-   [What tests were written and confirmation all tests pass]
-
-   ## Checklist
-   - [ ] Linked to issue (issue linked to epic on project board)
-   - [ ] Tests written and all tests pass
-   - [ ] TESTS.md updated
-   - [ ] README.md updated
-   - [ ] MEMORY.md updated
-   - [ ] 2 reviewers assigned (1 dev team + 1 project lead)
-
-   Closes #[issue-number]
-   Closes #[issue-number-2] (add one line per issue, remove if only one)
-   ```
-   Show the draft to the user and ask for approval before creating.
+3. **Draft the PR description** by filling in `.github/pull_request_template.md` — Summary, Changes, Testing, Issue Linkage (`Closes #<number>`, one line per issue), Checklist (tick only what was actually confirmed above), Reviewer Notes, and Screenshots for UI changes (remove that section if not applicable). Show the draft to the user and ask for approval before creating.
 
 4. **Confirm base branch** — ask the user if the PR should target `development` (default) or another branch.
 
 5. **Verify issue linking before creating** — confirm the PR description contains a `Closes #<number>` line for every issue identified in Item 1. If any issue number is missing, ask the user for it before proceeding. Do not create the PR without at least one linked issue. As a last resort, if the user cannot provide one, remind them they must manually link the issue on GitHub after creation — a PR cannot be merged without a linked issue.
 
-6. **Create the PR** using `gh pr create` with the approved title, body, and base branch. Add `--draft` if the user chose draft mode. Do not add a `Co-Authored-By` line anywhere in the commit message or PR body.
+6. **Create the PR** using `gh pr create --repo EduAI-Lab/EduAI` with the approved title, body, and base branch (write the body to a file and pass `--body-file` so the Markdown survives). Add `--draft` if the user chose draft mode. Do not add a `Co-Authored-By` line or a "Generated with Claude Code" line anywhere in the commit messages or PR body.
 
 7. After creation, remind the user:
    - **Assign yourself (and anyone else working on it) as the PR assignee** — everyone contributing to the PR should be assigned to it.
-   - **Assign two reviewers** — one from the dev team, one from the project leads. They must be from different groups (two dev team members does not count). The PR cannot be merged until both approve.
+   - **Assign a reviewer** — one approving review is required before the PR can be merged.
