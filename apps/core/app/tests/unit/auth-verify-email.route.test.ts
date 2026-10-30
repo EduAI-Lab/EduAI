@@ -30,7 +30,7 @@ describe("auth/verify-email loader", () => {
   it("renders for a user without a session", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
-    await expect(loader(routeArgs())).resolves.toBeNull();
+    await expect(loader(routeArgs())).resolves.toEqual({ email: "" });
   });
 
   it("continues a verified user to Canvas onboarding", async () => {
@@ -49,7 +49,7 @@ describe("auth/verify-email loader", () => {
       user: { email: "student@ubc.ca", emailVerified: false },
     } as never);
 
-    await expect(loader(routeArgs())).resolves.toBeNull();
+    await expect(loader(routeArgs())).resolves.toEqual({ email: "" });
   });
 });
 
