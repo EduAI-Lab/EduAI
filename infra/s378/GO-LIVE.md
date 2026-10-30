@@ -32,6 +32,33 @@ The browser clients are built during deployment and served by the host web serve
 There are no supported development `npm run dev` or user-level PM2 processes on
 this host. The current deployment is systemd plus built static assets.
 
+### Docker containers
+
+The databases and Redis come from the checkout's `docker-compose.dev.yml`
+(compose project `eduai`). These are the only EduAI containers dev should run:
+
+| Container | Purpose | Host port |
+| --- | --- | ---: |
+| `eduai-db` | Core PostgreSQL (`eduai` database; Core's `DATABASE_URL`) | `54320` |
+| `eduai-ai-tutor-db` | AI Tutor PostgreSQL | `54321` |
+| `eduai-question-maker-db` | Question Maker PostgreSQL | `55432` |
+| `eduai-redis` | Redis | `63790` |
+
+Other containers on s378 (`nuteach-*`, `contextcodeai-*`, `judge0-*`) belong to
+other projects; leave them alone.
+
+A second Core database, `eduaicore-postgres-1` (compose project `eduaicore`,
+database `deveduaidb`, from the first dev setup in May 2026), was found still
+running with no connections and empty tables. It was removed on 2026-10-29
+(#1871): a dump is at `/home/soumilcs/deveduaidb-2026-10-29.dump` and the
+volume `eduaicore_eduai_pgdata` is kept until the team agrees to delete it.
+Check which database Core uses with:
+
+```bash
+sudo -u service_eduai grep -E '^DATABASE_URL=' apps/core/.env | sed -E 's#//[^@]*@#//***@#'
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+```
+
 ## Current verified snapshot
 
 On 2026-09-02, after updating and rebuilding the `development` checkout, the
