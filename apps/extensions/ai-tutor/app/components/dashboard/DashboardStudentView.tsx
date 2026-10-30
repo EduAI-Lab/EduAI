@@ -64,7 +64,7 @@ export function DashboardStudentView({
   const coursesWithProgress = notStarted.length + inProgress.length + completed.length;
 
   const analytics = (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 @2xl/dashboard:grid-cols-2">
       <PanelCard title="Course status">
         {coursesWithProgress === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No enrolled courses yet.</p>

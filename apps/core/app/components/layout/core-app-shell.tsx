@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import {
+  GettingStartedButton,
   CommandSearchButton,
   NavShell,
   OnboardingChecklist,
@@ -171,6 +172,13 @@ export function CoreAppShell({
             assistant={<AssistantHeaderButton />}
             help={
               <>
+                <GettingStartedButton
+                  platform="core"
+                  userId={user.id}
+                  role={user.role}
+                  pathname={pathname}
+                  navigate={navigate}
+                />
                 <PageTourButton
                   platform="core"
                   pathname={pathname}
@@ -192,15 +200,18 @@ export function CoreAppShell({
         mainClassName={mainClassName}
         providerClassName={providerClassName}
       >
-        {pathname === "/dashboard" && (
+        {pathname === "/dashboard" ? (
           <OnboardingChecklist
             platform="core"
             userId={user.id}
             role={user.role}
             navigate={navigate}
-          />
+          >
+            {children}
+          </OnboardingChecklist>
+        ) : (
+          children
         )}
-        {children}
       </NavShell>
       {/* #1822: the one mount point for the help assistant. It renders nothing
           unless the root loader's gate says it could answer for this user. */}

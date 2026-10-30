@@ -71,7 +71,7 @@ export function DashboardAdminView({
   ];
 
   const analytics = (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 @2xl/dashboard:grid-cols-2">
       <PanelCard title="Publish status">
         {totalCourses === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No courses yet.</p>
