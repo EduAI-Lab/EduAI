@@ -3,6 +3,7 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import { resetEmailCookie, serializePendingEmail } from "~/lib/auth/pending-email-cookie.server";
 import { forgotPasswordSchema, PASSWORD_RESET_OTP_LENGTH } from "~/lib/auth/schemas";
 import { auth } from "~/lib/auth/server";
 
@@ -51,7 +52,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // Always the same redirect, for every address. The reset page phrases it as
   // a conditional ("if an account exists"), because that is all we may say.
-  return redirect(`/auth/reset-password?email=${encodeURIComponent(email)}`);
+  // #1942: the address rides in a short-lived cookie, never the URL.
+  return redirect("/auth/reset-password", {
+    headers: { "Set-Cookie": await serializePendingEmail(resetEmailCookie, email) },
+  });
 }
 
 function retryMessage(retryAfter: number): string {
