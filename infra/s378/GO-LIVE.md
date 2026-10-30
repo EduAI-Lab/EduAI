@@ -103,8 +103,10 @@ Deploys are two steps (#1872). The checkout belongs to the `service_eduai`
 service account, so everything that writes to it runs as that account through
 the root-owned wrapper `/usr/local/sbin/eduai-dev-build` (any `eduai-dev` member
 may run it; `go-live-systemd-install.sh` installs it and its sudoers rule). The
-restart runs as you, because the service account has no login and no polkit
-rights:
+service account has no login, but it is in `eduai-dev`, so the polkit rule
+`49-eduai-dev.rules` lets it restart the `eduai-*` units (verified 2026-10-29).
+That is what lets the nightly update below run unattended. By hand, run the
+restart as yourself:
 
 ```bash
 # 1. As the service account: refuses local edits to tracked files, switches the
@@ -135,8 +137,8 @@ In the two-step deploy, steps 1–6 run in `eduai-dev-build` and steps 7–8 in
 
 In a one-shot deploy the Core restart happens right after the Core build, so an
 old server process does not keep serving assets the build just replaced. **In the
-two-step deploy that early restart is skipped:** the service account cannot
-restart units, so Core keeps running the previous process until
+two-step deploy that early restart is skipped:** `eduai-dev-build` passes
+`--no-restart`, so Core keeps running the previous process until
 `--restart-only`, and dev.eduai can render unstyled while the AI Tutor and
 Question Maker builds finish (1–3 min). Run step 2 as soon as step 1 prints
 `BUILD_OK`. Do not manually reorder these steps around a migration or frontend build.
