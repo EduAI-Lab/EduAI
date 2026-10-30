@@ -189,6 +189,13 @@ for u in "${UNITS[@]}"; do
 done
 sudo install -m 0644 -o root -g root "$UNIT_SRC/eduai-dev.target" "$SYSTEMD_DIR/eduai-dev.target"
 echo "  $SYSTEMD_DIR/eduai-dev.target"
+# #2050: nightly "keep dev current" job. Installed but NOT enabled here, so
+# re-running this script never switches automatic updates on by itself.
+# Turn it on with: sudo systemctl enable --now eduai-dev-update.timer
+for u in eduai-dev-update.service eduai-dev-update.timer; do
+  sudo install -m 0644 -o root -g root "$UNIT_SRC/$u" "$SYSTEMD_DIR/$u"
+  echo "  $SYSTEMD_DIR/$u (timer not enabled)"
+done
 
 echo
 echo "=== installing restricted cron sync helper ==="
