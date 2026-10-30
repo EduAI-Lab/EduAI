@@ -1,6 +1,7 @@
 import type { JsonObject } from "~/lib/json-value";
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
+import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import prisma from "~/lib/prisma.server";
@@ -19,14 +20,14 @@ import type {
   UploadOutcome,
 } from "~/hooks/api/use-course-materials";
 import { useCourseTAs } from "~/hooks/api/use-course-tas";
+import { termLabel } from "@eduai/ui";
+import { usePolicyGate } from "~/components/policy/policy-gate";
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbSeparator,
-} from "@eduai/ui";
-import { CourseSwitcher } from "~/components/layout/course-switcher";
+  COURSE_TAB_PARAM,
+  buildCourseNavConfig,
+  getCourseNavItems,
+  resolveCourseNavKey,
+} from "~/lib/courses/course-nav-items";
 import type {
   CourseMaterial as UploadMaterial,
   UploadItem,
@@ -215,9 +216,45 @@ const UPLOAD_READY_MESSAGE = "Material uploaded and processed successfully";
 const UPLOAD_PROCESSING_MESSAGE =
   "Upload accepted. Processing is taking a while — the list will update when it finishes.";
 
+/** The URL's search string without the course-section param. */
+function searchWithoutTab(url: URL): string {
+  const params = new URLSearchParams(url.search);
+  params.delete(COURSE_TAB_PARAM);
+  return params.toString();
+}
+
+/**
+ * Picking a course menu section only changes `?tab=`, which the loader never
+ * reads, so it must not refetch the whole course. An explicit revalidation
+ * (same URL) and every other navigation keep the default behaviour.
+ */
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  const onlyTabChanged =
+    !formMethod &&
+    currentUrl.pathname === nextUrl.pathname &&
+    currentUrl.search !== nextUrl.search &&
+    searchWithoutTab(currentUrl) === searchWithoutTab(nextUrl);
+  return onlyTabChanged ? false : defaultShouldRevalidate;
+}
+
 export default function CourseDetailPage() {
   const { course, user, access, courseInstructors, assistantMaterialScope } =
     useLoaderData<typeof loader>();
+  const { isEnabled } = usePolicyGate();
+  const [searchParams] = useSearchParams();
+  const courseNavItems = getCourseNavItems(access, isEnabled);
+  const courseNav = buildCourseNavConfig({
+    courseId: course.id,
+    code: course.code,
+    term: termLabel(course.term, course.year),
+    items: courseNavItems,
+    activeKey: resolveCourseNavKey(searchParams.get(COURSE_TAB_PARAM), courseNavItems),
+  });
   const revalidator = useRevalidator();
   // The course as a whole, published to the shell-mounted assistant. No view here
   // narrows it to one material: students never open a file (#1962).
@@ -517,35 +554,7 @@ export default function CourseDetailPage() {
   };
 
   return (
-    <CoreAppShell
-      user={user}
-      title={course.name}
-      breadcrumbs={
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/dashboard">Home</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/courses">Courses</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <CourseSwitcher
-                currentCourseId={course.id}
-                currentCourseCode={course.code}
-                currentCourseName={course.name}
-              />
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      }
-    >
+    <CoreAppShell user={user} title={course.name} courseNav={courseNav}>
       <div className="flex flex-1 flex-col">
         <div className="px-4 lg:px-6 py-6">
           {access === "admin" || access === "unit" || access === "instructor" ? (

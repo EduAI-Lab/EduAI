@@ -7,6 +7,11 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 import { getPolicy } from "~/lib/policy.server";
 import { firstFieldError } from "~/lib/form-errors";
 import {
+  INVITE_NETWORK_ERROR,
+  inviteEmailNotice,
+  type InviteNotice,
+} from "~/lib/invitations/email-notice";
+import {
   Button,
   Badge,
   Input,
@@ -93,7 +98,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 const formatDate = (s: string) =>
-  new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  new Date(s).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 
 function StatusBadge({ invite }: { invite: Invitation }) {
   if (invite.status === "PENDING" && invite.isExpired) {
@@ -139,8 +148,8 @@ export default function UnitAdminInvitationsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Banner showing the most recent accept link (email may be console-only in dev)
-  const [notice, setNotice] = useState<{ message: string; link?: string } | null>(null);
+  // Banner showing the most recent accept link; a warning when the email didn't go out (#1860)
+  const [notice, setNotice] = useState<InviteNotice | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Invite pending cancellation; drives the confirmation dialog.
@@ -205,13 +214,10 @@ export default function UnitAdminInvitationsPage() {
       }
       setDialogOpen(false);
       resetForm();
-      setNotice({
-        message: data.emailDelivered
-          ? `Invitation emailed to ${data.invitation.email}.`
-          : `Invitation created for ${data.invitation.email} (email not configured — copy the link below).`,
-        link: data.acceptUrl,
-      });
+      setNotice(inviteEmailNotice(data.invitation.email, data, "created"));
       await fetchInvites();
+    } catch {
+      setFormError(INVITE_NETWORK_ERROR);
     } finally {
       setSubmitting(false);
     }
@@ -221,19 +227,24 @@ export default function UnitAdminInvitationsPage() {
     if (resendingId) return;
     setResendingId(invite.id);
     try {
-      const res = await fetch(`/api/invitations/${invite.id}`, { method: "POST" });
+      const res = await fetch(`/api/invitations/${invite.id}`, {
+        method: "POST",
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setNotice({ message: `Could not resend: ${errorMessage(data?.error, res.status)}` });
+        setNotice({
+          message: `Could not resend: ${errorMessage(data?.error, res.status)}`,
+          tone: "warning",
+        });
         return;
       }
-      setNotice({
-        message: data.emailDelivered
-          ? `Invitation re-sent to ${invite.email}.`
-          : `New link generated for ${invite.email} (email not configured — copy below).`,
-        link: data.acceptUrl,
-      });
+      setNotice(inviteEmailNotice(invite.email, data, "resent"));
       await fetchInvites();
+    } catch {
+      setNotice({
+        message: `Could not resend: ${INVITE_NETWORK_ERROR}`,
+        tone: "warning",
+      });
     } finally {
       setResendingId(null);
     }
@@ -243,12 +254,17 @@ export default function UnitAdminInvitationsPage() {
     if (!cancelTarget || cancelling) return;
     setCancelling(true);
     try {
-      const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/invitations/${cancelTarget.id}`, {
+        method: "DELETE",
+      });
       if (res.ok) {
         await fetchInvites();
       } else {
         const data = await res.json().catch(() => ({}));
-        setNotice({ message: `Could not cancel: ${errorMessage(data?.error, res.status)}` });
+        setNotice({
+          message: `Could not cancel: ${errorMessage(data?.error, res.status)}`,
+          tone: "warning",
+        });
       }
     } finally {
       setCancelling(false);
@@ -298,7 +314,14 @@ export default function UnitAdminInvitationsPage() {
 
             {notice && (
               <div className="px-4 lg:px-6">
-                <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                <div
+                  role={notice.tone === "warning" ? "alert" : "status"}
+                  className={
+                    notice.tone === "warning"
+                      ? "rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                      : "rounded-md border bg-muted/40 p-3 text-sm"
+                  }
+                >
                   <div className="flex items-center justify-between gap-3">
                     <span>{notice.message}</span>
                     <button

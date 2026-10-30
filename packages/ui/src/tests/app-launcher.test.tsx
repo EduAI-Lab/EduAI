@@ -79,7 +79,7 @@ describe("BrandSwitcher — trigger", () => {
 
 // NOTE: The popover grid contents (per-app cards, "Now" badge) are not asserted
 // here because Radix DropdownMenu does not render its items into the DOM when
-// opened under happy-dom (same limitation documented in nav-user.test.tsx). The
-// security-critical behaviour — which apps a role may reach — is fully covered
-// by the visibleAppsForRole tests above and the waffle-button presence tests,
-// since the grid is populated from exactly that filtered list.
+// opened under happy-dom. The security-critical behaviour — which apps a role
+// may reach — is fully covered by the visibleAppsForRole tests above and the
+// waffle-button presence tests, since the grid is populated from exactly that
+// filtered list.

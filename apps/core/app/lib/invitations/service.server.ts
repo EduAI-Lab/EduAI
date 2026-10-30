@@ -8,13 +8,16 @@ import {
   buildAuthSubRequest,
 } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
-import { sendEmail } from "~/lib/email/mailer.server";
+import { isSmtpConfigured, sendEmail } from "~/lib/email/mailer.server";
+import type { InviteEmailStatus } from "~/lib/invitations/email-notice";
 import { buildInvitationEmail } from "~/lib/email/templates/invitation";
 import { generateInviteToken, hashToken } from "~/lib/invitations/token.server";
 import type { AcceptInvitationInput, CreateInvitationInput } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
-const signupResponseSchema = z.object({ user: z.object({ id: z.string().min(1) }) });
+const signupResponseSchema = z.object({
+  user: z.object({ id: z.string().min(1) }),
+});
 
 /** Invitation shape safe to return over the API — never includes `tokenHash`. */
 export type PublicInvitation = Omit<Invitation, "tokenHash"> & {
@@ -23,6 +26,8 @@ export type PublicInvitation = Omit<Invitation, "tokenHash"> & {
 
 type Inviter = { id: string; name?: string | null };
 
+export type { InviteEmailStatus };
+
 export type CreateInvitationResult =
   | {
       ok: true;
@@ -30,6 +35,7 @@ export type CreateInvitationResult =
       /** One-time accept link (raw token) — only ever returned here. */
       acceptUrl: string;
       emailDelivered: boolean;
+      emailStatus: InviteEmailStatus;
     }
   | { ok: false; status: number; error: string };
 
@@ -81,7 +87,9 @@ async function classifyInvitationConsumeRace(
   invitationId: string,
   token: string,
 ): Promise<AcceptInvitationFailure> {
-  const current = await prisma.invitation.findUnique({ where: { id: invitationId } });
+  const current = await prisma.invitation.findUnique({
+    where: { id: invitationId },
+  });
   if (!current || current.tokenHash !== hashToken(token)) {
     return { ok: false, status: 409, error: "INVALID_TOKEN" };
   }
@@ -102,7 +110,7 @@ async function emailInvite(
   invite: Invitation,
   acceptUrl: string,
   inviterName?: string | null,
-): Promise<boolean> {
+): Promise<InviteEmailStatus> {
   try {
     const message = buildInvitationEmail({
       to: invite.email,
@@ -111,10 +119,10 @@ async function emailInvite(
       inviterName,
       expiresAt: invite.expiresAt,
     });
-    return (await sendEmail(message)).delivered;
+    return (await sendEmail(message)).delivered ? "SENT" : "NOT_CONFIGURED";
   } catch (error) {
     console.error("[invitations] failed to send invitation email", error);
-    return false;
+    return isSmtpConfigured() ? "FAILED" : "NOT_CONFIGURED";
   }
 }
 
@@ -157,9 +165,15 @@ export async function createInvitation(
   });
 
   const acceptUrl = buildAcceptUrl(token);
-  const emailDelivered = await emailInvite(invitation, acceptUrl, invitedBy.name);
+  const emailStatus = await emailInvite(invitation, acceptUrl, invitedBy.name);
 
-  return { ok: true, invitation: toPublic(invitation), acceptUrl, emailDelivered };
+  return {
+    ok: true,
+    invitation: toPublic(invitation),
+    acceptUrl,
+    emailDelivered: emailStatus === "SENT",
+    emailStatus,
+  };
 }
 
 export type ResendInvitationResult =
@@ -168,6 +182,7 @@ export type ResendInvitationResult =
       invitation: PublicInvitation;
       acceptUrl: string;
       emailDelivered: boolean;
+      emailStatus: InviteEmailStatus;
     }
   | { ok: false; status: number; error: string };
 
@@ -215,9 +230,15 @@ export async function resendInvitation(
   }
 
   const acceptUrl = buildAcceptUrl(token);
-  const emailDelivered = await emailInvite(updated, acceptUrl, invitedBy?.name);
+  const emailStatus = await emailInvite(updated, acceptUrl, invitedBy?.name);
 
-  return { ok: true, invitation: toPublic(updated), acceptUrl, emailDelivered };
+  return {
+    ok: true,
+    invitation: toPublic(updated),
+    acceptUrl,
+    emailDelivered: emailStatus === "SENT",
+    emailStatus,
+  };
 }
 
 /**
@@ -327,7 +348,9 @@ export async function acceptInvitation(
   const invite = lookup.invitation;
 
   // Race guard: someone may have registered this email since the invite was sent.
-  const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
+  const existingUser = await prisma.user.findUnique({
+    where: { email: invite.email },
+  });
   if (existingUser) {
     // The email now has an account, so this invite can never be accepted via
     // sign-up. Revoke it (guarded on PENDING for idempotency) so the live link

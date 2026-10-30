@@ -345,6 +345,7 @@ export const submissionRowSchema = z
     attemptNumber: z.number(),
     response: submissionResponseSchema.nullish(),
     answerLabel: z.string().nullish(),
+    referenceAnswer: z.string().nullish(),
     aiFeedback: z.object({ message: z.string().nullish() }).passthrough().nullish(),
     score: z.number().nullish(),
     isCorrect: z.boolean().nullish(),

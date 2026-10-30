@@ -12,7 +12,7 @@ export function AccessDeniedView() {
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
-          Use <strong>Back to EduAI</strong> in the sidebar to return to your dashboard.
+          Use <strong>Back to EduAI</strong> in the Account menu to return to your dashboard.
         </p>
       </CardContent>
     </Card>

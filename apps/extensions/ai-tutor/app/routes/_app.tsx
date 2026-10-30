@@ -1,20 +1,24 @@
 import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
-  AppShell,
   GettingStartedButton,
   OnboardingChecklist,
   PageTourButton,
   AIServiceHistoryPanel,
   AIServiceIndicators,
   BugReportDialog,
-  BugReportTriggerButton,
   CommandSearchButton,
+  NavShell,
   ThemeToggle,
+  termLabel,
   useAiServiceStatus,
   useHistoryOnOpen,
+  visibleAppsForRole,
   type BugReportSubmitData,
   type HistoryPayload,
+  type NavShellCourse,
+  type NavShellEntry,
+  type NavShellModel,
 } from "@eduai/ui";
 import { assistantPlacementFor, ExtensionHelpAssistant } from "@eduai/ui/assistant";
 import { getCoreDashboardUrl, getCoreStatusUrl, getCoreUrl } from "../lib/coreUrl";
@@ -23,7 +27,6 @@ import {
   IconBooks,
   IconDashboard,
   IconHelpCircle,
-  IconMessageChatbot,
   IconSettings,
   IconShieldLock,
 } from "@tabler/icons-react";
@@ -33,8 +36,8 @@ import { toast } from "sonner";
 import api from "~/lib/api";
 import { useLocalUser } from "~/hooks/useLocalUser";
 import { getNavForUser } from "~/lib/rbac/nav";
-import type { AtNavItemKey } from "~/lib/rbac/types";
-import { routeForRole } from "~/lib/role-routing";
+import type { AtNavItemKey, AtUser } from "~/lib/rbac/types";
+import { courseCode, courseName, courseTerm, courseYear } from "~/lib/course-display";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import { getRouteCourseId } from "~/lib/route-course";
 import { CommandPalette, AITUTOR_COMMAND_EVENT } from "~/components/command/CommandPalette";
@@ -44,6 +47,10 @@ import {
   ShellBreadcrumbProvider,
   useShellBreadcrumbState,
 } from "~/components/layout/ShellBreadcrumbContext";
+import {
+  ShellCourseNavProvider,
+  useShellCourseNavState,
+} from "~/components/layout/ShellCourseNavContext";
 import { AiTutorPageHelp } from "~/components/help/AiTutorPageHelp";
 
 const NAV_ICONS = {
@@ -56,25 +63,83 @@ const NAV_ICONS = {
   analytics: IconBooks,
 } satisfies Record<AtNavItemKey, Icon>;
 
+/** How many courses the Courses tray lists before deferring to the full list. */
+const NAV_COURSES_PAGE_SIZE = 20;
+
+type AtNavUser = AtUser & { name: string; email?: string | null };
+
 /**
- * AI Tutor brand mark — canonical shape shared with Core (`app-sidebar.tsx`)
- * and QM (`qmLogo`): a 28×28 inline-sized `--primary` tile holding the app's
- * launcher-registry icon, plus a single `text-base font-bold` wordmark. No
- * stacked subtitle — that two-line variant was unique to AI Tutor.
+ * AI Tutor's rail, trays and drawer, from its own RBAC nav (`lib/rbac/nav`):
+ * the role's Courses entry becomes the Courses tray, Help becomes a tray with
+ * the guide and the bug report, and "Back to EduAI" joins Settings in the
+ * Account tray.
  */
-const AI_TUTOR_LOGO = (
-  <>
-    <div
-      className="flex shrink-0 items-center justify-center"
-      style={{ width: 28, height: 28, borderRadius: 7, background: "var(--primary)" }}
-    >
-      <IconMessageChatbot className="size-4 text-white" strokeWidth={1.75} aria-hidden />
-    </div>
-    <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>
-      AI Tutor
-    </span>
-  </>
-);
+function buildAtNavModel({
+  user,
+  pathname,
+  launcherCourseId,
+  onLogout,
+  onReportBug,
+}: {
+  user: AtNavUser;
+  pathname: string;
+  launcherCourseId: string | null;
+  onLogout: () => void;
+  onReportBug: () => void;
+}): NavShellModel {
+  // STUDENT stays in the /student shell; everyone else uses the /instructor shell.
+  const coursePrefix = user.role === "STUDENT" ? "/student" : "/instructor";
+  let coursesHref = coursePrefix;
+  const entries: NavShellEntry[] = [];
+  for (const item of getNavForUser(user)) {
+    if (item.key === "my-courses" || item.key === "teaching" || item.key === "admin-courses") {
+      coursesHref = item.href;
+      entries.push({ kind: "tray", tray: "courses", label: item.title, icon: IconBooks });
+    } else {
+      entries.push({
+        kind: "link",
+        link: { key: item.key, label: item.title, href: item.href, icon: NAV_ICONS[item.key] },
+      });
+    }
+  }
+  entries.push({ kind: "tray", tray: "help", label: "Help", icon: IconHelpCircle });
+
+  const loadCourses = async (): Promise<NavShellCourse[]> => {
+    const page = await api.listCourses({ pageSize: NAV_COURSES_PAGE_SIZE });
+    return page.data.map((course) => ({
+      id: String(course.id),
+      href: `${coursePrefix}/courses/${course.id}`,
+      code: courseCode(course),
+      name: courseName(course),
+      subtitle: termLabel(courseTerm(course), courseYear(course)),
+    }));
+  };
+
+  return {
+    pathname,
+    user: { name: user.name, email: user.email ?? "", role: user.role },
+    entries,
+    accountLinks: [
+      { key: "settings", label: "Settings", href: "/settings", icon: IconSettings },
+      // Same "Back to EduAI" link Question Maker shows.
+      {
+        key: "back-to-eduai",
+        label: "Back to EduAI",
+        href: getCoreDashboardUrl(),
+        icon: IconArrowLeft,
+        external: true,
+      },
+    ],
+    adminLinks: [],
+    helpLinks: [{ key: "help", label: "Help & guide", href: "/help", icon: IconHelpCircle }],
+    coursesHref,
+    loadCourses,
+    launcherApps: visibleAppsForRole(getLauncherApps(launcherCourseId), user.role),
+    currentAppId: CURRENT_APP_ID,
+    onLogout,
+    onReportBug,
+  };
+}
 
 /** Lesson pages carry the student's own AI chat, so Penny opens from the header there. */
 const CHAT_SCREEN_PREFIXES = ["/student/lesson"];
@@ -91,7 +156,8 @@ function HeaderBreadcrumbs() {
 }
 
 function AppLayoutInner() {
-  const { pathname, search } = useLocation();
+  const location = useLocation();
+  const { pathname, search } = location;
   const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useLocalUser();
@@ -106,6 +172,8 @@ function AppLayoutInner() {
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const routeCourseId = getRouteCourseId(matches);
   const coreCourseId = routeCourseId ?? new URLSearchParams(search).get("coreCourseId");
+  const breadcrumbItems = useShellBreadcrumbState();
+  const courseNav = useShellCourseNavState();
 
   const fetchAiHistory = useCallback(() => api.aiStatusHistory(), []);
 
@@ -162,49 +230,26 @@ function AppLayoutInner() {
     }
   };
 
-  const navMain = getNavForUser(user).map((item) => ({
-    title: item.title,
-    url: item.href,
-    icon: NAV_ICONS[item.key],
-  }));
+  const model = buildAtNavModel({
+    user,
+    pathname,
+    launcherCourseId: coreCourseId,
+    onLogout: () => void handleLogout(),
+    onReportBug: handleOpenBugReport,
+  });
 
   return (
-    <AppShell
-      sidebar={{
-        logo: AI_TUTOR_LOGO,
-        logoHref: routeForRole(user.role),
-        navMain,
-        navSecondary: [{ title: "Help", url: "/help", icon: IconHelpCircle }],
-        currentPath: pathname,
-        LinkComponent: Link,
-        launcher: {
-          apps: getLauncherApps(coreCourseId),
-          currentAppId: CURRENT_APP_ID,
-          role: user.role,
-        },
-        user: { name: user.name, email: user.email ?? "", role: user.role },
-        navUser: {
-          items: [
-            {
-              label: "Settings",
-              href: "/settings",
-              icon: <IconSettings size={15} strokeWidth={1.75} />,
-            },
-          ],
-          LinkComponent: Link,
-          onLogout: handleLogout,
-        },
-        // Same "Back to EduAI" footer link Question Maker shows.
-        navFooter: [
-          {
-            title: "Back to EduAI",
-            url: getCoreDashboardUrl(),
-            icon: IconArrowLeft,
-            external: true,
-          },
-        ],
-      }}
+    <NavShell
+      model={model}
+      LinkComponent={Link}
+      locationKey={location.key}
+      // The mobile header's title (and the sr-only heading beside the trail).
+      title={breadcrumbItems.at(-1)?.label ?? "AI Tutor"}
       breadcrumbs={<HeaderBreadcrumbs />}
+      // Pages own their headings, as they did before the shared shell; the
+      // header's title only labels the mobile bar.
+      headingInPage
+      courseNav={courseNav}
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
@@ -232,7 +277,6 @@ function AppLayoutInner() {
             onUbcOpenChange={onAiHistoryOpenChange}
           />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          <BugReportTriggerButton onClick={handleOpenBugReport} />
           <ExtensionHelpAssistant
             coreUrl={getCoreUrl()}
             coreCourseId={coreCourseId}
@@ -246,11 +290,12 @@ function AppLayoutInner() {
             navigate={navigate}
           />
           <PageTourButton platform="ai-tutor" pathname={pathname} role={user.role} />
-          {/* Last, so it sits in the header's top-right corner (#1754). */}
+          {/* Last, so it sits in the header's top-right corner (#1754). The
+              bug report moved into the rail's Help tray. */}
           <AiTutorPageHelp role={user.role} />
         </>
       }
-      commandPalette={
+      overlays={
         <>
           <CommandPalette />
           <BugReportDialog
@@ -275,22 +320,25 @@ function AppLayoutInner() {
       ) : (
         <Outlet />
       )}
-    </AppShell>
+    </NavShell>
   );
 }
 
 /**
- * Authenticated app chrome: shared `@eduai/ui` `AppShell`, mounted as a
+ * Authenticated app chrome: the shared `@eduai/ui` `NavShell`, mounted as a
  * single layout route (issue #764) instead of AI Tutor's old forked
  * per-route `<AppShell>` composition. Structured like QM's
- * `QmAppLayout` → `QmAppLayoutInner` split so `ShellBreadcrumbProvider`
- * always wraps `<Outlet />` (both the pre-auth and authenticated states),
- * which keeps `useShellBreadcrumbs` safe to call from every child route.
+ * `QmAppLayout` → `QmAppLayoutInner` split so `ShellBreadcrumbProvider` and
+ * `ShellCourseNavProvider` always wrap `<Outlet />` (both the pre-auth and
+ * authenticated states), which keeps `useShellBreadcrumbs` and
+ * `useShellCourseNav` safe to call from every child route.
  */
 export default function AppLayout() {
   return (
     <ShellBreadcrumbProvider>
-      <AppLayoutInner />
+      <ShellCourseNavProvider>
+        <AppLayoutInner />
+      </ShellCourseNavProvider>
     </ShellBreadcrumbProvider>
   );
 }

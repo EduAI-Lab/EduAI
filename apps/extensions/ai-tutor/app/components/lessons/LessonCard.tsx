@@ -3,7 +3,7 @@
  * views). Shares the ModuleCard language one level down: a course-accent
  * gradient rail + a faint bottom-right order-number motif; a `CardHeader` with
  * an eyebrow (ringed order chip + "LESSON" kicker on the left; a read-only
- * Published/Draft `StatusBadge` and an optional publish kebab on the right)
+ * Published/Unpublished `StatusBadge` and an optional publish kebab on the right)
  * and a bold title; then an optional `CardContent` with the activity count and
  * learner progress. The whole card is one click/keyboard target that navigates
  * — no separate "view" affordance.
@@ -71,7 +71,7 @@ export interface LessonCardProps {
   progress?: Progress;
   /** Count of activities/questions in the lesson. Omit rather than guessing — never fabricate data. */
   activityCount?: number;
-  /** Drives the read-only Published/Draft status badge. */
+  /** Drives the read-only Published/Unpublished status badge. */
   isPublished?: boolean;
   /** Eyebrow-right action slot, e.g. the publish `PublishMenu`. */
   menuSlot?: ReactNode;
@@ -192,7 +192,11 @@ export function LessonCard({
               onKeyDown={stopStatusPropagation}
             >
               {isPublished != null && (
-                <StatusBadge active={isPublished} activeLabel="Published" inactiveLabel="Draft" />
+                <StatusBadge
+                  active={isPublished}
+                  activeLabel="Published"
+                  inactiveLabel="Unpublished"
+                />
               )}
               {menuSlot}
             </div>

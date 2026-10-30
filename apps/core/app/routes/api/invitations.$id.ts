@@ -45,7 +45,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
             entityId: result.invitation.id,
             // The invited email is the subject of the event and is stored for accountability.
             entityLabel: result.invitation.email,
-            details: { role: result.invitation.role, email: result.invitation.email },
+            details: {
+              role: result.invitation.role,
+              email: result.invitation.email,
+            },
           }),
         );
 
@@ -66,7 +69,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
             entityId: result.invitation.id,
             // The invited email is the subject of the event and is stored for accountability.
             entityLabel: result.invitation.email,
-            details: { role: result.invitation.role, email: result.invitation.email },
+            details: {
+              role: result.invitation.role,
+              email: result.invitation.email,
+            },
           }),
         );
 
@@ -74,6 +80,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           invitation: result.invitation,
           acceptUrl: result.acceptUrl,
           emailDelivered: result.emailDelivered,
+          emailStatus: result.emailStatus,
         });
       }
 

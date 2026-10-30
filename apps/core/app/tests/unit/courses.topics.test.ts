@@ -102,12 +102,12 @@ function mockUser(id = "u1", role = "STUDENT") {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id, role } } as never);
 }
 
-function makeLoaderArgs(courseId: string, topicId?: string, authorization?: string) {
+function makeLoaderArgs(courseId: string, topicId?: string, authorization?: string, query = "") {
   const headers = new Headers();
   if (authorization) headers.set("Authorization", authorization);
-  const path = topicId
-    ? `/api/courses/${courseId}/topics/${topicId}`
-    : `/api/courses/${courseId}/topics`;
+  const path =
+    (topicId ? `/api/courses/${courseId}/topics/${topicId}` : `/api/courses/${courseId}/topics`) +
+    query;
   return {
     request: new Request(`http://localhost${path}`, { method: "GET", headers }),
     params: { courseId, topicId },
@@ -273,6 +273,17 @@ describe("courses.topics loader", () => {
 
   it("keeps suggestions for service-key callers, which author against them", async () => {
     await loader(makeLoaderArgs(COURSE_ID, undefined, `Bearer ${VALID_KEY}`));
+    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "staff");
+  });
+
+  // #1956: AI Tutor reads the learner view for its students over the service key.
+  it("serves the learner view to a service-key caller that asks for it", async () => {
+    await loader(makeLoaderArgs(COURSE_ID, undefined, `Bearer ${VALID_KEY}`, "?audience=learner"));
+    expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "learner");
+  });
+
+  it("keeps the staff view for an unknown service-key audience", async () => {
+    await loader(makeLoaderArgs(COURSE_ID, undefined, `Bearer ${VALID_KEY}`, "?audience=admin"));
     expect(getCourseTopicsWithSources).toHaveBeenCalledWith(COURSE_ID, false, "staff");
   });
 });

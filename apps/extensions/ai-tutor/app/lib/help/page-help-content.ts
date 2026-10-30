@@ -9,7 +9,7 @@ import type { Role } from "~/lib/types";
 const FALLBACK: PageHelpContent = {
   title: "Getting around AI Tutor",
   summary:
-    "Courses are organized into modules, lessons and activities. Use the sidebar or ⌘K / Ctrl K to get anywhere.",
+    "Courses are organized into modules, lessons and activities. Use the navigation bar on the left or ⌘K / Ctrl K to get anywhere.",
   tips: ["Breadcrumbs at the top show where you are and take you back up a level."],
   helpHref: "/help#navigation",
 };
@@ -74,7 +74,7 @@ const ROUTES: PageHelpRoute[] = [
       title: "Course content",
       summary: "Build this course's modules and manage who can see it.",
       tips: [
-        "Draft content stays hidden from students until it's published.",
+        "Unpublished content stays hidden from students until it's published.",
         "Open a module to add and order its lessons.",
       ],
       helpHref: "/help#teaching",

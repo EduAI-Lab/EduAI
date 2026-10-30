@@ -92,7 +92,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "core.help.Report a problem",
         "title": "Report a problem",
-        "body": "Use Report a bug in the header. Include the app, page, expected result and actual result; diagnostics are optional. Never include passwords or API keys."
+        "body": "Use Report a bug under Help in the left navigation bar. Include the app, page, expected result and actual result; diagnostics are optional. Never include passwords or API keys."
       }
     ]
   },

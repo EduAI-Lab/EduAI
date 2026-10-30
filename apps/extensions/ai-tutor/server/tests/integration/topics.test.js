@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
 import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
+import { invalidateTopicSync } from "../../src/services/topicSync.js";
 
 vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -23,6 +24,16 @@ import {
 
 const listEduAiCourseTopics = vi.fn();
 const createEduAiCourseTopic = vi.fn();
+
+/** Mock Core's two topic views: `staff` for authoring, `learner` for students (#1956). */
+function mockCoreTopics({ staff, learner = staff }) {
+  listEduAiCourseTopics.mockImplementation(async (_courseId, options = {}) =>
+    (options.audience === "learner" ? learner : staff).map((name, i) => ({
+      id: `core-${name}-${i}`,
+      name,
+    })),
+  );
+}
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
@@ -137,7 +148,7 @@ describe("Topics routes", () => {
     // imported-course cases below.
 
     it("auto-pulls the latest topics from Core for an imported course (#1031)", async () => {
-      listEduAiCourseTopics.mockResolvedValue([{ id: "core-1", name: "Core-only Topic" }]);
+      mockCoreTopics({ staff: ["Test Topic", "Core-only Topic"] });
 
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
@@ -146,10 +157,46 @@ describe("Topics routes", () => {
         seed.course.coreOfferingId,
         expect.objectContaining({ signal: expect.anything() }),
       );
+      expect(listEduAiCourseTopics).toHaveBeenCalledWith(
+        seed.course.coreOfferingId,
+        expect.objectContaining({ audience: "learner" }),
+      );
       expect(res.body.total).toBe(2);
       const names = res.body.data.map((t) => t.name);
       expect(names).toContain("Test Topic");
       expect(names).toContain("Core-only Topic");
+    });
+
+    // #1956: dismissed, merged or orphan-cleaned topics leave the mirror too.
+    it("removes a mirrored topic Core no longer has when nothing uses it", async () => {
+      mockCoreTopics({ staff: ["Core-only Topic"] });
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((t) => t.name)).toEqual(["Core-only Topic"]);
+      await expect(prisma.topic.findUnique({ where: { id: seed.topic.id } })).resolves.toBeNull();
+    });
+
+    it("keeps a topic Core no longer has while an activity still uses it", async () => {
+      await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          title: "Uses the old topic",
+          position: 0,
+          mainTopicId: seed.topic.id,
+          instructionsMd: "Test",
+          config: { question: "Q?", questionType: "MCQ" },
+        },
+      });
+      mockCoreTopics({ staff: ["Core-only Topic"] });
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((t) => t.name).sort()).toEqual(["Core-only Topic", "Test Topic"]);
+      const kept = await prisma.topic.findUnique({ where: { id: seed.topic.id } });
+      expect(kept.learnerVisible).toBe(false);
     });
 
     it("falls back to the local mirror when Core is unreachable", async () => {
@@ -163,16 +210,16 @@ describe("Topics routes", () => {
     });
 
     it("falls back to the local mirror when the sync write fails, not just the fetch", async () => {
-      listEduAiCourseTopics.mockResolvedValue([{ id: "core-1", name: "Core-only Topic" }]);
-      const createMany = vi
-        .spyOn(prisma.topic, "createMany")
-        .mockRejectedValueOnce(new Error("write boom"));
+      mockCoreTopics({ staff: ["Core-only Topic"] });
+      // The sync's write transaction is the first one; the paginated read is the second.
+      const tx = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("write boom"));
 
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
       expect(res.body.total).toBe(1);
-      createMany.mockRestore();
+      expect(res.body.data).toMatchObject([{ id: seed.topic.id, name: "Test Topic" }]);
+      tx.mockRestore();
     });
 
     it("returns 400 for an unparseable pagination param", async () => {
@@ -190,6 +237,79 @@ describe("Topics routes", () => {
       expect(res.status).toBe(500);
       expect(res.body.error).toBe("Internal server error");
       tx.mockRestore();
+    });
+  });
+
+  // ── #1956: students get Core's learner view ────────────────────────
+
+  describe("GET /api/courses/:courseId/topics — learner view (#1956)", () => {
+    async function enrolledApp(role = "STUDENT") {
+      const member = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: seed.course.id, userId: member.id, role },
+      });
+      return createApp({ mockUser: member });
+    }
+
+    beforeEach(() => {
+      // Core's staff view still lists an unreviewed AI suggestion and the
+      // Uncategorized placeholder; its learner view has only the accepted topic.
+      mockCoreTopics({
+        staff: ["Test Topic", "Suggested Topic", "Uncategorized"],
+        learner: ["Test Topic"],
+      });
+    });
+
+    it("shows an enrolled student only accepted topics", async () => {
+      const studentApp = await enrolledApp();
+
+      const res = await request(studentApp).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data.map((t) => t.name)).toEqual(["Test Topic"]);
+    });
+
+    it("keeps the full staff list for the course instructor", async () => {
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((t) => t.name)).toEqual([
+        "Suggested Topic",
+        "Test Topic",
+        "Uncategorized",
+      ]);
+    });
+
+    it("keeps the full staff list for a course TA, as Core does", async () => {
+      const taApp = await enrolledApp("TA");
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(3);
+    });
+
+    it("hides a topic from students once Core moves it out of the learner view", async () => {
+      const studentApp = await enrolledApp();
+      await request(studentApp).get(`/api/courses/${seed.course.id}/topics`);
+      invalidateTopicSync(seed.course.id);
+      mockCoreTopics({ staff: ["Test Topic"], learner: [] });
+
+      const res = await request(studentApp).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it("fails closed for students when Core has never been reachable", async () => {
+      listEduAiCourseTopics.mockRejectedValue(new Error("Core unavailable"));
+      const studentApp = await enrolledApp();
+
+      const res = await request(studentApp).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
     });
   });
 
@@ -678,7 +798,18 @@ describe("Topics routes", () => {
     });
 
     it("syncs upstream topics and reports names missing locally", async () => {
-      listEduAiCourseTopics.mockResolvedValue([{ id: "core-1", name: "New Upstream Topic" }]);
+      // An activity still uses 'Test Topic', so the sync keeps it and reports it.
+      await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          title: "Uses the old topic",
+          position: 0,
+          mainTopicId: seed.topic.id,
+          instructionsMd: "Test",
+          config: { question: "Q?", questionType: "MCQ" },
+        },
+      });
+      mockCoreTopics({ staff: ["New Upstream Topic"] });
 
       const res = await request(app).post(`/api/courses/${seed.course.id}/topics/sync`).send({});
 

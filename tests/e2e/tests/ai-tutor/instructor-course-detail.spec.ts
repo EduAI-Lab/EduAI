@@ -73,7 +73,10 @@ test.describe("INSTRUCTOR course detail", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
 
-    const tabs = await page.getByRole("tab").allInnerTexts();
+    const tabs = await page
+      .getByRole("navigation", { name: "Course" })
+      .getByRole("link")
+      .allInnerTexts();
     expect(tabs.map((t) => t.trim())).toEqual(["Content", "Submissions", "Feedback", "Analytics"]);
   });
 

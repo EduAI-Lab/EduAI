@@ -119,6 +119,9 @@ function resolveProviderApiKeys({
 // #999/#1001: bound the complete EduAI call, including the one permitted
 // retry, so a transient failure cannot turn into an unbounded wait.
 const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
+// #2028: one deadline for a whole study buddy turn (every tutor + supervisor
+// call), kept under the client's 60s CHAT_TIMEOUT_MS so the server answers first.
+const EDUAI_TURN_TIMEOUT_MS = Number(process.env.EDUAI_TURN_TIMEOUT_MS) || 50_000;
 const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
 const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try again.";
@@ -350,6 +353,8 @@ async function callEduAI({
   // present (`effectiveCourseId = resolvedCourseId || courseId` in chat.ts) —
   // courseId is the fallback when code lookup fails, not a preferred override.
   courseId = null,
+  // #2028: epoch-ms turn deadline; the call gets min(per-call limit, time left).
+  turnDeadline = null,
   signal,
 }) {
   const endpoint = getEduAiCompletionUrl();
@@ -460,14 +465,21 @@ async function callEduAI({
   }
 
   const callStartedAt = Date.now();
+  const timeoutMs =
+    turnDeadline == null
+      ? EDUAI_CALL_TIMEOUT_MS
+      : Math.min(EDUAI_CALL_TIMEOUT_MS, Math.max(turnDeadline - callStartedAt, 0));
 
   try {
-    const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
-    // The same signal covers both attempts and the backoff, preserving the
-    // existing 45-second upper bound for the complete logical call.
+    if (timeoutMs <= 0) {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }
+    const deadline = callStartedAt + timeoutMs;
+    // The same signal covers both attempts and the backoff, so the complete
+    // logical call stays within `timeoutMs`.
     const requestSignal = signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
-      : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
+      ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs);
 
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
       const attemptStartedAt = Date.now();
@@ -553,7 +565,7 @@ async function callEduAI({
     }
     if (error.name === "TimeoutError" || error.name === "AbortError") {
       logAiGuidanceEvent("error", "call_timed_out", {
-        timeoutMs: EDUAI_CALL_TIMEOUT_MS,
+        timeoutMs,
         durationMs: Date.now() - callStartedAt,
         ...getSafeAiErrorMetadata(error),
       });
@@ -620,6 +632,7 @@ async function callSupervisor({
   providerApiKeys = null,
   courseCode = null,
   courseId = null,
+  turnDeadline = null,
   signal,
 }) {
   const template = await getPromptTemplateBySlug("supervisor-prompt");
@@ -658,6 +671,7 @@ RESPOND WITH ONLY VALID JSON.`;
       providerApiKeys,
       courseCode,
       courseId,
+      turnDeadline,
       signal,
     });
 
@@ -713,9 +727,23 @@ function buildSystemPrompt(templateContent, context = {}) {
   return systemPrompt;
 }
 
-function buildTeachUserMessage({ topicName, message }) {
+function buildTeachUserMessage({ topicName, message, hints }) {
   const topicText = topicName ? `Topic: ${topicName}\n\n` : "";
-  return `${topicText}Student request: ${message}`;
+  const hintsText = formatActivityHints(hints);
+  return `${topicText}${hintsText ? `${hintsText}\n\n` : ""}Student request: ${message}`;
+}
+
+// Read from the stored activity config, never the client payload.
+function getActivityHints(activity) {
+  const hints = activity?.config?.hints;
+  if (!Array.isArray(hints)) return [];
+  return hints.filter((hint) => typeof hint === "string" && hint.trim()).map((h) => h.trim());
+}
+
+function formatActivityHints(hints) {
+  if (!Array.isArray(hints) || hints.length === 0) return "";
+  const lines = hints.map((hint) => `- ${hint}`).join("\n");
+  return `Instructor-provided hints (use these to nudge the student; the student may already have revealed them):\n${lines}`;
 }
 
 /**
@@ -780,6 +808,9 @@ function buildGuideUserMessage(activity, { message, studentAnswer }) {
     base += `\n\nStudent answer: ${answerText}`;
   }
 
+  const hintsText = formatActivityHints(getActivityHints(activity));
+  if (hintsText) base += `\n\n${hintsText}`;
+
   base += `\n\nStudent request: ${message}`;
   return base;
 }
@@ -823,8 +854,8 @@ function formatAnswerKey(activity, studentAnswer) {
   return "Correct answer: unavailable";
 }
 
-function buildTeachSupervisorContexts({ topicName, knowledgeLevel, message }) {
-  const visibleContext = buildTeachUserMessage({ topicName, message });
+function buildTeachSupervisorContexts({ topicName, knowledgeLevel, message, hints }) {
+  const visibleContext = buildTeachUserMessage({ topicName, message, hints });
   const hiddenContext = `${visibleContext}\n\nKnowledge level: ${knowledgeLevel}\n\nThis is a teaching exchange. The tutor should stay concise, encouraging, and avoid doing the student’s thinking for them.`;
   return { visibleContext, hiddenContext };
 }
@@ -854,8 +885,11 @@ function buildGuideSupervisorContexts(activity, { knowledgeLevel, message, stude
  * Returned shape always includes a `finalOutcome` discriminator:
  *   - 'single_pass'  — dual-loop disabled, tutor draft returned as-is
  *   - 'approved'     — supervisor approved within iteration budget
- *   - 'safe_fallback'— iterations exhausted, returning supervisor safe text
+ *   - 'safe_fallback'— iterations exhausted (or the turn deadline hit after at
+ *                      least one reviewed draft), returning supervisor safe text
  *   - 'error'        — set by callers on thrown errors (see catch blocks)
+ *
+ * #2028: a timeout before any draft was reviewed rethrows the 504.
  */
 async function supervisedGenerate(generateFn, context) {
   let currentChatId = context.chatId;
@@ -890,9 +924,29 @@ async function supervisedGenerate(generateFn, context) {
     };
   }
 
+  const safeFallback = (turnDeadlineReached = false) => {
+    const fallbackTrace = {
+      ...trace,
+      finalOutcome: "safe_fallback",
+      finalResponse: FALLBACK_MESSAGE,
+      iterationCount: trace.iterations.length,
+    };
+    if (turnDeadlineReached) fallbackTrace.turnDeadlineReached = true;
+    return { message: FALLBACK_MESSAGE, chatId: currentChatId, trace: fallbackTrace };
+  };
+  // Rejected drafts are never shown, so once one pass was reviewed the best
+  // reply left at the deadline is the same fallback as running out of passes.
+  const isTurnTimeout = (error) => error?.code === "TIMEOUT" && trace.iterations.length > 0;
+
   for (let iteration = 0; iteration < context.maxSupervisorIterations; iteration += 1) {
     const isRevision = iteration > 0;
-    const tutorResult = await generateFn(currentChatId, isRevision, context.lastFeedback);
+    let tutorResult;
+    try {
+      tutorResult = await generateFn(currentChatId, isRevision, context.lastFeedback);
+    } catch (tutorError) {
+      if (isTurnTimeout(tutorError)) return safeFallback(true);
+      throw tutorError;
+    }
     currentChatId = tutorResult.chatId || currentChatId;
 
     const traceIteration = {
@@ -913,6 +967,7 @@ async function supervisedGenerate(generateFn, context) {
         providerApiKeys: context.providerApiKeys,
         courseCode: context.courseCode,
         courseId: context.courseId,
+        turnDeadline: context.turnDeadline,
         signal: context.signal,
       });
 
@@ -936,6 +991,7 @@ async function supervisedGenerate(generateFn, context) {
       // `[SUPERVISOR FEEDBACK: ...]` to the user message.
       context.lastFeedback = SUPERVISOR_REVISION_FEEDBACK;
     } catch (supervisorError) {
+      if (isTurnTimeout(supervisorError)) return safeFallback(true);
       logAiGuidanceEvent(
         "error",
         "supervisor_review_failed",
@@ -945,16 +1001,7 @@ async function supervisedGenerate(generateFn, context) {
     }
   }
 
-  return {
-    message: FALLBACK_MESSAGE,
-    chatId: currentChatId,
-    trace: {
-      ...trace,
-      finalOutcome: "safe_fallback",
-      finalResponse: FALLBACK_MESSAGE,
-      iterationCount: trace.iterations.length,
-    },
-  };
+  return safeFallback();
 }
 
 /**
@@ -982,6 +1029,7 @@ async function generateWithSupervisor({
   courseId = null,
   signal,
 }) {
+  const turnDeadline = Date.now() + EDUAI_TURN_TIMEOUT_MS;
   const effectiveTutorModelId = tutorModelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
   const effectiveSupervisorModelId =
     supervisorModelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
@@ -1023,6 +1071,7 @@ async function generateWithSupervisor({
     lastFeedback: null,
     courseCode,
     courseId,
+    turnDeadline,
     signal,
   };
 
@@ -1048,6 +1097,7 @@ async function generateWithSupervisor({
       messageId: isRevision ? randomUUID() : messageId,
       courseCode,
       courseId,
+      turnDeadline,
       signal,
     });
   };
@@ -1087,11 +1137,17 @@ export async function generateTeachResponse({
     }
 
     const resolvedTopicName = topicName || activity.mainTopic?.name || "the subject";
-    const baseUserMessage = buildTeachUserMessage({ topicName: resolvedTopicName, message });
+    const hints = getActivityHints(activity);
+    const baseUserMessage = buildTeachUserMessage({
+      topicName: resolvedTopicName,
+      message,
+      hints,
+    });
     const { visibleContext, hiddenContext: baseHiddenContext } = buildTeachSupervisorContexts({
       topicName: resolvedTopicName,
       knowledgeLevel,
       message,
+      hints,
     });
     const questionBankContext = buildQuestionBankContext(testableQuestions);
     const hiddenContext = questionBankContext
@@ -1310,6 +1366,8 @@ export const _testExports = {
   buildSystemPrompt,
   buildTeachUserMessage,
   buildGuideUserMessage,
+  getActivityHints,
+  formatActivityHints,
   formatAnswerKey,
   buildTeachSupervisorContexts,
   buildGuideSupervisorContexts,

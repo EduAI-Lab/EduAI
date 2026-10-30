@@ -44,6 +44,8 @@ export type SubmissionRow = {
   response?: SubmissionResponse | null;
   /** Resolved MCQ option label (the choice text), when the pick maps to a choice. */
   answerLabel?: string | null;
+  /** Short-answer reference text for graders; never used for auto-grading. */
+  referenceAnswer?: string | null;
   /** AI grader note, e.g. `{ message: string }`. */
   aiFeedback?: { message?: string | null } | null;
   score?: number | null;

@@ -16,7 +16,7 @@
  *
  * Each view supplies its own numbers:
  *   - instructor → total / published / draft lesson counts as glass badges + a
- *     Draft/Published badge, and drops its "Add lesson" / "Import" buttons into
+ *     Unpublished/Published badge, and drops its "Add lesson" / "Import" buttons into
  *     `actions`.
  *   - student → total lessons + a progress bar (real, derived from each
  *     lesson's progress — never fabricated).
@@ -61,7 +61,7 @@ export interface ModuleHeroProps {
   accentColor?: CourseAccentColor;
   /** Eyebrow kicker. Defaults to "Module". */
   eyebrow?: string;
-  /** Renders a read-only Draft/Published badge when provided (instructor). */
+  /** Renders a read-only Unpublished/Published badge when provided (instructor). */
   isPublished?: boolean;
   /** Summary counts shown as glass badges. */
   stats?: ModuleHeroStat[];
@@ -137,7 +137,7 @@ export function ModuleHero({
                         style={HERO_GLASS_STYLE}
                       >
                         <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
-                        {isPublished ? "Published" : "Draft"}
+                        {isPublished ? "Published" : "Unpublished"}
                       </span>
                     )}
                     {stats?.map((stat) => (
