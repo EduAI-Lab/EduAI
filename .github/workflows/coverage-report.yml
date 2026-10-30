@@ -2,7 +2,7 @@ name: Test Coverage Report
 
 # Tracks test coverage (unit + integration) across all workspaces with a test suite — the
 # three backend packages plus the frontend/UI suites — and commits a Markdown summary to
-# eduai-summer-2026/reports/ on a dedicated branch. No coverage build artifacts (HTML/lcov)
+# docs/coverage/ on a dedicated branch. No coverage build artifacts (HTML/lcov)
 # are committed — coverage/ stays gitignored; only the .md is pushed.
 
 on:
@@ -149,7 +149,7 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
           REPORT_TIMESTAMP: ${{ github.run_started_at }}
-        run: node eduai-summer-2026/scripts/generate-coverage-report.js
+        run: node scripts/coverage/generate-coverage-report.js
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-docs/coverage}"
-          REPORT_FILE="eduai-summer-2026/reports/coverage/coverage-report.md"
+          REPORT_FILE="docs/coverage/coverage-report.md"
 
           if [ ! -f "$REPORT_FILE" ]; then
             echo "No coverage report generated; nothing to commit."
@@ -201,7 +201,7 @@ jobs:
           git merge origin/development --no-edit
 
           # Restore the report and commit
-          mkdir -p eduai-summer-2026/reports/coverage
+          mkdir -p docs/coverage
           cp /tmp/coverage-report-commit/coverage-report.md "$REPORT_FILE"
 
           git add -f "$REPORT_FILE"

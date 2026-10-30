@@ -9,9 +9,9 @@
  *
  * Run from apps/core (needs DATABASE_URL + generated Prisma client):
  *   cd apps/core
- *   npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts
- *   npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --since 2026-06-09
- *   npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --event task_initiation
+ *   npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts
+ *   npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts --since 2026-06-09
+ *   npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts --event task_initiation
  */
 
 import { Prisma, PrismaClient } from "@prisma/client";

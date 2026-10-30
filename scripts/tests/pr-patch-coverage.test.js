@@ -16,7 +16,7 @@ const {
   lcovMappingBroken,
   compressRanges,
   fmtPct,
-} = require("../scripts/pr-patch-coverage");
+} = require("../coverage/pr-patch-coverage");
 
 function write(relPath, contents = "") {
   const abs = path.join(REPO_ROOT, relPath);

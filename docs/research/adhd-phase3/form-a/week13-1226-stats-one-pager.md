@@ -58,7 +58,7 @@ Oversight lift over prompt-only is modest (~4 pp).
 | Comprehension ↑ | 3.06 | 3.56 | +0.50 | −0.71 | favors Assist [^comp-fix] |
 | Prefer Assist | — | **7 / 9** | — | — | 0 prefer Baseline |
 
-[^comp-fix]: Corrected 2026-07-31. The original values here (Baseline 3.89, Assist 5.67) were out of range for the 1–5 Comprehension instrument and didn't reproduce from the scored items — likely a stale calculation. Recomputed as the mean of `Comp1`/`Comp2` (per instrument spec) on the same n=9 sample (same 2 exclusions as the rest of this table); see `eduai-summer-2026/reports/week13-adhd-analysis/adhd_analysis.py` and `adhd_study_report.md` for the reproducible pipeline and full cross-check against this doc.
+[^comp-fix]: Corrected 2026-07-31. The original values here (Baseline 3.89, Assist 5.67) were out of range for the 1–5 Comprehension instrument and didn't reproduce from the scored items — likely a stale calculation. Recomputed as the mean of `Comp1`/`Comp2` (per instrument spec) on the same n=9 sample (same 2 exclusions as the rest of this table); see `docs/research/adhd-phase3/week13-adhd-analysis/adhd_analysis.py` and `adhd_study_report.md` for the reproducible pipeline and full cross-check against this doc.
 
 8/9 primary rows are Survey Preview; 1 live QR. Treat as exploratory.
 

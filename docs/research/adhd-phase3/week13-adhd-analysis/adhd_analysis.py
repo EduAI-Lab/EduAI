@@ -21,7 +21,7 @@ Usage:
     python adhd_analysis.py \
         --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
         --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
-        --outdir eduai-summer-2026/reports/week13-adhd-analysis
+        --outdir docs/research/adhd-phase3/week13-adhd-analysis
 
 Dependencies: pandas, numpy, scipy, matplotlib (see report for versions used).
 """
@@ -74,7 +74,7 @@ BONFERRONI_ALPHA = 0.01  # 5 planned comparisons -> .05 / 5
 # data-quality reasons (one metric outlier where stated preference contradicts
 # the participant's own SUS+TLX scores; one concept confound where open
 # feedback describes a different product, not EduAI Assist) -- see
-# eduai-summer-2026/reports/form-a/week13-1226-stats-one-pager.md for the
+# docs/research/adhd-phase3/form-a/week13-1226-stats-one-pager.md for the
 # full rationale. The raw ResponseIds themselves are participant data and do
 # not belong in this public repo (per BREB H26-00906 / prior review on
 # #1415 / #1476); set them locally via ADHD_EXCLUDE_RESPONSE_IDS

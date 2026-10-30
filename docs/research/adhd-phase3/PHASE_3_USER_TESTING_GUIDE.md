@@ -77,7 +77,7 @@ Before any test session:
 | Dev server | `npm run dev` from `apps/core` (default `http://localhost:3000`) |
 | Model + keys | Participant-facing model configured (e.g. `google:gemini-2.5-flash`) |
 | Git SHA logged | `git rev-parse --short HEAD` — note in session notes |
-| Baseline latency | Optional: record TTFT/total and conditions using [`PERFORMANCE.md`](../docs/rag-ai/PERFORMANCE.md) |
+| Baseline latency | Optional: record TTFT/total and conditions using [`PERFORMANCE.md`](../../rag-ai/PERFORMANCE.md) |
 
 **Study build vs dev defaults:** If you use demo session caps (`CHAT_SESSION_MAX_CHARS=2000`, etc.), record that in your Form A notes — it affects long-thread behavior.
 
@@ -140,7 +140,7 @@ Counterbalance order (half A→B, half B→A) to control learning effects.
 
 ADHD-relevant latency matters. Before/after Phase 3 PRs, log warm **TTFT** and **Total** for the S1 probe. Regression rule from the latency sprint doc: do not worsen warm Total by more than **15%** vs `main` at the same model unless explicitly accepted.
 
-See: [`docs/rag-ai/PERFORMANCE.md`](../docs/rag-ai/PERFORMANCE.md)
+See: [`docs/rag-ai/PERFORMANCE.md`](../../rag-ai/PERFORMANCE.md)
 
 ---
 
@@ -323,13 +323,13 @@ From `apps/core` (needs `DATABASE_URL`):
 cd apps/core
 
 # Full report — compliance + behavioral events
-npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts
+npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts
 
 # Since pilot start date
-npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --since 2026-06-12
+npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts --since 2026-06-12
 
 # Single event type
-npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --event re_orientation
+npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts --event re_orientation
 ```
 
 Output includes **Cohen's d (OFF − ON)** for word count, duration, and behavioral latencies. Negative d on word count means ON replies are longer.
@@ -358,7 +358,7 @@ Outputs under `eval-runs/<timestamp>/`:
 
 1. Baseline run (pre-oversight) is frozen at `eval-runs/2026-06-09T21-14-53-136Z`.
 2. Re-run with `--mode on` on a Phase-3-enabled build.
-3. Document deltas in `eduai-summer-2026/reports/form-a/` (manifest + markdown record).
+3. Document deltas in `docs/research/adhd-phase3/form-a/` (manifest + markdown record).
 
 The helper script `record-form-a-phase3.mjs` referenced in #534 may need to be created if not yet on your branch — until then, compare `results.csv` and pass-rate lines manually.
 
@@ -413,7 +413,7 @@ cd apps/core && npm run dev
 cd apps/core && npm run eval:adhd -- --only S1,S2,S3,S5 --mode both
 
 # Telemetry report
-cd apps/core && npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --since 2026-06-12
+cd apps/core && npx tsx ../../docs/research/adhd-phase3/scripts/report-adhd-metrics.ts --since 2026-06-12
 
 # Git SHA for session log
 git rev-parse --short HEAD
@@ -434,7 +434,7 @@ git rev-parse --short HEAD
 | `apps/core/app/lib/assistive-events.server.ts` | Event types + sanitization |
 | `apps/core/app/routes/api/assistive-events.ts` | Client event POST endpoint |
 | `apps/core/scripts/eval-adhd-assist.mjs` | Form A synthetic runner |
-| `eduai-summer-2026/reports/scripts/report-adhd-metrics.ts` | OFF vs ON aggregation |
+| `docs/research/adhd-phase3/scripts/report-adhd-metrics.ts` | OFF vs ON aggregation |
 | `docs/rag-ai/PERFORMANCE.md` | Current performance measurement guidance |
 
 ---

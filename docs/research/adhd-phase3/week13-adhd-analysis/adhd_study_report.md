@@ -3,7 +3,7 @@
 **Analysis date:** 2026-07-31 (leave-one-out sensitivity added 2026-08-06, #1308)
 **Script:** `adhd_analysis.py` (this directory) — fully reproducible, see Appendix for exact command and package versions.
 **Related issue:** EduAI-Lab/EduAI #1226, #1308
-**Cross-checked against:** `eduai-summer-2026/reports/form-a/week13-1226-stats-one-pager.md` (2026-07-30) — same exclusion logic, see Section 6.
+**Cross-checked against:** `docs/research/adhd-phase3/form-a/week13-1226-stats-one-pager.md` (2026-07-30) — same exclusion logic, see Section 6.
 
 ---
 

@@ -8,7 +8,7 @@ const test = require("node:test");
 // that were actually wrong, plus the resolution rules the guarantee rests on.
 let mod;
 test.before(async () => {
-  mod = await import("../../scripts/token-parity.mjs");
+  mod = await import("../token-parity.mjs");
 });
 
 test("stripComments does not treat a @source glob as a comment opener", () => {

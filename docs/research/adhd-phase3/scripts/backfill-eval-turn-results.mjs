@@ -2,7 +2,7 @@
 /**
  * Build turn-results.json for older eval runs (pre per-turn export).
  * Run from apps/core:
- *   npx tsx ../../eduai-summer-2026/reports/scripts/backfill-eval-turn-results.mjs ../../eval-runs/2026-06-09T21-14-53-136Z
+ *   npx tsx ../../docs/research/adhd-phase3/scripts/backfill-eval-turn-results.mjs ../../eval-runs/2026-06-09T21-14-53-136Z
  */
 
 import { readFile, readdir, writeFile } from "node:fs/promises";
@@ -10,7 +10,7 @@ import path from "node:path";
 import {
   computeAdhdResponseMetrics,
   isStructuralCompliancePass,
-} from "../../../apps/core/app/lib/ai/adhd-metrics.ts";
+} from "../../../../apps/core/app/lib/ai/adhd-metrics.ts";
 
 const LEGACY_FLAT = /^S(\d+)-(on|off)\.md$/;
 const CONDITION_SUBDIR = /^S(\d+)-(.+)\.md$/;

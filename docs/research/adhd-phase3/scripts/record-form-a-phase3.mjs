@@ -3,10 +3,10 @@
  * Build IURA Form A before/after comparison from two eval:adhd runs.
  *
  * Usage (from apps/core):
- *   npx tsx ../../eduai-summer-2026/reports/scripts/record-form-a-phase3.mjs \
+ *   npx tsx ../../docs/research/adhd-phase3/scripts/record-form-a-phase3.mjs \
  *     --baseline ../../eval-runs/2026-06-09T21-14-53-136Z \
  *     --after ../../eval-runs/<AFTER_STAMP> \
- *     --out ../../eduai-summer-2026/reports/form-a/phase3-after-record.md
+ *     --out ../../docs/research/adhd-phase3/form-a/phase3-after-record.md
  */
 
 import { parseArgs } from "node:util";
@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
 
 function fail(msg) {
   process.stderr.write(`error: ${msg}\n`);
