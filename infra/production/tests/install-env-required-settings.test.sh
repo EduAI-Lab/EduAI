@@ -82,4 +82,48 @@ complete_env | sed 's|^COOKIE_DOMAIN=.*|COOKIE_DOMAIN=".eduai.ok.ubc.ca"|' >"$TE
 rm -f "$LIVE"
 bash "$TEST_DIR/helper.sh" install-env >/dev/null || fail "quoted COOKIE_DOMAIN was refused"
 
+# #1859: a sender name in angle brackets is a real value, not a placeholder;
+# a placeholder in a comment is ignored; one in a setting is still refused.
+{
+  complete_env
+  echo 'EMAIL_FROM="EduAI <noreply.eduai@ubc.ca>"'
+  echo '# DISK_ALERT_EMAILS=<team-alert-list-address>'
+} >"$TEMPLATE"
+rm -f "$LIVE"
+bash "$TEST_DIR/helper.sh" install-env >/dev/null || fail "EMAIL_FROM with a sender name was refused"
+for placeholder in '<generate-a-long-random-secret>' 'CHANGE_ME' \
+  'postgresql://<user>:<password>@127.0.0.1:5432/db'; do
+  { complete_env; echo "DATABASE_URL=$placeholder"; } >"$TEMPLATE"
+  expect_refused "placeholder $placeholder" "still contains placeholders"
+done
+
+# #1859: a template that drops a setting the live file has is refused, names the
+# setting, and leaves the live file alone; --allow-removed installs it anyway.
+# Either way the previous live file is backed up first.
+{ complete_env; echo "SMTP_HOST=smtp.mail-relay.ubc.ca"; } >"$LIVE"
+cp "$LIVE" "$TEST_DIR/live-before"
+complete_env >"$TEMPLATE"
+rm -f "$LIVE".bak-*
+if output=$(bash "$TEST_DIR/helper.sh" install-env 2>&1); then
+  fail "install-env accepted a template that drops SMTP_HOST"
+fi
+[[ "$output" == *"SMTP_HOST would be removed"* ]] || fail "removed setting not named: $output"
+cmp -s "$TEST_DIR/live-before" "$LIVE" || fail "live file was overwritten when a setting would be removed"
+compgen -G "$LIVE.bak-*" >/dev/null && fail "backup written although nothing was installed"
+
+output=$(bash "$TEST_DIR/helper.sh" install-env --allow-removed 2>&1) \
+  || fail "--allow-removed was refused: $output"
+cmp -s "$TEMPLATE" "$LIVE" || fail "--allow-removed did not install the template"
+backups=("$LIVE".bak-*)
+[ "${#backups[@]}" -eq 1 ] && [ -f "${backups[0]}" ] || fail "expected one backup, found: ${backups[*]}"
+cmp -s "$TEST_DIR/live-before" "${backups[0]}" || fail "backup does not hold the previous live file"
+
+# Re-installing the same file adds no backup; unknown arguments are refused.
+bash "$TEST_DIR/helper.sh" install-env >/dev/null || fail "re-install of the same template was refused"
+backups=("$LIVE".bak-*)
+[ "${#backups[@]}" -eq 1 ] || fail "an identical re-install wrote another backup"
+if bash "$TEST_DIR/helper.sh" install-env --force >/dev/null 2>&1; then
+  fail "install-env accepted an unknown argument"
+fi
+
 echo "install-env required settings contract: PASS"
