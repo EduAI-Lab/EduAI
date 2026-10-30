@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Toaster } from "sonner";
 import {
@@ -165,5 +166,16 @@ describe("page tours", () => {
     expect(startTour).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Play page tour" }));
     expect(startTour).toHaveBeenCalledWith("dashboard");
+  });
+  it("reserves no column before the saved state is read, so a closed card never moves the dashboard", () => {
+    // Server and first-paint markup: no effects have run, so nothing is known about the account yet.
+    const html = renderToString(
+      <OnboardingChecklist platform="core" userId="u1" role="INSTRUCTOR" navigate={vi.fn()}>
+        <p>Dashboard</p>
+      </OnboardingChecklist>,
+    );
+    expect(html).toContain("Dashboard");
+    expect(html).not.toContain("w-80");
+    expect(html).not.toContain("Getting started");
   });
 });

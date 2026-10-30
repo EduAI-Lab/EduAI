@@ -70,7 +70,9 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
   const headingId = React.useId();
   const listId = React.useId();
 
-  React.useEffect(() => {
+  // Layout effect: a client navigation reads the saved state before paint, so a closed card
+  // never reserves its column for a frame.
+  React.useLayoutEffect(() => {
     setProgress(readProgress(storageKey));
     setPanel(readPanel(panelKey));
     setReady(true);
@@ -79,7 +81,7 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
     return () => window.removeEventListener(REOPEN_EVENT, reopen);
   }, [storageKey, panelKey]);
 
-  const hidden = (ready && panel === "dismissed") || !userId || tasks.length === 0;
+  const hidden = !ready || panel === "dismissed" || !userId || tasks.length === 0;
   const count = tasks.filter((task) => progress.completed.includes(task.id)).length;
   const collapsed = panel === "collapsed";
 
@@ -110,131 +112,130 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
       <div className="flex flex-col @2xl/onboarding:flex-row">
         {!hidden && (
           // A column beside the dashboard, top-aligned with its heading (#2070). It stacks above
-          // only when the page itself is too narrow for two columns. The column is reserved before
-          // storage is read so the dashboard does not jump sideways after it loads.
+          // only when the page itself is too narrow for two columns. It is not reserved before the
+          // saved state is read, so a closed card never moves the dashboard; on a full page load
+          // an open card appears after hydration.
           <div className="shrink-0 px-4 pt-6 lg:px-6 @2xl/onboarding:order-last @2xl/onboarding:w-80 @2xl/onboarding:pl-0">
-            {ready && (
-              <section
-                aria-labelledby={headingId}
-                className="rounded-xl border bg-card text-card-foreground shadow-2xs"
-              >
-                <div className="p-4">
-                  <div className="flex items-baseline gap-2">
-                    <h2
-                      id={headingId}
-                      className="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-                    >
-                      Getting started
-                    </h2>
-                    <p aria-live="polite" className="text-sm font-medium">
-                      {count} of {tasks.length} done
-                    </p>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Progress
-                      value={(count / tasks.length) * 100}
-                      aria-label="Getting started progress"
-                      className="h-1.5 flex-1 bg-muted *:bg-primary-text"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-expanded={!collapsed}
-                      aria-controls={listId}
-                      onClick={() => changePanel(collapsed ? "open" : "collapsed")}
-                    >
-                      {collapsed ? "Expand" : "Collapse"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-8"
-                      aria-label="Close getting started"
-                      title="Close getting started"
-                      onClick={() => {
-                        changePanel("dismissed");
-                        toast(
-                          "Getting started is hidden. Bring it back anytime with the checklist icon in the top bar.",
-                          {
-                            duration: 10_000,
-                            position: "bottom-right",
-                            closeButton: true,
-                            // Close sits inside the top-right corner, where people look for it.
-                            classNames: {
-                              toast: "pr-10!",
-                              closeButton:
-                                "top-3! right-2! left-auto! size-7! transform-none! border-0! bg-transparent! [&>svg]:size-4!",
-                            },
-                          },
-                        );
-                      }}
-                    >
-                      <IconX aria-hidden />
-                    </Button>
-                  </div>
+            <section
+              aria-labelledby={headingId}
+              className="rounded-xl border bg-card text-card-foreground shadow-2xs"
+            >
+              <div className="p-4">
+                <div className="flex items-baseline gap-2">
+                  <h2
+                    id={headingId}
+                    className="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                  >
+                    Getting started
+                  </h2>
+                  <p aria-live="polite" className="text-sm font-medium">
+                    {count} of {tasks.length} done
+                  </p>
                 </div>
-                {!collapsed && (
-                  <div id={listId} className="border-t px-4 pb-4">
-                    <p className="pt-3 text-sm text-muted-foreground">
-                      Open a task, then tick its circle when you have finished. For course tasks,
-                      choose a course first.
-                    </p>
-                    <ul className="divide-y">
-                      {tasks.map((task) => {
-                        const done = progress.completed.includes(task.id);
-                        return (
-                          <li key={task.id} className="py-3">
-                            <label className="flex cursor-pointer items-start gap-3 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={done}
-                                onChange={() => toggle(task.id)}
-                                className="peer sr-only"
+                <div className="mt-2 flex items-center gap-2">
+                  <Progress
+                    value={(count / tasks.length) * 100}
+                    aria-label="Getting started progress"
+                    className="h-1.5 flex-1 bg-muted *:bg-primary-text"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={!collapsed}
+                    aria-controls={listId}
+                    onClick={() => changePanel(collapsed ? "open" : "collapsed")}
+                  >
+                    {collapsed ? "Expand" : "Collapse"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="size-8"
+                    aria-label="Close getting started"
+                    title="Close getting started"
+                    onClick={() => {
+                      changePanel("dismissed");
+                      toast(
+                        "Getting started is hidden. Bring it back anytime with the checklist icon in the top bar.",
+                        {
+                          duration: 10_000,
+                          position: "bottom-right",
+                          closeButton: true,
+                          // Close sits inside the top-right corner, where people look for it.
+                          classNames: {
+                            toast: "pr-10!",
+                            closeButton:
+                              "top-3! right-2! left-auto! size-7! transform-none! border-0! bg-transparent! [&>svg]:size-4!",
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    <IconX aria-hidden />
+                  </Button>
+                </div>
+              </div>
+              {!collapsed && (
+                <div id={listId} className="border-t px-4 pb-4">
+                  <p className="pt-3 text-sm text-muted-foreground">
+                    Open a task, then tick its circle when you have finished. For course tasks,
+                    choose a course first.
+                  </p>
+                  <ul className="divide-y">
+                    {tasks.map((task) => {
+                      const done = progress.completed.includes(task.id);
+                      return (
+                        <li key={task.id} className="py-3">
+                          <label className="flex cursor-pointer items-start gap-3 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={done}
+                              onChange={() => toggle(task.id)}
+                              className="peer sr-only"
+                            />
+                            {done ? (
+                              <IconCircleCheckFilled
+                                aria-hidden
+                                className="size-5 shrink-0 rounded-full text-primary-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
                               />
-                              {done ? (
-                                <IconCircleCheckFilled
-                                  aria-hidden
-                                  className="size-5 shrink-0 rounded-full text-primary-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
-                                />
-                              ) : (
-                                <IconCircle
-                                  aria-hidden
-                                  className="size-5 shrink-0 rounded-full text-muted-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
-                                />
-                              )}
-                              <span
-                                className={
-                                  done ? "text-muted-foreground line-through" : "font-medium"
-                                }
-                              >
-                                {task.label}
-                              </span>
-                            </label>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mt-2 ml-8"
-                              aria-label={`Open ${task.label}`}
-                              onClick={() => navigate(task.href)}
+                            ) : (
+                              <IconCircle
+                                aria-hidden
+                                className="size-5 shrink-0 rounded-full text-muted-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+                              />
+                            )}
+                            <span
+                              className={
+                                done ? "text-muted-foreground line-through" : "font-medium"
+                              }
                             >
-                              Open
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    <p
-                      className="border-t pt-3 text-xs text-muted-foreground"
-                      role={progress.persistent ? undefined : "status"}
-                    >
-                      {progress.persistent
-                        ? "Progress is saved for your account in this browser only."
-                        : "Progress cannot be saved in this browser. It lasts only while this page is open."}
-                    </p>
-                  </div>
-                )}
-              </section>
-            )}
+                              {task.label}
+                            </span>
+                          </label>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 ml-8"
+                            aria-label={`Open ${task.label}`}
+                            onClick={() => navigate(task.href)}
+                          >
+                            Open
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p
+                    className="border-t pt-3 text-xs text-muted-foreground"
+                    role={progress.persistent ? undefined : "status"}
+                  >
+                    {progress.persistent
+                      ? "Progress is saved for your account in this browser only."
+                      : "Progress cannot be saved in this browser. It lasts only while this page is open."}
+                  </p>
+                </div>
+              )}
+            </section>
           </div>
         )}
         <div className="min-w-0 flex-1">{children}</div>
