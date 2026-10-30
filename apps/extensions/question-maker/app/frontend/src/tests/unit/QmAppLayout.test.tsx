@@ -193,6 +193,18 @@ afterEach(() => {
 const COURSE_42 = { id: 42, code: "BIOL 116", name: "Intro Biology", term: "W1", year: 2026 };
 
 describe("QmAppLayout", () => {
+  it("shows the Getting started button in the header on a non-dashboard route and sends it to /dashboard (#2070)", () => {
+    pathnameValue = "/courses";
+    userValue = { ...userValue, role: "INSTRUCTOR" };
+    render(<QmAppLayout />);
+    fireEvent.click(
+      within(screen.getByTestId("header-actions")).getByRole("button", {
+        name: "Show getting started checklist",
+      }),
+    );
+    expect(navigate).toHaveBeenCalledWith("/dashboard");
+  });
+
   it("renders the dashboard title for /dashboard", () => {
     pathnameValue = "/dashboard";
     render(<QmAppLayout />);
