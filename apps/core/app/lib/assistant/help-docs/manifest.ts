@@ -36,7 +36,7 @@ export type HelpDocPage = {
 
 export const HELP_DOC_PAGES: readonly HelpDocPage[] = [
   // ── User guide: everyone ──────────────────────────────────────────────────
-  { id: "applications", source: "user-guide", heading: "The three applications", slice: "student" },
+  { id: "applications", source: "user-guide", heading: "The applications", slice: "student" },
   {
     id: "navigation",
     source: "user-guide",

@@ -16,7 +16,14 @@
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { DEFAULT_PASSWORD, signOut } from "../helpers/auth";
-import { gotoAiTutor, openHelpTourEntry, sidebar } from "../helpers/at-ui";
+import {
+  gotoAiTutor,
+  openAppSwitcher,
+  openBugReport,
+  openHelpTourEntry,
+  openRailTray,
+  sidebar,
+} from "../helpers/at-ui";
 import { registerStudent, seedPublishedCourseAndEnroll } from "../helpers/at-student-fixtures";
 
 /**
@@ -72,7 +79,15 @@ test.describe("AI Tutor TA — sidebar navigation", () => {
       await gotoAiTutor(page, "/dashboard");
       const nav = sidebar(page);
       for (const label of ["Dashboard", "Courses", "Help"]) {
-        await expect(nav.getByRole("link", { name: label, exact: true }).first()).toBeVisible();
+        // Courses and Help open trays, so they are buttons; the rest are links.
+        await expect(
+          nav
+            .getByRole(label === "Courses" || label === "Help" ? "button" : "link", {
+              name: label,
+              exact: true,
+            })
+            .first(),
+        ).toBeVisible();
       }
       // A TA is course teaching staff, so their single "Courses" entry is the
       // instructor shell (`usesInstructorShell`), never the admin console.
@@ -89,7 +104,11 @@ test.describe("AI Tutor TA — sidebar navigation", () => {
     const { seeded } = await signInAsTa(page, playwright, "TNC");
     try {
       await gotoAiTutor(page, "/dashboard");
-      await sidebar(page).getByRole("link", { name: "Courses", exact: true }).first().click();
+      await (
+        await openRailTray(page, "Courses")
+      )
+        .getByRole("link", { name: "All courses" })
+        .click();
       // `getNavForUser` points a TA's Courses entry at `/instructor` — the
       // learner `/student` list is reachable only by direct URL.
       await expect(page).toHaveURL(/\/instructor$/, { timeout: 20_000 });
@@ -107,9 +126,7 @@ test.describe("AI Tutor TA — sidebar navigation", () => {
       await gotoAiTutor(page, "/dashboard");
       // The account button in the sidebar carries the TA's own email.
       const me = await (await page.request.get(`${AI_TUTOR_API_URL}/api/me`)).json();
-      await page.locator("button").filter({ hasText: me.user.email }).first().click();
-      const menu = page.locator('[role="menu"]');
-      await expect(menu).toBeVisible();
+      const menu = await openRailTray(page, "Account");
       await expect(menu.getByText("Settings")).toBeVisible();
       await expect(menu.getByText(/log out/i)).toBeVisible();
     } finally {
@@ -166,17 +183,13 @@ test.describe("AI Tutor TA — suite switcher and chrome", () => {
     const { seeded } = await signInAsTa(page, playwright, "TSW");
     try {
       await gotoAiTutor(page, "/dashboard");
-      await page.getByRole("button", { name: /switch app/i }).click();
-      const menu = page.locator('[role="menu"]');
-      await expect(menu).toBeVisible();
-      await expect(menu.getByRole("menuitem", { name: /EduAI Core/ })).toHaveAttribute(
+      const menu = await openAppSwitcher(page);
+      await expect(menu.getByRole("link", { name: /EduAI Core/ })).toHaveAttribute(
         "href",
         /localhost:3000/,
       );
-      await expect(menu.getByRole("menuitem", { name: /AI Tutor/ })).not.toHaveAttribute(
-        "href",
-        /./,
-      );
+      // The current app is listed but is not a link.
+      await expect(menu.locator('[aria-current="page"]', { hasText: "AI Tutor" })).toBeVisible();
     } finally {
       await seeded.dispose();
     }
@@ -199,8 +212,8 @@ test.describe("AI Tutor TA — suite switcher and chrome", () => {
     const { seeded } = await signInAsTa(page, playwright, "TBG");
     try {
       await gotoAiTutor(page, "/dashboard");
-      await page.getByRole("button", { name: /report a bug/i }).click();
-      const dialog = page.locator('[role="dialog"]');
+      await openBugReport(page);
+      const dialog = page.getByRole("dialog", { name: "Report a bug" });
       await expect(dialog.getByText("Report a bug")).toBeVisible();
       await dialog.getByTestId("bug-type").click();
       await page.locator('[role="option"]').first().click();

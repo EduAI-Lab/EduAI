@@ -9,25 +9,27 @@ export function evaluateQuestion(activity, payload) {
     if (typeof expected === "number" && typeof payload.answerOption === "number") {
       isCorrect = expected === payload.answerOption;
     }
-  } else if (questionType === "SHORT_TEXT") {
-    const expected =
-      typeof config.answer === "string"
-        ? config.answer
-        : config.answer?.text
-          ? String(config.answer.text)
-          : "";
-    // An open-ended short-text question (no configured answer key) cannot be
-    // auto-graded, so `isCorrect` stays `null` — the submission is left for a
-    // human to grade (it appears in the staff "to review" queue). Only compare
-    // when there is an answer key AND a submitted string; otherwise the old
-    // `expected && …` yielded `""` (an empty string, not a boolean or null),
-    // which the `Submission.isCorrect Boolean?` column rejects.
-    if (expected && typeof payload.answerText === "string") {
-      isCorrect = payload.answerText.trim().toLowerCase() === expected.trim().toLowerCase();
-    }
   }
+  // SHORT_TEXT is never auto-graded (#2027): a stored answer is only a reference
+  // for staff, so `isCorrect` stays null and the attempt waits in Needs grading.
 
   return {
     isCorrect,
   };
+}
+
+export const PENDING_REVIEW_MESSAGE = "Submitted. Your instructor will review this answer.";
+
+/** Student-facing message for a submit result; null means awaiting staff review. */
+export function submissionResultMessage(isCorrect) {
+  if (isCorrect === true) return "Nice! That looks right.";
+  if (isCorrect === false) return "Not quite. Try another angle.";
+  return PENDING_REVIEW_MESSAGE;
+}
+
+/** Feedback stored after a staff override, so it can't contradict the new result. */
+export function overrideFeedbackMessage(isCorrect) {
+  if (isCorrect === true) return "Marked correct by your instructor.";
+  if (isCorrect === false) return "Marked incorrect by your instructor.";
+  return PENDING_REVIEW_MESSAGE;
 }

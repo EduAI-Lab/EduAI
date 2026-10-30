@@ -90,7 +90,7 @@ function wrapWithPolicies(ui: React.ReactElement, policies: PolicyValues) {
 
 // Manager view (admin / unit / instructor)
 describe("CourseDetailManagerView", () => {
-  it("shows all four tabs including Enrollments", () => {
+  it("renders all four sections including Enrollments", () => {
     wrap(
       <CourseDetailManagerView
         course={COURSE}
@@ -104,10 +104,10 @@ describe("CourseDetailManagerView", () => {
         {...STAFF_PROPS}
       />,
     );
-    expect(screen.getByRole("tab", { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /materials/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /topics/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /enrollments/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /overview/i, hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /materials/i, hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /topics/i, hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /enrollments/i, hidden: true })).toBeInTheDocument();
   });
 
   it('renders "Upload material" button in Materials content', () => {
@@ -261,7 +261,7 @@ const TA_PROPS = {
 };
 
 describe("CourseDetailTaView", () => {
-  it("does NOT show Enrollments tab (§6)", () => {
+  it("does NOT render an Enrollments section (§6)", () => {
     wrap(
       <CourseDetailTaView
         course={COURSE}
@@ -271,7 +271,9 @@ describe("CourseDetailTaView", () => {
         {...TA_PROPS}
       />,
     );
-    expect(screen.queryByRole("tab", { name: /enrollments/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /enrollments/i, hidden: true }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders "Upload material" button in Materials content', () => {
@@ -362,14 +364,18 @@ describe("CourseDetailTaView", () => {
 
 // Student view (#1962: course chat is the main action; files only where shared, #2002)
 describe("CourseDetailStudentView", () => {
-  it("does NOT show Enrollments tab", () => {
+  it("does NOT render an Enrollments section", () => {
     wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
-    expect(screen.queryByRole("tab", { name: /enrollments/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /enrollments/i, hidden: true }),
+    ).not.toBeInTheDocument();
   });
 
-  it("does NOT have a Topics management tab", () => {
+  it("does NOT have a Topics management section", () => {
     wrap(<CourseDetailStudentView course={COURSE} topics={[TOPIC]} />);
-    expect(screen.queryByRole("tab", { name: /^topics$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /^topics$/i, hidden: true }),
+    ).not.toBeInTheDocument();
     // Topic names shown as badges in the hero
     expect(screen.getByText("Variables")).toBeInTheDocument();
   });

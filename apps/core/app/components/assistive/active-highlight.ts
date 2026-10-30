@@ -7,9 +7,6 @@ export const CHAT_MESSAGE_INACTIVE_CLASS = "chat-message--inactive";
 /** Subtle anchor on the chat composer when assistive highlighting is on. */
 export const ASSISTIVE_INPUT_ANCHOR_CLASS = "assistive-input-anchor";
 
-/** Class name for the chat history rail (hidden in assistive focus mode via CSS). */
-export const CHAT_HISTORY_RAIL_CLASS = "chat-history-rail";
-
 /** Chat surface scope for stronger `:focus-visible` rings. */
 export const ASSISTIVE_CHAT_SURFACE_CLASS = "assistive-chat-surface";
 

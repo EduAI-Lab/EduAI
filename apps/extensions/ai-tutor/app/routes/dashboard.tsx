@@ -187,7 +187,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+    <div className="@container/dashboard flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
       <PageHeading heading={heading} subheading={subheading} />
       {content}
     </div>

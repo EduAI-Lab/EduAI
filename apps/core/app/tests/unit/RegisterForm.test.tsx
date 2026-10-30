@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { RegisterForm } from "~/components/register-form";
+import { UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -65,6 +66,47 @@ describe("RegisterForm — rendering", () => {
     render(<RegisterForm fieldErrors={{ email: "Invalid email" }} />);
     expect(screen.queryByText(/must be a ubc address/i)).not.toBeInTheDocument();
     expect(screen.getByText("Invalid email")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1942: UBC check on blur, before the password fields
+// ---------------------------------------------------------------------------
+
+describe("RegisterForm — UBC address check on blur (#1942)", () => {
+  it("flags a non-UBC address as soon as the email field loses focus", () => {
+    render(<RegisterForm />);
+    const email = screen.getByLabelText<HTMLInputElement>("Email");
+
+    fireEvent.change(email, { target: { value: "qa-negative-test@example.com" } });
+    fireEvent.blur(email);
+
+    expect(screen.getByText(UBC_EMAIL_MESSAGE)).toBeInTheDocument();
+    expect(email).toHaveAttribute("aria-invalid", "true");
+    expect(email.checkValidity()).toBe(false);
+  });
+
+  it("leaves a UBC address alone", () => {
+    render(<RegisterForm />);
+    const email = screen.getByLabelText<HTMLInputElement>("Email");
+
+    fireEvent.change(email, { target: { value: "you@student.ubc.ca" } });
+    fireEvent.blur(email);
+
+    expect(screen.queryByText(UBC_EMAIL_MESSAGE)).not.toBeInTheDocument();
+    expect(email.checkValidity()).toBe(true);
+  });
+
+  it("clears the flag once the address is corrected", () => {
+    render(<RegisterForm />);
+    const email = screen.getByLabelText<HTMLInputElement>("Email");
+    fireEvent.change(email, { target: { value: "someone@example.com" } });
+    fireEvent.blur(email);
+
+    fireEvent.change(email, { target: { value: "someone@ubc.ca" } });
+
+    expect(screen.queryByText(UBC_EMAIL_MESSAGE)).not.toBeInTheDocument();
+    expect(email.checkValidity()).toBe(true);
   });
 });
 

@@ -91,7 +91,7 @@ describe("NeedsAttentionPanel — publish failure branches", () => {
     expect(toastSuccess).not.toHaveBeenCalled();
     // The optimistic hide must not apply to a write that never landed.
     expect(screen.getByRole("button", { name: /^Publish CPSC 101/ })).toBeInTheDocument();
-    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(screen.getByText("Unpublished")).toBeInTheDocument();
     expect(mockRevalidate).not.toHaveBeenCalled();
   });
 
@@ -130,7 +130,7 @@ describe("NeedsAttentionPanel — publish failure branches", () => {
 
     expect(mockPublishCourse).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /^Publish CPSC 101/ })).toBeInTheDocument();
-    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(screen.getByText("Unpublished")).toBeInTheDocument();
   });
 
   it("names the course in the confirm and states that publishing does not cascade", async () => {

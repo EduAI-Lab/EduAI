@@ -284,6 +284,23 @@ export const activitySchema = z
     customPrompt: z.string().nullable(),
     customPromptTitle: z.string().nullable(),
     completionStatus: completionStatusSchema.optional(),
+    lastSubmission: z
+      .object({
+        answer: z.object({
+          answerText: z.string().nullable(),
+          answerOption: z.number().nullable(),
+        }),
+        isCorrect: z.boolean().nullable(),
+        score: z.number().nullable(),
+        // Freeform Json column; never let a legacy shape reject the activity.
+        aiFeedback: z
+          .object({ message: z.string().optional() })
+          .passthrough()
+          .nullable()
+          .catch(null),
+        createdAt: z.string(),
+      })
+      .nullish(),
   })
   // The input is stated as `unknown` rather than `Activity` because `answer`
   // recovers from a malformed value instead of rejecting it, so what this
@@ -345,6 +362,7 @@ export const submissionRowSchema = z
     attemptNumber: z.number(),
     response: submissionResponseSchema.nullish(),
     answerLabel: z.string().nullish(),
+    referenceAnswer: z.string().nullish(),
     aiFeedback: z.object({ message: z.string().nullish() }).passthrough().nullish(),
     score: z.number().nullish(),
     isCorrect: z.boolean().nullish(),

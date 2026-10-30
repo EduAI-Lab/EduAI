@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly update of dev (s378) to the latest development branch (#2050)
+
+[Timer]
+# 04:00 Pacific, when nobody is testing on dev. A run skips at once when dev is
+# already on the latest commit.
+OnCalendar=*-*-* 04:00:00 America/Vancouver
+# Catch up after a reboot that slept through 04:00.
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

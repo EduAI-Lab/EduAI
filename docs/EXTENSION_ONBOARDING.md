@@ -19,7 +19,7 @@ This guide explains how to connect a new extension to the EduAI Core platform. I
 5. [Login redirect flow](#5-login-redirect-flow)
 6. [Role-based access control](#6-role-based-access-control)
 7. [Calling Core APIs](#7-calling-core-apis)
-8. [Registering with Core's sidebar](#8-registering-with-cores-sidebar)
+8. [Registering with Core's app switcher](#8-registering-with-cores-app-switcher)
 9. [Local development setup](#9-local-development-setup)
 10. [Verification checklist](#10-verification-checklist)
 
@@ -232,7 +232,7 @@ Reads are unaffected. Your own extension should run the mirror-image guard on it
 | `POST /api/sessions/validate` | Session validation — **requires** the key; a cookie alone is `403` |
 | `GET /api/courses` | List courses (role-filtered when a cookie is forwarded; unscoped for a bare service key) |
 | `GET /api/courses/:id` | Single-course live read-through |
-| `GET /api/courses/:id/topics` | Service-key callers receive staff topics, including suggestions; never expose this response directly as a student topic list (AI Tutor still does: [#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)) |
+| `GET /api/courses/:id/topics` | Service-key callers receive staff topics, including suggestions, by default. Pass `?audience=learner` for the topics students may see (accepted, not hidden, no `Uncategorized`) and use that for any student-facing list ([#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)) |
 | `GET /api/courses/:id/enrollments` | Course roster |
 | `GET /api/policies` | Platform feature flags |
 | `POST /api/completion` | Stateless LLM completion for extension AI-assist |
@@ -243,9 +243,9 @@ Core also calls **outward** to extensions using the same key: on course deletion
 
 ---
 
-## 8. Registering with Core's sidebar
+## 8. Registering with Core's app switcher
 
-Once your extension is running, add it to the Core app switcher so users can navigate to it.
+Once your extension is running, add it to Core's app switcher (the **Switch app** tray opened from the app icon at the top of the left navigation bar, or from the top bar on a phone) so users can navigate to it.
 
 ### Without touching `apps.tsx` (recommended)
 
@@ -288,7 +288,7 @@ npm install
 npm run dev
 ```
 
-Open Core in a browser, look at the sidebar app switcher — "Example Extension" appears. Click it to trigger the login redirect flow end-to-end.
+Open Core in a browser and select the Core icon at the top of the left navigation bar to open **Switch app** — "Example Extension" appears in the list. Click it to trigger the login redirect flow end-to-end.
 
 ---
 
@@ -354,7 +354,7 @@ Run through these steps after wiring up a new extension. All items must pass bef
 
 ### Sidebar registration
 
-- [ ] Set `VITE_EXTRA_EXTENSIONS` in `apps/core/.env` and restart Core — confirm the extension appears in the sidebar app switcher.
+- [ ] Set `VITE_EXTRA_EXTENSIONS` in `apps/core/.env` and restart Core — confirm the extension appears in the **Switch app** tray.
 
 ---
 
@@ -368,5 +368,5 @@ Run through these steps after wiring up a new extension. All items must pass bef
 
 **Core session validation endpoint:** `apps/core/app/routes/api/sessions.validate.ts`  
 **Core login redirect protection:** `apps/core/app/lib/auth/guards.server.ts` (`validateRedirectUrl`)  
-**Core sidebar registration:** `apps/core/app/lib/apps.tsx` (`getLauncherApps`, `parseExtraExtensions`)  
+**Core app switcher registration:** `apps/core/app/lib/apps.tsx` (`getLauncherApps`, `parseExtraExtensions`)  
 **Auth pipeline design doc:** `docs/implementations/auth-pipeline-centralization-plan.md`

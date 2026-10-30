@@ -239,8 +239,10 @@ export function invalidateCourseTopicNamesCache(courseId: string): void {
  *
  * A `learner` read (a student's turn) lists the learner view (#1937), the same
  * set as LEARNER_TOPIC_WHERE: a topic the instructor hid from students (#2002)
- * leaves the prompt's list but stays in the classifier's, because hiding a
- * topic hides its name, not the course content it covers.
+ * leaves the prompt's list but stays in the classifier's. A question about it
+ * is still about the course; since #2061 retrieval leaves the topic's files
+ * out (HIDDEN_TOPIC_WHERE), so chat answers it without them and the name is
+ * never shown to the student.
  */
 export async function getCourseTopicNamesCached(
   courseId: string,

@@ -114,7 +114,7 @@ describe("DashboardAnalytics", () => {
   it("uses a single-column layout when only the activity panel renders", () => {
     const { container } = render(<DashboardAnalytics stats={baseStats} />);
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+    expect(container.firstElementChild).toHaveClass("@2xl/dashboard:grid-cols-1");
   });
 
   it("uses a two-column layout when two panels render", () => {
@@ -124,7 +124,7 @@ describe("DashboardAnalytics", () => {
       />,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-2");
+    expect(container.firstElementChild).toHaveClass("@2xl/dashboard:grid-cols-2");
   });
 
   it("uses a three-column layout when all three panels render", () => {
@@ -138,6 +138,6 @@ describe("DashboardAnalytics", () => {
       />,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-3");
+    expect(container.firstElementChild).toHaveClass("@2xl/dashboard:grid-cols-3");
   });
 });

@@ -332,11 +332,19 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/courses.id.response-style.ts",
   }),
   entry({
+    method: "GET",
+    path: "/api/courses/:id/student-visibility",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    note: "File setting, approved topics and every live file with its topics and Canvas state; Settings audience only (#2061)",
+    routeFile: "routes/api/courses.id.student-visibility.ts",
+  }),
+  entry({
     method: "PATCH",
     path: "/api/courses/:id/student-visibility",
     readiness: "ready",
     errorEnvelope: "standard",
-    note: "No GET — course detail loader and topics API supply UI state (#2002)",
+    note: "File setting, topics, single files, or a whole file group resolved server-side (#2002, #2061)",
     routeFile: "routes/api/courses.id.student-visibility.ts",
   }),
 

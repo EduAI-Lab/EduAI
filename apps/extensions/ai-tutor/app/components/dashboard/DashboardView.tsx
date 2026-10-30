@@ -155,7 +155,7 @@ export function DashboardView({
   return (
     <div className="flex flex-col gap-6">
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-tour="dashboard-stats">
+      <div className="grid grid-cols-2 gap-3 @xl/dashboard:grid-cols-4" data-tour="dashboard-stats">
         {stats.map((s) => (
           <StatCard key={s.label} label={s.label} value={s.value} />
         ))}
@@ -165,7 +165,7 @@ export function DashboardView({
       {analytics}
 
       {/* 2-column body */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
+      <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_360px] @3xl/dashboard:items-start">
         {/* Left — your courses + quick actions */}
         <div className="flex flex-col gap-6">
           <div>

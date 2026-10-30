@@ -82,7 +82,10 @@ export async function action({ request }: ActionFunctionArgs) {
           entityId: created.invitation.id,
           // The invited email is the subject of the event and is stored for accountability.
           entityLabel: created.invitation.email,
-          details: { role: created.invitation.role, email: created.invitation.email },
+          details: {
+            role: created.invitation.role,
+            email: created.invitation.email,
+          },
         }),
       );
 
@@ -91,6 +94,7 @@ export async function action({ request }: ActionFunctionArgs) {
           invitation: created.invitation,
           acceptUrl: created.acceptUrl,
           emailDelivered: created.emailDelivered,
+          emailStatus: created.emailStatus,
         },
         201,
       );

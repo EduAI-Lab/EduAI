@@ -12,27 +12,28 @@ This guide reflects the current repository and the technically traced actor work
 
 A scenario explicitly marked as a bug is evidence of unintended behavior, not a supported workflow.
 
-## The three applications
+## The applications
 
 | Application | Use it for | Main places to look |
 | --- | --- | --- |
-| **EduAI Core** | Signing in, finding courses, course-aware chat, course materials, account settings, and platform administration | Dashboard, Courses, Course Chat, Settings |
+| **EduAI Core** | Signing in, finding courses, course materials, account settings, and platform administration | Dashboard, Courses, Settings |
+| **Course Chat** | Asking questions answered from one course's materials (part of Core, opened like an app) | New chat, History, Courses, Course Assistant for instructors |
 | **AI Tutor** | Working through structured learning activities with guided AI help | Dashboard, Courses, course content, activity chat |
 | **Question Maker** | Creating questions, assessments, exam variants, and Canvas imports/exports | Dashboard, Courses, Question Library, course workspace |
 
-Use the application switcher in the sidebar footer to move between applications.
+Use the app switcher, the current app's icon at the top of the left navigation bar, to move between applications. On a phone it sits in the top bar next to the menu button.
 You remain signed in because Core provides the shared session for all three applications.
 
 ## Navigation shared across the platform
 
-- Use the **sidebar** for the main sections of the current application.
-- Use the **application switcher** in the sidebar footer to open Core, AI Tutor, or Question Maker.
+- Use the **navigation bar** on the left for the main sections of the current application; on a phone, open it with the menu button in the top bar.
+- Use the **app switcher** (the app icon at the top of the left navigation bar, or in the top bar on a phone) to open Core, Course Chat, AI Tutor, or Question Maker.
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
-- Open the **profile menu** in the sidebar footer for Settings and Log out.
+- Open **Account** in the left navigation bar for Settings and Log out.
 - Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
-- Each app's dashboard has a five-task **Getting started** checklist. **Open** takes you to a task; tick it yourself when you have finished. Progress is saved for your account in this browser only.
+- Each app's dashboard has a five-task **Getting started** checklist on the right. **Open** takes you to a task; tick its circle yourself when you have finished. **Collapse** shrinks it to its progress bar, and **✕** hides it; the checklist button in the header brings it back from any page. Progress, and whether it is collapsed or hidden, is saved for your account in this browser only.
 - Five main pages in each app have a ▶ **Page tour** button in the header. Tours start only when you press it. On the Core and Question Maker dashboards, ▶ plays the app's overview tour, the same one **(?) → Take the tour** offers. Question Maker's checklist and page tours are for instructors and administrators.
-- Use **Report a bug** in the header when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
+- Use **Report a bug** under **Help** in the left navigation bar (in the menu on a phone) when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
 - Use the theme control in the header to change the color theme. Accessibility preferences are not shared between applications today: Core saves yours to your account and reapplies them on every device, AI Tutor keeps its setting in this browser only (`localStorage`), and Question Maker's setting lasts only for the current session. Set accessibility preferences in each application separately.
 
@@ -55,7 +56,7 @@ Penny is a guide, not an answer key: for assessment-style questions it explains 
 2. Sign in through EduAI Core. Students see their courses once an instructor adds them or the course roster syncs; until then the dashboard says your professor hasn't added you yet.
 3. If you opened an extension first, it sends you to Core to sign in and then returns you to the extension.
 4. Students may be asked for their student number during onboarding.
-5. Open **profile menu → Settings** to manage your account.
+5. Open **Account → Settings** to manage your account.
 
 Core Settings contains:
 
@@ -91,7 +92,7 @@ Question Maker is for `INSTRUCTOR`, `UNIT_ADMIN`, and `ADMIN` users. A TA can op
 
 ### Find a course
 
-1. Open **Courses** from the sidebar.
+1. Open **Courses** in the left navigation bar and pick the course, or choose **All courses** to see them all.
 2. Select a course card, or use the command palette to search for a course.
 3. The course page shows the features available to your role, such as course information, materials, roster, and course settings.
 
@@ -105,14 +106,14 @@ Students and teaching assistants can't create courses. If you need a course set 
 
 Platform administrators, unit administrators, and instructors can make a new course by hand:
 
-1. Open **Courses** from the sidebar (instructors see it as **My Courses**).
+1. Open **Courses** in the left navigation bar and choose **All courses**.
 2. Choose **Create course** at the top right of the page.
 3. Fill in the **Course name**, pick a **Course Code** (the department or subject, such as `CS`), and enter the **Course number** (such as `101`) and **Section**.
 4. Pick a **Start date**. The **Term** is filled in from the start date; you can't choose it separately.
 5. Administrators and unit administrators also choose the course's **Instructor**. When an instructor creates a course, they become its instructor automatically.
 6. Optionally add **AI instructions** for the course's AI features, then choose **Create course**.
 
-The new course starts as a **Draft**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
+The new course starts **Unpublished**, so students can't see it yet. Add materials and enrollments, then publish it from the course card or the course page.
 
 If a deleted course has the same code, section, year and term, or the same instructor already teaches that code in another section, year or term, EduAI first shows **This course may already exist**. **Restore** brings the deleted course back with its materials and enrollments; Question Maker and AI Tutor content is not restored. If you can't restore it, the dialog tells you to ask an administrator. **Create new course anyway** makes a separate course.
 
@@ -125,15 +126,15 @@ If your course already exists in Canvas, you don't need to create it by hand: fe
 
 ### Ask a course-aware question
 
-1. Open **Course Chat**.
-2. Select the course whose materials should ground the response.
+1. Open **Course Chat** from the app switcher. You can also start it from your dashboard or, as a student, with **Chat about this course** on a course page.
+2. Select the course whose materials should ground the response: open **Courses** in Course Chat's navigation bar, or use the course chip under the message box.
 3. Choose an available model if the interface offers a choice.
 4. Enter a clear question and send it.
 5. Continue in the same chat when asking follow-up questions about the same course.
 
 Use the attachment control to add up to three PDF, Word, PowerPoint, Excel, UTF-8 text/code, or PNG/JPEG/WebP files (10 MB each by default) to a message. Images are transcribed before sending; the chat model receives text, not the original image. Wait for extraction to finish and check any warning about truncated content. Message attachments are separate from the course learning-material library.
 
-The selected course controls which material can be retrieved. Start a separate chat when switching course context. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
+The selected course controls which material can be retrieved; changing course starts a separate chat. Use **New chat** to start over, and **History** in the navigation bar to reopen an earlier conversation. AI responses can be incomplete or wrong; verify important academic information against course materials and instructor guidance.
 
 **Assistive Mode.** Course Chat has an Assist toggle that reformats answers into a predictable structure (top summary, short stages, an explicit "next?" prompt) for readers who find long unbroken prose hard to work through. Turning it on may switch the request to a larger model, so replies can take longer; the progress indicator shows an expected duration and says so when a reply is taking longer than usual. Toggling Assist on the last reply re-generates that reply in place rather than only restyling it. Set your default in
 **Settings → Accessibility**.
@@ -148,6 +149,7 @@ Do not put passwords, API keys, private student information, or other secrets in
 
 - Students use course chat rather than the course Materials tab. Course-material files and their names are hidden from students; staff retain materials access according to their course permissions.
 - Instructors and TAs can upload learning materials, several files at once with progress shown for each, and instructors may connect/sync Canvas content. Materials are the reference content used to ground course chat, not a place for student submissions.
+- Instructors choose which files students can see in the course's **Settings** tab, under **What students see**: every file at once, by topic, or one file at a time, with an optional date for each file. A hidden file is not used to answer students in course chat.
 - **Materials are course learning materials only:** lecture notes, slides, readings and assignments. Don't upload rosters, grades or admin documents. Course chat, Penny and topic matching read every file here.
 - PNG, JPEG and WebP images are transcribed by a vision model before indexing. Check the transcription and retrieval with real examples; handwriting and charts can be misread. A scanned PDF without a text layer still needs OCR or conversion to a supported image.
 - A file may be linked to up to three approved topics. Automatic matching uses existing accepted topics; it does not invent new topics on upload. Instructors can change the links on the file. Use **Topics → Suggest topics** to request new suggestions, then review them. Core and course chat show students approved topics only, never suggestions or Uncategorized. AI Tutor's course page can still list suggestions that were never approved, and keeps listing one after it is dismissed; this is a known bug ([#1956](https://github.com/EduAI-Lab/EduAI/issues/1956)).
@@ -172,7 +174,7 @@ Uploading the same file again after a failure retries the existing entry rather 
 
 ### Instructor: connect and sync Canvas
 
-1. Open **profile menu → Settings → Canvas** and connect your Canvas account.
+1. Open **Account → Settings → Canvas** and connect your Canvas account.
 2. Open the relevant course.
 3. Start the Canvas course/material or roster sync offered by the course page.
 4. Review the imported course, materials, and enrollments before relying on them.
@@ -202,7 +204,7 @@ The full link is shown **once**, when you create it. Copy it then; EduAI stores 
 
 ### Instructor: the Course Assistant
 
-Once you teach at least one published course, a second chat entry, **Course Assistant**, appears below Course Chat in the sidebar, whatever your platform role.
+Once you teach at least one published course, **Course Assistant** appears in Course Chat's navigation bar, below **Courses**, whatever your platform role.
 It is a read-only helper for *running* one of your published courses — it can answer questions about that course's roster, enrollments, and topics, and nothing else.
 
 1. Open **Course Assistant** and pick one of your published courses.
@@ -232,7 +234,7 @@ The **Administration** sidebar group provides:
 - **Cron Jobs** — job status, manual runs, and per-job settings such as how many days deleted course materials are kept before they are purged (**Edit settings → Delete after (days)**).
 - **API Access** — who besides administrators may use an API key, and how much they used in the last 24 hours (see [API access for students and researchers](#api-access-for-students-and-researchers)).
 
-**Admin Chatbot** appears separately near the bottom of the sidebar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
+**Admin Chatbot** appears separately near the bottom of the navigation bar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
 
 **Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
 
@@ -253,7 +255,7 @@ Only administrators can use an EduAI API key until an administrator gives someon
 
 1. Open **Administration → API Access** and choose **Give API access**, or open the person's **⋮** menu in **User Management** and choose **Give API access**.
 2. Pick the person, enter the purpose (for example the project or course), and choose when access ends. It defaults to the end of the current term.
-3. Set the daily limits. They start at 200 requests and 200,000 tokens, counted over the last 24 hours across all of the person's keys.
+3. Set the daily limits. They start at 200 requests and 500,000 tokens, counted over the last 24 hours across all of the person's keys.
 4. Choose **Give access**. The person can now create their own key in **Settings → API Keys**.
 
 The API Access page shows each person's last 24 hours of use against their limits. **Revoke** stops their keys at once and disables them; to give access again later, grant it anew and they create a new key. Access also ends by itself on its end date, and their keys stop working then.
@@ -264,7 +266,7 @@ Every request made with an API key is recorded against the person: when, which m
 
 The [student API guide](STUDENT_API_GUIDE.md) has the full details: request examples in curl, Python and JavaScript, each model's context window, how limits and tokens are counted, every error and when to retry, and tips for large batches. The steps in short:
 
-1. Open **profile menu → Settings → API Keys**. The tab appears only while you have access, and shows when it ends and how much of today's allowance you have used.
+1. Open **Account → Settings → API Keys**. The tab appears only while you have access, and shows when it ends and how much of today's allowance you have used.
 2. Name a key and choose **Create**. Copy it right away: it is shown only once. A key can't last longer than your access.
 3. Send the key in the `x-api-key` header to `POST /api/completion` with a campus model, for example `vllm:qwen3.5-2b-instruct`. The tab shows a complete example.
 

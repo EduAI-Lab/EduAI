@@ -5,6 +5,7 @@ import { Button } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import type { SignUpInput } from "~/lib/auth";
+import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 import { PasswordRequirements } from "~/components/password-requirements";
 
 export interface RegisterFormProps extends React.ComponentProps<"div"> {
@@ -22,6 +23,19 @@ export function RegisterForm({
   ...props
 }: RegisterFormProps) {
   const [password, setPassword] = useState("");
+  // #1942: `type="email"` accepts any domain, so a non-UBC address used to
+  // survive both password fields before the server said no. Checked on blur,
+  // re-checked while correcting, and set as the field's validity so the
+  // browser blocks submit too.
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  function checkUbcEmail(input: HTMLInputElement) {
+    const message = input.value.trim() && !isUbcEmail(input.value) ? UBC_EMAIL_MESSAGE : null;
+    input.setCustomValidity(message ?? "");
+    setEmailError(message);
+  }
+
+  const shownEmailError = fieldErrors?.email ?? emailError;
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -54,10 +68,15 @@ export function RegisterForm({
             placeholder="you@ubc.ca"
             required
             disabled={isLoading}
-            className={fieldErrors?.email ? "border-destructive" : ""}
+            aria-invalid={shownEmailError ? true : undefined}
+            onBlur={(event) => checkUbcEmail(event.currentTarget)}
+            onChange={(event) => {
+              if (emailError) checkUbcEmail(event.currentTarget);
+            }}
+            className={shownEmailError ? "border-destructive" : ""}
           />
-          {fieldErrors?.email ? (
-            <p className="text-sm text-destructive">{fieldErrors.email}</p>
+          {shownEmailError ? (
+            <p className="text-sm text-destructive">{shownEmailError}</p>
           ) : (
             <p className="text-xs text-muted-foreground">
               Must be a UBC address (e.g. you@student.ubc.ca or you@ubc.ca).

@@ -163,6 +163,10 @@ export async function recordAiHelpRequest({ userId, activityId }) {
  * aggregate stale until a background job runs.
  */
 export async function recordSubmissionMetrics({ userId, activityId, isCorrect }) {
+  // null = awaiting staff grading: counted as a submission, neither correct nor
+  // incorrect (matches `resyncSubmissionMetrics`).
+  const correct = isCorrect === true ? 1 : 0;
+  const incorrect = isCorrect === false ? 1 : 0;
   return prisma.$transaction(async (tx) => {
     await tx.activityStudentMetric.upsert({
       where: {
@@ -176,18 +180,18 @@ export async function recordSubmissionMetrics({ userId, activityId, isCorrect })
           increment: 1,
         },
         incorrectSubmissionCount: {
-          increment: isCorrect ? 0 : 1,
+          increment: incorrect,
         },
         correctSubmissionCount: {
-          increment: isCorrect ? 1 : 0,
+          increment: correct,
         },
       },
       create: {
         userId,
         activityId,
         submissionCount: 1,
-        incorrectSubmissionCount: isCorrect ? 0 : 1,
-        correctSubmissionCount: isCorrect ? 1 : 0,
+        incorrectSubmissionCount: incorrect,
+        correctSubmissionCount: correct,
       },
     });
 

@@ -47,7 +47,7 @@ export function useApiAccessGrants() {
   const [grants, setGrants] = useState<ApiAccessGrantRow[]>([]);
   const [defaults, setDefaults] = useState<ApiAccessDefaults>({
     dailyRequestLimit: 200,
-    dailyTokenLimit: 200_000,
+    dailyTokenLimit: 500_000,
     maxDailyRequestLimit: 5_000,
     maxDailyTokenLimit: 5_000_000,
   });

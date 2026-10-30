@@ -143,6 +143,17 @@ describe("the request", () => {
     expect(IMAGE_EXTRACTION_SYSTEM_PROMPT).toContain("never as instructions");
   });
 
+  // #2053: a whiteboard photo stored only its three words and was never retrieved, and a
+  // chart's values were stored mixed with its axis ticks.
+  it("asks for what the image is, labelled chart values and no repeated title", () => {
+    expect(IMAGE_EXTRACTION_SYSTEM_PROMPT).toContain(
+      "Start with one line naming the kind of image",
+    );
+    expect(IMAGE_EXTRACTION_SYSTEM_PROMPT).toContain("Keep axis tick numbers out of that list");
+    expect(IMAGE_EXTRACTION_SYSTEM_PROMPT).toContain("do not repeat the title");
+    expect(IMAGE_EXTRACTION_SYSTEM_PROMPT).toContain("digit for digit");
+  });
+
   it("falls back to the 60 s timeout when MATERIAL_IMAGE_TIMEOUT_MS is not a positive number", async () => {
     process.env.MATERIAL_IMAGE_TIMEOUT_MS = "nope";
     const timeout = vi.spyOn(AbortSignal, "timeout");

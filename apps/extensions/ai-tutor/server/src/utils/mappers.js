@@ -175,6 +175,23 @@ export function mapLesson(lesson) {
   };
 }
 
+/** Student's latest attempt as the lesson player reads it (#2030). */
+function mapLastSubmission(submission) {
+  if (submission === undefined) return undefined;
+  if (!submission) return null;
+  const response = submission.response ?? {};
+  return {
+    answer: {
+      answerText: typeof response.answerText === "string" ? response.answerText : null,
+      answerOption: typeof response.answerOption === "number" ? response.answerOption : null,
+    },
+    isCorrect: submission.isCorrect ?? null,
+    score: submission.score ?? null,
+    aiFeedback: submission.aiFeedback ?? null,
+    createdAt: submission.createdAt,
+  };
+}
+
 /**
  * Map an Activity row (with optional eager-loaded relations) to the
  * Activity DTO consumed by the student/instructor activity views.
@@ -208,6 +225,9 @@ export function mapLesson(lesson) {
  *   - `completionStatus`  — Per-user status injected by the route handler
  *                            (mapper does not compute it); left `undefined`
  *                            when not applicable (e.g. instructor view).
+ *   - `lastSubmission`    — The requesting student's latest attempt, also
+ *                            injected by the route (#2030); `null` when they
+ *                            haven't answered, `undefined` for staff views.
  *
  * Why the heavy normalization: `Activity.config` is `Json` for flexibility,
  * but the client cannot safely consume freeform JSON. This mapper is the
@@ -266,6 +286,7 @@ export function mapActivity(activity, options = {}) {
     customPromptTitle:
       typeof activity.customPromptTitle === "string" ? activity.customPromptTitle : null,
     completionStatus: activity.completionStatus ?? undefined,
+    lastSubmission: mapLastSubmission(activity.lastSubmission),
   };
 
   if (includeAnswer) {

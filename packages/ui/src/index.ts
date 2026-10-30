@@ -139,22 +139,16 @@ export { SegmentedControl } from "./segmented-control";
 export type { SegmentedControlProps, SegmentedControlOption } from "./segmented-control";
 export { ThemeToggle } from "./theme-toggle";
 export type { ThemeToggleProps } from "./theme-toggle";
-export { NavUser } from "./nav-user";
-export type { NavUserProps, NavUserItem } from "./nav-user";
-export { NavMain } from "./nav-main";
-export type { NavMainProps, NavMainItem, NavGroupItem } from "./nav-main";
-export { NavSecondary } from "./nav-secondary";
-export type { NavSecondaryProps, NavSecondaryItem } from "./nav-secondary";
-export { AppSidebar } from "./app-sidebar";
-export type { AppSidebarProps } from "./app-sidebar";
-export { BrandSwitcher, AppSwitcher, QUESTION_MAKER_ROLES } from "./app-launcher";
+export {
+  BrandSwitcher,
+  AppSwitcher,
+  QUESTION_MAKER_ROLES,
+  visibleAppsForRole,
+} from "./app-launcher";
 export type { BrandSwitcherProps, AppSwitcherProps, LauncherApp } from "./app-launcher";
 export { getLauncherApps } from "./launcher-registry";
 export type { LauncherAppId, LauncherAppUrls, GetLauncherAppsOptions } from "./launcher-registry";
-export { SiteHeader } from "./site-header";
-export type { SiteHeaderProps } from "./site-header";
-export { AppShell } from "./app-shell";
-export type { AppShellProps } from "./app-shell";
+export * from "./nav-shell";
 export { CommandPalette, CommandSearchButton, buildAppSwitcherGroup } from "./command-palette";
 export type {
   CommandPaletteProps,
@@ -344,5 +338,5 @@ export type { ComboboxOption, ComboboxProps, MultiSelectProps } from "./ui/combo
 export { DetailPageScaffold } from "./detail-page-scaffold";
 export type { DetailPageScaffoldProps } from "./detail-page-scaffold";
 
-export { OnboardingChecklist, PageTourButton } from "./onboarding/onboarding";
+export { GettingStartedButton, OnboardingChecklist, PageTourButton } from "./onboarding/onboarding";
 export type { OnboardingPlatform } from "./onboarding/catalog";

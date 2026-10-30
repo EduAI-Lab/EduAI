@@ -19,10 +19,12 @@ import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
 import {
   commandPalette,
+  openAppSwitcher,
   openHelpTourEntry,
+  openRailTray,
+  sidebar,
   sidebarHrefs,
   sidebarLink,
-  userMenuButton,
 } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
@@ -47,16 +49,21 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     // heroCopy(UNIT_ADMIN) in routes/dashboard.tsx — proves the role reached
     // the client, not merely that some dashboard rendered.
     await expect(page.getByText("Your unit's courses and administration.")).toBeVisible();
-    // The sidebar user card renders the role label from the same session.
-    await expect(userMenuButton(page)).toContainText("Unit Admin");
+    // The Account tray carries the signed-in user; only an ADMIN gets a role
+    // badge there, so a unit admin must not be shown as one.
+    const account = await openRailTray(page, "Account");
+    await expect(account.getByRole("button", { name: "Log out" })).toBeVisible();
+    await expect(account.getByText("Admin", { exact: true })).toHaveCount(0);
   });
 
-  test("the sidebar exposes Dashboard, Courses and Help — and no Admin entry", async ({ page }) => {
+  test("the rail exposes Dashboard, Courses and Help — and no Admin entry", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
     await expect(sidebarLink(page, "/dashboard")).toBeVisible();
-    await expect(sidebarLink(page, "/instructor")).toBeVisible();
-    await expect(sidebarLink(page, "/help")).toBeVisible();
+    // Courses and Help open trays, so they are buttons rather than links.
+    for (const tray of ["Courses", "Help"]) {
+      await expect(sidebar(page).getByRole("button", { name: tray, exact: true })).toBeVisible();
+    }
 
     const hrefs = await sidebarHrefs(page);
     // The admin console is ADMIN-only in both places now: `getNavForUser()`
@@ -71,7 +78,7 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
   test("Courses in the sidebar opens the instructor course shell", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await sidebarLink(page, "/instructor").click();
+    await (await openRailTray(page, "Courses")).getByRole("link", { name: "All courses" }).click();
     await page.waitForURL(`${AI_TUTOR_URL}/instructor`);
     await expect(page.getByText("Browse your courses and manage their content.")).toBeVisible();
   });
@@ -107,13 +114,12 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     await expect(page.getByRole("heading", { name: ua.course.name, level: 1 })).toBeVisible();
   });
 
-  test("the sidebar user menu is a second route into Settings", async ({ page }) => {
+  test("the Account tray is a second route into Settings", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    // The palette is one way in (covered above); the sidebar footer user menu is
-    // the other, and it is the only one a mouse-only user is likely to find.
-    await userMenuButton(page).click();
-    await page.getByRole("menuitem", { name: "Settings" }).click();
+    // The palette is one way in (covered above); the rail's Account tray is the
+    // other, and it is the only one a mouse-only user is likely to find.
+    await (await openRailTray(page, "Account")).getByRole("link", { name: "Settings" }).click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/settings`);
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
@@ -203,14 +209,12 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
   }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await page.getByRole("button", { name: /Switch app/i }).click();
-    const launcher = page
-      .locator("[role=menu], [role=dialog]")
-      .filter({ hasText: "EduAI Core" })
-      .first();
-    await expect(launcher).toBeVisible();
+    const launcher = await openAppSwitcher(page);
+    await expect(launcher.getByRole("link", { name: /EduAI Core/ })).toBeVisible();
     await expect(launcher.getByText("Question Maker")).toBeVisible();
-    await expect(launcher.getByText("NOW")).toBeVisible();
+    await expect(launcher.locator('[aria-current="page"]', { hasText: "AI Tutor" })).toContainText(
+      "Current",
+    );
   });
 
   test("Help renders the unit-administrator guide", async ({ page }) => {

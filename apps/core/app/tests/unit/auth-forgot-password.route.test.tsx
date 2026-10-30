@@ -9,6 +9,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 import { action } from "~/routes/auth/forgot-password";
+import { loader as resetLoader } from "~/routes/auth/reset-password";
 import { auth } from "~/lib/auth/server";
 
 function routeArgs(email: string, headers: Record<string, string> = {}) {
@@ -36,7 +37,7 @@ describe("auth/forgot-password action", () => {
     expect(sent.headers.get("cookie")).toBeNull();
     expect(await sent.json()).toEqual({ email: "student@ubc.ca" });
     expect(result.status).toBe(302);
-    expect(result.headers.get("Location")).toBe("/auth/reset-password?email=student%40ubc.ca");
+    expect(result.headers.get("Location")).toBe("/auth/reset-password");
   });
 
   it("answers an unknown address exactly as it answers a known one", async () => {
@@ -50,7 +51,27 @@ describe("auth/forgot-password action", () => {
 
     expect(unknown.status).toBe(known.status);
     expect(await unknown.text()).toBe(await known.text());
-    expect(unknown.headers.get("Location")).toBe("/auth/reset-password?email=nobody%40ubc.ca");
+    expect(unknown.headers.get("Location")).toBe("/auth/reset-password");
+  });
+
+  // #1942: `?email=` put the address in browser history, the proxy's access
+  // log and every Referer. It travels to the reset page in a cookie instead.
+  it("hands the address to the reset page without putting it in the URL", async () => {
+    const result = (await action(routeArgs("Student@ubc.ca"))) as Response;
+
+    const setCookie = result.headers.get("Set-Cookie") ?? "";
+    expect(result.headers.get("Location")).not.toContain("ubc.ca");
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/Path=\/auth\/reset-password/);
+
+    const reset = await resetLoader({
+      request: new Request("http://localhost/auth/reset-password", {
+        headers: { Cookie: setCookie.split(";")[0] },
+      }),
+      params: {},
+      context: {} as never,
+    } as never);
+    expect(reset).toEqual({ email: "student@ubc.ca" });
   });
 
   it("keeps a Better Auth failure indistinguishable from a success", async () => {
@@ -59,7 +80,7 @@ describe("auth/forgot-password action", () => {
     const result = (await action(routeArgs("student@ubc.ca"))) as Response;
 
     expect(result.status).toBe(302);
-    expect(result.headers.get("Location")).toBe("/auth/reset-password?email=student%40ubc.ca");
+    expect(result.headers.get("Location")).toBe("/auth/reset-password");
   });
 
   it("rejects a malformed address before anything is sent", async () => {

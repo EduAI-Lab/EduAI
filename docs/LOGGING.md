@@ -86,6 +86,10 @@ grep -rhoE 'actionCode: "[A-Z_]+"' apps/core/app | sort -u
 | Login success | A user authenticated successfully (`LOGIN_SUCCESS` / `LOGIN`). |
 | Login failed | An authentication attempt was rejected (`LOGIN_FAILED` / `FAILED_LOGIN`). |
 | Logout | A user ended their session. |
+| User registered | A public self-signup created an account (`USER_REGISTERED`). Not written for a repeat sign-up of an existing address, an invitation acceptance, or an admin-created user. |
+| Verification email sent / failed | The sign-up verification email was handed to SMTP, or the send failed (`VERIFICATION_EMAIL_SENT` / `VERIFICATION_EMAIL_FAILED`). |
+| Password reset requested | A reset code was emailed to an existing account; outcome `FAILURE` when the send failed (`PASSWORD_RESET_REQUESTED`). A request for an unknown address writes nothing. |
+| Password reset completed | A reset code was redeemed and the password changed (`PASSWORD_RESET_COMPLETED`). |
 | Admin access denied | A non-admin was blocked from an admin-only resource (`ADMIN_ACCESS_DENIED`). |
 | API key denied | An `x-api-key` request came from a non-admin, inactive, or unknown key owner (`API_KEY_DENIED`). |
 | Invitation access denied | A caller without invitation authority hit an invitation endpoint (`INVITATION_ACCESS_DENIED`). |

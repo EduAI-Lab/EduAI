@@ -1,0 +1,19 @@
+[Unit]
+Description=Update dev (s378) to the latest development branch (#2050)
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/GO-LIVE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Same account as the web units and eduai-dev-build (#1872). It is in
+# eduai-dev, so the polkit rule lets it restart the eduai-* units and the
+# sudoers grant lets it run eduai-cron-sync, exactly as a teammate would.
+User=service_eduai
+Group=eduai-dev
+UMask=0002
+Environment=HOME=/var/lib/service_eduai
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/eduai-dev-update.sh
+# npm install + four builds; well past this means something is stuck.
+TimeoutStartSec=45min

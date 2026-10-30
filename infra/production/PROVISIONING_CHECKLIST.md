@@ -51,6 +51,13 @@ evidence in the deployment handoff.
       by the systemd units; do not place secrets in the release checkout.
 - [ ] Confirm `COOKIE_DOMAIN=.eduai.ok.ubc.ca` in Core's environment (without it
       every app switch asks users to sign in again, #1935).
+- [ ] Confirm `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` and `EMAIL_FROM` are set in
+      Core's environment. They are required: without them prod sends no email
+      (#1854). Send a test invitation after installing.
+- [ ] When re-running `install-env`, read its output: it backs up the live file
+      as `eduai-core.env.bak-<time>` and stops if the template would drop a
+      setting the live file has. Add the setting to the template; pass
+      `--allow-removed` only when the removal is intended (#1859).
 - [ ] Confirm production URLs, cookie domain, CORS origins, ports, database URLs,
       and API-key relationships.
 - [ ] Confirm session/authentication secrets are stable for the release and are

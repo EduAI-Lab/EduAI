@@ -1,15 +1,16 @@
 /**
- * Unit tests for `QmAppLayout` (#1546): the app shell wrapper — nav building
- * from RBAC helpers, route-aware breadcrumb/title, the composer sticky-bar
- * className branch, the help modal's tour entry, and the "no courses yet"
- * pulse indicator. Every `@eduai/ui` shell primitive and sibling
- * component/context is mocked so this exercises only QmAppLayout's own logic.
+ * Unit tests for `QmAppLayout` (#1546): the app shell wrapper — the nav model
+ * built from RBAC helpers, the course menu, route-aware breadcrumb/title, the
+ * composer sticky-bar className branch, the help modal's tour entry, and the
+ * "no courses yet" pulse indicator. The shared `NavShell` and sibling
+ * components/contexts are mocked so this exercises only QmAppLayout's own logic.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 let pathnameValue = "/dashboard";
 let searchParamsValue = new URLSearchParams();
+let searchValue = "";
 const navigate = vi.fn();
 const startTour = vi.fn();
 const logout = vi.fn();
@@ -29,34 +30,37 @@ const { toastErrorFn, toastFn, createCourse } = vi.hoisted(() => {
 vi.mock("sonner", () => ({ toast: toastFn }));
 
 vi.mock("react-router", () => ({
-  useLocation: () => ({ pathname: pathnameValue }),
+  useLocation: () => ({ pathname: pathnameValue, search: searchValue, key: "test-key" }),
   useNavigate: () => navigate,
   useSearchParams: () => [searchParamsValue],
   Link: ({ children, to }: any) => <a href={to}>{children}</a>,
   Outlet: () => <div data-testid="outlet" />,
 }));
 
-let capturedAppShellProps: any = null;
+let capturedShellProps: any = null;
 
 // The shell primitives are stubbed, but `useHistoryOnOpen` is the REAL hook:
 // its one-request-per-open contract is what the history wiring below asserts,
 // and a stub would assert nothing.
 vi.mock("@eduai/ui", async (importOriginal) => ({
   OnboardingChecklist: (await importOriginal<any>()).OnboardingChecklist,
+  GettingStartedButton: (await importOriginal<any>()).GettingStartedButton,
   PageTourButton: (await importOriginal<any>()).PageTourButton,
   useHistoryOnOpen: (await importOriginal<any>()).useHistoryOnOpen,
-  BugReportTriggerButton: (await importOriginal<any>()).BugReportTriggerButton,
+  termLabel: (await importOriginal<any>()).termLabel,
+  visibleAppsForRole: (await importOriginal<any>()).visibleAppsForRole,
   // Real help button + resolver: the modal's tour wiring is what's asserted below.
   PageHelpButton: (await importOriginal<any>()).PageHelpButton,
   resolvePageHelp: (await importOriginal<any>()).resolvePageHelp,
   useTour: () => ({ startTour }),
-  AppShell: (props: any) => {
-    capturedAppShellProps = props;
+  NavShell: (props: any) => {
+    capturedShellProps = props;
     return (
       <div data-testid="app-shell" data-classname={props.mainClassName} data-title={props.title}>
         <div data-testid="breadcrumbs">{props.breadcrumbs}</div>
+        <div data-testid="course-nav">{props.courseNav?.subPage}</div>
         <div data-testid="header-actions">{props.headerActions}</div>
-        <div data-testid="command-palette-slot">{props.commandPalette}</div>
+        <div data-testid="overlays-slot">{props.overlays}</div>
         {props.children}
       </div>
     );
@@ -94,7 +98,6 @@ vi.mock("@eduai/ui", async (importOriginal) => ({
       <button data-testid="history-refresh" onClick={props.onRefresh} />
     </div>
   ),
-  NavSecondary: () => null,
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -150,17 +153,16 @@ vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: any) => <>{children}</>,
 }));
 
-vi.mock("@/components/layout/CourseSwitcher", () => ({
-  CourseSwitcher: ({ courseId }: any) => <div data-testid="course-switcher">{courseId}</div>,
-}));
-
 vi.mock("@/components/command/CommandPalette", () => ({
   CommandPalette: () => <div data-testid="command-palette" />,
 }));
 
 vi.mock("@/lib/apps", () => ({
   CURRENT_APP_ID: "question-maker",
-  getLauncherApps: () => [],
+  getLauncherApps: () => [
+    { id: "question-maker", name: "Question Maker", url: "/", roles: ["TA", "INSTRUCTOR"] },
+    { id: "admin-only", name: "Admin only", url: "/", roles: ["ADMIN"] },
+  ],
 }));
 
 vi.mock("@/services/courseService", () => ({
@@ -180,14 +182,29 @@ afterEach(() => {
   getAiStatusHistory.mockReset();
   pathnameValue = "/dashboard";
   searchParamsValue = new URLSearchParams();
+  searchValue = "";
   coursesValue = [];
   isCoursesLoadingValue = false;
   bugReportValue = { openBugReport };
   userValue = { id: "1", name: "Ada", email: "ada@example.com", role: "instructor" };
-  capturedAppShellProps = null;
+  capturedShellProps = null;
 });
 
+const COURSE_42 = { id: 42, code: "BIOL 116", name: "Intro Biology", term: "W1", year: 2026 };
+
 describe("QmAppLayout", () => {
+  it("shows the Getting started button in the header on a non-dashboard route and sends it to /dashboard (#2070)", () => {
+    pathnameValue = "/courses";
+    userValue = { ...userValue, role: "INSTRUCTOR" };
+    render(<QmAppLayout />);
+    fireEvent.click(
+      within(screen.getByTestId("header-actions")).getByRole("button", {
+        name: "Show getting started checklist",
+      }),
+    );
+    expect(navigate).toHaveBeenCalledWith("/dashboard");
+  });
+
   it("renders the dashboard title for /dashboard", () => {
     pathnameValue = "/dashboard";
     render(<QmAppLayout />);
@@ -195,17 +212,39 @@ describe("QmAppLayout", () => {
     expect(screen.getByTestId("outlet")).toBeInTheDocument();
   });
 
-  it('shows "Course workspace" title and a course switcher for a course route', () => {
+  it('shows "Course workspace" title and the course menu for a course route', () => {
     pathnameValue = "/courses/42";
+    searchValue = "?tab=banks";
+    coursesValue = [COURSE_42];
     render(<QmAppLayout />);
     expect(screen.getByTestId("app-shell").dataset.title).toBe("Course workspace");
-    expect(screen.getByTestId("course-switcher")).toHaveTextContent("42");
+    const courseNav = capturedShellProps.courseNav;
+    expect(courseNav).toMatchObject({ href: "/courses/42", code: "BIOL 116", activeKey: "banks" });
+    expect(courseNav.items.map((item: any) => item.key)).toEqual([
+      "overview",
+      "questions",
+      "banks",
+      "assessments",
+    ]);
+    expect(courseNav.items[3]).toMatchObject({
+      href: "/courses/42?tab=assessments",
+      tourId: "assessment-tab",
+    });
+  });
+
+  it("has no course menu until the route's course has loaded", () => {
+    pathnameValue = "/courses/42";
+    render(<QmAppLayout />);
+    expect(capturedShellProps.courseNav).toBeUndefined();
+    expect(screen.getByTestId("breadcrumbs")).toHaveTextContent("Course workspace");
   });
 
   it('shows the "New question" sub-crumb on the composer route', () => {
     pathnameValue = "/courses/42/questions/new";
+    coursesValue = [COURSE_42];
     render(<QmAppLayout />);
     expect(screen.getByText("New question")).toBeInTheDocument();
+    expect(capturedShellProps.courseNav.activeKey).toBe("questions");
   });
 
   it("applies the min-w-0 flex-1 mainClassName on composer routes", () => {
@@ -229,8 +268,10 @@ describe("QmAppLayout", () => {
       questionMakerRole: "TA",
     };
     render(<QmAppLayout />);
-    expect(capturedAppShellProps.sidebar.launcher.role).toBe("TA");
-    expect(capturedAppShellProps.sidebar.user.role).toBe("TA");
+    expect(capturedShellProps.model.launcherApps.map((app: any) => app.id)).toEqual([
+      "question-maker",
+    ]);
+    expect(capturedShellProps.model.user.role).toBe("TA");
   });
 
   it('falls back to "Question Maker" for an unmapped path', () => {
@@ -286,17 +327,33 @@ describe("QmAppLayout", () => {
     await waitFor(() => expect(startTour).toHaveBeenCalledWith("main"));
   });
 
-  it("renders the bug report button when a BugReportContext is present, and calls it on click", () => {
+  it("offers the bug report from the Help tray when a BugReportContext is present", () => {
     render(<QmAppLayout />);
-    const btn = screen.getByLabelText("Report a bug");
-    fireEvent.click(btn);
+    expect(screen.queryByLabelText("Report a bug")).toBeNull();
+    capturedShellProps.model.onReportBug();
     expect(openBugReport).toHaveBeenCalled();
   });
 
-  it("omits the bug report button when no BugReportContext is present", () => {
+  it("omits the bug report when no BugReportContext is present", () => {
     bugReportValue = null;
     render(<QmAppLayout />);
-    expect(screen.queryByLabelText("Report a bug")).toBeNull();
+    expect(capturedShellProps.model.onReportBug).toBeUndefined();
+  });
+
+  it("makes Courses and Help trays and puts Back to EduAI in the Account tray", () => {
+    render(<QmAppLayout />);
+    const { model } = capturedShellProps;
+    expect(model.entries.map((entry: any) => entry.tray ?? entry.link.label)).toEqual([
+      "Dashboard",
+      "help",
+    ]);
+    expect(model.helpLinks).toEqual([
+      expect.objectContaining({ label: "Help & guide", href: "/help" }),
+    ]);
+    expect(model.accountLinks.map((link: any) => link.label)).toEqual([
+      "Settings",
+      "Back to EduAI",
+    ]);
   });
 
   // Task 15: clicking the cloud chip now re-validates the key on demand
@@ -384,7 +441,7 @@ describe("QmAppLayout additional coverage", () => {
   it("shows a toast error when logout rejects", async () => {
     logout.mockRejectedValueOnce(new Error("network"));
     render(<QmAppLayout />);
-    capturedAppShellProps.sidebar.navUser.onLogout();
+    capturedShellProps.model.onLogout();
     await new Promise((r) => setTimeout(r, 0));
     expect(toastErrorFn).toHaveBeenCalledWith("Could not log out", expect.any(Object));
   });
@@ -392,22 +449,24 @@ describe("QmAppLayout additional coverage", () => {
   it("does not toast when logout resolves", async () => {
     logout.mockResolvedValueOnce(undefined);
     render(<QmAppLayout />);
-    capturedAppShellProps.sidebar.navUser.onLogout();
+    capturedShellProps.model.onLogout();
     await new Promise((r) => setTimeout(r, 0));
     expect(toastErrorFn).not.toHaveBeenCalled();
   });
 
-  it("falls back to Guest sidebar user when unauthenticated", () => {
+  it("falls back to a Guest nav user, without Settings, when unauthenticated", () => {
     userValue = null;
     render(<QmAppLayout />);
-    expect(capturedAppShellProps.sidebar.user).toEqual({ name: "Guest", email: "", role: "GUEST" });
-    expect(capturedAppShellProps.sidebar.navUser).toBeUndefined();
+    expect(capturedShellProps.model.user).toEqual({ name: "Guest", email: "", role: "GUEST" });
+    expect(capturedShellProps.model.accountLinks.map((link: any) => link.label)).toEqual([
+      "Back to EduAI",
+    ]);
   });
 
-  it("uses the user email as sidebar name when name is absent", () => {
+  it("uses the user email as the nav name when name is absent", () => {
     userValue = { id: "1", email: "noname@example.com", role: "instructor" };
     render(<QmAppLayout />);
-    expect(capturedAppShellProps.sidebar.user.name).toBe("noname@example.com");
+    expect(capturedShellProps.model.user.name).toBe("noname@example.com");
   });
 
   it.each([
@@ -418,6 +477,7 @@ describe("QmAppLayout additional coverage", () => {
     ["/courses/42/banks/7", "Question bank"],
   ])("shows the %s sub-crumb for %s", (path, expected) => {
     pathnameValue = path;
+    coursesValue = [COURSE_42];
     render(<QmAppLayout />);
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
@@ -451,15 +511,14 @@ describe("QmAccessShell", () => {
     expect(screen.queryByRole("button", { name: /take the tour/i })).not.toBeInTheDocument();
   });
 
-  it("falls back to a Guest sidebar user when unauthenticated", () => {
+  it("falls back to a Guest nav user when unauthenticated", () => {
     userValue = null;
     render(
       <QmAccessShell>
         <p>gated content</p>
       </QmAccessShell>,
     );
-    expect(capturedAppShellProps.sidebar.user).toEqual({ name: "Guest", email: "", role: "GUEST" });
-    expect(capturedAppShellProps.sidebar.navUser).toBeUndefined();
+    expect(capturedShellProps.model.user).toEqual({ name: "Guest", email: "", role: "GUEST" });
   });
 
   it("wires onLogout and surfaces a toast on failure", async () => {
@@ -469,7 +528,7 @@ describe("QmAccessShell", () => {
         <p>gated content</p>
       </QmAccessShell>,
     );
-    capturedAppShellProps.sidebar.navUser.onLogout();
+    capturedShellProps.model.onLogout();
     await new Promise((r) => setTimeout(r, 0));
     expect(toastErrorFn).toHaveBeenCalled();
   });

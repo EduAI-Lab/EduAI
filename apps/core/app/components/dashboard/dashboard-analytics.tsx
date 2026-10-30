@@ -27,7 +27,7 @@ const ACTIVITY_COLOR = "var(--color-role-instructor)";
 
 function AnalyticsSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 @2xl/dashboard:grid-cols-3">
       {[0, 1, 2].map((i) => (
         <div
           key={i}
@@ -115,10 +115,10 @@ export function DashboardAnalytics({
 
   const cols =
     panels.length >= 3
-      ? "md:grid-cols-3"
+      ? "@2xl/dashboard:grid-cols-3"
       : panels.length === 2
-        ? "md:grid-cols-2"
-        : "md:grid-cols-1";
+        ? "@2xl/dashboard:grid-cols-2"
+        : "@2xl/dashboard:grid-cols-1";
 
   return <div className={`grid gap-4 ${cols}`}>{panels}</div>;
 }

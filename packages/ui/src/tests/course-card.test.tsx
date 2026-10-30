@@ -75,7 +75,7 @@ describe("CourseCard", () => {
         href="/courses/1"
       />,
     );
-    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(screen.getByText("Unpublished")).toBeInTheDocument();
   });
 
   it("renders department label if provided", () => {
@@ -181,7 +181,7 @@ describe("CourseCard", () => {
         }}
       />,
     );
-    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(screen.getByText("Unpublished")).toBeInTheDocument();
   });
 
   it("shows delete option in action menu when showDelete is true", () => {

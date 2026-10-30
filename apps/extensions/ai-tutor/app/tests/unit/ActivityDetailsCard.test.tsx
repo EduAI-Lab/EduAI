@@ -74,7 +74,7 @@ describe("ActivityDetailsCard", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Question details/i }));
-    expect(screen.getByText("Expected answer")).toBeInTheDocument();
+    expect(screen.getByText("Reference answer")).toBeInTheDocument();
     expect(screen.getByText("Paris")).toBeInTheDocument();
   });
 

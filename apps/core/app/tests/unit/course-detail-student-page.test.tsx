@@ -41,6 +41,7 @@ vi.mock("react-router", async (importOriginal) => {
     ...actual,
     useLoaderData: () => loaderData,
     useRevalidator: () => ({ revalidate: vi.fn(), state: "idle" }),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
     Link: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   };
 });
@@ -86,7 +87,6 @@ vi.mock("~/hooks/api/use-course-tas", () => ({
 vi.mock("~/components/layout/core-app-shell", () => ({
   CoreAppShell: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("~/components/layout/course-switcher", () => ({ CourseSwitcher: () => null }));
 
 /** Which role view rendered, and the names of the props it was handed. */
 const renderedViews: Array<{ view: string; propNames: string[] }> = [];

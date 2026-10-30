@@ -21,6 +21,13 @@ export type SendEmailResult = { delivered: boolean };
 
 const DEFAULT_FROM = "EduAI <no-reply@eduai.local>";
 
+/**
+ * Connect, greeting and idle timeouts for the SMTP transport (#1860). Without
+ * them nodemailer waits about two minutes on an unreachable relay, so an invite
+ * request hangs instead of failing and offering the copy link.
+ */
+export const SMTP_TIMEOUT_MS = 10_000;
+
 function readEnv(name: string): string | undefined {
   const value = process.env[name];
   return value && value.trim() ? value.trim() : undefined;
@@ -52,8 +59,24 @@ function getTransport(): Transporter | null {
     // `secure` true for implicit TLS (465); otherwise STARTTLS is negotiated.
     secure: readEnv("SMTP_SECURE") === "true" || port === 465,
     auth: user && pass ? { user, pass } : undefined,
+    connectionTimeout: SMTP_TIMEOUT_MS,
+    greetingTimeout: SMTP_TIMEOUT_MS,
+    socketTimeout: SMTP_TIMEOUT_MS,
   });
   return cachedTransport;
+}
+
+/**
+ * Warn once at startup when a production server has no SMTP relay (#1860).
+ * Every email (invites, verification, alerts) would fail, and before this the
+ * only sign was a console error on the first send.
+ */
+export function warnIfSmtpMissing(): void {
+  if (process.env.NODE_ENV !== "production" || isSmtpConfigured()) return;
+  console.warn(
+    "[email] SMTP_HOST is not set — invitations, verification and alert emails cannot be sent. " +
+      "Set the SMTP_* variables in apps/core/.env.",
+  );
 }
 
 /** Test seam: drop the cached transport so env changes take effect. */
@@ -66,7 +89,17 @@ export async function sendEmail(message: EmailMessage): Promise<SendEmailResult>
 
   if (!transport) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("SMTP must be configured before sending email in production");
+      const error = new Error("SMTP must be configured before sending email in production");
+      // Recorded before the throw so it reaches Admin → Logs, not only the console (#1860).
+      fireAndForget(
+        logSystemError({
+          source: "MAIL",
+          code: "MAIL_NOT_CONFIGURED",
+          message: "SMTP is not configured; email was not sent",
+          error,
+        }),
+      );
+      throw error;
     }
     console.info(
       `[email] SMTP not configured — skipping send to ${message.to}: "${message.subject}"\n${message.text}`,

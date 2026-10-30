@@ -36,26 +36,26 @@ export function DashboardInstructorView({
   const stats = [
     { label: "Courses teaching", value: totalCourses },
     { label: "Published", value: publishedCount },
-    { label: "Drafts", value: draftCount },
+    { label: "Unpublished", value: draftCount },
     { label: "Synced from EduAI", value: syncedCount },
   ];
 
   const statusSegments: DonutSegment[] = [
     { label: "Published", value: publishedCount, color: PUBLISHED_COLOR },
-    { label: "Draft", value: draftCount, color: DRAFT_COLOR },
+    { label: "Unpublished", value: draftCount, color: DRAFT_COLOR },
   ];
 
   const analytics =
     totalCourses > 0 ? (
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @2xl/dashboard:grid-cols-2">
         <PanelCard title="Publish status">
           <DonutChart data={statusSegments} centerValue={totalCourses} centerLabel="Courses" />
         </PanelCard>
-        <PanelCard title="Draft courses">
+        <PanelCard title="Unpublished courses">
           <p className="py-6 text-center text-sm text-muted-foreground">
             {draftCount === 0
               ? "Everything you teach is published."
-              : `${draftCount} of ${totalCourses} courses are still in draft.`}
+              : `${draftCount} of ${totalCourses} courses are still unpublished.`}
           </p>
         </PanelCard>
       </div>

@@ -130,7 +130,12 @@ restart_and_verify() {
   # Empty is legitimate: `--only core` already restarted Core above. Guard anyway,
   # because `systemctl restart` with no arguments is an error, not a no-op.
   if [ "${#RESTART_UNITS[@]}" -gt 0 ]; then
-    systemctl restart "${RESTART_UNITS[@]}"
+    # --no-ask-password (#2050): the polkit rule already says yes, so there is
+    # nothing to ask. Without it systemctl first starts a tty auth agent, which
+    # fails in an SSH session with "Error registering authentication agent …
+    # Cannot determine user of subject" even though the restart then succeeds.
+    # If the rule ever stops applying, this fails at once instead of prompting.
+    systemctl --no-ask-password restart "${RESTART_UNITS[@]}"
   else
     echo "  nothing left to restart"
   fi
@@ -326,7 +331,7 @@ if want core; then
   # serving an unstyled, non-interactive shell for that whole window.
   if [ "$DO_RESTART" = "1" ]; then
     step "restart: core (closes the stale-asset window)"
-    systemctl restart eduai-core.service
+    systemctl --no-ask-password restart eduai-core.service
     CORE_RESTARTED=1
   fi
 fi
@@ -378,9 +383,13 @@ step "verify the builds carry development semantics"
 # If NODE_ENV failed to reach the bundler, the build still succeeds and still
 # serves fine — it just silently drops every import.meta.env.DEV branch. These
 # two markers are the cheapest reliable proof that did not happen.
+# The QM marker is the dev-only `/api-test` route (App.tsx, behind
+# import.meta.env.DEV), which a production build drops. The old marker,
+# 'localhost:8080', left the code on 2026-08-16 (0be564c25), so this warned on
+# every correct build until #2050.
 QM_DIST="apps/extensions/question-maker/app/frontend/dist/assets"
 if want qm && [ -d "$QM_DIST" ]; then
-  if grep -rqs 'localhost:8080' "$QM_DIST"; then
+  if grep -rqs '"/api-test"' "$QM_DIST"; then
     echo "  ok question-maker: import.meta.env.DEV baked true"
   else
     echo "  WARNING question-maker: DEV-only markers absent — built with production semantics."

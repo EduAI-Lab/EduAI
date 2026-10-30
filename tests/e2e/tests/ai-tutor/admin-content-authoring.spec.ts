@@ -39,7 +39,7 @@ test.describe("AI Tutor ADMIN — modules", () => {
       await expect(page.getByText("Admin-authored module")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText("What this module covers.")).toBeVisible();
       // New content starts hidden from students.
-      await expect(page.getByText("Draft").first()).toBeVisible();
+      await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
     } finally {
       await seeded.dispose();
     }
@@ -488,7 +488,7 @@ test.describe("AI Tutor ADMIN — publish controls on content cards", () => {
         .locator('[role="button"]')
         .filter({ hasText: "Published module" })
         .first();
-      await expect(draftCard).toContainText("Draft", { timeout: 20_000 });
+      await expect(draftCard).toContainText("Unpublished", { timeout: 20_000 });
       await expect(publishedCard).toContainText("Published");
 
       // And the card still navigates into the module it names.

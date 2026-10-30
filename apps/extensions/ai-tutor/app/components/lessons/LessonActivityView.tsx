@@ -14,10 +14,13 @@
  * answer state, submission, and feedback.
  */
 import {
+  IconBulb,
   IconChevronLeft,
   IconChevronRight,
   IconCircleCheck,
   IconInfoCircle,
+  IconPencil,
+  IconRefresh,
   IconSparkles,
 } from "@tabler/icons-react";
 import {
@@ -67,6 +70,11 @@ type LessonActivityViewProps = {
   onSubmit: () => void;
   result: string | null;
   wasCorrect: boolean;
+  /** The result is awaiting staff grading: render it neutral, not as an error. */
+  awaitingReview?: boolean;
+  /** A restored answer is read-only until the student retries (#2030). */
+  answerLocked: boolean;
+  onRetry: () => void;
   /**
    * The caller's answer-submission capability for this course (#1626).
    * Recording a graded attempt is a STUDENT-enrolment path; a course TA keeps
@@ -83,6 +91,10 @@ type LessonActivityViewProps = {
 
   isUserReady: boolean;
   onGuideMe: () => void;
+
+  /** Whether the student has revealed this activity's hints (#2029). */
+  hintsRevealed: boolean;
+  onToggleHints: () => void;
 
   canPrev: boolean;
   canNext: boolean;
@@ -115,9 +127,14 @@ export function LessonActivityView({
   onSubmit,
   result,
   wasCorrect,
+  awaitingReview = false,
+  answerLocked,
+  onRetry,
   submitState,
   isUserReady,
   onGuideMe,
+  hintsRevealed,
+  onToggleHints,
   canPrev,
   canNext,
   onPrev,
@@ -151,6 +168,8 @@ export function LessonActivityView({
   // state on every lesson load while the breadcrumb resolves, and should not see
   // the quiz flash greyed.
   const quizMuted = submitState === "withheld" || submitState === "unverified";
+  const hints = (activity?.hints ?? []).filter((hint) => hint.trim());
+  const hintsId = activity ? `activity-${activity.id}-hints` : undefined;
 
   return (
     <div className="flex flex-col gap-5">
@@ -221,6 +240,38 @@ export function LessonActivityView({
               {line}
             </p>
           ))}
+          {hints.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggleHints}
+                aria-expanded={hintsRevealed}
+                aria-controls={hintsId}
+              >
+                <IconBulb className="mr-1 h-4 w-4" aria-hidden="true" />
+                {`${hintsRevealed ? "Hide" : "Show"} hint${hints.length > 1 ? "s" : ""}`}
+              </Button>
+              {hintsRevealed && (
+                <div
+                  id={hintsId}
+                  className="rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4 text-sm text-foreground"
+                >
+                  {hints.length === 1 ? (
+                    <p className="whitespace-pre-wrap">{hints[0]}</p>
+                  ) : (
+                    <ol className="list-decimal list-inside space-y-1">
+                      {hints.map((hint, index) => (
+                        <li key={index} className="whitespace-pre-wrap">
+                          {hint}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
         {activity?.secondaryTopics && activity.secondaryTopics.length > 0 && (
           <CardFooter className="relative flex flex-wrap items-center gap-1.5 border-t border-border">
@@ -256,7 +307,7 @@ export function LessonActivityView({
             Array.isArray(activity?.options?.choices) ? (
               <div className="space-y-3" role="radiogroup" aria-label="Answer choices">
                 {activity.options.choices.map((choice, i) => {
-                  const graded = result !== null;
+                  const graded = result !== null && !awaitingReview;
                   const state = graded
                     ? mcq === i
                       ? wasCorrect
@@ -272,7 +323,7 @@ export function LessonActivityView({
                       letter={String.fromCharCode(65 + i)}
                       state={state}
                       selected={mcq === i}
-                      disabled={submitting || wasCorrect || !canSubmitAnswers}
+                      disabled={submitting || wasCorrect || answerLocked || !canSubmitAnswers}
                       onSelect={() => onSelectMcq(i)}
                     >
                       {choice}
@@ -291,36 +342,53 @@ export function LessonActivityView({
               onChange={(e) => onTextChange(e.target.value)}
               placeholder="Type your answer…"
               className="text-lg"
-              disabled={!canSubmitAnswers}
+              disabled={!canSubmitAnswers || answerLocked}
             />
           )}
 
           {/* Actions — both quiz controls are STUDENT-in-this-course only, so
               they are disabled together when the quiz is withheld (#1626). */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={onSubmit}
-              disabled={
-                !canSubmitAnswers ||
-                submitting ||
-                wasCorrect ||
-                (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
-              }
-            >
-              {submitting ? (
-                <>
-                  <Spinner className="mr-1" />
-                  Submitting…
-                </>
-              ) : (
-                <>
-                  <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
-                  Submit answer
-                </>
-              )}
-            </Button>
+            {answerLocked && !wasCorrect ? (
+              // Resubmitting a restored answer is a deliberate step (#2030).
+              <Button variant="primary" size="lg" onClick={onRetry} disabled={!canSubmitAnswers}>
+                {awaitingReview ? (
+                  <>
+                    <IconPencil className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Edit answer
+                  </>
+                ) : (
+                  <>
+                    <IconRefresh className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Try again
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={onSubmit}
+                disabled={
+                  !canSubmitAnswers ||
+                  submitting ||
+                  wasCorrect ||
+                  (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
+                }
+              >
+                {submitting ? (
+                  <>
+                    <Spinner className="mr-1" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Submit answer
+                  </>
+                )}
+              </Button>
+            )}
 
             <Button
               variant="secondary"
@@ -351,11 +419,14 @@ export function LessonActivityView({
           {/* Result feedback */}
           {result && (
             <div
+              data-result-state={wasCorrect ? "correct" : awaitingReview ? "pending" : "incorrect"}
               className={cn(
                 "flex items-center gap-3 rounded-[var(--radius-lg)] p-4",
                 wasCorrect
                   ? "border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]"
-                  : "border border-destructive/40 bg-destructive/10 text-destructive",
+                  : awaitingReview
+                    ? "border border-border bg-muted/60 text-foreground"
+                    : "border border-destructive/40 bg-destructive/10 text-destructive",
               )}
             >
               {wasCorrect ? (
@@ -364,6 +435,11 @@ export function LessonActivityView({
                 <IconInfoCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
               )}
               <span className="font-medium">{result}</span>
+              {awaitingReview && (
+                <Badge variant="muted" size="sm" className="ml-auto shrink-0">
+                  Awaiting review
+                </Badge>
+              )}
             </div>
           )}
 

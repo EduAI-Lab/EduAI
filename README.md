@@ -103,6 +103,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`USER_GUIDE.md`](docs/USER_GUIDE.md) | User-facing guide to navigation, roles, and common workflows across Core, AI Tutor, and Question Maker |
 | [`STUDENT_API_GUIDE.md`](docs/STUDENT_API_GUIDE.md) | For students and researchers given API access (#2039): creating and protecting a key, request examples, the campus models' context windows, limits and token charging, errors and retries, and running batches |
+| [`PROVIDER_API_KEY_GUIDE.md`](docs/PROVIDER_API_KEY_GUIDE.md) | Half-page guide for anyone adding their own OpenAI, Gemini or OpenCode Go key (#2063): when you need one, making the provider account first, where to paste it in Core and the AI Tutor, and keeping it safe |
 | [`DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Developer entry point covering the stack, trust boundaries, conventions, testing, and documentation map |
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every `.env.example` in the monorepo, which mechanism loads it, and what each variable does |
@@ -120,7 +121,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
 | [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
 | [`ONBOARDING.md`](docs/ONBOARDING.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
-| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
+| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, app-switcher registration, and local dev verification checklist |
 | [`implementations/extension-platform-design.md`](docs/implementations/extension-platform-design.md) | Proposed design for adding honours projects as extensions (#2000) — what Core owns vs the extension, scoped extension keys, the starter template, porting options and delivery order; decisions in [`extension-platform-review.md`](docs/implementations/extension-platform-review.md) |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
@@ -169,7 +170,7 @@ The repository intentionally does not treat old dated benchmark reports as curre
 
 ## Mobile responsiveness audit (`#805`)
 
-Playwright-driven screenshot audit of Core, AI Tutor, and Question Maker at mobile viewports, checking for horizontal overflow and sidebar `aria-expanded`/`aria-controls` wiring:
+Playwright-driven screenshot audit of Core, AI Tutor, and Question Maker at mobile viewports, checking for horizontal overflow and the navigation menu button's `aria-expanded`/`aria-haspopup` wiring:
 
 ```bash
 cd scripts/mobile-audit
