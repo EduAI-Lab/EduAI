@@ -155,7 +155,7 @@ Vite `VITE_*` variables are build-time values. Restart the dev server after chan
 
 ### UI and navigation
 
-- Reuse `@eduai/ui` and the established `AppShell`, sidebar, page-tab, command-palette, feedback, and form components before creating a local copy.
+- Reuse `@eduai/ui` and the established `NavShell` (global rail, trays, course menu, mobile drawer), page-tab, command-palette, feedback, and form components before creating a local copy.
 - Keep navigation and visibility derived from the existing RBAC helpers.
 - A frontend permission gate must have a matching server-side authorization check.
 - Preserve keyboard navigation, focus states, labels, responsive behavior, and assistive-mode hooks.

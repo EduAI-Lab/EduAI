@@ -1,13 +1,14 @@
 /**
  * Coverage for the shared authenticated-shell layout route (_app.tsx):
  * the pre-auth bare-Outlet branch, the bug-report open/submit flow, and
- * logout navigation. `AppShell` and friends are mocked to a thin pass-through
- * so the route's own handlers (not `@eduai/ui` internals) are what's tested.
+ * logout navigation, and the nav model handed to the shell. `NavShell` and
+ * friends are mocked to a thin pass-through so the route's own handlers (not
+ * `@eduai/ui` internals) are what's tested.
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
-import type { BugReportSubmitData } from "@eduai/ui";
+import type { BugReportSubmitData, NavShellModel } from "@eduai/ui";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router", async (importActual) => {
@@ -58,6 +59,8 @@ vi.mock("~/components/layout/ShellBreadcrumbs", () => ({
   ShellBreadcrumbs: () => <div data-testid="breadcrumbs" />,
 }));
 const mockStartTour = vi.fn();
+let capturedModel: NavShellModel | null = null;
+let capturedHeadingInPage: boolean | undefined;
 
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
@@ -100,34 +103,44 @@ vi.mock("@eduai/ui", async (importOriginal) => {
           </button>
         </div>
       ) : null,
-    AppShell: ({
-      sidebar,
+    // Stands in for the rail's trays: the Account tray's links and Log out,
+    // and the Help tray's Report a bug, all driven by the model under test.
+    NavShell: ({
+      model,
+      headingInPage,
       headerActions,
-      commandPalette,
+      overlays,
       children,
     }: {
-      sidebar: {
-        navUser: { onLogout: () => void };
-        navFooter?: { title: string; url: string }[];
-      };
+      model: NavShellModel;
+      headingInPage?: boolean;
       headerActions: React.ReactNode;
-      commandPalette: React.ReactNode;
+      overlays: React.ReactNode;
       children: React.ReactNode;
-    }) => (
-      <div>
-        <button type="button" onClick={() => void sidebar.navUser.onLogout()}>
-          Log out
-        </button>
-        {sidebar.navFooter?.map((item) => (
-          <a key={item.title} href={item.url}>
-            {item.title}
-          </a>
-        ))}
-        <div>{headerActions}</div>
-        <div>{commandPalette}</div>
-        <div>{children}</div>
-      </div>
-    ),
+    }) => {
+      capturedModel = model;
+      capturedHeadingInPage = headingInPage;
+      return (
+        <div>
+          <button type="button" onClick={model.onLogout}>
+            Log out
+          </button>
+          {model.onReportBug && (
+            <button type="button" onClick={model.onReportBug}>
+              Report a bug
+            </button>
+          )}
+          {model.accountLinks.map((link) => (
+            <a key={link.key} href={link.href}>
+              {link.label}
+            </a>
+          ))}
+          <div>{headerActions}</div>
+          <div>{overlays}</div>
+          <div>{children}</div>
+        </div>
+      );
+    },
   };
 });
 
@@ -256,7 +269,22 @@ describe("_app layout — authenticated shell", () => {
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
   });
 
-  it("offers a Back to EduAI footer link to Core's dashboard, like Question Maker", () => {
+  it("tells the shell its pages draw their own h1, so the header adds no second one", () => {
+    wrap();
+    expect(capturedHeadingInPage).toBe(true);
+  });
+
+  it("makes Courses and Help trays, keeping other entries as links", () => {
+    wrap();
+
+    const entries = capturedModel?.entries.map((entry) =>
+      entry.kind === "link" ? entry.link.label : entry.kind === "tray" ? `tray:${entry.tray}` : "",
+    );
+    expect(entries).toEqual(["Dashboard", "tray:help"]);
+    expect(capturedModel?.helpLinks.map((link) => link.href)).toEqual(["/help"]);
+  });
+
+  it("offers a Back to EduAI account link to Core's dashboard, like Question Maker", () => {
     mockUser = { id: "u1", name: "Ada", role: "STUDENT" };
     render(
       <MemoryRouter>

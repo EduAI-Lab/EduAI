@@ -121,7 +121,7 @@ describe("ModuleCard", () => {
         isPublished={false}
       />,
     );
-    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(screen.getByText("Unpublished")).toBeInTheDocument();
   });
 
   it("renders actions and stops click propagation to the card", () => {

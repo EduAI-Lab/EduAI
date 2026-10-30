@@ -53,8 +53,8 @@ const {
       deleteAssessment: vi.fn(),
     },
     // Plain mutable bag standing in for tab state. `PageTabs` writes into it
-    // during its own render, and `PageTabsTrigger`/`PageTabsContent` (rendered
-    // as its children in the same pass) read the already-updated value — no
+    // during its own render, and `PageTabsContent` (rendered as its children
+    // in the same pass) reads the already-updated value — no
     // React context needed, which matters because `createContext` needs the
     // real `react` module and can't be constructed inside `vi.hoisted`.
     tabsBox: { value: "", onValueChange: (() => {}) as (v: string) => void },
@@ -103,10 +103,6 @@ vi.mock("@eduai/ui", () => ({
     tabsBox.onValueChange = onValueChange;
     return <>{children}</>;
   },
-  PageTabsList: ({ children }: any) => <div>{children}</div>,
-  PageTabsTrigger: ({ value, children }: any) => (
-    <button onClick={() => tabsBox.onValueChange(value)}>{children}</button>
-  ),
   PageTabsContent: ({ value, children }: any) =>
     tabsBox.value === value ? <div>{children}</div> : null,
   CourseHeroCard: (props: any) => (

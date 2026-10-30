@@ -6,7 +6,6 @@ import {
   CHAT_MESSAGE_ACTIVE_CLASS,
   CHAT_MESSAGE_INACTIVE_CLASS,
   ASSISTIVE_INPUT_ANCHOR_CLASS,
-  CHAT_HISTORY_RAIL_CLASS,
   resolveMessageHighlightRole,
   findLastAssistantIndex,
 } from "~/components/assistive/active-highlight";
@@ -55,20 +54,19 @@ describe("assistive-active-highlight.css", () => {
     expect(css).toContain("box-shadow:");
   });
 
-  it("collapses sidebar and chat history rail in focus mode while keeping header trigger available", () => {
+  it("collapses the rail, and with it chat history, in focus mode while keeping header trigger available", () => {
     expect(css).toContain("[data-assistive-focus-mode]");
     expect(css).toContain(`[data-sidebar="sidebar"]`);
     expect(css).toContain(`[data-slot="sidebar-gap"]`);
-    expect(css).toContain(`.${CHAT_HISTORY_RAIL_CLASS}`);
+    // Chat history now lives in the rail's History tray (#1996), so hiding the
+    // rail hides it; the old history column's rule is gone.
+    expect(css).not.toContain(".chat-history-rail");
     expect(css).not.toContain(`[data-sidebar="trigger"]`);
   });
 
-  it("hides the sidebar and chat history rail in focus mode independent of assistive mode", () => {
+  it("hides the rail in focus mode independent of assistive mode", () => {
     expect(css).not.toMatch(/\[data-assistive\]\[data-assistive-focus-mode\]/);
     expect(css).toMatch(/\[data-assistive-focus-mode\]\s*\[data-sidebar="sidebar"\]/);
-    expect(css).toMatch(
-      new RegExp(`\\[data-assistive-focus-mode\\]\\s*\\.${CHAT_HISTORY_RAIL_CLASS}`),
-    );
   });
 
   it("exports hook classes referenced by components", () => {

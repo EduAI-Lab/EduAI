@@ -355,6 +355,18 @@ describe("listEduAiCourseTopics", () => {
     expect(opts.headers.Authorization).toBe("Bearer svc-key");
   });
 
+  it("asks Core for the learner view when audience is learner (#1956)", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ topics: [] }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await listEduAiCourseTopics("core-1", { audience: "learner" });
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "http://eduai.test/api/courses/core-1/topics?audience=learner",
+    );
+  });
+
   it("throws a 502 when the response fails schema validation", async () => {
     process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson({ notTopics: true })));

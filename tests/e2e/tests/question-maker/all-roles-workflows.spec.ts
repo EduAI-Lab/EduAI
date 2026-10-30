@@ -49,7 +49,14 @@ test.describe("Question Maker role access", () => {
       ),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Question Library" })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Back to EduAI" })).toBeVisible();
+    // The way out sits in the rail's Account tray.
+    await page
+      .getByRole("navigation", { name: "Global" })
+      .getByRole("button", { name: "Account", exact: true })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: "Account" }).getByRole("link", { name: "Back to EduAI" }),
+    ).toBeVisible();
   });
 
   test("TA can author assigned courses but cannot open another instructor course", async ({
@@ -295,10 +302,11 @@ test.describe("Question Maker authoring and AI workflows", () => {
   }) => {
     const unitAdmin = await createUnitAdmin(request);
     await signInThroughPage(page, unitAdmin, `${QM_FRONTEND_URL}/dashboard`);
-    const sidebar = page.locator("#app-sidebar-content");
-    await expect(sidebar.getByRole("link", { name: "Courses" })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: "Question Library" })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: "Bug reports" })).toHaveCount(0);
+    // Courses opens a tray (a button); the other entries are links.
+    const rail = page.getByRole("navigation", { name: "Global" });
+    await expect(rail.getByRole("button", { name: "Courses", exact: true })).toBeVisible();
+    await expect(rail.getByRole("link", { name: "Question Library" })).toBeVisible();
+    await expect(rail.getByRole("link", { name: "Bug reports" })).toHaveCount(0);
   });
 
   test("ADMIN sees the full authoring navigation including bug-report triage", async ({
@@ -307,9 +315,9 @@ test.describe("Question Maker authoring and AI workflows", () => {
   }) => {
     const admin = await createAdmin(request, { prefix: "qm-ui-admin" });
     await signInThroughPage(page, admin, `${QM_FRONTEND_URL}/dashboard`);
-    const sidebar = page.locator("#app-sidebar-content");
-    await expect(sidebar.getByRole("link", { name: "Courses" })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: "Question Library" })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: "Bug reports" })).toBeVisible();
+    const rail = page.getByRole("navigation", { name: "Global" });
+    await expect(rail.getByRole("button", { name: "Courses", exact: true })).toBeVisible();
+    await expect(rail.getByRole("link", { name: "Question Library" })).toBeVisible();
+    await expect(rail.getByRole("link", { name: "Bug reports" })).toBeVisible();
   });
 });

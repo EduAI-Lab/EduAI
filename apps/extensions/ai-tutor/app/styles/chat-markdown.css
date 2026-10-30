@@ -1,15 +1,13 @@
 /*
  * Markdown stylesheet, scoped to the chunk that renders chat messages, mirroring
  * apps/core/app/styles/chat-markdown.css (#1222/#1343). Imported from
- * components/StudentAiChat.tsx rather than from app.css so the vendor sheet only
- * loads on routes whose module graph actually renders markdown.
- *
- * StudentAiChat is AI Tutor's only `MessageContent markdown` surface, so this
- * one import covers every markdown render in the app.
+ * the `MessageContent markdown` surfaces (components/StudentAiChat.tsx and
+ * components/lessons/LessonReading.tsx) rather than from app.css so the vendor
+ * sheet only loads on routes whose module graph actually renders markdown.
  *
  * KaTeX's stylesheet is deliberately absent: it is loaded on demand by the
  * shared markdown component when a message actually contains math (#1342). See
- * the MarkdownStylesProvider in StudentAiChat.tsx.
+ * lib/markdown-styles.ts.
  *
  * Note: the Tailwind `@source` directives for streamdown stay in app.css.
  * Streamdown's own markup is styled with Tailwind utilities that must be

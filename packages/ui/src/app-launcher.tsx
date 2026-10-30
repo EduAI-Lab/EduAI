@@ -21,6 +21,8 @@ export interface LauncherApp {
   /** Stable id used to mark the current app (e.g. "core", "ai-tutor", "question-maker"). */
   id: string;
   name: string;
+  /** Label for tight spots (the nav rail's app tile); falls back to `name`. Keep it a substring of `name`. */
+  shortName?: string;
   /** Absolute URL to the app. Ignored for the current app. */
   url: string;
   icon?: React.ReactNode;

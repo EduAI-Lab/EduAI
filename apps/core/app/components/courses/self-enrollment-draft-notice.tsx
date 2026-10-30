@@ -30,7 +30,7 @@ interface SelfEnrollmentDraftNoticeProps {
   publishControl: ReactNode | null;
 }
 
-/** Shown in the self-enrollment section while the course is a Draft (#1939). */
+/** Shown in the self-enrollment section while the course is unpublished (#1939). */
 export function SelfEnrollmentDraftNotice({
   canPublish,
   publishControl,
@@ -40,7 +40,7 @@ export function SelfEnrollmentDraftNotice({
       <p className="flex items-start gap-2">
         <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
         <span>
-          This course is a draft. Students who open a self-enrollment link see &ldquo;Can&apos;t
+          This course is unpublished. Students who open a self-enrollment link see &ldquo;Can&apos;t
           join this course&rdquo; until it is published.
           {canPublish ? null : " Ask an administrator to publish it."}
         </span>

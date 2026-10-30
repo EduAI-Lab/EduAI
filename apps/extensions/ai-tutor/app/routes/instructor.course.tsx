@@ -19,8 +19,15 @@
  * Related: routes/instructor.tsx (parent), routes/instructor.module.tsx (child)
  */
 import type { FormEvent } from "react";
-import { useOptimistic, useRef, useState } from "react";
-import { Link, useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
+import { useMemo, useOptimistic, useRef, useState } from "react";
+import {
+  Link,
+  useNavigate,
+  useNavigation,
+  useParams,
+  useSearchParams,
+  type ShouldRevalidateFunctionArgs,
+} from "react-router";
 import { toast } from "sonner";
 import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-react";
 import {
@@ -40,8 +47,8 @@ import {
   Label,
   PageTabs,
   PageTabsContent,
-  PageTabsList,
-  PageTabsTrigger,
+  termLabel,
+  type CourseNavConfig,
   Select,
   SelectContent,
   SelectItem,
@@ -76,7 +83,7 @@ import { HelpHint, PermissionGate } from "@eduai/ui";
 import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { getCourseDetailTabs } from "~/lib/rbac/nav";
 import { useCourseTopics } from "../hooks/useCourseTopics";
-import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { useShellCourseNav } from "~/components/layout/ShellCourseNavContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
 import { PaginationControls } from "~/components/common/PaginationControls";
 import { ListSearchInput } from "~/components/common/ListSearchInput";
@@ -126,6 +133,33 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   };
 }
 
+/** The search param that picks a course section; absent means Content. */
+const COURSE_TAB_PARAM = "tab";
+
+function searchWithoutTab(url: URL): string {
+  const params = new URLSearchParams(url.search);
+  params.delete(COURSE_TAB_PARAM);
+  return params.toString();
+}
+
+/**
+ * Picking a section from the course menu only changes `?tab=`, which the
+ * loader never reads — so skip refetching the course and its modules for it.
+ */
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  const onlyTabChanged =
+    !formMethod &&
+    currentUrl.pathname === nextUrl.pathname &&
+    currentUrl.search !== nextUrl.search &&
+    searchWithoutTab(currentUrl) === searchWithoutTab(nextUrl);
+  return onlyTabChanged ? false : defaultShouldRevalidate;
+}
+
 /**
  * Module list for one course. Hosts module creation, the cross-course import
  * panel, and the publish toggle whose enablement depends on the parent
@@ -133,7 +167,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
  */
 export default function InstructorCourseModules({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
   const { courseId } = useParams();
   const numericCourseId = courseId ? Number(courseId) : null;
@@ -154,16 +188,40 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
     course.viewerRole ?? null,
   );
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
-  // #1644: the router reuses this instance when CourseSwitcher changes only
-  // `:courseId`, so `activeTab` survives the switch. If the new course's
-  // per-course `viewerRole` drops the staff tabs (e.g. a TA who is only a
-  // STUDENT there), a stale `feedback`/`analytics` value has no matching Radix
-  // trigger and every tab panel hides — the page renders blank. Clamp back to
-  // `content` during render whenever the active tab is no longer available.
-  if (!tabs.some((tab) => tab.id === activeTab)) {
-    setActiveTab("content");
-  }
+  // The section comes from `?tab=`, set by the shell's course menu. #1644: a
+  // value this course doesn't offer (a stale link, or a course where the viewer
+  // is only a STUDENT, so the staff sections are gone) lands on Content rather
+  // than a blank page with every panel hidden.
+  const requestedTab = searchParams.get(COURSE_TAB_PARAM);
+  const activeTab = tabs.find((tab) => tab.id === requestedTab)?.id ?? "content";
+  const tabKeys = tabs.map((tab) => tab.id).join(",");
+  const courseNav = useMemo<CourseNavConfig | undefined>(() => {
+    if (numericCourseId == null) return undefined;
+    const href = `/instructor/courses/${numericCourseId}`;
+    return {
+      href,
+      code: courseCode(course),
+      term: termLabel(courseTerm(course), courseYear(course)),
+      activeKey: activeTab,
+      // The same switcher the module and lesson breadcrumbs carry, so changing
+      // course never means going back to the list first.
+      courseCrumb: (
+        <CourseSwitcher
+          courseId={numericCourseId}
+          basePath="/instructor"
+          currentTitle={course?.title || "Course"}
+        />
+      ),
+      items: tabs.map((tab) => ({
+        key: tab.id,
+        label: tab.label,
+        href: tab.id === "content" ? href : `${href}?${COURSE_TAB_PARAM}=${tab.id}`,
+      })),
+    };
+    // `tabs` is rebuilt every render; `tabKeys` is its identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numericCourseId, course, activeTab, tabKeys]);
+  useShellCourseNav(courseNav);
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
@@ -519,21 +577,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
-  useShellBreadcrumbs([
-    { label: "Courses", href: "/instructor" },
-    {
-      label: course?.title || "Course",
-      node:
-        numericCourseId != null ? (
-          <CourseSwitcher
-            courseId={numericCourseId}
-            basePath="/instructor"
-            currentTitle={course?.title || "Course"}
-          />
-        ) : undefined,
-    },
-  ]);
-
   return (
     <DetailPageScaffold
       padding="app"
@@ -553,24 +596,22 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               ? [`+${courseTopics.total - courseTopics.topics.length} more`]
               : []),
           ]}
-          topRightBadges={[course.isPublished ? "Published" : "Draft"]}
+          topRightBadges={[course.isPublished ? "Published" : "Unpublished"]}
           topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
         />
       }
     >
-      <PageTabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as (typeof tabs)[number]["id"])}
-      >
-        <PageTabsList>
-          {tabs.map((tab) => (
-            <PageTabsTrigger key={tab.id} value={tab.id}>
-              {tab.label}
-            </PageTabsTrigger>
-          ))}
-        </PageTabsList>
-
-        <PageTabsContent value="content" className="space-y-6">
+      {/* Sections are picked from the shell's course menu (`?tab=`), so there
+          is no tab list; each panel is a labelled region instead of a
+          tabpanel pointing at a trigger that no longer exists. */}
+      <PageTabs value={activeTab}>
+        <PageTabsContent
+          value="content"
+          className="space-y-6"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Content"
+        >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
               <h2 className="text-lg font-semibold text-foreground">Modules</h2>
@@ -981,19 +1022,35 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         </PageTabsContent>
 
         {tabs.some((tab) => tab.id === "feedback") && (
-          <PageTabsContent value="feedback">
+          <PageTabsContent
+            value="feedback"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Feedback"
+          >
             {numericCourseId ? <CourseFeedbackPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}
 
         {tabs.some((tab) => tab.id === "submissions") && (
-          <PageTabsContent value="submissions">
+          <PageTabsContent
+            value="submissions"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Submissions"
+          >
             {numericCourseId ? <CourseSubmissionsPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}
 
         {tabs.some((tab) => tab.id === "analytics") && (
-          <PageTabsContent value="analytics" className="space-y-6">
+          <PageTabsContent
+            value="analytics"
+            className="space-y-6"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Analytics"
+          >
             {numericCourseId ? <CourseAnalyticsPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}

@@ -139,7 +139,7 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAt
             </div>
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
               <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
-              Draft
+              Unpublished
             </span>
           </div>
 

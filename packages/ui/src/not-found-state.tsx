@@ -14,7 +14,7 @@
  * `standalone` centres it on a bare page for boundaries above an app shell;
  * the default form sits inside the shell, so the sidebar and header stay
  * mounted. Pass the app's router link as `LinkComponent` (this package does
- * not depend on a router), the same way `AppSidebar` takes one.
+ * not depend on a router), the same way `NavShell` takes one.
  */
 import type * as React from "react";
 import { IconArrowLeft, IconSearchOff } from "@tabler/icons-react";

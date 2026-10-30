@@ -64,12 +64,54 @@ export async function signInAs(
 }
 
 /**
- * The app-shell sidebar. It is a `data-slot="sidebar"` region rather than a
- * `<nav>` landmark (`@eduai/ui`'s `sidebar.tsx`), so `getByRole("navigation")`
- * finds the header breadcrumbs instead — scope sidebar assertions through this.
+ * The global nav rail (`@eduai/ui`'s `GlobalNavRail`): the app switcher, then
+ * the Account, Courses and Help tray buttons and the plain nav links. The mobile
+ * drawer reuses the "Global" name, but it is only mounted while open, so at the
+ * suite's desktop viewport the first match is always the rail.
  */
 export function sidebar(page: Page) {
-  return page.locator('[data-slot="sidebar"]').first();
+  return page.getByRole("navigation", { name: "Global" }).first();
+}
+
+export type RailTray = "Account" | "Courses" | "Administration" | "Help";
+
+/**
+ * Open one of the rail's flyout trays and return it. Account holds Settings,
+ * Back to EduAI, the theme switch and Log out; Courses lists the
+ * user's courses plus "All courses"; Help holds the guide and Report a bug.
+ */
+export async function openRailTray(page: Page, tray: RailTray): Promise<Locator> {
+  await sidebar(page).getByRole("button", { name: tray, exact: true }).click();
+  const panel = page.getByRole("dialog", { name: tray });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/**
+ * Open the app switcher from the rail's top tile (the current app's icon) and
+ * return its tray: one row per app, the current one marked and not a link.
+ */
+export async function openAppSwitcher(page: Page): Promise<Locator> {
+  await sidebar(page)
+    .getByRole("button", { name: /^Switch app/ })
+    .click();
+  const panel = page.getByRole("dialog", { name: "Switch app" });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/**
+ * A section link in the shell's course menu (Content, Submissions, Feedback,
+ * Analytics on a staff course page) — they replaced the page's tab bar.
+ */
+export function courseMenuLink(page: Page, name: string) {
+  return page.getByRole("navigation", { name: "Course" }).getByRole("link", { name, exact: true });
+}
+
+/** Open the bug-report dialog from the Help tray (it left the header). */
+export async function openBugReport(page: Page): Promise<void> {
+  const help = await openRailTray(page, "Help");
+  await help.getByRole("button", { name: "Report a bug" }).click();
 }
 
 /**
@@ -98,38 +140,25 @@ export async function openHelpTourEntry(page: Page): Promise<Locator> {
 }
 
 /**
- * A sidebar *nav* link addressed by its `href` rather than its label.
+ * A rail *nav* link addressed by its `href` rather than its label. Returns a
+ * locator, so `toHaveCount(0)` is a valid assertion that the entry is absent.
  *
- * Two entries can share a label — ADMIN gets "Courses" from both the teaching
- * and admin-courses nav keys — so the href is the only stable identity. Returns
- * a locator, so `toHaveCount(0)` is a valid assertion that the entry is absent.
- *
- * Scoped to `sidebar-content` (NavMain + NavSecondary) rather than the whole
- * sidebar, because `SidebarHeader` carries the brand logo as a link too and
- * `_app.tsx` points it at `logoHref: routeForRole(user.role)`. For every role
- * whose home is `/dashboard` that collides with the Dashboard nav entry, and an
- * unscoped `a[href="/dashboard"]` matches both — a strict-mode violation rather
- * than a missing element, so it fails as "resolved to 2 elements".
+ * Scoped to the rail's entry list rather than the whole rail, so links inside
+ * an open tray never match. Courses and Help are tray buttons, not links; reach
+ * their destinations through `openRailTray`.
  */
 export function sidebarLink(page: Page, href: string) {
-  return sidebar(page).locator(`[data-slot="sidebar-content"] a[href="${href}"]`);
+  return sidebar(page).locator(`ul a[href="${href}"]`);
 }
 
-/**
- * The shell's content area, for reading what a page actually rendered.
- *
- * `getByRole("main")` is ambiguous here: `@eduai/ui`'s `SidebarInset`
- * (`ui/sidebar.tsx`) renders `<main data-slot="sidebar-inset">` and `AppShell`
- * renders a second `<main>` inside it. Two nested `main` landmarks is an
- * accessibility defect in the shared shell — reported separately; this helper
- * only keeps the tests deterministic by naming the inner one explicitly.
- */
+/** The shell's content area, for reading what a page actually rendered. */
 export function shellMain(page: Page) {
-  return page.locator('[data-slot="sidebar-inset"] main');
+  return page.getByRole("main");
 }
 
 /**
- * Every `href` in the sidebar, in render order.
+ * Every `href` in the rail, in render order: just the plain nav links (the app
+ * switcher and tray entries are buttons and carry none).
  *
  * For "this destination has no navigation affordance at all" assertions, where
  * asking for one link by name would pass simply because the name changed.
@@ -142,16 +171,9 @@ export async function sidebarHrefs(page: Page): Promise<string[]> {
   );
 }
 
-/**
- * The sidebar footer's user-menu trigger — name, role badge, and the menu
- * holding Settings and Log out.
- *
- * The footer holds up to three controls (Take Tour, the app launcher, this),
- * and the launcher is a menu trigger too. NavUser renders last, so the final
- * menu trigger in the footer is this one.
- */
+/** The rail's Account entry, which opens the Account tray (`openRailTray(page, "Account")`). */
 export function userMenuButton(page: Page) {
-  return sidebar(page).locator('[data-slot="sidebar-footer"] button[aria-haspopup="menu"]').last();
+  return sidebar(page).getByRole("button", { name: "Account", exact: true });
 }
 
 /**
@@ -190,7 +212,7 @@ export function errorBoundary(page: Page) {
   return page.getByText("404 — Page not found");
 }
 
-/** The sidebar's nav link labels, in render order. */
+/** The rail's nav link labels, in render order (tray entries are buttons, not links). */
 export async function sidebarLinkNames(page: Page): Promise<string[]> {
   const links = sidebar(page).getByRole("link");
   await expect(links.first()).toBeVisible();
@@ -198,28 +220,36 @@ export async function sidebarLinkNames(page: Page): Promise<string[]> {
   return names.map((n) => n.trim()).filter(Boolean);
 }
 
-/** Click a sidebar nav link by its visible label. */
+/** Click a rail nav link by its visible label. */
 export async function clickSidebar(page: Page, label: string): Promise<void> {
   await sidebar(page).getByRole("link", { name: label, exact: true }).first().click();
 }
 
 /**
- * Open a tab in a `PageTabs` tablist by its visible label and wait for it to
- * actually become the selected tab — right after a reload the tablist can be
- * painted before it is interactive, so a bare click is silently dropped.
+ * Open a section by its visible label and wait for it to take effect. A course
+ * page's sections live in the shell's course menu (links that set `?tab=`);
+ * other pages (admin, settings) keep a `PageTabs` tablist. Right after a reload
+ * either can be painted before it is interactive, so a bare click is retried.
  */
 export async function openTab(page: Page, label: string | RegExp): Promise<void> {
-  // Wait for the shell before touching the tablist. `_app.tsx` renders a bare
-  // `<Outlet />` while `useLocalUser()` is still resolving `/api/me`, then
-  // swaps in `<AppShell><Outlet /></AppShell>` once the user lands — a
-  // different tree position, so the route remounts and its `activeTab` state
-  // resets to the default. A tab clicked before that swap goes selected and is
-  // then silently reverted, which reads as "the panel never rendered". The
-  // sidebar only exists in the post-swap tree, so this is the point after
+  // Wait for the shell first. `_app.tsx` renders a bare `<Outlet />` while
+  // `useLocalUser()` is still resolving `/api/me`, then swaps in the shell
+  // once the user lands — a different tree position, so the route remounts.
+  // The rail only exists in the post-swap tree, so this is the point after
   // which no auth-driven remount can undo the click.
   await expect(sidebar(page).getByRole("link", { name: "Dashboard", exact: true })).toBeVisible({
     timeout: 30_000,
   });
+
+  const courseMenu = page.getByRole("navigation", { name: "Course" });
+  if (await courseMenu.count()) {
+    const link = courseMenu.getByRole("link", { name: label });
+    await expect(async () => {
+      if ((await link.getAttribute("aria-current")) !== "page") await link.click();
+      await expect(link).toHaveAttribute("aria-current", "page", { timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+    return;
+  }
 
   const tab = page.getByRole("tab", { name: label });
   await expect(tab).toBeVisible({ timeout: 30_000 });

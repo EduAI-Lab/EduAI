@@ -81,6 +81,7 @@ describe("createAdminInvitation", () => {
       invitation: { id: "inv1" } as never,
       acceptUrl: "https://app/accept/token",
       emailDelivered: true,
+      emailStatus: "SENT",
     });
     const result = await createAdminInvitation(ADMIN, validInput);
     expect(result).toEqual({
@@ -145,6 +146,7 @@ describe("resendAdminInvitation", () => {
       invitation: { id: "inv1" } as never,
       acceptUrl: "https://app/accept/token2",
       emailDelivered: true,
+      emailStatus: "SENT",
     });
     const result = await resendAdminInvitation(ADMIN, "inv1");
     expect(result).toEqual({

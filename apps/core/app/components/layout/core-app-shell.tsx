@@ -1,32 +1,37 @@
 import * as React from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 
 import {
+  CommandSearchButton,
+  NavShell,
   OnboardingChecklist,
   PageTourButton,
-  AppShell,
-  CommandSearchButton,
   ThemeToggle,
-  type AppSidebarProps,
+  type CourseNavConfig,
 } from "@eduai/ui";
 
-import { useCoreSidebarProps, type UseCoreSidebarPropsOptions } from "~/components/app-sidebar";
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette";
 import { CorePageHelp } from "~/components/help/core-page-help";
 import { AssistantHeaderButton, HelpAssistant } from "~/components/assistant/help-assistant";
+import { useCoreNavModel } from "~/components/layout/core-nav-model";
+import {
+  isCourseChatPath,
+  useCourseChatNavModel,
+  type CourseChatNavOptions,
+} from "~/components/layout/course-chat-nav-model";
 import { CurrentUserIdProvider } from "~/contexts/current-user";
 import type { User } from "~/lib/auth/types";
+
+export type { CourseNavConfig } from "@eduai/ui";
 
 /**
  * Route → header title fallback map, ported verbatim from the old bespoke
  * `~/components/site-header`'s `resolvedTitle` logic (issue #764 core-shell
- * parity). `CoreAppShell` always resolves a title through this before handing
- * it to the shared `AppShell`, so every route's visible/sr-only heading is
- * byte-for-byte unchanged from before the AppShell migration — routes that
- * used to rely on the fallback (e.g. `/settings` rendering a bare
- * `<SiteHeader />`) don't need to start passing an explicit `title`.
+ * parity). `CoreAppShell` always resolves a title through this, so every
+ * route's visible/sr-only heading is unchanged from before — routes that rely
+ * on the fallback (e.g. `/settings`) don't need to pass an explicit `title`.
  */
 // A `Map` because the key is whatever path the router is on: an unlisted
 // route falls through to the course-detail rule, then to the app name.
@@ -52,13 +57,11 @@ export function resolveCoreHeaderTitle(pathname: string, title?: string): string
 
 /**
  * The header's fixed right-hand action bundle, identical across every Core
- * page: quick search, live AI-service status, theme toggle, and the bug
- * report trigger, with the page help (?) button pinned last so it sits in the
- * top-right corner (#1754). `extraActions` renders BEFORE this bundle, for the rare
- * route that needs its own control there too (e.g. the chat page's mobile
- * history toggle) — mirrors the old bespoke SiteHeader's
- * `{actions}{CommandSearchButton}{AIServiceIndicators}{themeToggle}{BugReportSubmitDialog}`
- * order exactly.
+ * page: quick search, live AI-service status, and the theme toggle, with the
+ * page help (?) button pinned last so it sits in the top-right corner (#1754).
+ * The bug report trigger moved into the Help tray. `extraActions` renders
+ * BEFORE this bundle, for the rare route that needs its own control there too
+ * (e.g. the chat page's mobile history toggle).
  */
 export function CoreHeaderActions({
   extraActions,
@@ -86,7 +89,6 @@ export function CoreHeaderActions({
       <span data-tour="theme-toggle" className="inline-flex">
         <ThemeToggle />
       </span>
-      <BugReportSubmitDialog />
       {assistant}
       {help}
     </>
@@ -99,57 +101,70 @@ export interface CoreAppShellProps {
   title?: string;
   /** Breadcrumb trail rendered in place of the plain title — passed straight through from the route. */
   breadcrumbs?: React.ReactNode;
+  /**
+   * Course pages only: draws the course menu column, the hamburger that
+   * toggles it, and the `CODE · term › Section` breadcrumb (which replaces
+   * `breadcrumbs`).
+   */
+  courseNav?: CourseNavConfig;
   /** Route-specific header control(s) rendered before the common action bundle (e.g. chat's history toggle). */
   actions?: React.ReactNode;
-  /** Sidebar variant override — e.g. `"inset"` for the unit-chats and admin-chat pages. */
-  sidebarVariant?: AppSidebarProps["variant"];
-  /** Sidebar nav overrides, forwarded to `useCoreSidebarProps`. Unused by any route today; kept for parity with the old `AppSidebar` component's flexibility. */
-  sidebarProps?: Omit<UseCoreSidebarPropsOptions, "user" | "variant">;
   /**
    * Escape hatches for pages with non-standard scroll containment — currently
-   * only the chat screen, which owns an internally-scrolling layout instead of
-   * the standard page-scrolls `<main>`. See `AppShellProps` for details.
+   * only the chat screens, which own an internally-scrolling layout instead of
+   * the standard page-scrolls `<main>`.
+   * `insetClassName` replaces the content column's default `min-h-svh`,
+   * `mainClassName` replaces `<main>`'s default `min-w-0 flex-1 overflow-auto`,
+   * and `providerClassName` is merged onto the outer grid.
    */
   insetClassName?: string;
   mainClassName?: string;
   providerClassName?: string;
+  /**
+   * Course Chat pages only: the page's history list and new-chat action, for
+   * the Course Chat rail (#1996).
+   */
+  chatApp?: CourseChatNavOptions;
   children: React.ReactNode;
 }
 
 /**
- * Core's composition of the shared `@eduai/ui` `AppShell` (issue #764 core
- * parity) — the single place that assembles Core's sidebar (RBAC nav, logout),
- * header (search, AI status, theme, bug report), command palette, and
- * per-route breadcrumbs, instead of every route hand-assembling
- * `SidebarProvider > AppSidebar + SidebarInset > SiteHeader`.
+ * Core's app chrome: the shared `NavShell` (Canvas-style rail, course menu,
+ * trays, and mobile drawer) fed with Core's nav model, header actions, and the
+ * dialogs that live beside the layout.
  */
 export function CoreAppShell({
   user,
   title,
   breadcrumbs,
+  courseNav,
   actions,
-  sidebarVariant,
-  sidebarProps,
   insetClassName,
   mainClassName,
   providerClassName,
+  chatApp,
   children,
 }: CoreAppShellProps) {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
+  const [bugReportOpen, setBugReportOpen] = React.useState(false);
+  const openBugReport = () => setBugReportOpen(true);
+  // Both hooks run on every page so hook order never changes; the path picks
+  // which app the shell presents.
+  const coreModel = useCoreNavModel(user, openBugReport);
+  const chatModel = useCourseChatNavModel(user, openBugReport, chatApp ?? {});
+  const model = isCourseChatPath(pathname) ? chatModel : coreModel;
   const navigate = useNavigate();
-  const sidebar = useCoreSidebarProps({
-    user,
-    variant: sidebarVariant,
-    ...sidebarProps,
-  });
-  const resolvedTitle = resolveCoreHeaderTitle(pathname, title);
 
   return (
     <CurrentUserIdProvider userId={user.id}>
-      <AppShell
-        sidebar={sidebar}
-        title={resolvedTitle}
+      <NavShell
+        model={model}
+        LinkComponent={Link}
+        locationKey={location.key}
+        title={resolveCoreHeaderTitle(pathname, title)}
         breadcrumbs={breadcrumbs}
+        courseNav={courseNav}
         headerActions={
           <CoreHeaderActions
             extraActions={actions}
@@ -167,7 +182,12 @@ export function CoreAppShell({
             }
           />
         }
-        commandPalette={<CommandPalette user={user} />}
+        overlays={
+          <>
+            <BugReportSubmitDialog open={bugReportOpen} onOpenChange={setBugReportOpen} />
+            <CommandPalette user={user} />
+          </>
+        }
         insetClassName={insetClassName}
         mainClassName={mainClassName}
         providerClassName={providerClassName}
@@ -181,7 +201,7 @@ export function CoreAppShell({
           />
         )}
         {children}
-      </AppShell>
+      </NavShell>
       {/* #1822: the one mount point for the help assistant. It renders nothing
           unless the root loader's gate says it could answer for this user. */}
       <HelpAssistant user={user} />

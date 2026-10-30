@@ -7,6 +7,7 @@
  * request are stubbed.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const submitBugReport = vi.hoisted(() => vi.fn());
@@ -21,6 +22,19 @@ vi.mock("~/hooks/api/use-submit-bug-report", () => ({
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
 
+/** The dialog has no trigger of its own; this stands in for the Help tray's "Report a bug" entry. */
+function ReportBugHarness() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Report a bug
+      </button>
+      <BugReportSubmitDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   submitBugReport.mockResolvedValue({ ok: true });
@@ -30,7 +44,7 @@ describe("BugReportCaptureProvider", () => {
   it("keeps logs from the previous page when the header dialog remounts", async () => {
     const page = (key: string) => (
       <BugReportCaptureProvider>
-        <BugReportSubmitDialog key={key} />
+        <ReportBugHarness key={key} />
       </BugReportCaptureProvider>
     );
     const { rerender, unmount } = render(page("previous"));
