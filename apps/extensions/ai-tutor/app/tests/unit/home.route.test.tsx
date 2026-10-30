@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -49,6 +49,17 @@ describe("home route", () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(window.location.href).toBe("");
+  });
+
+  it("shows the shared PageLoader instead of an AI Tutor-specific splash (#1925)", () => {
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByText(/initializing your workspace/i)).not.toBeInTheDocument();
   });
 
   it("redirects to the role home once a user is present", async () => {

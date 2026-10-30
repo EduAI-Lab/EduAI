@@ -336,10 +336,10 @@ function pageQuery(params?: ListParams): string {
 /**
  * Hard ceiling for the session probe `/api/me`. If the AT API is up but its
  * upstream Core `/api/sessions/validate` hangs, a bare `/api/me` would never
- * settle — stranding loaders and leaving the "Initializing your workspace"
- * spinner running forever. Applied opt-in via `timeoutMs` on that call (below),
- * NOT globally: most of the API surface (imports, sync) may legitimately run
- * longer and hasn't been audited against a blanket cutoff.
+ * settle — stranding loaders and leaving the home-route loader running
+ * forever. Applied opt-in via `timeoutMs` on that call (below), NOT globally:
+ * most of the API surface (imports, sync) may legitimately run longer and
+ * hasn't been audited against a blanket cutoff.
  */
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -609,7 +609,7 @@ export const api = {
   me: () => {
     if (meInFlight) return meInFlight;
     // #446: bound the session probe so a hung upstream can't strand the
-    // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
+    // home-route loader forever (surfaced as ApiTimeoutError).
     meInFlight = decode(http("/api/me", { timeoutMs: REQUEST_TIMEOUT_MS }), meSchema).finally(
       () => {
         meInFlight = null;
