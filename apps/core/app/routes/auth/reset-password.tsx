@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import { readPendingEmail, resetEmailCookie } from "~/lib/auth/pending-email-cookie.server";
 import {
   PASSWORD_RESET_OTP_LENGTH,
   resetPasswordOtpSchema,
@@ -41,8 +42,8 @@ function messageForAuthError(code: string | undefined, message: string | undefin
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const email = new URL(request.url).searchParams.get("email")?.trim().slice(0, 320) ?? "";
-  return { email };
+  // #1942: set by the request step; the URL never carries the address.
+  return { email: await readPendingEmail(resetEmailCookie, request) };
 }
 
 export async function action({ request }: ActionFunctionArgs) {

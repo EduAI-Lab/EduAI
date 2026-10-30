@@ -10,6 +10,7 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { auth } from "~/lib/auth/server";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import { serializePendingEmail, verifyEmailCookie } from "~/lib/auth/pending-email-cookie.server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -147,7 +148,11 @@ export async function action({ request }: ActionFunctionArgs) {
       return redirect(`/auth/login?registered=1&redirect=${encodeURIComponent(joinPath)}`);
     }
 
-    return redirect("/auth/verify-email");
+    // #1942: prefill the verify page's Resend box. Set for a stand-in response
+    // too, so the redirect looks the same whether or not the address was new.
+    return redirect("/auth/verify-email", {
+      headers: { "Set-Cookie": await serializePendingEmail(verifyEmailCookie, input.email) },
+    });
   } catch (err: unknown) {
     const message = messageFromCause(err, "Sign up failed");
     return { formError: message };

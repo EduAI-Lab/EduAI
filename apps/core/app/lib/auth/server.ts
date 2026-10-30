@@ -25,6 +25,7 @@ import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asJsonObject, asText } from "~/lib/json-value";
 import { fireAndForget } from "~/lib/logging.server";
+import { recordAuthEvent } from "./auth-events.server";
 import { redeemPendingSelfEnrollments } from "~/lib/courses/pending-self-enrollment.server";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
 import { buildEmailVerificationEmail } from "../email/templates/email-verification";
@@ -198,6 +199,14 @@ export const auth = betterAuth({
     // attacker already holds must not outlive it. Only the OTP reset path
     // reads this; `/change-password` has its own `revokeOtherSessions`.
     revokeSessionsOnPasswordReset: true,
+    onPasswordReset: async ({ user }, request) => {
+      recordAuthEvent({
+        actionCode: "PASSWORD_RESET_COMPLETED",
+        outcome: "SUCCESS",
+        user: { id: user.id, email: user.email },
+        request,
+      });
+    },
   },
   emailVerification: {
     // All three flags only matter when verification is enforceable; in
@@ -213,12 +222,23 @@ export const auth = betterAuth({
       // skip this otherwise automatic self-signup email.
       if (request?.headers.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
 
-      await sendEmail(
-        buildEmailVerificationEmail({
-          to: user.email,
-          verificationUrl: url,
-        }),
-      );
+      try {
+        await sendEmail(
+          buildEmailVerificationEmail({
+            to: user.email,
+            verificationUrl: url,
+          }),
+        );
+      } catch (error) {
+        recordAuthEvent({
+          actionCode: "VERIFICATION_EMAIL_FAILED",
+          outcome: "FAILURE",
+          user,
+          request,
+        });
+        throw error;
+      }
+      recordAuthEvent({ actionCode: "VERIFICATION_EMAIL_SENT", outcome: "SUCCESS", user, request });
     },
     // #1961: a course join started from a self-enrollment link before this
     // account existed is redeemed the moment the account is activated. Never
@@ -258,7 +278,7 @@ export const auth = betterAuth({
       // somehow reached the plugin, it must never mint an account — that is
       // what §6a and §567 guard on /sign-up/email.
       disableSignUp: true,
-      sendVerificationOTP: async ({ email, otp, type }) => {
+      sendVerificationOTP: async ({ email, otp, type }, ctx) => {
         // Reset is the only flow this deployment enables.
         if (type !== "forget-password") return;
 
@@ -266,6 +286,7 @@ export const auth = betterAuth({
         // identically whether or not the address has an account; awaiting an
         // SMTP round trip only on the "account exists" branch would put that
         // difference back into the response time.
+        const request = ctx?.request ?? null;
         fireAndForget(
           sendEmail(
             buildPasswordResetOtpEmail({
@@ -273,6 +294,24 @@ export const auth = betterAuth({
               otp,
               expiresInMinutes: PASSWORD_RESET_OTP_EXPIRY_MINUTES,
             }),
+          ).then(
+            () => {
+              recordAuthEvent({
+                actionCode: "PASSWORD_RESET_REQUESTED",
+                outcome: "SUCCESS",
+                user: { email },
+                request,
+              });
+            },
+            (error: Error) => {
+              recordAuthEvent({
+                actionCode: "PASSWORD_RESET_REQUESTED",
+                outcome: "FAILURE",
+                user: { email },
+                request,
+              });
+              throw error;
+            },
           ),
         );
       },
@@ -584,6 +623,19 @@ export const auth = betterAuth({
         before: async (user) => {
           if (!EMAIL_VERIFICATION_DISABLED) return;
           return { data: { ...user, emailVerified: true } };
+        },
+        // #1942: public self-signup only. An existing address gets Better
+        // Auth's stand-in response and never reaches this hook; invitation
+        // acceptance and admin-created users have their own audit entries.
+        after: async (user, ctx) => {
+          if (ctx?.path !== "/sign-up/email") return;
+          if (ctx.request?.headers.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
+          recordAuthEvent({
+            actionCode: "USER_REGISTERED",
+            outcome: "SUCCESS",
+            user: { id: user.id, email: user.email },
+            request: ctx.request,
+          });
         },
       },
     },

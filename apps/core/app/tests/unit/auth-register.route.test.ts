@@ -30,6 +30,7 @@ vi.mock("~/lib/courses/pending-self-enrollment.server", () => ({
 }));
 
 import { loader, action } from "~/routes/auth/register";
+import { loader as verifyLoader } from "~/routes/auth/verify-email";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
@@ -198,7 +199,8 @@ describe("auth/register action", () => {
     )) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/auth/verify-email");
-    expect(res.headers.get("Set-Cookie")).toBeNull();
+    // No session cookie — only #1942's address carrier for the verify page.
+    expect(res.headers.get("Set-Cookie")).not.toMatch(/better-auth/);
 
     const signupRequest = vi.mocked(auth.handler).mock.calls[0][0] as Request;
     expect(await signupRequest.json()).toEqual({
@@ -207,6 +209,35 @@ describe("auth/register action", () => {
       password: STRONG_PASSWORD,
       callbackURL: "/onboarding/student-id",
     });
+  });
+
+  // #1942: the verify page's Resend box was empty right after sign-up, so the
+  // student had to type the address they had just typed.
+  it("carries the address to the verify page so Resend needs no retyping", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ token: null, user: { id: "u1" } }), { status: 200 }),
+    );
+    const res = (await action(
+      makeActionArgs({
+        name: "Ada Lovelace",
+        email: "ada@student.ubc.ca",
+        password: STRONG_PASSWORD,
+        confirmPassword: STRONG_PASSWORD,
+      }),
+    )) as Response;
+
+    const setCookie = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/Path=\/auth\/verify-email/);
+
+    const verify = await verifyLoader({
+      request: new Request("http://localhost/auth/verify-email", {
+        headers: { Cookie: setCookie.split(";")[0] },
+      }),
+      params: {},
+      context: {} as never,
+    } as never);
+    expect(verify).toEqual({ email: "ada@student.ubc.ca" });
   });
 
   it("catches a thrown error from the handler and returns a formError", async () => {
