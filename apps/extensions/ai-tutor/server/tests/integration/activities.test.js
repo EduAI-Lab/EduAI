@@ -2347,6 +2347,67 @@ describe("Tutoring-flow: question consumption via Core", () => {
       expect(consoleOutput).not.toContain(canary);
     });
 
+    // #1757: a Core rate limit used to come back as the same generic
+    // "Unable to generate" as an outage, so the student was never told to wait.
+    function stubCoreRateLimit(retryAfter) {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url) => {
+          if (typeof url === "string" && url.includes("/api/completion")) {
+            return Promise.resolve({
+              ok: false,
+              status: 429,
+              headers: new Headers({ "Retry-After": String(retryAfter) }),
+              text: () => Promise.resolve(JSON.stringify({ error: "RATE_LIMITED", retryAfter })),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: () => Promise.resolve({ questions: [], total: 0 }),
+            text: () => Promise.resolve(""),
+          });
+        }),
+      );
+    }
+
+    it("tells the student to wait when Core rate-limits a burst (#1757)", async () => {
+      stubCoreRateLimit(30);
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .set("Cookie", "session=test-cookie")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+
+      expect(res.status).toBe(429);
+      expect(res.headers["retry-after"]).toBe("30");
+      expect(res.body).toEqual({
+        error: "You're sending messages too quickly. Wait 30 seconds and try again.",
+        code: "AI_TUTOR_RATE_LIMITED",
+        retryAfter: 30,
+      });
+    });
+
+    it("names a used-up allowance when the wait is longer than a burst (#1757)", async () => {
+      stubCoreRateLimit(7200);
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .set("Cookie", "session=test-cookie")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+
+      expect(res.status).toBe(429);
+      expect(res.body).toMatchObject({
+        error: "You've reached your AI usage limit. You can ask again in 2 hours.",
+        code: "AI_TUTOR_RATE_LIMITED",
+      });
+    });
+
     it("returns 400 for a non-numeric activity id", async () => {
       const res = await request(studentApp)
         .post("/api/activities/not-a-number/custom")

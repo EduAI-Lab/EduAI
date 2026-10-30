@@ -125,7 +125,7 @@ const EDUAI_TURN_TIMEOUT_MS = Number(process.env.EDUAI_TURN_TIMEOUT_MS) || 50_00
 const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
 const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try again.";
-const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT"]);
+const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT", "RATE_LIMITED"]);
 const SAFE_AI_LOG_EVENTS = new Set([
   "missing_session_cookie",
   "missing_user_api_key",
@@ -144,7 +144,14 @@ const SAFE_AI_LOG_EVENTS = new Set([
   "custom_route_failed",
   "service_key_unset",
 ]);
-const SAFE_AI_LOG_NUMBER_KEYS = ["status", "attempt", "maxAttempts", "durationMs", "timeoutMs"];
+const SAFE_AI_LOG_NUMBER_KEYS = [
+  "status",
+  "attempt",
+  "maxAttempts",
+  "durationMs",
+  "timeoutMs",
+  "retryAfter",
+];
 const SAFE_AI_LOG_IDENTIFIER_KEYS = ["requestId", "correlationId", "traceId"];
 const SAFE_AI_LOG_TYPES = new Set([
   "array",
@@ -236,6 +243,7 @@ export function getSafeAiErrorMetadata(error, depth = 0) {
   const directMetadata = sanitizeAiLogMetadata({
     status: error?.status,
     code: error?.code,
+    retryAfter: error?.retryAfter,
     requestId: error?.requestId,
     correlationId: error?.correlationId,
     traceId: error?.traceId,
@@ -322,6 +330,25 @@ function eduAiErrorMessage(status, errorText) {
     // Non-JSON proxy responses keep the established status-only message.
   }
   return `AI API returned status ${status}${detail}`;
+}
+
+/**
+ * #1757: how long Core asked us to wait, in seconds — its JSON `retryAfter`
+ * when present, else the `Retry-After` header. Null when neither is a
+ * positive whole number (an HTTP-date header is left to the generic wording).
+ */
+function eduAiRetryAfterSeconds(errorText, retryAfterHeader) {
+  let fromBody;
+  try {
+    fromBody = JSON.parse(errorText)?.retryAfter;
+  } catch {
+    fromBody = undefined;
+  }
+  for (const candidate of [fromBody, retryAfterHeader]) {
+    const seconds = Number(candidate);
+    if (Number.isInteger(seconds) && seconds > 0) return seconds;
+  }
+  return null;
 }
 
 /**
@@ -527,6 +554,11 @@ async function callEduAI({
         logAiGuidanceEvent("error", "upstream_http_error", responseMetadata);
         const error = new Error(eduAiErrorMessage(response.status, errorText));
         error.status = response.status;
+        if (response.status === 429) {
+          error.code = "RATE_LIMITED";
+          const retryAfter = eduAiRetryAfterSeconds(errorText, response.headers.get("Retry-After"));
+          if (retryAfter !== null) error.retryAfter = retryAfter;
+        }
         error.requestId = responseMetadata.requestId;
         error.correlationId = responseMetadata.correlationId;
         error.traceId = responseMetadata.traceId;
