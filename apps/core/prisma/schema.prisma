@@ -662,8 +662,9 @@ model CourseTopic {
   /// topic-analysis job created and nobody has reviewed yet. Defaults to
   /// ACCEPTED so the migration leaves existing rows unflagged.
   reviewStatus    TopicReviewStatus        @default(ACCEPTED)
-  /// #2002: shown to students on the course page and in course chat. Hides the
-  /// name only — course chat still answers from the topic's materials.
+  /// #2002: shown to students on the course page and in course chat. Since #2061
+  /// a hidden topic also hides every file filed under it (student file list,
+  /// preview, help assistant and both RAG paths), and wins over a shown topic.
   visibleToStudents Boolean                @default(true)
   /// How much the generator trusts this name: 1 for a Canvas module title, less
   /// for a heading match, least for an AI proposal. Null on human-created rows.
