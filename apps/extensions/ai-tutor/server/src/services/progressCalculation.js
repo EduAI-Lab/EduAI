@@ -296,6 +296,45 @@ export async function getActivityCompletionStatuses(activityIds, userId) {
 }
 
 /**
+ * The user's latest submission (highest attemptNumber) per activity, so the
+ * lesson player can restore their last answer and its current grade (#2030).
+ * Scoped to `userId`; never returns another user's rows.
+ * @returns {Promise<Map<number, object>>} activityId => submission
+ */
+export async function getLatestSubmissions(activityIds, userId) {
+  if (!activityIds || activityIds.length === 0 || !userId) {
+    return new Map();
+  }
+
+  try {
+    const submissions = await prisma.submission.findMany({
+      where: { userId, activityId: { in: activityIds } },
+      select: {
+        activityId: true,
+        attemptNumber: true,
+        response: true,
+        isCorrect: true,
+        score: true,
+        aiFeedback: true,
+        createdAt: true,
+      },
+    });
+
+    const latest = new Map();
+    for (const sub of submissions) {
+      const current = latest.get(sub.activityId);
+      if (!current || sub.attemptNumber > current.attemptNumber) {
+        latest.set(sub.activityId, sub);
+      }
+    }
+    return latest;
+  } catch (error) {
+    console.error("Error getting latest submissions:", error);
+    return new Map();
+  }
+}
+
+/**
  * Helper: Count how many activities have ever had a correct submission.
  * Sticky (#1187): a later incorrect re-attempt does not undo completion.
  * @private

@@ -48,7 +48,10 @@ import {
   createActivityForLesson,
   updateActivityForEditor,
 } from "../services/activityManagement.js";
-import { getActivityCompletionStatuses } from "../services/progressCalculation.js";
+import {
+  getActivityCompletionStatuses,
+  getLatestSubmissions,
+} from "../services/progressCalculation.js";
 import { cloneActivityIntoLesson } from "../services/activityCloning.js";
 import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
 import {
@@ -494,7 +497,8 @@ async function handleAiInteraction({
  * Auth: any authenticated user; INSTRUCTOR must instruct the course, STUDENT
  *   must be enrolled AND lesson must be published.
  * Returns: For students, each activity is enriched with `completionStatus`
- *   so the lesson page can render attempt indicators without N+1 calls.
+ *   and their own `lastSubmission` (#2030) so the lesson page can render
+ *   attempt indicators and restore answers without N+1 calls.
  *
  * Why: completion status only matters for students, so the join is skipped
  * for instructors to keep the instructor authoring view fast.
@@ -587,11 +591,18 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
     // For students, add completion status to each activity
     if (isStudent && !hasElevatedAccess) {
       const activityIds = activities.map((a) => a.id);
-      const statusMap = await getActivityCompletionStatuses(activityIds, authUser.id);
+      const [statusMap, latestMap] = await Promise.all([
+        getActivityCompletionStatuses(activityIds, authUser.id),
+        getLatestSubmissions(activityIds, authUser.id),
+      ]);
 
       const activitiesWithStatus = activities.map((activity) => {
         const status = statusMap.get(activity.id) || "not_attempted";
-        return mapActivity({ ...activity, completionStatus: status });
+        return mapActivity({
+          ...activity,
+          completionStatus: status,
+          lastSubmission: latestMap.get(activity.id) ?? null,
+        });
       });
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
