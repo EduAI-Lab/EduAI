@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Defaults an admin starts from when granting access. */
 export const DEFAULT_API_ACCESS_DAILY_REQUEST_LIMIT = 200;
-export const DEFAULT_API_ACCESS_DAILY_TOKEN_LIMIT = 200_000;
+export const DEFAULT_API_ACCESS_DAILY_TOKEN_LIMIT = 500_000;
 
 /** Upper bounds an admin can set, so a typo can't grant effectively unlimited use. */
 export const MAX_API_ACCESS_DAILY_REQUEST_LIMIT = 5_000;
