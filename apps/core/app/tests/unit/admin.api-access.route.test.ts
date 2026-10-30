@@ -91,7 +91,7 @@ describe("admin API access API", () => {
     const res = await loader(makeArgs("GET"));
     await expect(res.json()).resolves.toMatchObject({
       grants: [],
-      defaults: { dailyRequestLimit: 200, dailyTokenLimit: 200_000 },
+      defaults: { dailyRequestLimit: 200, dailyTokenLimit: 500_000 },
     });
     expect(mocks.listApiAccessGrants).toHaveBeenCalledWith({ includeInactive: false });
     await loader(makeArgs("GET", { query: "?all=1" }));
@@ -110,7 +110,7 @@ describe("admin API access API", () => {
       purpose: "Honours project",
       expiresAt: new Date("2026-12-31T00:00:00Z"),
       dailyRequestLimit: 200,
-      dailyTokenLimit: 200_000,
+      dailyTokenLimit: 500_000,
       grantedById: "admin-1",
     });
     expect(mocks.logAuditAction).toHaveBeenCalledWith(

@@ -255,7 +255,7 @@ Only administrators can use an EduAI API key until an administrator gives someon
 
 1. Open **Administration → API Access** and choose **Give API access**, or open the person's **⋮** menu in **User Management** and choose **Give API access**.
 2. Pick the person, enter the purpose (for example the project or course), and choose when access ends. It defaults to the end of the current term.
-3. Set the daily limits. They start at 200 requests and 200,000 tokens, counted over the last 24 hours across all of the person's keys.
+3. Set the daily limits. They start at 200 requests and 500,000 tokens, counted over the last 24 hours across all of the person's keys.
 4. Choose **Give access**. The person can now create their own key in **Settings → API Keys**.
 
 The API Access page shows each person's last 24 hours of use against their limits. **Revoke** stops their keys at once and disables them; to give access again later, grant it anew and they create a new key. Access also ends by itself on its end date, and their keys stop working then.

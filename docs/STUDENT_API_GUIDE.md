@@ -12,7 +12,7 @@ This guide is for students and researchers an EduAI administrator has given **AP
 |---|---|
 | **Endpoint** | `POST https://my.eduai.ok.ubc.ca/api/completion` (one request in, one answer out; no chat history is kept) |
 | **Models** | The campus models only (names start with `vllm:`). Cloud models such as Gemini or GPT are not available with a student key. |
-| **Daily limits** | Set by the admin who gave you access. The defaults are **200 requests** and **200,000 tokens**, counted over the **last 24 hours** across all your keys. |
+| **Daily limits** | Set by the admin who gave you access. The defaults are **200 requests** and **500,000 tokens**, counted over the **last 24 hours** across all your keys. |
 | **At the same time** | At most **2 requests** from *all* student keys together run at once, because course chat for every EduAI student shares the same servers. |
 | **Longest request** | **5 minutes.** Anything longer is stopped. |
 | **Access ends** | On the end date your admin chose, or when they revoke it. Your keys stop working at that moment. |
