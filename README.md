@@ -103,6 +103,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`USER_GUIDE.md`](docs/USER_GUIDE.md) | User-facing guide to navigation, roles, and common workflows across Core, AI Tutor, and Question Maker |
 | [`STUDENT_API_GUIDE.md`](docs/STUDENT_API_GUIDE.md) | For students and researchers given API access (#2039): creating and protecting a key, request examples, the campus models' context windows, limits and token charging, errors and retries, and running batches |
+| [`PROVIDER_API_KEY_GUIDE.md`](docs/PROVIDER_API_KEY_GUIDE.md) | Half-page guide for anyone adding their own OpenAI, Gemini or OpenCode Go key (#2063): when you need one, making the provider account first, where to paste it in Core and the AI Tutor, and keeping it safe |
 | [`DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Developer entry point covering the stack, trust boundaries, conventions, testing, and documentation map |
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every `.env.example` in the monorepo, which mechanism loads it, and what each variable does |
