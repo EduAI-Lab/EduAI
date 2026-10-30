@@ -161,9 +161,7 @@ test.describe("What students see: one checkbox, then by topic (#2061)", () => {
     await expect(allCheckbox(page)).toHaveAttribute("data-state", "unchecked");
 
     await allCheckbox(page).click();
-    await expect(confirmDialog(page)).toContainText(
-      "Every hidden topic will be shown to students.",
-    );
+    await expect(confirmDialog(page)).toContainText("2 hidden topics will be shown to students.");
     await confirmDialog(page).getByRole("button", { name: "Show files" }).click();
     await expect(allCheckbox(page)).toHaveAttribute("data-state", "checked");
     await expect.poll(() => studentTopics(course)).toEqual(TOPICS);

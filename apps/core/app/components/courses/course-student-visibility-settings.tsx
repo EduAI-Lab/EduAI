@@ -139,19 +139,38 @@ export function describeFileVisibility({
   return parts.join(" ");
 }
 
-/** What revealing these hidden files means, for the dialog that asks first. */
-export function revealDescription(revealed: number, stillHidden: number, scheduled: boolean) {
-  const parts = [
-    revealed === 0
-      ? "Every hidden topic will be shown to students."
-      : `${revealed === 1 ? "1 hidden file" : `${revealed} hidden files`} will be shown to students, and course chat will be able to use ${revealed === 1 ? "it to answer students. Make sure it should not stay private, like an answer key." : "them to answer students. Make sure none of them should stay private, such as answer keys."}`,
-  ];
+/**
+ * What revealing means, for the dialog that asks first: the files students get,
+ * the hidden topics shown with them, and what stays hidden.
+ */
+export function revealDescription(
+  revealed: number,
+  stillHidden: number,
+  scheduled: boolean,
+  topicsShown = 0,
+) {
+  const parts: string[] = [];
+  if (revealed > 0) {
+    parts.push(
+      `${revealed === 1 ? "1 hidden file" : `${revealed} hidden files`} will be shown to students, and course chat will be able to use ${revealed === 1 ? "it to answer students. Make sure it should not stay private, like an answer key." : "them to answer students. Make sure none of them should stay private, such as answer keys."}`,
+    );
+  }
+  if (topicsShown > 0) {
+    const topics = topicsShown === 1 ? "1 hidden topic" : `${topicsShown} hidden topics`;
+    parts.push(
+      revealed > 0 ? `${topics} will be shown too.` : `${topics} will be shown to students.`,
+    );
+  } else if (revealed === 0) {
+    parts.push("No file will be shown to students yet.");
+  }
   if (stillHidden > 0) {
     parts.push(
       `${stillHidden === 1 ? "1 file stays" : `${stillHidden} files stay`} hidden, under another hidden topic or in Canvas.`,
     );
   }
-  if (scheduled) parts.push("Files scheduled for a later date still wait for that date.");
+  if (revealed > 0 && scheduled) {
+    parts.push("Files scheduled for a later date still wait for that date.");
+  }
   return parts.join(" ");
 }
 
@@ -335,8 +354,11 @@ export function CourseStudentVisibilitySettings({
 
   /**
    * Asks before revealing a group's hidden files, saying how many students will
-   * get. Showing everything also shows every topic; one topic's or the No topic
-   * group's files stay hidden where another hidden topic or Canvas hides them.
+   * get and which hidden topics are shown with them. Showing everything also shows
+   * every topic; one topic's or the No topic group's files stay hidden where
+   * another hidden topic or Canvas hides them. Showing one hidden topic
+   * (`changes.topics`) reveals its files whose own switch is on, and goes
+   * straight through when there are none.
    */
   const confirmReveal = (
     title: string,
@@ -344,17 +366,23 @@ export function CourseStudentVisibilitySettings({
     changes: StudentVisibilityChanges,
     except?: string,
   ) => {
-    const showsTopics = changes.fileGroup?.scope === "all";
-    const hidden = group.filter((f) => !isShown(f));
+    const showsAll = changes.fileGroup?.scope === "all";
+    const showsTopic = changes.topics !== undefined;
+    const hidden = group.filter((f) => !isShown(f) && (!showsTopic || f.visibleToStudents));
     const revealed = hidden.filter(
-      (f) => !f.hiddenByCanvas && (showsTopics || hidingTopic(f, except) === undefined),
+      (f) => !f.hiddenByCanvas && (showsAll || hidingTopic(f, except) === undefined),
     );
+    if (showsTopic && revealed.length === 0) {
+      void change(changes);
+      return;
+    }
     setConfirm({
       title,
       description: revealDescription(
         revealed.length,
         hidden.length - revealed.length,
         revealed.some(isFuture),
+        showsAll ? hiddenTopicNames.size : showsTopic ? 1 : 0,
       ),
       confirmLabel: "Show files",
       destructive: false,
@@ -391,10 +419,16 @@ export function CourseStudentVisibilitySettings({
         ? false
         : checkState([...(topic ? [true] : []), ...group.map((f) => f.visibleToStudents)]);
     const onGroupChange = () => {
-      if (topic && checked !== "indeterminate") {
-        // A topic's own switch: hiding it hides its files; showing it brings back
-        // the ones not hidden some other way.
-        void change({ topics: [{ id: topic.id, visibleToStudents: !topic.visibleToStudents }] });
+      if (topic && checked === false) {
+        // Showing a hidden topic brings back the files not hidden some other way.
+        confirmReveal(
+          `Show “${label}” to students?`,
+          group,
+          { topics: [{ id: topic.id, visibleToStudents: true }] },
+          topic.id,
+        );
+      } else if (topic && checked === true) {
+        void change({ topics: [{ id: topic.id, visibleToStudents: false }] });
       } else if (checked === true) {
         void change({ fileGroup: { scope: "unfiled", visibleToStudents: false } });
       } else {

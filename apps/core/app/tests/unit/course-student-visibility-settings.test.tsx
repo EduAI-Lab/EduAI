@@ -224,6 +224,63 @@ describe("CourseStudentVisibilitySettings (#2002, #2061)", () => {
     );
   });
 
+  it("asks before showing a hidden topic, counting only the files that become visible", async () => {
+    server.topics[0].visibleToStudents = false;
+    // m2 is also under Exam prep (shown), m1 is Canvas-hidden, so only m2 comes back.
+    server.files[0].hiddenByCanvas = true;
+    await renderSettings();
+    openTopics();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sorting" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Show “Sorting” to students?");
+    expect(dialog).toHaveTextContent("1 hidden file will be shown to students");
+    expect(dialog).toHaveTextContent("1 hidden topic will be shown too.");
+    expect(dialog).toHaveTextContent("1 file stays hidden");
+    expect(patches).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Show files" }));
+
+    await waitFor(() =>
+      expect(patches[0]?.body).toEqual({ topics: [{ id: "t1", visibleToStudents: true }] }),
+    );
+  });
+
+  it("shows a hidden topic without asking when no file comes back with it", async () => {
+    server.topics[0].visibleToStudents = false;
+    server.files = [file("m3", ["t2"]), file("m4", [])];
+    await renderSettings();
+    openTopics();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sorting" }));
+
+    await waitFor(() =>
+      expect(patches[0]?.body).toEqual({ topics: [{ id: "t1", visibleToStudents: true }] }),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("does not claim topics will be shown when a topic's reveal only touches a file another topic hides", async () => {
+    server.topics[1].visibleToStudents = false;
+    server.files = [file("m1", ["t1"]), file("m2", ["t1", "t2"], { visibleToStudents: false })];
+    await renderSettings();
+    openTopics();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sorting" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("No file will be shown to students yet.");
+    expect(dialog).not.toHaveTextContent("hidden topic will be shown");
+  });
+
+  it("names the hidden topics that showing hidden files shows too", async () => {
+    server.topics[1].visibleToStudents = false;
+    server.files[0].visibleToStudents = false;
+    const all = await renderSettings();
+    fireEvent.click(all);
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("3 hidden files will be shown to students");
+    expect(dialog).toHaveTextContent("1 hidden topic will be shown too.");
+  });
+
   it("hides the files with no topic at once, and asks before showing them again", async () => {
     await renderSettings();
     openTopics();
@@ -404,7 +461,24 @@ describe("describeFileVisibility (#2061)", () => {
     expect(describeFileVisibility(counts)).toBe(text);
   });
 
-  it("explains a reveal that only shows topics", () => {
-    expect(revealDescription(0, 0, false)).toBe("Every hidden topic will be shown to students.");
+  it.each([
+    [[0, 0, false, 2], "2 hidden topics will be shown to students."],
+    [[0, 0, false, 1], "1 hidden topic will be shown to students."],
+    [
+      [0, 1, false, 0],
+      "No file will be shown to students yet. 1 file stays hidden, under another hidden topic or in Canvas.",
+    ],
+    [[0, 0, true, 0], "No file will be shown to students yet."],
+  ] as const)(
+    "%#: describes a reveal of %j",
+    ([revealed, stillHidden, scheduled, topics], text) => {
+      expect(revealDescription(revealed, stillHidden, scheduled, topics)).toBe(text);
+    },
+  );
+
+  it("names the hidden topics a reveal of files shows too", () => {
+    const text = revealDescription(2, 0, false, 2);
+    expect(text).toContain("2 hidden files will be shown to students");
+    expect(text).toContain("2 hidden topics will be shown too.");
   });
 });
