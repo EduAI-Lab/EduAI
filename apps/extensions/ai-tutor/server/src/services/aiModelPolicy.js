@@ -181,6 +181,8 @@ function mapCatalogModel(model) {
     modelId,
     modelName: model.name,
     provider: model.provider.name,
+    // #1899: Core can serve this model with the deployment's own key.
+    platformKeyAvailable: model.platformKeyAvailable === true,
     costTier,
     summary: inferSummary(modelId, model.name),
     roleHint:
@@ -201,6 +203,23 @@ export async function loadAiModelCatalog() {
     .filter((model) => model.isActive)
     .map(mapCatalogModel)
     .toSorted((a, b) => a.modelName.localeCompare(b.modelName));
+}
+
+/**
+ * Providers Core can serve with the deployment's own key (#1899), so a student
+ * needs no key of their own for them. Empty when the catalog is unreachable,
+ * which keeps the student-key requirement in force.
+ */
+export async function loadProvidersWithCoreKey() {
+  try {
+    const models = await loadAiModelCatalog();
+    return new Set(
+      models.filter((model) => model.platformKeyAvailable).map((model) => model.provider),
+    );
+  } catch (error) {
+    logSafeError("Failed to load AI model catalog", error);
+    return new Set();
+  }
 }
 
 /**

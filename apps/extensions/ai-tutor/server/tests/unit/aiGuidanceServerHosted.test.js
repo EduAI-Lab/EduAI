@@ -4,7 +4,7 @@
  * Core injects, so they proceed with no student key — and their supervisor pass
  * stays available. BYOK providers with no key still fail closed.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
@@ -14,9 +14,17 @@ vi.mock("../../src/config/database.js", () => ({
   },
 }));
 
+const listEduAiModels = vi.hoisted(() => vi.fn());
+
 vi.mock("../../src/services/eduaiClient.js", () => ({
   getEduAiCompletionUrl: () => "http://eduai.test/api/completion",
+  listEduAiModels,
 }));
+
+beforeEach(() => {
+  // Core's catalog: no provider has a deployment key unless a test says so.
+  listEduAiModels.mockReset().mockResolvedValue([]);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -133,6 +141,94 @@ describe("UBC-hosted models need no BYOK key (#1645)", () => {
         dualLoopEnabled: false,
         cookie: "session=canary",
         // No key for the google BYOK provider.
+      }),
+    ).rejects.toThrow("API key is required for the selected tutor provider");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+function coreCatalog(platformKeyAvailable) {
+  return [
+    {
+      id: "model-1",
+      modelId: "gemini-test",
+      name: "Gemini Test",
+      isActive: true,
+      provider: { name: "google" },
+      platformKeyAvailable,
+    },
+  ];
+}
+
+describe("providers Core holds a deployment key for need no student key (#1899)", () => {
+  it("sends a Core-keyed tutor request with no student key", async () => {
+    listEduAiModels.mockResolvedValue(coreCatalog(true));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ content: "Try isolating x." }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ content: '{"approved":true}' }) }),
+    );
+
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
+    const result = await generateGuideResponse({
+      activity: activity(),
+      knowledgeLevel: "beginner",
+      message: "Give me a hint",
+      studentAnswer: null,
+      tutorModelId: "google:gemini-test",
+      supervisorModelId: "google:gemini-test",
+      dualLoopEnabled: true,
+      maxSupervisorIterations: 1,
+      cookie: "session=canary",
+    });
+
+    expect(result.message).toBe("Try isolating x.");
+    // The supervisor is Core-keyed too, so its pass runs rather than being skipped.
+    expect(result.trace.finalOutcome).toBe("approved");
+    const bodies = global.fetch.mock.calls.map(([, init]) => JSON.parse(init.body));
+    // No key leaves AI Tutor: Core supplies its own.
+    expect(bodies.map((body) => body.apiKeys)).toEqual([{}, {}]);
+  });
+
+  it("does not ask Core when the student brings their own key", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ content: "Try isolating x." }) }),
+    );
+
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
+    await generateGuideResponse({
+      activity: activity(),
+      knowledgeLevel: "beginner",
+      message: "Give me a hint",
+      studentAnswer: null,
+      tutorModelId: "google:gemini-test",
+      dualLoopEnabled: false,
+      cookie: "session=canary",
+      apiKey: "student-gemini-key",
+    });
+
+    expect(listEduAiModels).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when Core's catalog cannot be read", async () => {
+    listEduAiModels.mockRejectedValue(new Error("Core down"));
+    vi.stubGlobal("fetch", vi.fn());
+
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
+    await expect(
+      generateGuideResponse({
+        activity: activity(),
+        knowledgeLevel: "beginner",
+        message: "Give me a hint",
+        studentAnswer: null,
+        tutorModelId: "google:gemini-test",
+        dualLoopEnabled: false,
+        cookie: "session=canary",
       }),
     ).rejects.toThrow("API key is required for the selected tutor provider");
     expect(global.fetch).not.toHaveBeenCalled();

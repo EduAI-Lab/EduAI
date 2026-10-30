@@ -38,7 +38,7 @@ import { prisma } from "../config/database.js";
 import { getEduAiCompletionUrl } from "./eduaiClient.js";
 import { serviceAuthHeader } from "./systemSettings.js";
 import { trimNonEmpty } from "../utils/coreCourseId.js";
-import { DEFAULT_TUTOR_MODEL } from "./aiModelPolicy.js";
+import { DEFAULT_TUTOR_MODEL, loadProvidersWithCoreKey } from "./aiModelPolicy.js";
 
 const SUPERVISOR_ERROR_MESSAGE =
   "AI study buddy encountered an issue reviewing the response. Please try again.";
@@ -371,6 +371,9 @@ async function callEduAI({
   // fall back to another keyed provider when the UBC fleet is down. Falls back
   // to just the selected provider's `userApiKey` when omitted.
   providerApiKeys = null,
+  // #1899: providers Core serves with the deployment's own key, so they need
+  // no student key either.
+  coreKeyedProviders = null,
   chatId = null,
   messageId = null,
   courseCode = null,
@@ -405,7 +408,7 @@ async function callEduAI({
   // #1645: a BYOK key is required only for BYOK providers. UBC-hosted models
   // (vllm/ollama) are served with the deployment key Core injects, so they may
   // proceed with no student key at all.
-  if (providerRequiresApiKey(provider) && !userApiKey) {
+  if (providerRequiresApiKey(provider) && !userApiKey && !coreKeyedProviders?.has(provider)) {
     logAiGuidanceEvent("error", "missing_user_api_key");
     const error = new Error("API key is required");
     error.status = 400;
@@ -662,6 +665,7 @@ async function callSupervisor({
   cookie,
   userApiKey,
   providerApiKeys = null,
+  coreKeyedProviders = null,
   courseCode = null,
   courseId = null,
   turnDeadline = null,
@@ -701,6 +705,7 @@ RESPOND WITH ONLY VALID JSON.`;
       cookie,
       userApiKey,
       providerApiKeys,
+      coreKeyedProviders,
       courseCode,
       courseId,
       turnDeadline,
@@ -997,6 +1002,7 @@ async function supervisedGenerate(generateFn, context) {
         cookie: context.cookie,
         userApiKey: context.supervisorApiKey,
         providerApiKeys: context.providerApiKeys,
+        coreKeyedProviders: context.coreKeyedProviders,
         courseCode: context.courseCode,
         courseId: context.courseId,
         turnDeadline: context.turnDeadline,
@@ -1072,9 +1078,21 @@ async function generateWithSupervisor({
     tutorModelId: effectiveTutorModelId,
     supervisorModelId: effectiveSupervisorModelId,
   });
+  // #1899: Core serves a provider it holds a deployment key for, so a student
+  // without a key of their own can still use it. Ask Core only when a key is
+  // missing, so a student who brings their own key costs no extra catalog read.
+  const missingKey = (provider, key) => providerRequiresApiKey(provider) && !key;
+  const coreKeyedProviders =
+    missingKey(resolvedKeys.tutorProvider, resolvedKeys.tutorApiKey) ||
+    missingKey(resolvedKeys.supervisorProvider, resolvedKeys.supervisorApiKey)
+      ? await loadProvidersWithCoreKey()
+      : new Set();
+  const keyAvailable = (provider, key) =>
+    !missingKey(provider, key) || coreKeyedProviders.has(provider);
+
   // #1645: BYOK providers still require the student's key; UBC-hosted tutor
   // models (vllm/ollama) proceed with the deployment key Core injects.
-  if (providerRequiresApiKey(resolvedKeys.tutorProvider) && !resolvedKeys.tutorApiKey) {
+  if (!keyAvailable(resolvedKeys.tutorProvider, resolvedKeys.tutorApiKey)) {
     const error = new Error("API key is required for the selected tutor provider");
     error.status = 400;
     throw error;
@@ -1084,9 +1102,10 @@ async function generateWithSupervisor({
   // its provider has its own credential OR is UBC-hosted (server key). For a
   // BYOK supervisor provider with no key we skip that stage rather than
   // relabelling the tutor secret and sending it to the wrong upstream.
-  const supervisionAvailable =
-    Boolean(resolvedKeys.supervisorApiKey) ||
-    !providerRequiresApiKey(resolvedKeys.supervisorProvider);
+  const supervisionAvailable = keyAvailable(
+    resolvedKeys.supervisorProvider,
+    resolvedKeys.supervisorApiKey,
+  );
   const context = {
     originalStudentMessage,
     visibleContext,
@@ -1097,6 +1116,7 @@ async function generateWithSupervisor({
     userApiKey: resolvedKeys.tutorApiKey,
     supervisorApiKey: resolvedKeys.supervisorApiKey,
     providerApiKeys: resolvedKeys.allKeys,
+    coreKeyedProviders,
     chatId,
     dualLoopEnabled: dualLoopEnabled && supervisionAvailable,
     maxSupervisorIterations,
@@ -1123,6 +1143,7 @@ async function generateWithSupervisor({
       cookie,
       userApiKey: resolvedKeys.tutorApiKey,
       providerApiKeys: resolvedKeys.allKeys,
+      coreKeyedProviders,
       chatId: currentChatId,
       // Each revision needs a fresh messageId so EduAI doesn't dedupe it as
       // the same turn; only the original turn reuses the caller's messageId.

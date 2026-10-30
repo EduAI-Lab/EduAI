@@ -361,6 +361,8 @@ export type AiModel = {
   studentSelectable?: boolean;
   availability?: "allowed" | "admin-only" | "blocked";
   isDefaultTutor?: boolean;
+  /** Core serves this model with the deployment's own key (#1899). */
+  platformKeyAvailable?: boolean;
 };
 
 export type SuggestedPrompt = {
