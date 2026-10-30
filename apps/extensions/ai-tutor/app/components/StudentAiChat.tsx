@@ -214,6 +214,29 @@ function getInitialChatState() {
   } satisfies ChatState;
 }
 
+const RATE_LIMIT_FALLBACK = "You're sending messages too quickly. Wait a moment and try again.";
+
+const rateLimitBodySchema = z.object({
+  code: z.literal("AI_TUTOR_RATE_LIMITED"),
+  error: z.string().min(1),
+});
+
+/**
+ * #1757: a 429 used to read as "not available right now", which sends the
+ * student off to report an outage when all they need to do is wait. The
+ * server words the wait (`AI_TUTOR_RATE_LIMITED`); any other 429 body (a
+ * proxy, the auth middleware) still gets a sentence that names the limit.
+ */
+function rateLimitMessage(responseText: string): string {
+  let parsed;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    return RATE_LIMIT_FALLBACK;
+  }
+  return rateLimitBodySchema.safeParse(parsed).data?.error ?? RATE_LIMIT_FALLBACK;
+}
+
 const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(function StudentAiChat(
   {
     activity,
@@ -595,6 +618,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         } else if (error instanceof ApiTimeoutError) {
           console.error("AI chat timed out:", error);
           appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
+        } else if (error instanceof ApiHttpError && error.status === 429) {
+          console.error("AI chat rate limited:", error);
+          appendMessage(tab, "assistant", rateLimitMessage(error.message));
         } else {
           console.error("AI chat failed:", error);
           // #1660 review (ariqmuldi): the server 403s these endpoints for

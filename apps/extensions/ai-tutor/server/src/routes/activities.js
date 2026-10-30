@@ -196,6 +196,28 @@ async function getExactCourseMembership(course, authUser) {
   };
 }
 
+// Past this many seconds, the limit is an allowance the student used up,
+// not a burst they can wait out (mirrors Core's chat-error-copy.ts).
+const BURST_WINDOW_SECONDS = 60;
+
+// "42 seconds" / "5 minutes" / "14 hours", or "a moment" without a number.
+function waitPhrase(seconds) {
+  if (seconds === undefined) return "a moment";
+  if (seconds < 120) return `${seconds} seconds`;
+  if (seconds < 7200) return `${Math.ceil(seconds / 60)} minutes`;
+  return `${Math.ceil(seconds / 3600)} hours`;
+}
+
+// #1757: what to tell a student whose turn Core rate-limited.
+function rateLimitMessage(retryAfter) {
+  if (retryAfter !== undefined && retryAfter > BURST_WINDOW_SECONDS) {
+    return `You've reached your AI usage limit. You can ask again in ${waitPhrase(retryAfter)}.`;
+  }
+  return retryAfter === undefined
+    ? "You're sending messages too quickly. Wait a moment and try again."
+    : `You're sending messages too quickly. Wait ${waitPhrase(retryAfter)} and try again.`;
+}
+
 // The student may pick a secondary topic to focus on for an AI session;
 // fall back to the activity's main topic if the requested id is unknown.
 function resolveTopicName(activity, topicId) {
@@ -474,6 +496,15 @@ async function handleAiInteraction({
     logAiGuidanceEvent("error", "guidance_route_failed", { mode, ...metadata });
     const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
     const timedOut = metadata.code === "TIMEOUT";
+    if (metadata.code === "RATE_LIMITED") {
+      if (metadata.retryAfter !== undefined) res.set("Retry-After", String(metadata.retryAfter));
+      const body = {
+        error: rateLimitMessage(metadata.retryAfter),
+        code: "AI_TUTOR_RATE_LIMITED",
+      };
+      if (metadata.retryAfter !== undefined) body.retryAfter = metadata.retryAfter;
+      return res.status(429).json(body);
+    }
     const body = {
       error: timedOut
         ? "The AI study buddy took too long to respond. Please try again."
