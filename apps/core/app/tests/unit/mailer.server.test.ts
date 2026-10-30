@@ -14,7 +14,12 @@ vi.mock("~/lib/logging.server", () => ({
 }));
 
 import { logSystemError } from "~/lib/logging.server";
-import { resetMailerTransport, sendEmail } from "~/lib/email/mailer.server";
+import {
+  resetMailerTransport,
+  sendEmail,
+  SMTP_TIMEOUT_MS,
+  warnIfSmtpMissing,
+} from "~/lib/email/mailer.server";
 
 const ORIGINAL_ENV = { ...process.env };
 const MESSAGE = {
@@ -75,11 +80,67 @@ describe("sendEmail — SMTP not configured", () => {
     expect(infoSpy).not.toHaveBeenCalled();
     expect(createTransport).not.toHaveBeenCalled();
   });
+
+  it("records the production refusal in Admin → Logs (#1860)", async () => {
+    process.env.NODE_ENV = "production";
+
+    await expect(sendEmail(MESSAGE)).rejects.toThrow("SMTP must be configured");
+    expect(logSystemError).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "MAIL", code: "MAIL_NOT_CONFIGURED" }),
+    );
+  });
+
+  it("does not log a system error outside production", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await sendEmail(MESSAGE);
+
+    expect(logSystemError).not.toHaveBeenCalled();
+  });
+});
+
+describe("warnIfSmtpMissing (#1860)", () => {
+  it("warns in production when SMTP_HOST is unset", () => {
+    process.env.NODE_ENV = "production";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    warnIfSmtpMissing();
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("SMTP_HOST is not set"));
+  });
+
+  it("stays quiet in production when SMTP is configured, and outside production", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    process.env.NODE_ENV = "production";
+    process.env.SMTP_HOST = "smtp.example.com";
+    warnIfSmtpMissing();
+
+    process.env.NODE_ENV = "development";
+    delete process.env.SMTP_HOST;
+    warnIfSmtpMissing();
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendEmail — SMTP configured", () => {
   beforeEach(() => {
     process.env.SMTP_HOST = "smtp.example.com";
+  });
+
+  it("sets connect, greeting and socket timeouts so a dead relay fails fast (#1860)", async () => {
+    sendMail.mockResolvedValue(undefined);
+
+    await sendEmail(MESSAGE);
+
+    expect(createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectionTimeout: SMTP_TIMEOUT_MS,
+        greetingTimeout: SMTP_TIMEOUT_MS,
+        socketTimeout: SMTP_TIMEOUT_MS,
+      }),
+    );
   });
 
   it("builds the transport once and caches it across sends", async () => {

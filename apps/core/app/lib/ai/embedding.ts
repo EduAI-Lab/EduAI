@@ -7,6 +7,7 @@ import pLimit from "p-limit";
 import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
 import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
 import prisma from "../prisma.server";
+import { FALLBACK_TOPIC_NAME } from "../topics/fallback.server";
 import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
 import { SEMANTIC_CHUNK_SEPARATOR } from "./file-processing";
@@ -1252,9 +1253,22 @@ export async function findRelevantContent(
     : Prisma.empty;
 
   // §839 student-visibility gate, injected into both retrieval paths. Empty for
-  // staff callers so their retrieval is unchanged.
+  // staff callers so their retrieval is unchanged. #2061: a file under a topic
+  // hidden from students is left out too — HIDDEN_TOPIC_WHERE in SQL.
   const visibilityFilter = restrictToStudentVisible
-    ? Prisma.sql`AND cm."visibleToStudents" = true AND (cm."availableAt" IS NULL OR cm."availableAt" <= NOW())`
+    ? Prisma.sql`
+        AND cm."visibleToStudents" = true
+        AND (cm."availableAt" IS NULL OR cm."availableAt" <= NOW())
+        AND NOT EXISTS (
+          SELECT 1 FROM course_topic_sources cts
+          JOIN course_topics ct ON ct.id = cts."topicId"
+          WHERE cts."materialId" = cm.id
+            AND ct."visibleToStudents" = false
+            AND ct."deletedAt" IS NULL
+            AND ct."reviewStatus" = 'ACCEPTED'
+            AND ct.name <> ${FALLBACK_TOPIC_NAME}
+        )
+      `
     : Prisma.empty;
 
   // #940: ivfflat.probes is a session/transaction-scoped GUC, not an index

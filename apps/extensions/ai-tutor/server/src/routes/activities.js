@@ -37,14 +37,21 @@ import {
   activitySearchWhere,
   PaginationError,
 } from "../utils/pagination.js";
-import { evaluateQuestion } from "../services/activityEvaluation.js";
+import {
+  evaluateQuestion,
+  overrideFeedbackMessage,
+  submissionResultMessage,
+} from "../services/activityEvaluation.js";
 import { createSubmissionWithNextAttempt } from "../services/submissionAttempts.js";
 import {
   ActivityMutationError,
   createActivityForLesson,
   updateActivityForEditor,
 } from "../services/activityManagement.js";
-import { getActivityCompletionStatuses } from "../services/progressCalculation.js";
+import {
+  getActivityCompletionStatuses,
+  getLatestSubmissions,
+} from "../services/progressCalculation.js";
 import { cloneActivityIntoLesson } from "../services/activityCloning.js";
 import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
 import {
@@ -187,6 +194,28 @@ async function getExactCourseMembership(course, authUser) {
     isUnitAdmin: principal.state === "allowed" && principal.kind === "UNIT_ADMIN",
     isAdmin: principal.state === "allowed" && principal.kind === "ADMIN",
   };
+}
+
+// Past this many seconds, the limit is an allowance the student used up,
+// not a burst they can wait out (mirrors Core's chat-error-copy.ts).
+const BURST_WINDOW_SECONDS = 60;
+
+// "42 seconds" / "5 minutes" / "14 hours", or "a moment" without a number.
+function waitPhrase(seconds) {
+  if (seconds === undefined) return "a moment";
+  if (seconds < 120) return `${seconds} seconds`;
+  if (seconds < 7200) return `${Math.ceil(seconds / 60)} minutes`;
+  return `${Math.ceil(seconds / 3600)} hours`;
+}
+
+// #1757: what to tell a student whose turn Core rate-limited.
+function rateLimitMessage(retryAfter) {
+  if (retryAfter !== undefined && retryAfter > BURST_WINDOW_SECONDS) {
+    return `You've reached your AI usage limit. You can ask again in ${waitPhrase(retryAfter)}.`;
+  }
+  return retryAfter === undefined
+    ? "You're sending messages too quickly. Wait a moment and try again."
+    : `You're sending messages too quickly. Wait ${waitPhrase(retryAfter)} and try again.`;
 }
 
 // The student may pick a secondary topic to focus on for an AI session;
@@ -467,6 +496,15 @@ async function handleAiInteraction({
     logAiGuidanceEvent("error", "guidance_route_failed", { mode, ...metadata });
     const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
     const timedOut = metadata.code === "TIMEOUT";
+    if (metadata.code === "RATE_LIMITED") {
+      if (metadata.retryAfter !== undefined) res.set("Retry-After", String(metadata.retryAfter));
+      const body = {
+        error: rateLimitMessage(metadata.retryAfter),
+        code: "AI_TUTOR_RATE_LIMITED",
+      };
+      if (metadata.retryAfter !== undefined) body.retryAfter = metadata.retryAfter;
+      return res.status(429).json(body);
+    }
     const body = {
       error: timedOut
         ? "The AI study buddy took too long to respond. Please try again."
@@ -490,7 +528,8 @@ async function handleAiInteraction({
  * Auth: any authenticated user; INSTRUCTOR must instruct the course, STUDENT
  *   must be enrolled AND lesson must be published.
  * Returns: For students, each activity is enriched with `completionStatus`
- *   so the lesson page can render attempt indicators without N+1 calls.
+ *   and their own `lastSubmission` (#2030) so the lesson page can render
+ *   attempt indicators and restore answers without N+1 calls.
  *
  * Why: completion status only matters for students, so the join is skipped
  * for instructors to keep the instructor authoring view fast.
@@ -583,11 +622,18 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
     // For students, add completion status to each activity
     if (isStudent && !hasElevatedAccess) {
       const activityIds = activities.map((a) => a.id);
-      const statusMap = await getActivityCompletionStatuses(activityIds, authUser.id);
+      const [statusMap, latestMap] = await Promise.all([
+        getActivityCompletionStatuses(activityIds, authUser.id),
+        getLatestSubmissions(activityIds, authUser.id),
+      ]);
 
       const activitiesWithStatus = activities.map((activity) => {
         const status = statusMap.get(activity.id) || "not_attempted";
-        return mapActivity({ ...activity, completionStatus: status });
+        return mapActivity({
+          ...activity,
+          completionStatus: status,
+          lastSubmission: latestMap.get(activity.id) ?? null,
+        });
       });
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
@@ -1209,6 +1255,7 @@ router.post("/questions/:id/answer", async (req, res) => {
       answerOption,
     });
 
+    const message = submissionResultMessage(isCorrect);
     const submission = await createSubmissionWithNextAttempt({
       userId: authUser.id,
       activityId,
@@ -1216,13 +1263,11 @@ router.post("/questions/:id/answer", async (req, res) => {
         answerText: typeof answerText === "string" ? answerText : null,
         answerOption: typeof answerOption === "number" ? answerOption : null,
       },
-      aiFeedback: isCorrect
-        ? { message: "Nice! That looks right." }
-        : { message: "Not quite. Try another angle." },
+      aiFeedback: { message },
       isCorrect,
     });
 
-    await trackSubmissionMetrics(authUser.id, activityId, Boolean(isCorrect));
+    await trackSubmissionMetrics(authUser.id, activityId, isCorrect);
     const feedbackAlreadySubmitted = await hasActivityFeedback({
       userId: authUser.id,
       activityId,
@@ -1231,7 +1276,7 @@ router.post("/questions/:id/answer", async (req, res) => {
     res.json({
       ok: true,
       isCorrect,
-      message: isCorrect ? "Nice! That looks right." : "Not quite. Try another angle.",
+      message,
       submissionId: submission.id,
       feedbackRequired: !feedbackAlreadySubmitted,
       feedbackAlreadySubmitted,
@@ -1596,7 +1641,8 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
  *   `Submission` has no free-text grader-feedback column (only `aiFeedback`,
  *   which holds the system-generated hint shown at submit time, a different
  *   concern) — see prisma/schema.prisma Submission model. Adding one would
- *   require a migration, which is out of scope here.
+ *   require a migration, which is out of scope here. When `isCorrect` changes,
+ *   `aiFeedback` is replaced with a message matching the new result.
  * Returns: the updated Submission row (same shape as the GET list above).
  */
 router.patch("/activities/:activityId/submissions/:submissionId", async (req, res) => {
@@ -1680,6 +1726,12 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
         return res.status(403).json({ error: "Not authorized for this submission" });
       }
+    }
+
+    // A changed verdict replaces the submit-time feedback so it can't contradict
+    // the new result (#2033); a score-only edit keeps it.
+    if (typeof isCorrect !== "undefined" && isCorrect !== submission.isCorrect) {
+      updateData.aiFeedback = { message: overrideFeedbackMessage(isCorrect) };
     }
 
     const updated = await prisma.submission.update({

@@ -10,7 +10,6 @@ import {
   IconUpload,
   IconSettings,
   IconBook,
-  IconEye,
   IconEyeOff,
   IconClock,
   IconDownload,
@@ -28,7 +27,7 @@ import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { EmptyState } from "@eduai/ui";
 import { HelpHint, MaterialList, type MaterialListItem } from "@eduai/ui";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { CORE_HELP } from "~/components/help/help-hints";
 
 /**
@@ -57,7 +56,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@eduai/ui";
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
+import { PageTabs, PageTabsContent } from "@eduai/ui";
 import { CourseHeroCard } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
 import { resolvePaletteAccent } from "@eduai/ui";
@@ -110,7 +109,13 @@ import {
 } from "~/components/courses/topic-suggestion-controls";
 import type { CourseAccess } from "~/lib/rbac";
 import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
-import { PolicyTooltip, DisabledTooltip, usePolicyGate } from "~/components/policy/policy-gate";
+import {
+  COURSE_TAB_PARAM,
+  courseNavSearch,
+  getCourseNavItems,
+  resolveCourseNavKey,
+} from "~/lib/courses/course-nav-items";
+import { PolicyTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
 
 /**
@@ -416,6 +421,8 @@ export function CourseDetailManagerView({
     approveTopic,
     dismissTopic,
     mergeTopic,
+    approveTopics,
+    dismissTopics,
     retryAnalysis,
     suggestTopics,
     inFlight: topicAnalysisInFlight,
@@ -448,12 +455,6 @@ export function CourseDetailManagerView({
   const [renameTitle, setRenameTitle] = useState("");
   const [renamingMaterial, setRenamingMaterial] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
-  // Per-material student-visibility scheduling (#839).
-  const [visibilityMaterialId, setVisibilityMaterialId] = useState<string | null>(null);
-  const [visibilityVisible, setVisibilityVisible] = useState(true);
-  const [visibilityDate, setVisibilityDate] = useState("");
-  const [savingVisibility, setSavingVisibility] = useState(false);
-  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "");
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
@@ -517,9 +518,7 @@ export function CourseDetailManagerView({
   const {
     canManage,
     canAssignInstructor,
-    showStaffTab,
     canManageStaff,
-    showChatTab,
     canViewChats,
     canManageStudentEnrollments,
     canManageRagSettings,
@@ -527,6 +526,11 @@ export function CourseDetailManagerView({
     canPublishCourse,
     canDeleteMaterial: canDeleteMaterialForUploader,
   } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
+  const [searchParams] = useSearchParams();
+  const activeTab = resolveCourseNavKey(
+    searchParams.get(COURSE_TAB_PARAM),
+    getCourseNavItems(access, isEnabled),
+  );
 
   // #1939: one control, shown beside the Published badge and in the draft notice.
   const publishControl =
@@ -962,57 +966,6 @@ export function CourseDetailManagerView({
     }
   };
 
-  // datetime-local <-> ISO helpers for the availability schedule. The input works
-  // in the browser's local zone; the API stores/returns ISO (UTC).
-  const isoToLocalInput = (iso: string | null | undefined): string => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
-  const openVisibility = (m: CourseMaterial) => {
-    setVisibilityMaterialId(m.id);
-    setVisibilityVisible(m.visibleToStudents ?? true);
-    setVisibilityDate(isoToLocalInput(m.availableAt));
-    setVisibilityError(null);
-  };
-
-  const handleSaveVisibility = async () => {
-    if (!visibilityMaterialId || !courseId) return;
-    let availableAt: string | null = null;
-    if (visibilityDate) {
-      const parsed = new Date(visibilityDate);
-      if (Number.isNaN(parsed.getTime())) {
-        setVisibilityError("Invalid date");
-        return;
-      }
-      availableAt = parsed.toISOString();
-    }
-    setSavingVisibility(true);
-    setVisibilityError(null);
-    try {
-      const res = await fetch(`/api/courses/${courseId}/materials/${visibilityMaterialId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visibleToStudents: visibilityVisible, availableAt }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error ?? "Failed to update visibility");
-      }
-      setVisibilityMaterialId(null);
-      if (onRefreshMaterials) {
-        await onRefreshMaterials();
-      }
-    } catch {
-      setVisibilityError("Could not update visibility. Please try again.");
-    } finally {
-      setSavingVisibility(false);
-    }
-  };
-
   const saveRagSettings = async () => {
     if (!courseId) return;
     setRagSaving(true);
@@ -1267,102 +1220,6 @@ export function CourseDetailManagerView({
         </DialogContent>
       </Dialog>
 
-      {/* Student-visibility scheduling modal (#839) */}
-      <Dialog
-        open={!!visibilityMaterialId}
-        onOpenChange={(open) => {
-          if (!open) {
-            setVisibilityMaterialId(null);
-            setVisibilityError(null);
-          }
-        }}
-      >
-        <DialogContent
-          className="sm:max-w-md rounded-[var(--radius-xl)]"
-          onOpenAutoFocus={(event) => {
-            // Start on the switch, not the header's help hint.
-            event.preventDefault();
-            document.getElementById("material-visible")?.focus();
-          }}
-        >
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <DialogTitle className="flex items-center gap-2">
-                <IconEye className="h-4 w-4" />
-                Student visibility
-              </DialogTitle>
-              <HelpHint {...CORE_HELP.materialVisibility} LinkComponent={Link} />
-            </div>
-            <DialogDescription>
-              Control whether students can see this material, and optionally schedule when it
-              becomes available. Instructors and TAs always see every material.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col">
-                <Label htmlFor="material-visible">Visible to students</Label>
-                <p className="text-[12px] text-muted-foreground">
-                  Turn off to hide this material from students entirely.
-                </p>
-              </div>
-              <Switch
-                id="material-visible"
-                checked={visibilityVisible}
-                onCheckedChange={setVisibilityVisible}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="material-available-at">Available from (optional)</Label>
-              <p className="text-[12px] text-muted-foreground">
-                Students won't see this material until the selected date and time. Leave blank to
-                make it available as soon as it's visible.
-              </p>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="material-available-at"
-                  type="datetime-local"
-                  value={visibilityDate}
-                  onChange={(e) => setVisibilityDate(e.target.value)}
-                  disabled={!visibilityVisible}
-                />
-                {visibilityDate && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setVisibilityDate("")}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-              {!visibilityVisible && (
-                <p className="text-[12px] text-muted-foreground">
-                  The schedule is ignored while the material is hidden.
-                </p>
-              )}
-            </div>
-            {visibilityError && <p className="text-[13px] text-destructive">{visibilityError}</p>}
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setVisibilityMaterialId(null);
-                setVisibilityError(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleSaveVisibility} disabled={savingVisibility}>
-              {savingVisibility ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Canvas material sync */}
       {showCanvasMaterialSync && courseId && (
         <CanvasMaterialSyncDialog
@@ -1373,30 +1230,17 @@ export function CourseDetailManagerView({
         />
       )}
 
-      <PageTabs defaultValue="overview">
-        <PageTabsList>
-          <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
-          <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
-          <PageTabsTrigger value="enrollments">Enrollments</PageTabsTrigger>
-          {/* §807: a qualifying role keeps the tab visible but greyed when the
-              policy is off; non-qualifying roles don't see it at all. */}
-          {showStaffTab && (
-            <DisabledTooltip disabled={!canManageStaff}>
-              <PageTabsTrigger value="staff">TAs</PageTabsTrigger>
-            </DisabledTooltip>
-          )}
-          {canManageRagSettings && <PageTabsTrigger value="settings">Settings</PageTabsTrigger>}
-          {showChatTab && (
-            <DisabledTooltip disabled={!canViewChats}>
-              <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
-            </DisabledTooltip>
-          )}
-        </PageTabsList>
-
+      {/* The course menu in the shell (CourseNavMenu) picks the section via
+          `?tab=`; this only shows the matching panel. */}
+      <PageTabs value={activeTab}>
         {/* ── Overview ── */}
         <PageTabsContent
           value="overview"
+          // Named after its course menu entry; the tab triggers that used
+          // to label the panel moved out to the shell's course menu.
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Overview"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -1449,7 +1293,7 @@ export function CourseDetailManagerView({
                       <StatusBadge
                         active={course.isPublished}
                         activeLabel="Published"
-                        inactiveLabel="Draft"
+                        inactiveLabel="Unpublished"
                       />
                       {publishControl}
                     </div>
@@ -1536,11 +1380,27 @@ export function CourseDetailManagerView({
         {/* ── Materials — A1+A2 rework ── */}
         <PageTabsContent
           value="materials"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Materials"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           {/* #1998: say what belongs here; chat and topic matching read these files. */}
           <p className="mb-2 text-xs text-muted-foreground">{MATERIALS_SCOPE_COPY}</p>
+          {/* #2061: what students see changes in one place, the Settings tab. */}
+          {canManageRagSettings && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              To choose which files students can see, go to{" "}
+              <Link
+                to={courseNavSearch("settings")}
+                className="font-medium text-primary-text underline-offset-2 hover:underline"
+              >
+                What students see in Settings
+              </Link>
+              .
+            </p>
+          )}
           <MaterialList
             title={
               <span className="inline-flex items-center gap-1.5">
@@ -1624,16 +1484,6 @@ export function CourseDetailManagerView({
               return (
                 <>
                   <MaterialVisibilityChip material={m} />
-                  {canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Student visibility"
-                      onClick={() => openVisibility(m)}
-                    >
-                      <IconEye className="w-4 h-4" />
-                    </Button>
-                  )}
                   {canRenameMaterial(m) && (
                     <Button
                       variant="ghost"
@@ -1679,6 +1529,9 @@ export function CourseDetailManagerView({
         {/* ── Topics ── */}
         <PageTabsContent
           value="topics"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Topics"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -1762,6 +1615,16 @@ export function CourseDetailManagerView({
                   await mergeTopic(id, intoId);
                   await onRefreshTopics?.();
                 }}
+                onApproveMany={async (ids) => {
+                  const result = await approveTopics(ids);
+                  await onRefreshTopics?.();
+                  return result;
+                }}
+                onDismissMany={async (ids) => {
+                  const result = await dismissTopics(ids);
+                  await onRefreshTopics?.();
+                  return result;
+                }}
                 onRename={
                   onRenameTopic &&
                   (async (id, name) => {
@@ -1835,6 +1698,9 @@ export function CourseDetailManagerView({
         {/* ── Enrollments ── */}
         <PageTabsContent
           value="enrollments"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Enrollments"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
@@ -2124,6 +1990,9 @@ export function CourseDetailManagerView({
         {canManageStaff && (
           <PageTabsContent
             value="staff"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="TAs"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
@@ -2297,18 +2166,24 @@ export function CourseDetailManagerView({
         {canManageRagSettings && (
           <PageTabsContent
             value="settings"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Settings"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
-            {/* #2002: what students see — files and topics. Same audience as the tab. */}
-            {courseId && (
+            {/* #2002: what students see — files and topics. Same audience as the tab.
+                #2061: mounted only while the tab is open, so it reads the course
+                fresh on each visit and costs nothing on every other tab. */}
+            {courseId && activeTab === "settings" && (
               <div className="mb-6">
                 <CourseStudentVisibilitySettings
                   key={courseId}
                   courseId={courseId}
-                  studentFilesVisible={course.studentFilesVisible ?? false}
-                  topics={topics}
-                  onSaved={onRefreshTopics}
+                  onSaved={async () => {
+                    // Topic names and the Materials tab's Hidden tags show what changed.
+                    await Promise.all([onRefreshTopics?.(), onRefreshMaterials?.()]);
+                  }}
                 />
               </div>
             )}
@@ -2435,6 +2310,9 @@ export function CourseDetailManagerView({
         {canViewChats && (
           <PageTabsContent
             value="chat-history"
+            role="region"
+            aria-labelledby={undefined}
+            aria-label="Chat history"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >

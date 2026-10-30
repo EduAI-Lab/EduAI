@@ -473,6 +473,17 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
               ) : null}
             </section>
 
+            {activeRow?.referenceAnswer ? (
+              <section>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Reference answer
+                </p>
+                <p className="whitespace-pre-wrap break-words rounded-[var(--radius-lg)] border border-dashed border-border px-4 py-3 text-sm text-foreground">
+                  {activeRow.referenceAnswer}
+                </p>
+              </section>
+            ) : null}
+
             {canGrade ? (
               <section className="space-y-4 rounded-[var(--radius-lg)] border border-border bg-card p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

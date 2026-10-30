@@ -21,7 +21,7 @@ app/
   routes/
     home.tsx                        # Public landing — redirects to Core's login when signed out
     unsupported-role.tsx            # Fallback for a role with no route home (routeForRole always resolves today)
-    _app.tsx                        # Authenticated shell layout (AppShell, sidebar/header, outlet)
+    _app.tsx                        # Authenticated shell layout (NavShell: rail, trays, course menu, header, outlet)
     dashboard.tsx                   # Shared role-aware dashboard — every role lands here after sign-in
     settings.tsx                    # Account / Accessibility / Providers tabs (any authenticated role)
     help.tsx                        # In-app guide (any authenticated role)

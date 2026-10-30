@@ -192,10 +192,13 @@ command palette) reads as one product with EduAI Core and Question Maker.
 
 ### The App Shell
 
-- **Sidebar** — role-aware nav items (`app/lib/rbac/nav.ts`): every role gets a shared "Dashboard"
-  entry, plus "Courses" (student label for `STUDENT`, "Courses" for the instructor shell roles), and
-  `ADMIN` additionally gets an "Admin" entry. A guide-tour control and an app-switcher launcher live
-  in the sidebar footer.
+- **Global nav rail** — the shared Canvas-style `NavShell` from `@eduai/ui`, fed role-aware nav items
+  (`app/lib/rbac/nav.ts`): every role gets a shared "Dashboard" entry, plus "Courses" (student label
+  for `STUDENT`, "Courses" for the instructor shell roles), and `ADMIN` additionally gets an "Admin"
+  entry. The rail's top tile is the AI Tutor icon: it opens the **Switch app** tray, which lists
+  EduAI Core, AI Tutor (marked Current) and Question Maker. Below it, Account holds Settings, Back to
+  EduAI, the theme switch and Log out. On a phone the switcher is the app icon and name in the top
+  bar, and it opens the same list as a bottom sheet.
 - **Header** — breadcrumb trail for the current page, a ⌘K command-palette trigger, AI-service status
   chips (cloud + UBC-hosted, proxied from Core), a theme toggle, and a "Report a bug" button.
 - **Command palette (⌘K)** — jump to any nav item or search courses server-side, without leaving the
@@ -412,7 +415,7 @@ reads elsewhere auto-sync on a 30-second TTL so the mirror doesn't drift far eve
 
 ### 5.8 Submitting a bug report
 
-1. Click "Report a bug" in the header from anywhere in the app.
+1. Open Help in the global nav rail and click "Report a bug", from anywhere in the app.
 2. A screenshot, recent console/network logs, and the current page context are captured automatically.
 3. Write a description (10–2000 characters), optionally mark it anonymous, and submit.
 4. It appears in the admin console's Bug Reports tab with the full captured context.

@@ -1,7 +1,7 @@
 /**
  * Mobile responsiveness audit (#805): screenshots every configured page in
  * Core, AI Tutor, and Question Maker at each viewport in VIEWPORTS, and
- * flags horizontal overflow / missing sidebar aria attributes.
+ * flags horizontal overflow / a nav-menu button missing its aria attributes.
  *
  * Requires: Core, AI Tutor, and Question Maker dev servers running locally
  * (see each app's README for `npm run dev`), plus a seeded instructor
@@ -98,7 +98,7 @@ async function auditEntries(browser, entries, { requiresAuth, login }) {
           : " PUBLIC-PAGE-FAILED (did not stay on the requested page — see finalUrl)";
         const navFlag = result.authOk ? "" : failLabel;
         console.log(
-          `[${appKey}] ${pageConfig.name} @ ${viewport.label}: overflow=${result.overflow} ariaOk=${result.sidebarAriaOk}${navFlag}`,
+          `[${appKey}] ${pageConfig.name} @ ${viewport.label}: overflow=${result.overflow} ariaOk=${result.navMenuAriaOk}${navFlag}`,
         );
       }
     }

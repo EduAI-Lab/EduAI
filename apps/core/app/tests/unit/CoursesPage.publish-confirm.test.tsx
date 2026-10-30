@@ -19,7 +19,6 @@ vi.mock("~/components/courses/courses-view", () => ({
   },
 }));
 
-vi.mock("~/components/app-sidebar", () => ({ AppSidebar: () => null }));
 vi.mock("~/components/site-header", () => ({ SiteHeader: () => null }));
 
 // This branch routes the page chrome through CoreAppShell (which calls

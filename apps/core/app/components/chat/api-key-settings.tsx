@@ -24,6 +24,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import type { UserProviderSettings } from "~/lib/ai/providers";
+import { ProviderAccountNotice } from "~/components/settings/provider-account-notice";
 
 type Provider = "openai" | "google" | "opencode";
 
@@ -189,6 +190,7 @@ export function ApiKeySettings({
           )}
 
           <PageTabsContent value="keys" className="space-y-4">
+            <ProviderAccountNotice />
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Provider</Label>
               <Select

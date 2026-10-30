@@ -59,10 +59,15 @@ export async function auditPage(page, { app, name, url, viewport, outDir, requir
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
   );
 
-  const sidebarAriaOk = await page.evaluate(() => {
-    const trigger = document.querySelector('[data-slot="sidebar-trigger"]');
+  // The shared NavShell's phone header opens the nav drawer from this button
+  // (null when a page has no shell, e.g. sign-in). Closed, it carries
+  // aria-expanded and aria-haspopup; aria-controls appears only while open.
+  const navMenuAriaOk = await page.evaluate(() => {
+    const trigger = document.querySelector('button[aria-label="Open navigation menu"]');
     if (!trigger) return null;
-    return trigger.hasAttribute("aria-expanded") && trigger.hasAttribute("aria-controls");
+    return (
+      trigger.hasAttribute("aria-expanded") && trigger.getAttribute("aria-haspopup") === "dialog"
+    );
   });
 
   fs.mkdirSync(outDir, { recursive: true });
@@ -77,7 +82,7 @@ export async function auditPage(page, { app, name, url, viewport, outDir, requir
     finalUrl,
     authOk,
     overflow,
-    sidebarAriaOk,
+    navMenuAriaOk,
     screenshotPath,
   };
 }

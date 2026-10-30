@@ -527,6 +527,56 @@ describe("mapActivity", () => {
     ).toBe("42");
     expect(mapActivity(baseActivity({ config: {} }), { includeAnswer: true }).answer).toBeNull();
   });
+
+  // -- lastSubmission (#2030) --
+  describe("lastSubmission", () => {
+    it("is undefined for staff views that don't inject it", () => {
+      expect(mapActivity(baseActivity({}), { includeAnswer: true }).lastSubmission).toBeUndefined();
+    });
+
+    it("is null for a student who hasn't answered", () => {
+      expect(mapActivity(baseActivity({ lastSubmission: null })).lastSubmission).toBeNull();
+    });
+
+    it("maps the stored response and current grade, dropping internal fields", () => {
+      const createdAt = new Date("2026-10-01T00:00:00Z");
+      const mapped = mapActivity(
+        baseActivity({
+          lastSubmission: {
+            activityId: 100,
+            attemptNumber: 3,
+            userId: "s1",
+            response: { answerText: null, answerOption: 2 },
+            isCorrect: false,
+            score: 0,
+            aiFeedback: { message: "Not quite." },
+            createdAt,
+          },
+        }),
+      );
+      expect(mapped.lastSubmission).toStrictEqual({
+        answer: { answerText: null, answerOption: 2 },
+        isCorrect: false,
+        score: 0,
+        aiFeedback: { message: "Not quite." },
+        createdAt,
+      });
+    });
+
+    it("keeps an ungraded short answer as isCorrect null", () => {
+      const mapped = mapActivity(
+        baseActivity({
+          lastSubmission: { response: { answerText: "photosynthesis" }, isCorrect: null },
+        }),
+      );
+      expect(mapped.lastSubmission).toMatchObject({
+        answer: { answerText: "photosynthesis", answerOption: null },
+        isCorrect: null,
+        score: null,
+        aiFeedback: null,
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

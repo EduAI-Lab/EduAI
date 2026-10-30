@@ -16,3 +16,16 @@ export const LEARNER_TOPIC_WHERE = {
   visibleToStudents: true,
   name: { not: FALLBACK_TOPIC_NAME },
 } satisfies Prisma.CourseTopicWhereInput;
+
+/**
+ * A topic the instructor hid from students (#2061). Hiding a topic hides its
+ * files too, including ones filed under it later: the student file gate and
+ * course chat's retrieval both leave out any file under one of these, so a
+ * hidden topic wins over a shown one. Mirrored in SQL by `findRelevantContent`.
+ */
+export const HIDDEN_TOPIC_WHERE = {
+  reviewStatus: "ACCEPTED",
+  visibleToStudents: false,
+  deletedAt: null,
+  name: { not: FALLBACK_TOPIC_NAME },
+} satisfies Prisma.CourseTopicWhereInput;

@@ -48,11 +48,12 @@ const TOPICS: HelpTopic[] = [
     icon: IconRocket,
     points: [
       "Your dashboard is home base — it greets you, surfaces quick stats, and lists your courses and recent conversations.",
-      "The left sidebar is your main navigation. Collapse it with the toggle in the header when you want more room.",
+      "The navigation bar on the left is your main navigation. Account, Courses, Administration and Help open a panel beside it; collapse the bar to icons with the arrows at its bottom when you want more room.",
       "Switch between light and dark themes with the sun/moon button in the top-right of every page.",
       "Click the (?) button in the top-right corner of any page for help with that page, or to start the guided tour.",
       "Your dashboard has a Getting started checklist, and the main pages have a ▶ Page tour button in the header for a short walkthrough of that page.",
-      "Use the app-grid (waffle) button at the bottom of the sidebar to jump between EduAI apps you have access to.",
+      "To jump between the EduAI apps you have access to, select the app icon at the top of the navigation bar to open Switch app, then choose an app. On a phone, tap the app icon in the top bar instead.",
+      "Course Chat opens like an app of its own from Switch app. Its navigation bar has New chat, History, Courses (pick the course to chat about) and, for instructors, Course Assistant.",
     ],
   },
   {
@@ -81,8 +82,8 @@ const TOPICS: HelpTopic[] = [
         </Link>{" "}
         to browse everything you're enrolled in or teaching.
       </>,
-      "Inside a course, use the tabs to move between overview, materials, topics, and people.",
-      "The course name in the breadcrumb is a switcher — click it to jump to another course without leaving the page you're on.",
+      "Inside a course, the course menu beside the page moves between its sections: Overview, Materials, Topics, Enrollments and more. The menu button (☰) in the top bar hides or shows it.",
+      "To jump to another course, open Courses in the navigation bar and pick it from the list.",
     ],
   },
   {
@@ -98,7 +99,7 @@ const TOPICS: HelpTopic[] = [
         to ask questions grounded in your course materials.
       </>,
       "Course Chat conversations are tied to a selected course and use that course's uploaded materials.",
-      "Your conversations are saved — reopen any of them from the dashboard or the chat history.",
+      "Your conversations are saved — reopen any of them from the dashboard or from History in Course Chat's navigation bar.",
     ],
   },
   {
@@ -118,7 +119,7 @@ const TOPICS: HelpTopic[] = [
     icon: IconFileText,
     slice: "instructor",
     points: [
-      "Upload materials on a course's Materials tab. Each file is processed so the chatbot can search and cite it.",
+      "Upload materials in a course's Materials section. Each file is processed so the chatbot can search and cite it.",
       "Control per-material visibility and scheduled availability so students only see what you've released.",
     ],
   },
@@ -149,9 +150,9 @@ const TOPICS: HelpTopic[] = [
     icon: IconEye,
     slice: "instructor",
     points: [
-      "A new course starts as a draft. Only course staff and administrators can open a draft, and self-enrollment links won't let students join it.",
-      "Publish the course from its Overview tab when it's ready. Unpublishing removes student access again without deleting anything.",
-      "Inside a published course, each material can be hidden from students or scheduled to appear on a date. Hidden and not-yet-available materials are also left out of students' chat answers.",
+      "A new course starts unpublished. Only course staff and administrators can open an unpublished course, and self-enrollment links won't let students join it.",
+      "Publish the course from its Overview section when it's ready. Unpublishing removes student access again without deleting anything.",
+      "Choose which files students can see on the course's Settings tab, under What students see: every file at once, by topic, or one file at a time, with an optional date for each. Hidden and not-yet-available files are also left out of students' chat answers.",
       "Instructors and TAs always see every material, whatever its visibility.",
     ],
   },

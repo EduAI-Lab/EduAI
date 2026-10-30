@@ -45,7 +45,7 @@ export const AI_TUTOR_HELP = {
     title: "Grading",
     summary: "Multiple-choice and keyed short answers grade themselves; open answers wait for you.",
     details:
-      "A multiple-choice answer is checked against the correct option. A short answer is compared with the answer key, ignoring case and extra spaces. A short answer with no key is left ungraded until staff review it here. You can override any grade and add a score.",
+      "A multiple-choice answer is checked against the correct option. A short answer is never auto-graded: it waits here for staff, with any reference answer shown alongside it. You can override any grade and add a score.",
     href: "/help#grading",
   },
 } satisfies Record<string, HelpHintContent>;

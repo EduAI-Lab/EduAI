@@ -130,7 +130,7 @@ test.describe("INSTRUCTOR module authoring", () => {
     // New content starts as a draft — publishing is a separate, confirmed step.
     const created = card(page, title);
     await expect(created).toBeVisible({ timeout: 30_000 });
-    await expect(created).toContainText("Draft");
+    await expect(created).toContainText("Unpublished");
   });
 
   test("renames a module from its kebab menu", async ({ page }) => {
@@ -218,7 +218,7 @@ test.describe("INSTRUCTOR module authoring", () => {
 
     // The badge flips to Draft — a positive signal, not merely the absence of
     // "Published" (which "Unpublished" would also satisfy).
-    await expect(card(page, title)).toContainText("Draft", { timeout: 30_000 });
+    await expect(card(page, title)).toContainText("Unpublished", { timeout: 30_000 });
 
     const afterModule = await (
       await page.request.get(`${AI_TUTOR_API_URL}/api/modules/${moduleRow.id}`)

@@ -86,9 +86,9 @@ test.describe("AI Tutor TA — dashboard", () => {
     const { seeded } = await seedTaDashboard(page, playwright, "TDD");
     try {
       // Seed a genuinely *ungraded* submission so the TA's grading queue is
-      // non-empty. MCQ (and answer-keyed short-text) auto-grade on submit, so
-      // they never enter the `isCorrect: null` queue — an open-ended SHORT_TEXT
-      // activity is the realistic source. A student submits a text answer to it,
+      // non-empty. MCQ auto-grades on submit, so it never enters the
+      // `isCorrect: null` queue — a SHORT_TEXT activity (never auto-graded) is
+      // the realistic source. A student submits a text answer to it,
       // which stays ungraded, then we assert the dashboard's "To review" stat
       // actually reflects it (it reads the server's `submissionsToReview`
       // rollup, #1626), so a count of 0 would mean it never reached the UI.

@@ -61,7 +61,7 @@ export function DashboardAdminView({
 
   const statusSegments: DonutSegment[] = [
     { label: "Published", value: publishedCount, color: PUBLISHED_COLOR },
-    { label: "Draft", value: draftCount, color: DRAFT_COLOR },
+    { label: "Unpublished", value: draftCount, color: DRAFT_COLOR },
   ];
 
   const roleSegments: DonutSegment[] = [

@@ -1,12 +1,13 @@
 /**
- * Unit tests for Core's header bug-report trigger + modal (#1752).
+ * Unit tests for Core's bug-report modal (#1752).
  *
- * Covers: the shared trigger, the "Include diagnostics" toggle (present and off
+ * Covers: the "Include diagnostics" toggle (present and off
  * by default), diagnostics reaching the submit hook only after opt-in, the
  * submit hook's readable error surfacing in the dialog, the screenshot being
  * dropped when the dialog closes, and no toggle outside the capture provider.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const capture = vi.hoisted(() => ({
@@ -26,10 +27,23 @@ vi.mock("~/hooks/api/use-submit-bug-report", () => ({
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { BugReportCaptureProvider } from "~/contexts/bug-report-capture";
 
+/** The dialog has no trigger of its own; this stands in for the Help tray's "Report a bug" entry. */
+function ReportBugHarness() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Report a bug
+      </button>
+      <BugReportSubmitDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 function renderDialog() {
   return render(
     <BugReportCaptureProvider>
-      <BugReportSubmitDialog />
+      <ReportBugHarness />
     </BugReportCaptureProvider>,
   );
 }
@@ -103,7 +117,7 @@ describe("BugReportSubmitDialog", () => {
   });
 
   it("offers no diagnostics toggle outside the capture provider", async () => {
-    render(<BugReportSubmitDialog />);
+    render(<ReportBugHarness />);
     fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
     await screen.findByTestId("bug-description");
     expect(screen.queryByRole("switch", { name: /include diagnostics/i })).not.toBeInTheDocument();

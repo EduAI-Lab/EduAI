@@ -23,7 +23,6 @@ import {
   Input,
   Loader,
   MarkdownStylesProvider,
-  type MarkdownStyles,
   Message,
   MessageContent,
   PromptInput,
@@ -56,12 +55,18 @@ import { StudentChatHistoryPanel } from "~/components/StudentChatHistoryPanel";
 import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
 import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
 import { useApiKeys } from "~/hooks/use-api-keys";
+import { useLocalUser } from "~/hooks/useLocalUser";
 import {
   getProviderFromModelId,
   getProviderLabel,
   maskApiKey,
   providerRequiresByokKey,
 } from "~/lib/provider-keys";
+import {
+  loadStudyBuddyModelId,
+  resolveStudyBuddyModelId,
+  saveStudyBuddyModelId,
+} from "~/lib/study-buddy-model";
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
 import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import { z } from "zod";
@@ -70,18 +75,11 @@ import api, { ApiHttpError, ApiTimeoutError } from "../lib/api";
 import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
-// see MARKDOWN_STYLES below.
+// see lib/markdown-styles.ts.
 import "~/styles/chat-markdown.css";
 import { randomId } from "@eduai/ui/runtime-env";
-
-/**
- * KaTeX's stylesheet is loaded on demand, only for messages that actually
- * contain math (#1342). Module-level so its identity is stable — the shared
- * markdown renderer caches a Streamdown variant per loader.
- */
-const MARKDOWN_STYLES: MarkdownStyles = {
-  loadKatexStyles: () => import("katex/dist/katex.min.css"),
-};
+import { MARKDOWN_STYLES } from "~/lib/markdown-styles";
+import { ProviderKeyGuideLink } from "~/components/settings/provider-account-notice";
 
 type ChatTab = "teach" | "guide" | "custom";
 
@@ -216,6 +214,29 @@ function getInitialChatState() {
   } satisfies ChatState;
 }
 
+const RATE_LIMIT_FALLBACK = "You're sending messages too quickly. Wait a moment and try again.";
+
+const rateLimitBodySchema = z.object({
+  code: z.literal("AI_TUTOR_RATE_LIMITED"),
+  error: z.string().min(1),
+});
+
+/**
+ * #1757: a 429 used to read as "not available right now", which sends the
+ * student off to report an outage when all they need to do is wait. The
+ * server words the wait (`AI_TUTOR_RATE_LIMITED`); any other 429 body (a
+ * proxy, the auth middleware) still gets a sentence that names the limit.
+ */
+function rateLimitMessage(responseText: string): string {
+  let parsed;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    return RATE_LIMIT_FALLBACK;
+  }
+  return rateLimitBodySchema.safeParse(parsed).data?.error ?? RATE_LIMIT_FALLBACK;
+}
+
 const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(function StudentAiChat(
   {
     activity,
@@ -240,7 +261,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
+  const { user } = useLocalUser();
+  const userId = user?.id ?? null;
+  // #2025: only an explicit pick overrides the admin's default tutor; it is
+  // persisted per account because this component remounts per activity.
+  const [pickedModelId, setPickedModelId] = useState<string | null>(null);
   const [modelsFetched, setModelsFetched] = useState(false);
   const [modelLoadError, setModelLoadError] = useState(false);
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
@@ -286,6 +311,28 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       isMounted = false;
     };
   }, []);
+
+  // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
+  // held BYOK key never adds models the admin left off the allow-list — the
+  // allow-list is absolute. A personal key is a fallback (UBC-hosted models
+  // serve without one, and Core falls back to a keyed provider when the fleet
+  // is down), not a way to pick a model policy forbids.
+  const pickerModels = availableModels as StudentSelectableModel[];
+
+  const selectedModelId = useMemo(
+    () =>
+      resolveStudyBuddyModelId(pickerModels, pickedModelId ?? loadStudyBuddyModelId(userId)) ??
+      DEFAULT_MODEL_ID,
+    [pickerModels, pickedModelId, userId],
+  );
+
+  const handleSelectModel = useCallback(
+    (modelId: string) => {
+      setPickedModelId(modelId);
+      saveStudyBuddyModelId(userId, modelId);
+    },
+    [userId],
+  );
 
   const currentProvider = getProviderFromModelId(selectedModelId);
   const currentApiKey = getKey(currentProvider);
@@ -373,11 +420,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         const selectableModels = policyActive ? models.filter(isStudentSelectableModel) : models;
         setAvailableModels(selectableModels);
         setStudentModelPolicyActive(policyActive);
-        setSelectedModelId((current) => {
-          if (selectableModels.some((model) => model.modelId === current)) return current;
-          const defaultModel = selectableModels.find((model) => model.isDefaultTutor);
-          return defaultModel?.modelId ?? selectableModels[0]?.modelId ?? DEFAULT_MODEL_ID;
-        });
         setModelLoadError(false);
       } catch (error) {
         if (!isMounted) return;
@@ -392,13 +434,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       isMounted = false;
     };
   }, []);
-
-  // #1645: the model picker offers exactly the admin-allowed tutor catalog. A
-  // held BYOK key never adds models the admin left off the allow-list — the
-  // allow-list is absolute. A personal key is a fallback (UBC-hosted models
-  // serve without one, and Core falls back to a keyed provider when the fleet
-  // is down), not a way to pick a model policy forbids.
-  const pickerModels = availableModels as StudentSelectableModel[];
 
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
@@ -583,6 +618,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         } else if (error instanceof ApiTimeoutError) {
           console.error("AI chat timed out:", error);
           appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
+        } else if (error instanceof ApiHttpError && error.status === 429) {
+          console.error("AI chat rate limited:", error);
+          appendMessage(tab, "assistant", rateLimitMessage(error.message));
         } else {
           console.error("AI chat failed:", error);
           // #1660 review (ariqmuldi): the server 403s these endpoints for
@@ -941,7 +979,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               </p>
             </div>
           ) : !modelUsable ? (
-            apiKeysLoaded ? (
+            apiKeysLoaded && modelsFetched ? (
               <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
                   <IconKey className="h-7 w-7" aria-hidden />
@@ -952,7 +990,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     Add your {getProviderLabel(currentProvider)} API key to chat with your study
-                    buddy. It stays on this device.
+                    buddy. It's saved to your EduAI account.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    You need an account with {getProviderLabel(currentProvider)} first to create the
+                    key. A ChatGPT or Gemini app subscription is not an API key.{" "}
+                    <ProviderKeyGuideLink />
                   </p>
                 </div>
                 <div className="flex flex-col items-center gap-2">
@@ -1055,7 +1098,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
               <Select
                 value={selectedModelId}
-                onValueChange={setSelectedModelId}
+                onValueChange={handleSelectModel}
                 disabled={!pickerModels.length}
               >
                 <SelectTrigger
@@ -1125,9 +1168,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored for your account on this device and sent through EduAI services to{" "}
-              {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
-              device. You can also manage keys in Settings → Providers.
+              Saved securely to your EduAI account and sent through EduAI services to{" "}
+              {getProviderLabel(currentProvider)} when you use AI. You can also manage keys in
+              Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

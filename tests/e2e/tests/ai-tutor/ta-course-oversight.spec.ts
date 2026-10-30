@@ -13,7 +13,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
-import { gotoAiTutor, openTab } from "../helpers/at-ui";
+import { courseMenuLink, gotoAiTutor, openTab } from "../helpers/at-ui";
 import { registerStudent, seedPublishedCourseAndEnroll } from "../helpers/at-student-fixtures";
 import { seedAtCourse, seedModule, seedLesson } from "../helpers/at-admin-fixtures";
 
@@ -48,7 +48,7 @@ test.describe("AI Tutor TA — staff course list and detail", () => {
     try {
       await gotoAiTutor(page, `/instructor/courses/${seeded.atCourseId}`);
       for (const label of ["Content", "Submissions", "Feedback", "Analytics"]) {
-        await expect(page.getByRole("tab", { name: label })).toBeVisible({ timeout: 20_000 });
+        await expect(courseMenuLink(page, label)).toBeVisible({ timeout: 20_000 });
       }
     } finally {
       await seeded.dispose();

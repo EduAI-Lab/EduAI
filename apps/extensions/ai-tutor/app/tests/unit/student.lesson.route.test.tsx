@@ -147,6 +147,34 @@ describe("student.lesson — answer submission", () => {
     expect(await screen.findByText("Not quite. Keep going!")).toBeInTheDocument();
   });
 
+  it("shows an ungraded short answer as awaiting review, not wrong (#1982)", async () => {
+    mockSubmitAnswer.mockResolvedValue({ isCorrect: null });
+    wrap({
+      activities: [
+        makeActivity({
+          type: "SHORT_TEXT",
+          options: null,
+          answer: { text: "4" },
+          completionStatus: "correct",
+        }),
+      ],
+    });
+
+    const input = await screen.findByPlaceholderText(/type your answer/i);
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.change(input, { target: { value: "four" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /submit answer/i }));
+    });
+
+    const banner = await screen.findByText("Submitted. Your instructor will review this answer.");
+    expect(banner.parentElement).toHaveAttribute("data-result-state", "pending");
+    expect(screen.queryByText(/Not quite/)).not.toBeInTheDocument();
+    // Completion isn't cleared and the student can still revise and resubmit.
+    expect(screen.getByText("1 of 1 activities completed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeEnabled();
+  });
+
   it("shows an inline error when submitAnswer rejects", async () => {
     mockSubmitAnswer.mockRejectedValue(new Error("network down"));
     wrap();
@@ -341,5 +369,67 @@ describe("student.lesson — pre-chat knowledge-level modal", () => {
     await waitFor(() => expect(mockLessonBreadcrumb).toHaveBeenCalled());
     // Non-fatal: the player still renders the question.
     expect(screen.getByText("What is 2+2?")).toBeInTheDocument();
+  });
+});
+
+describe("student.lesson — lesson reading (#2026)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLessonBreadcrumb.mockResolvedValue({
+      module: { id: 5, title: "Module 1", courseOfferingId: 1 },
+      course: { id: 1, title: "Course 1", code: "C1" },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+      viewerEnrollmentRole: "STUDENT",
+    });
+  });
+
+  const contentMd = [
+    "## Recursion",
+    "",
+    "A recursive function calls **itself** until it reaches a *base case*.",
+    "",
+    "```python",
+    "def fact(n):",
+    "    return 1 if n <= 1 else n * fact(n - 1)",
+    "```",
+    "",
+    "- Base case",
+    "- Recursive case",
+  ].join("\n");
+
+  it("renders the full lesson content as Markdown, not a flattened excerpt", async () => {
+    wrap({ lesson: { ...lesson, position: 0, contentMd } });
+
+    expect(
+      await screen.findByRole("heading", { name: "Recursion" }, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    const code = await screen.findByText(/def fact\(n\):/, {}, { timeout: 5000 });
+    expect(code.closest("pre")).not.toBeNull();
+    // Emphasis is parsed into its own element rather than left as literal `**`.
+    expect(screen.getByText("itself")).toHaveAttribute("data-streamdown", "strong");
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
+      expect.arrayContaining(["Base case", "Recursive case"]),
+    );
+  });
+
+  it("collapses and re-expands the reading panel", async () => {
+    wrap({ lesson: { ...lesson, position: 0, contentMd } });
+    const toggle = screen.getByRole("button", { name: "Reading" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("heading", { name: "Recursion" })).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(
+      await screen.findByRole("heading", { name: "Recursion" }, { timeout: 5000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the reading panel when the lesson has no content", () => {
+    wrap();
+    expect(screen.queryByRole("button", { name: "Reading" })).not.toBeInTheDocument();
   });
 });

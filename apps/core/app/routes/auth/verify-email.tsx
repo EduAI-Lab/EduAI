@@ -1,4 +1,4 @@
-import { Form, Link, redirect, useActionData, useNavigation } from "react-router";
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
@@ -7,6 +7,7 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 import { auth } from "~/lib/auth/server";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 import { formBodyErrorResponse, readAuthFormData } from "~/lib/auth/forms.server";
+import { readPendingEmail, verifyEmailCookie } from "~/lib/auth/pending-email-cookie.server";
 import { SELF_ENROLL_COMPLETE_PATH } from "~/lib/courses/self-enrollment.server";
 
 const VERIFICATION_CALLBACK_URL = "/onboarding/student-id";
@@ -24,7 +25,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (session?.user.emailVerified) return redirect(VERIFICATION_CALLBACK_URL);
 
-  return null;
+  // #1942: the address just typed at sign-up, never a (possibly stale) session's.
+  return { email: await readPendingEmail(verifyEmailCookie, request) };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -66,6 +68,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function VerifyEmailPage() {
+  const { email } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSubmitting = navigation.state !== "idle";
@@ -82,8 +85,8 @@ export default function VerifyEmailPage() {
       <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg text-center">
         <h1 className="text-2xl font-bold">Check your email</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Verify your email before linking your Canvas student number. If you need another link,
-          enter the UBC email address you registered with.
+          We sent a verification link to your UBC email. Open it to finish setting up your account.
+          If it hasn't arrived, you can send another link below.
         </p>
 
         {actionData && "sent" in actionData && actionData.sent && (
@@ -107,6 +110,7 @@ export default function VerifyEmailPage() {
             type="email"
             autoComplete="email"
             required
+            defaultValue={email}
             className="mt-2 flex h-9 w-full rounded-md border bg-background px-3 py-1 text-sm"
           />
           <button

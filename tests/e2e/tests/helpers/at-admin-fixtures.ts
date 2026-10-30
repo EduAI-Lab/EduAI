@@ -203,10 +203,9 @@ export async function seedMcqActivity(
 }
 
 /**
- * Create an open-ended SHORT_TEXT activity — no answer key, so a submission to
- * it cannot be auto-graded and lands in the staff "to review" grading queue
- * (`isCorrect: null`). This is the realistic source of an ungraded submission,
- * since MCQ and answer-keyed short-text both auto-grade on submit.
+ * Create an open-ended SHORT_TEXT activity. Short answers are never
+ * auto-graded, so a submission lands in the staff "to review" grading queue
+ * (`isCorrect: null`), unlike MCQ which auto-grades on submit.
  */
 export async function seedShortTextActivity(
   ctx: APIRequestContext,
