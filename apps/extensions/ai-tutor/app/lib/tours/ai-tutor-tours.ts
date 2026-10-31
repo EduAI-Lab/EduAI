@@ -132,7 +132,7 @@ export const AI_TUTOR_TOURS = {
       {
         id: "unit-admin-intro",
         title: "A quick tour of your unit",
-        body: "This walks you through the rollup on this page, the drafts waiting on you, and where your unit's courses live. You can restart it from here at any time.",
+        body: "This walks you through the rollup on this page, the unpublished courses waiting on you, and where your unit's courses live. You can restart it from here at any time.",
         target: "page-help",
         route: "/dashboard",
         placement: "bottom",
@@ -140,14 +140,14 @@ export const AI_TUTOR_TOURS = {
       {
         id: "unit-admin-stats",
         title: "Your unit at a glance",
-        body: "Every course in your authorized units, split by published and draft. These counts cover the whole unit, not just the courses listed below.",
+        body: "Every course in your authorized units, split by published and unpublished. These counts cover the whole unit, not just the courses listed below.",
         target: "dashboard-stats",
         route: "/dashboard",
         placement: "bottom",
       },
       {
         id: "unit-admin-needs-attention",
-        title: "Drafts waiting on you",
+        title: "Unpublished courses waiting on you",
         body: "Courses your unit hasn't published yet. Publish one straight from here, or open it first to check its content. Publishing a course doesn't publish its modules and lessons — those stay hidden until you publish them individually.",
         target: "dashboard-needs-attention",
         route: "/dashboard",
@@ -156,7 +156,7 @@ export const AI_TUTOR_TOURS = {
       {
         id: "unit-admin-quick-actions",
         title: "Shortcuts to the rest",
-        body: "Jump to your course list, the next draft, or your own settings. Courses themselves are created in EduAI Core, not here.",
+        body: "Jump to your course list, the next unpublished course, or your own settings. Courses themselves are created in EduAI Core, not here.",
         target: "dashboard-quick-actions",
         route: "/dashboard",
         placement: "top",

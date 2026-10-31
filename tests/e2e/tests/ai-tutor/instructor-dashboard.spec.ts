@@ -71,7 +71,7 @@ test.describe("INSTRUCTOR dashboard", () => {
     // The four tiles defined by DashboardInstructorView. "Courses teaching" is
     // the label no other role's dashboard uses — a unit admin gets "Unit
     // courses" from the same grid position.
-    for (const label of ["Courses teaching", "Published", "Drafts", "Synced from EduAI"]) {
+    for (const label of ["Courses teaching", "Published", "Unpublished", "Synced from EduAI"]) {
       await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
   });
@@ -80,7 +80,7 @@ test.describe("INSTRUCTOR dashboard", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
     await expect(page.getByRole("heading", { name: "Publish status" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Draft courses" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Unpublished courses" })).toBeVisible();
     await expect(page.getByText("Courses", { exact: true }).first()).toBeVisible();
   });
 

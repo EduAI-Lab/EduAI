@@ -29,7 +29,7 @@ const PARAMS = { courseId: "course-1" };
 
 /** The bodies this route accepts, plus the malformed ones under test. */
 type ReviewBody =
-  | { action: string; topicId?: string; intoTopicId?: string }
+  | { action: string; topicId?: string; intoTopicId?: string; topicIds?: string[] }
   | Record<string, never>;
 
 function post(body: ReviewBody, method: "POST" | "PATCH" = "POST") {
@@ -252,5 +252,98 @@ describe("POST suggest (#1966)", () => {
 
     expect(res.status).toBe(403);
     expect(startTopicSuggestion).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST approveMany / dismissMany (#1977)", () => {
+  it("approves each selected suggestion and reports them all", async () => {
+    review.approveGeneratedTopic
+      .mockResolvedValueOnce({ status: "200", topic: { id: "t1", name: "Recursion" } })
+      .mockResolvedValueOnce({ status: "200", topic: { id: "t2", name: "Graphs" } });
+
+    const res = await action({
+      request: post({ action: "approveMany", topicIds: ["t1", "t2"] }),
+      params: PARAMS,
+    } as never);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      succeeded: [
+        { id: "t1", name: "Recursion" },
+        { id: "t2", name: "Graphs" },
+      ],
+      failed: [],
+    });
+    expect(review.approveGeneratedTopic).toHaveBeenNthCalledWith(1, "course-1", "t1");
+    expect(review.approveGeneratedTopic).toHaveBeenNthCalledWith(2, "course-1", "t2");
+  });
+
+  it("dismisses the rest of a selection when some topics fail, and names those", async () => {
+    review.dismissGeneratedTopic
+      .mockResolvedValueOnce({ status: "200", topic: { id: "t1", name: "Recursion" } })
+      .mockResolvedValueOnce({ status: "409", error: "TOPIC_HAS_QUESTIONS" })
+      .mockRejectedValueOnce(new Error("connection reset"))
+      .mockResolvedValueOnce({ status: "200", topic: { id: "t4", name: "Sorting" } });
+
+    const res = await action({
+      request: post({ action: "dismissMany", topicIds: ["t1", "t2", "t3", "t4"] }),
+      params: PARAMS,
+    } as never);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      succeeded: [
+        { id: "t1", name: "Recursion" },
+        { id: "t4", name: "Sorting" },
+      ],
+      failed: [
+        { topicId: "t2", error: "TOPIC_HAS_QUESTIONS" },
+        { topicId: "t3", error: "REVIEW_FAILED" },
+      ],
+    });
+    expect(review.dismissGeneratedTopic).toHaveBeenCalledWith("course-1", "t4", "user-1");
+  });
+
+  it("reviews a topic listed twice only once", async () => {
+    await action({
+      request: post({ action: "approveMany", topicIds: ["topic-1", "topic-1"] }),
+      params: PARAMS,
+    } as never);
+
+    expect(review.approveGeneratedTopic).toHaveBeenCalledTimes(1);
+  });
+
+  it("400s an empty selection", async () => {
+    const res = await action({
+      request: post({ action: "dismissMany", topicIds: [] }),
+      params: PARAMS,
+    } as never);
+
+    expect(res.status).toBe(400);
+    expect(review.dismissGeneratedTopic).not.toHaveBeenCalled();
+  });
+
+  it("400s a selection past the batch bound", async () => {
+    const topicIds = Array.from({ length: 201 }, (_, index) => `t${index}`);
+
+    const res = await action({
+      request: post({ action: "approveMany", topicIds }),
+      params: PARAMS,
+    } as never);
+
+    expect(res.status).toBe(400);
+    expect(review.approveGeneratedTopic).not.toHaveBeenCalled();
+  });
+
+  it("is instructor-only, like the single-topic review actions", async () => {
+    resolveCourseAccessGate.mockResolvedValue({ course: COURSE, access: { level: "ta", rank: 1 } });
+
+    const res = await action({
+      request: post({ action: "approveMany", topicIds: ["t1"] }),
+      params: PARAMS,
+    } as never);
+
+    expect(res.status).toBe(403);
+    expect(review.approveGeneratedTopic).not.toHaveBeenCalled();
   });
 });

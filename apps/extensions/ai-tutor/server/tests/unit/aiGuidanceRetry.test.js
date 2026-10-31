@@ -152,6 +152,36 @@ describe("callEduAI transient failure retry (#1001)", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  // #1757: the route words the wait for the student, so the error must say
+  // it was a rate limit and how long Core asked us to wait.
+  it("tags a final 429 as RATE_LIMITED with Core's retryAfter", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        failedResponse(429, {}, JSON.stringify({ error: "RATE_LIMITED", retryAfter: 42 })),
+      );
+
+    await expect(generateResponse()).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+      retryAfter: 42,
+    });
+  });
+
+  it("falls back to the Retry-After header when the 429 body has no retryAfter", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        failedResponse(429, { "Retry-After": "7200" }, JSON.stringify({ error: "RATE_LIMITED" })),
+      );
+
+    await expect(generateResponse()).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+      retryAfter: 7200,
+    });
+  });
+
   it("keeps the legacy Core Too Many Requests response non-retryable", async () => {
     global.fetch = vi
       .fn()

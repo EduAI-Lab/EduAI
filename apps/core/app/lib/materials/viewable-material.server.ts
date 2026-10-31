@@ -11,6 +11,7 @@ import type { Prisma } from "@prisma/client";
 
 import type { AccessLevel } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
+import { HIDDEN_TOPIC_WHERE } from "~/lib/topics/learner-view.server";
 
 /** Characters of extracted text the preview shows; the assistant reads the same excerpt. */
 export const PREVIEW_EXCERPT_MAX = 4000;
@@ -42,6 +43,8 @@ export function studentVisibilityWhere(
   return {
     unpublishedAt: null,
     visibleToStudents: true,
+    // #2061: a file under a topic hidden from students is hidden with it.
+    derivedTopics: { none: { topic: HIDDEN_TOPIC_WHERE } },
     ...(exclusionGate ? { AND: [availableAtGate, exclusionGate] } : availableAtGate),
   };
 }

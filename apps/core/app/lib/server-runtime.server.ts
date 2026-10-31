@@ -1,4 +1,5 @@
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
+import { warnIfSmtpMissing } from "~/lib/email/mailer.server";
 import { redactErrorForConsole } from "~/lib/redact.server";
 
 const CRON_STARTUP_RETRY_MS = 5_000;
@@ -28,5 +29,6 @@ async function initializeCronWithRetry(): Promise<void> {
 export function startCoreServerRuntime(): void {
   if (globalThis.__coreServerRuntimeStarted) return;
   globalThis.__coreServerRuntimeStarted = true;
+  warnIfSmtpMissing();
   void initializeCronWithRetry();
 }

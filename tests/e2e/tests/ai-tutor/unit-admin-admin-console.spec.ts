@@ -27,7 +27,7 @@ import {
   OUT_OF_UNIT_DEPARTMENT,
   type UnitAdminFixture,
 } from "../helpers/at-unit-admin";
-import { errorBoundary, sidebarLink } from "../helpers/at-ui";
+import { errorBoundary, openBugReport, sidebarLink } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 
@@ -105,7 +105,7 @@ test.describe("UNIT_ADMIN and the admin console", () => {
   }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+    await openBugReport(page);
 
     const dialog = page.getByRole("dialog", { name: "Report a bug" });
     await expect(dialog).toBeVisible();
@@ -118,7 +118,7 @@ test.describe("UNIT_ADMIN and the admin console", () => {
 
   test("a unit admin's bug report validates and then submits", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
-    await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+    await openBugReport(page);
     const dialog = page.getByRole("dialog", { name: "Report a bug" });
 
     // Both fields are required, and the dialog says which is missing rather than

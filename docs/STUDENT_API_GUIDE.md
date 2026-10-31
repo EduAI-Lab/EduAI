@@ -12,7 +12,7 @@ This guide is for students and researchers an EduAI administrator has given **AP
 |---|---|
 | **Endpoint** | `POST https://my.eduai.ok.ubc.ca/api/completion` (one request in, one answer out; no chat history is kept) |
 | **Models** | The campus models only (names start with `vllm:`). Cloud models such as Gemini or GPT are not available with a student key. |
-| **Daily limits** | Set by the admin who gave you access. The defaults are **200 requests** and **200,000 tokens**, counted over the **last 24 hours** across all your keys. |
+| **Daily limits** | Set by the admin who gave you access. The defaults are **200 requests** and **500,000 tokens**, counted over the **last 24 hours** across all your keys. |
 | **At the same time** | At most **2 requests** from *all* student keys together run at once, because course chat for every EduAI student shares the same servers. |
 | **Longest request** | **5 minutes.** Anything longer is stopped. |
 | **Access ends** | On the end date your admin chose, or when they revoke it. Your keys stop working at that moment. |
@@ -22,7 +22,7 @@ You can't reach EduAI's other APIs (courses, users, chat history) with this key.
 ## 2. Create your key
 
 1. Sign in at https://my.eduai.ok.ubc.ca.
-2. Open the **profile menu** at the bottom of the left sidebar and choose **Settings**, then the **API Keys** tab. The tab only appears while your access is active. If you were just given access, reload the page.
+2. Open **Account** in the left navigation bar and choose **Settings**, then the **API Keys** tab. The tab only appears while your access is active. If you were just given access, reload the page.
 3. The **Your API access** card shows when your access ends and how much of today's allowance you've used.
 4. Give the key a name (for example the project), choose how long it should last (it can't outlast your access; "Until access ends" is the default), and choose **Create**.
 5. **Copy the key now.** It is shown once. If you lose it, delete it and create a new one.

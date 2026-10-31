@@ -4,7 +4,7 @@
  *
  * Anatomy: a course-accent gradient rail + a faint order-number motif tucked
  * into the bottom-right corner; a `CardHeader` holding an eyebrow row (ringed
- * order chip + "MODULE" kicker on the left; a read-only Published/Draft
+ * order chip + "MODULE" kicker on the left; a read-only Published/Unpublished
  * `StatusBadge` and an optional publish kebab menu on the right), a bold
  * title, and a description; then an optional
  * `CardContent` with a lesson-count/updated meta row or a student progress bar.
@@ -52,7 +52,7 @@ export interface ModuleCardProps {
    */
   showProgress?: boolean;
   progress?: Progress;
-  /** Drives the read-only Published/Draft status badge. */
+  /** Drives the read-only Published/Unpublished status badge. */
   isPublished?: boolean;
   /** Optional trailing meta label, e.g. "Updated 2 days ago". */
   updatedLabel?: string;
@@ -165,7 +165,11 @@ export function ModuleCard({
               onKeyDown={(event) => event.stopPropagation()}
             >
               {isPublished !== undefined && (
-                <StatusBadge active={isPublished} activeLabel="Published" inactiveLabel="Draft" />
+                <StatusBadge
+                  active={isPublished}
+                  activeLabel="Published"
+                  inactiveLabel="Unpublished"
+                />
               )}
               {actions}
             </div>

@@ -87,8 +87,8 @@ Every issue carries one hours line per contributor per week, in exactly this sha
 Hours to complete (Week N): X hours [github-handle]
 ```
 
-Bracketed GitHub handles only — plain names are not counted. This feeds the weekly team time report;
-a line that does not match is reported as needing manual review rather than silently dropped.
+Bracketed GitHub handles only, so hours can be totalled per contributor without guessing who a plain
+name refers to.
 
 ## Term-close checklist
 

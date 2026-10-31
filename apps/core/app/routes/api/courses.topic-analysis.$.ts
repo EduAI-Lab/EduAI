@@ -25,6 +25,15 @@ function json(body: JsonValue, status = 200): Response {
 const topicId = z.string().min(1);
 
 /**
+ * Upper bound on one batch review (#1977). A Suggest run proposes a handful of
+ * topics, so this is far past a real selection while keeping one request from
+ * holding the handler for an unbounded number of sequential writes.
+ */
+const MAX_BATCH_TOPICS = 200;
+
+const topicIds = z.array(topicId).min(1).max(MAX_BATCH_TOPICS);
+
+/**
  * The bodies this action accepts. The "merge into itself" check lives in
  * the handler rather than a `.refine()` here: refining a member turns it into a
  * ZodEffects, which `discriminatedUnion` will not accept.
@@ -35,7 +44,12 @@ const ReviewBodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("merge"), topicId, intoTopicId: topicId }),
   z.object({ action: z.literal("retry") }),
   z.object({ action: z.literal("suggest") }),
+  z.object({ action: z.literal("approveMany"), topicIds }),
+  z.object({ action: z.literal("dismissMany"), topicIds }),
 ]);
+
+/** One topic a batch review could not act on, and why (#1977). */
+type BatchFailure = { topicId: string; error: string };
 
 /**
  * `GET /api/courses/:courseId/topic-analysis` — the instructor-facing status of
@@ -67,7 +81,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
  *
  * `{ action: "approve" | "dismiss", topicId }` or
  * `{ action: "merge", topicId, intoTopicId }`, `{ action: "retry" }`, or
- * `{ action: "suggest" }` (#1966).
+ * `{ action: "suggest" }` (#1966), or
+ * `{ action: "approveMany" | "dismissMany", topicIds }` (#1977).
  *
  * Restricted to rank >= 2 (INSTRUCTOR and above). A TA is deliberately excluded
  * even under the `tas.canManageTopics` grant: merging repoints every question on
@@ -123,6 +138,49 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const started = await retryTopicAnalysis(courseId, session.user.id);
     if (!started) return json({ error: "NO_ANALYZABLE_MATERIALS" }, 409);
     return json({ jobId: started.jobId });
+  }
+
+  if (parsed.action === "approveMany" || parsed.action === "dismissMany") {
+    // #1977: each topic is reviewed on its own rather than in one transaction,
+    // so one that cannot be acted on (already reviewed, or dismissing it would
+    // orphan questions) is reported back instead of failing the whole selection.
+    // Sequential, not parallel: a dismissal re-establishes the course's fallback
+    // topic, and concurrent dismissals would race on that check.
+    const approve = parsed.action === "approveMany";
+    const succeeded: Array<{ id: string; name: string }> = [];
+    const failed: BatchFailure[] = [];
+
+    for (const id of new Set(parsed.topicIds)) {
+      // A thrown write is one topic's failure, not the batch's.
+      const result = await (
+        approve
+          ? approveGeneratedTopic(courseId, id)
+          : dismissGeneratedTopic(courseId, id, session.user.id)
+      ).catch(() => null);
+      if (!result) {
+        failed.push({ topicId: id, error: "REVIEW_FAILED" });
+        continue;
+      }
+      if (result.status !== "200") {
+        failed.push({ topicId: id, error: result.error });
+        continue;
+      }
+      succeeded.push(result.topic);
+      fireAndForget(
+        logAuditAction({
+          ...actor,
+          ...requestContext,
+          actionCode: approve ? "TOPIC_SUGGESTION_APPROVED" : "TOPIC_SUGGESTION_DISMISSED",
+          category: "TOPIC",
+          entityType: "CourseTopic",
+          entityId: id,
+          entityLabel: result.topic.name,
+          details: { courseId, batch: true },
+        }),
+      );
+    }
+
+    return json({ succeeded, failed });
   }
 
   if (parsed.action === "merge" && parsed.topicId === parsed.intoTopicId) {

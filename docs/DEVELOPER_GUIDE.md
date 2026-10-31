@@ -42,7 +42,7 @@ Core owns identity and is the authority for users, platform roles, courses, and 
 | Lint / format | oxlint + oxfmt | oxlint + oxfmt (server excluded from the app's own scripts, and linted by its own) | oxlint + oxfmt |
 | Delivery | Docker Compose, Apache reverse proxy, systemd/Node services | Same platform topology | Same platform topology |
 
-The whole repo lints with **oxlint** and formats with **oxfmt** — `eslint` still appears in the Question Maker backend's `devDependencies` but no script invokes it. `npm run lint` / `npm run format` at the root fan out through Turborepo and then run the root-level pass over `scripts/`, `tests/`, `infra/`, `tools/`, `ops/`, `docs/`, and `eduai-summer-2026/`. Git hooks are managed by **lefthook** (`lefthook.yml`), installed by the root `prepare` script.
+The whole repo lints with **oxlint** and formats with **oxfmt** — `eslint` still appears in the Question Maker backend's `devDependencies` but no script invokes it. `npm run lint` / `npm run format` at the root fan out through Turborepo and then run the root-level pass over `scripts/`, `tests/`, `infra/`, `tools/`, `ops/`, and `docs/`. Git hooks are managed by **lefthook** (`lefthook.yml`), installed by the root `prepare` script.
 
 The repository pins npm through `packageManager` and currently expects npm workspaces rather than pnpm or Yarn. Check the root and app `package.json` files before assuming every workspace uses the same major version of React Router, Vite, or Express.
 
@@ -155,7 +155,7 @@ Vite `VITE_*` variables are build-time values. Restart the dev server after chan
 
 ### UI and navigation
 
-- Reuse `@eduai/ui` and the established `AppShell`, sidebar, page-tab, command-palette, feedback, and form components before creating a local copy.
+- Reuse `@eduai/ui` and the established `NavShell` (global rail, trays, course menu, mobile drawer), page-tab, command-palette, feedback, and form components before creating a local copy.
 - Keep navigation and visibility derived from the existing RBAC helpers.
 - A frontend permission gate must have a matching server-side authorization check.
 - Preserve keyboard navigation, focus states, labels, responsive behavior, and assistive-mode hooks.

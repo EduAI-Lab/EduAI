@@ -136,7 +136,16 @@ describe("AddActivityPanel — submit flows", () => {
     expect(onActivityCreated).toHaveBeenCalled();
   });
 
-  it("submits a SHORT_TEXT activity with the expected answer", async () => {
+  it("labels the short-answer field a grader reference, not an auto-grading key (#2027)", () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("radio", { name: "Short answer" }));
+
+    const field = screen.getByLabelText("Reference answer (for graders)");
+    expect(field).toHaveAccessibleDescription(/Not used for auto-grading/);
+    expect(screen.queryByText("Expected answer")).not.toBeInTheDocument();
+  });
+
+  it("submits a SHORT_TEXT activity with the reference answer", async () => {
     renderPanel();
 
     selectMainTopic("Recursion");
@@ -144,7 +153,7 @@ describe("AddActivityPanel — submit flows", () => {
     fireEvent.change(screen.getByLabelText(/Question prompt/i), {
       target: { value: "Capital of France?" },
     });
-    fireEvent.change(screen.getByLabelText(/Expected answer/i), {
+    fireEvent.change(screen.getByLabelText(/Reference answer/i), {
       target: { value: "Paris" },
     });
 
@@ -242,7 +251,7 @@ describe("AddActivityPanel — submit flows", () => {
     fireEvent.change(screen.getByLabelText(/Question prompt/i), {
       target: { value: "Will fail" },
     });
-    fireEvent.change(screen.getByLabelText(/Expected answer/i), {
+    fireEvent.change(screen.getByLabelText(/Reference answer/i), {
       target: { value: "Anything" },
     });
 

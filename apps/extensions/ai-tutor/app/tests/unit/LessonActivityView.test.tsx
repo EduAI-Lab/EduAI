@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -59,9 +59,14 @@ function renderView(overrides: Partial<React.ComponentProps<typeof LessonActivit
         onSubmit={vi.fn()}
         result={null}
         wasCorrect={false}
+        awaitingReview={false}
+        answerLocked={false}
+        onRetry={vi.fn()}
         submitState="allowed"
         isUserReady
         onGuideMe={vi.fn()}
+        hintsRevealed={false}
+        onToggleHints={vi.fn()}
         canPrev={false}
         canNext={false}
         onPrev={vi.fn()}
@@ -86,6 +91,33 @@ describe("LessonActivityView", () => {
   it("keeps Submit enabled for an ungraded selected answer", () => {
     renderView();
     expect(screen.getByRole("button", { name: /submit answer/i })).not.toBeDisabled();
+  });
+
+  it("locks a restored wrong answer behind a Try again button (#2030)", () => {
+    const onRetry = vi.fn();
+    renderView({ result: "Not quite. Keep going!", answerLocked: true, onRetry });
+    expect(screen.queryByRole("button", { name: /submit answer/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Option A" })).toBeDisabled();
+    screen.getByRole("button", { name: /try again/i }).click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a restored ungraded answer as awaiting review with Edit answer (#2030)", () => {
+    renderView({
+      result: "Submitted. Your instructor will review this answer.",
+      awaitingReview: true,
+      answerLocked: true,
+    });
+    expect(screen.getByText("Awaiting review")).toBeInTheDocument();
+    const status = screen.getByText("Submitted. Your instructor will review this answer.");
+    expect(status.parentElement?.className).not.toContain("destructive");
+    expect(screen.getByRole("button", { name: /edit answer/i })).toBeInTheDocument();
+  });
+
+  it("offers no retry once a restored answer is correct (#2030)", () => {
+    renderView({ result: "Correct!", wasCorrect: true, answerLocked: true });
+    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit answer/i })).toBeDisabled();
   });
 
   it("marks the picked option red only while a wrong grade stands (#1644 bug 4)", () => {
@@ -116,9 +148,14 @@ describe("LessonActivityView", () => {
           onSubmit={vi.fn()}
           result={null}
           wasCorrect={false}
+          awaitingReview={false}
+          answerLocked={false}
+          onRetry={vi.fn()}
           submitState="allowed"
           isUserReady
           onGuideMe={vi.fn()}
+          hintsRevealed={false}
+          onToggleHints={vi.fn()}
           canPrev={false}
           canNext={false}
           onPrev={vi.fn()}
@@ -134,5 +171,42 @@ describe("LessonActivityView", () => {
     expect(screen.getByRole("radio", { name: "Option A" }).className).not.toContain(
       "border-destructive",
     );
+  });
+});
+
+describe("LessonActivityView hints (#2029)", () => {
+  const hinted: Activity = { ...activity, hints: ["Think about when it should stop."] };
+
+  it("hides the hint button when the activity has no hints", () => {
+    renderView({ activity: { ...activity, hints: [" "] } });
+    expect(screen.queryByRole("button", { name: /show hint/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a collapsed Show hint button before any attempt", () => {
+    const onToggleHints = vi.fn();
+    renderView({ activity: hinted, onToggleHints });
+    const button = screen.getByRole("button", { name: "Show hint" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Think about when it should stop.")).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(onToggleHints).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the hint text inline once revealed", () => {
+    renderView({ activity: hinted, hintsRevealed: true });
+    const button = screen.getByRole("button", { name: "Hide hint" });
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    const hint = screen.getByText("Think about when it should stop.");
+    expect(button.getAttribute("aria-controls")).toBe(hint.parentElement?.id);
+  });
+
+  it("lists every hint when there are several", () => {
+    renderView({ activity: { ...activity, hints: ["First", "Second"] }, hintsRevealed: true });
+    expect(screen.getByRole("button", { name: "Hide hints" })).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "First",
+      "Second",
+    ]);
   });
 });

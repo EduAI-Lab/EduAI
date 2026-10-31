@@ -282,7 +282,7 @@ export function CourseCard({
               <IconCalendar size={13} />
               {termLabel(term, year)}
             </span>
-            <StatusBadge active={isPublished} activeLabel="Published" inactiveLabel="Draft" />
+            <StatusBadge active={isPublished} activeLabel="Published" inactiveLabel="Unpublished" />
           </div>
 
           {/* Badges row — own dedicated row, wraps cleanly */}

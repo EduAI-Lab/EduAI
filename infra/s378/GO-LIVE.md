@@ -32,6 +32,33 @@ The browser clients are built during deployment and served by the host web serve
 There are no supported development `npm run dev` or user-level PM2 processes on
 this host. The current deployment is systemd plus built static assets.
 
+### Docker containers
+
+The databases and Redis come from the checkout's `docker-compose.dev.yml`
+(compose project `eduai`). These are the only EduAI containers dev should run:
+
+| Container | Purpose | Host port |
+| --- | --- | ---: |
+| `eduai-db` | Core PostgreSQL (`eduai` database; Core's `DATABASE_URL`) | `54320` |
+| `eduai-ai-tutor-db` | AI Tutor PostgreSQL | `54321` |
+| `eduai-question-maker-db` | Question Maker PostgreSQL | `55432` |
+| `eduai-redis` | Redis | `63790` |
+
+Other containers on s378 (`nuteach-*`, `contextcodeai-*`, `judge0-*`) belong to
+other projects; leave them alone.
+
+A second Core database, `eduaicore-postgres-1` (compose project `eduaicore`,
+database `deveduaidb`, from the first dev setup in May 2026), was found still
+running with no connections and empty tables. It was removed on 2026-10-29
+(#1871): a dump is at `/home/soumilcs/deveduaidb-2026-10-29.dump` and the
+volume `eduaicore_eduai_pgdata` is kept until the team agrees to delete it.
+Check which database Core uses with:
+
+```bash
+sudo -u service_eduai grep -E '^DATABASE_URL=' apps/core/.env | sed -E 's#//[^@]*@#//***@#'
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+```
+
 ## Current verified snapshot
 
 On 2026-09-02, after updating and rebuilding the `development` checkout, the
@@ -103,8 +130,10 @@ Deploys are two steps (#1872). The checkout belongs to the `service_eduai`
 service account, so everything that writes to it runs as that account through
 the root-owned wrapper `/usr/local/sbin/eduai-dev-build` (any `eduai-dev` member
 may run it; `go-live-systemd-install.sh` installs it and its sudoers rule). The
-restart runs as you, because the service account has no login and no polkit
-rights:
+service account has no login, but it is in `eduai-dev`, so the polkit rule
+`49-eduai-dev.rules` lets it restart the `eduai-*` units (verified 2026-10-29).
+That is what lets the nightly update below run unattended. By hand, run the
+restart as yourself:
 
 ```bash
 # 1. As the service account: refuses local edits to tracked files, switches the
@@ -135,11 +164,42 @@ In the two-step deploy, steps 1–6 run in `eduai-dev-build` and steps 7–8 in
 
 In a one-shot deploy the Core restart happens right after the Core build, so an
 old server process does not keep serving assets the build just replaced. **In the
-two-step deploy that early restart is skipped:** the service account cannot
-restart units, so Core keeps running the previous process until
+two-step deploy that early restart is skipped:** `eduai-dev-build` passes
+`--no-restart`, so Core keeps running the previous process until
 `--restart-only`, and dev.eduai can render unstyled while the AI Tutor and
 Question Maker builds finish (1–3 min). Run step 2 as soon as step 1 prints
 `BUILD_OK`. Do not manually reorder these steps around a migration or frontend build.
+
+### Keeping dev current (#2050)
+
+Dev drifted 489 commits behind `development` in September and October 2026
+because nobody ran the deploy for three and a half weeks. Anything "checked on
+dev" in that window was checked against old code. Two things prevent a repeat:
+
+- **The nightly update.** `eduai-dev-update.timer` runs `eduai-dev-update.service`
+  at 04:00 Pacific. As `service_eduai`, it skips at once when the latest
+  `development` commit is already deployed. Otherwise it runs
+  `eduai-dev-build`, then `go-live-build.sh --restart-only`, and records the
+  commit only after every port is up. A failed build leaves the running
+  services alone, fails the unit, and is retried the next night.
+  `go-live-systemd-install.sh` installs the units but does not enable the timer:
+
+  ```bash
+  sudo systemctl enable --now eduai-dev-update.timer   # switch nightly updates on
+  sudo systemctl start eduai-dev-update.service        # update now (same job)
+  journalctl -u eduai-dev-update.service -n 50         # what the last run did
+  systemctl list-timers eduai-dev-update.timer         # when it runs next
+  ```
+
+- **Update after a merge you want to test.** Run the job by hand (above), or
+  the two deploy steps, instead of testing on whatever dev happens to run.
+
+To check how far behind dev is:
+
+```bash
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore && git fetch -q origin \
+  && git rev-list --count "$(cat /var/lib/service_eduai/dev-deployed-commit)..origin/development"
+```
 
 Supported scoped options include:
 

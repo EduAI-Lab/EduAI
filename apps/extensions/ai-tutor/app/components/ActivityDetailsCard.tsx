@@ -105,7 +105,7 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
           {activity.type === "SHORT_TEXT" && details.shortAnswerText && (
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Expected answer
+                Reference answer
               </div>
               <p className="mt-1 whitespace-pre-wrap">{details.shortAnswerText}</p>
             </div>

@@ -58,7 +58,7 @@ import {
 import AddActivityPanel from "../components/AddActivityPanel";
 import ActivityDetailsCard from "../components/ActivityDetailsCard";
 import EditActivityPanel from "../components/EditActivityPanel";
-import { contentExcerpt } from "../components/lessons/LessonCard";
+import { LessonReading } from "../components/lessons/LessonReading";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { accentForCourse } from "~/lib/course-display";
 import api from "../lib/api";
@@ -889,11 +889,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           eyebrow="Lesson"
           orderText={orderText}
           title={lesson?.title || "Lesson"}
-          description={
-            (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
-            module?.title ||
-            "Activity editor"
-          }
+          // The lesson body renders in full below, as students see it (#2026).
+          description={module?.title || "Activity editor"}
           accentColor={accentColor}
           stats={
             oActivities.length > 0
@@ -929,6 +926,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             </PermissionGate>
           }
         />
+
+        {lesson?.contentMd?.trim() && <LessonReading contentMd={lesson.contentMd} />}
 
         <div className="space-y-4">
           <div className="flex items-center gap-2.5">

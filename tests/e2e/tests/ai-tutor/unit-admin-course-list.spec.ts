@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { courseLink } from "../helpers/at-ui";
+import { courseLink, courseMenuLink } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 
@@ -109,7 +109,7 @@ test.describe("UNIT_ADMIN course list", () => {
     await searchFor(page, ua.course.code);
 
     // The filters are Select comboboxes, not buttons.
-    await chooseFilter(page, "Status", "Draft");
+    await chooseFilter(page, "Status", "Unpublished");
 
     // The fixture course is unpublished, so it survives a draft-only filter.
     await expect(courseLink(page, ua.course.atCourseId)).toBeVisible();
@@ -165,8 +165,8 @@ test.describe("UNIT_ADMIN course list", () => {
     await courseLink(page, ua.course.atCourseId).click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${ua.course.atCourseId}`);
-    // The Content tab is the landing tab of the course detail page.
-    await expect(page.getByRole("tab", { name: "Content" })).toBeVisible();
+    // Content is the landing section of the course detail page.
+    await expect(courseMenuLink(page, "Content")).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "Modules", exact: true })).toBeVisible();
   });
 
@@ -183,6 +183,6 @@ test.describe("UNIT_ADMIN course list", () => {
     // Search has narrowed the list to this one card, so these are unambiguous:
     // every course a unit admin can see arrived from Core, and this one is a draft.
     await expect(page.getByText("EduAI", { exact: true })).toBeVisible();
-    await expect(page.getByText("Draft", { exact: true })).toBeVisible();
+    await expect(page.getByText("Unpublished", { exact: true })).toBeVisible();
   });
 });

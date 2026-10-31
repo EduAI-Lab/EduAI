@@ -44,6 +44,8 @@ export type SubmissionRow = {
   response?: SubmissionResponse | null;
   /** Resolved MCQ option label (the choice text), when the pick maps to a choice. */
   answerLabel?: string | null;
+  /** Short-answer reference text for graders; never used for auto-grading. */
+  referenceAnswer?: string | null;
   /** AI grader note, e.g. `{ message: string }`. */
   aiFeedback?: { message?: string | null } | null;
   score?: number | null;
@@ -317,6 +319,17 @@ export type Activity = {
   customPrompt: string | null;
   customPromptTitle: string | null;
   completionStatus?: CompletionStatus;
+  /** The requesting student's latest attempt (#2030); absent for staff views. */
+  lastSubmission?: ActivityLastSubmission | null;
+};
+
+export type ActivityLastSubmission = {
+  answer: { answerText: string | null; answerOption: number | null };
+  /** Current grade, including staff overrides; `null` = awaiting review. */
+  isCorrect: boolean | null;
+  score: number | null;
+  aiFeedback: { message?: string } | null;
+  createdAt: string;
 };
 
 export type PromptTemplate = {

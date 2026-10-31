@@ -43,10 +43,21 @@ beforeEach(() => {
 });
 
 describe("auth/reset-password loader", () => {
-  it("prefills the address the request step redirected with", async () => {
+  // #1942: the request step's address arrives in a cookie (the round trip is
+  // covered in the forgot-password tests); the URL is no longer read at all.
+  it("ignores an address in the URL", async () => {
     await expect(
       loader(loaderArgs("http://localhost/auth/reset-password?email=student%40ubc.ca")),
-    ).resolves.toEqual({ email: "student@ubc.ca" });
+    ).resolves.toEqual({ email: "" });
+  });
+
+  it("ignores a cookie that does not hold an address", async () => {
+    const request = new Request("http://localhost/auth/reset-password", {
+      headers: { Cookie: "eduai_reset_email=garbage" },
+    });
+    await expect(loader({ request, params: {}, context: {} as never } as never)).resolves.toEqual({
+      email: "",
+    });
   });
 
   it("renders fine with no address at all", async () => {

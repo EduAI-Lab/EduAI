@@ -8,7 +8,7 @@
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin } from "../helpers/at-ui";
+import { loginAsAdmin, openBugReport } from "../helpers/at-ui";
 import { seedAtCourse } from "../helpers/at-admin-fixtures";
 
 test.describe("AI Tutor ADMIN — dashboard overview", () => {
@@ -32,7 +32,7 @@ test.describe("AI Tutor ADMIN — dashboard overview", () => {
     await expect(page.getByText(/^users$/i).first()).toBeVisible();
     await expect(page.getByText(/^courses$/i).first()).toBeVisible();
     await expect(page.getByText("Students", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Draft", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
   });
 
   test("lists a course owned by another instructor and links to the full list", async ({
@@ -103,8 +103,8 @@ test.describe("AI Tutor ADMIN — bug-report triage panel", () => {
     await loginAsAdmin(page, "at-admin-dash-triage");
 
     const description = `E2E dashboard triage probe ${Date.now()}`;
-    await page.getByRole("button", { name: /report a bug/i }).click();
-    const dialog = page.locator('[role="dialog"]');
+    await openBugReport(page);
+    const dialog = page.getByRole("dialog", { name: "Report a bug" });
     await dialog.getByTestId("bug-type").click();
     await page.locator('[role="option"]').first().click();
     await dialog.getByTestId("bug-description").fill(description);

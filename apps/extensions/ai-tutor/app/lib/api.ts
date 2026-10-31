@@ -435,15 +435,11 @@ export class ApiTimeoutError extends Error {
   }
 }
 
-// #999: the chat send path has no bound on how long a hung upstream call can
-// leave the UI showing "Thinking...". This is the client-side half of that
-// fix — the AI Tutor server also bounds its own EduAI round-trip
-// (EDUAI_CALL_TIMEOUT_MS, default 45s) so this should normally see a clean
-// 504 response (mapped to ApiTimeoutError below) before ever firing; it
-// exists as a backstop. Opt-in via `timeoutMs` — deliberately NOT a global
-// default, since most of the API surface (imports, sync operations, etc.)
-// may legitimately take longer than a chat turn and hasn't been audited
-// against a blanket cutoff.
+// #999/#2028: client backstop for a chat turn. The server bounds the whole
+// turn (all tutor + supervisor calls) by EDUAI_TURN_TIMEOUT_MS, default 50s,
+// and answers with a reply or a 504 (mapped to ApiTimeoutError below) first.
+// Keep this above that server deadline. Opt-in via `timeoutMs`, not a global
+// default: imports, syncs, etc. may legitimately take longer than a chat turn.
 export const CHAT_TIMEOUT_MS = 60_000;
 
 /**
@@ -512,10 +508,9 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
       window.location.href = getCoreLoginUrl();
       throw new Error("Authentication required");
     }
-    // 504 = the AI Tutor server's own upstream call timed out (see
-    // EDUAI_CALL_TIMEOUT_MS in callEduAI()) — this is the common case in
-    // practice, since the server's 45s bound fires well before this client's
-    // own timeoutMs backstop. Map it to the same ApiTimeoutError callers
+    // 504 = the AI Tutor server hit its own turn/call deadline (see
+    // EDUAI_TURN_TIMEOUT_MS in aiGuidance.js), which fires before this
+    // client's timeoutMs backstop. Map it to the same ApiTimeoutError callers
     // already handle for a client-side timeout, so "took too long" is shown
     // either way.
     if (res.status === 504) {

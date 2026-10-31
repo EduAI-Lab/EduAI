@@ -11,7 +11,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
-import { gotoAiTutor, loginAsAdmin, openTab } from "../helpers/at-ui";
+import { courseMenuLink, gotoAiTutor, loginAsAdmin, openTab } from "../helpers/at-ui";
 import {
   atCourseTopicIds,
   seedAtCourse,
@@ -170,7 +170,7 @@ test.describe("AI Tutor ADMIN — course detail tabs", () => {
 
       await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible();
       for (const tab of ["Content", "Submissions", "Feedback", "Analytics"]) {
-        await expect(page.getByRole("tab", { name: tab })).toBeVisible();
+        await expect(courseMenuLink(page, tab)).toBeVisible();
       }
     } finally {
       await seeded.dispose();

@@ -92,7 +92,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "core.help.Report a problem",
         "title": "Report a problem",
-        "body": "Use Report a bug in the header. Include the app, page, expected result and actual result; diagnostics are optional. Never include passwords or API keys."
+        "body": "Use Report a bug under Help in the left navigation bar. Include the app, page, expected result and actual result; diagnostics are optional. Never include passwords or API keys."
       }
     ]
   },
@@ -150,12 +150,12 @@ export const ONBOARDING_PAGES = {
   "ai-tutor.lesson": {
     "title": "Work through an activity",
     "task": "Submit an answer and try guided help",
-    "staffTask": "Review an activity and its tutoring modes",
+    "staffTask": "Review an activity's question and hints",
     "steps": [
       {
         "id": "ai-tutor.lesson.Read the activity",
         "title": "Read the activity",
-        "body": "Read the question and the instructions before answering. Staff can review the configured activity and available guidance modes."
+        "body": "Read the question and the instructions before answering. Staff can review the configured activity; instructors also choose its tutoring modes."
       },
       {
         "id": "ai-tutor.lesson.Use guided help",
@@ -211,7 +211,7 @@ export const ONBOARDING_PAGES = {
       {
         "id": "question-maker.course.Choose a workspace tab",
         "title": "Choose a workspace tab",
-        "body": "Overview summarizes the course. Questions contains its question bank, Assessments groups questions, and Canvas offers supported import and export flows."
+        "body": "Overview summarizes the course. Questions and Banks hold its questions, Assessments groups them, and Canvas, shown when the course is linked to Canvas, offers supported import and export flows."
       },
       {
         "id": "question-maker.course.Keep topics aligned",

@@ -212,6 +212,17 @@ read_env_value() {
   value="${value#\"}"
   printf '%s' "$value"
 }
+# True when a setting (not a comment) still holds a template placeholder:
+# `<word-or-words>`, CHANGE_ME or REPLACE_ME (#1859). A real address in angle
+# brackets, as in EMAIL_FROM="EduAI <noreply.eduai@ubc.ca>", has `@` and `.`,
+# so it is not mistaken for one.
+has_placeholders() {
+  grep -Ev '^[[:space:]]*(#|$)' "$1" | grep -Eq '<[A-Za-z0-9_-]+>|CHANGE_ME|REPLACE_ME'
+}
+# Names of the settings in a file, one per line, comments skipped.
+env_keys() {
+  sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$1" | sort -u
+}
 set_env_value() {
   local file="$1" key="$2" value="$3" escaped
   touch "$file"
@@ -240,10 +251,15 @@ case "${1:-}" in
     docker exec "$REDIS_NAME" redis-cli ping
     ;;
   install-env)
-    no_extra_args "$@"
+    allow_removed=false
+    case "$#:${2:-}" in
+      1:) ;;
+      2:--allow-removed) allow_removed=true ;;
+      *) die "install-env accepts only --allow-removed" ;;
+    esac
     [ -f "$ENV_SOURCE" ] || die "environment source does not exist: $ENV_SOURCE"
     grep -q '^NODE_ENV=production$' "$ENV_SOURCE" || die "environment must set NODE_ENV=production"
-    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$ENV_SOURCE" && die "environment still contains placeholders"
+    has_placeholders "$ENV_SOURCE" && die "environment still contains placeholders"
     # Settings whose absence breaks prod without an error at startup: no
     # COOKIE_DOMAIN sends users back to sign in on every app switch (#1935), and
     # an empty EDUAI_API_KEY makes Core reject every AI Tutor / Question Maker
@@ -262,6 +278,23 @@ case "${1:-}" in
     # ok.ubc.ca site. provision-aitutor writes the same value.
     [ "$(read_env_value "$ENV_SOURCE" COOKIE_DOMAIN)" = ".eduai.ok.ubc.ca" ] \
       || die "environment must set COOKIE_DOMAIN=.eduai.ok.ubc.ca"
+    # On Sep 18 this overwrote the live file with a template that had no SMTP
+    # settings, and all prod email stopped with no copy to restore from (#1854,
+    # #1859). Settings the live file has but the template drops are listed and
+    # refused unless --allow-removed is passed, and the live file is backed up.
+    if [ -f "$CORE_ENV" ]; then
+      removed=$(comm -23 <(env_keys "$CORE_ENV") <(env_keys "$ENV_SOURCE"))
+      if [ -n "$removed" ]; then
+        while IFS= read -r key; do echo "WARNING: $key would be removed" >&2; done <<<"$removed"
+        $allow_removed \
+          || die "the template drops settings the live file has; add them to $ENV_SOURCE, or rerun with --allow-removed if that is intended"
+      fi
+      if ! cmp -s "$ENV_SOURCE" "$CORE_ENV"; then
+        backup="$CORE_ENV.bak-$(date +%Y%m%d-%H%M%S)"
+        cp -p "$CORE_ENV" "$backup"
+        echo "Backed up the previous file to $backup"
+      fi
+    fi
     install -o root -g eduai -m 0640 "$ENV_SOURCE" "$CORE_ENV"
     echo "Installed $CORE_ENV"
     ;;
@@ -286,7 +319,7 @@ case "${1:-}" in
     grep -Eq '^POSTGRES_USER=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is missing POSTGRES_USER"
     grep -Eq '^POSTGRES_PASSWORD=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is missing POSTGRES_PASSWORD"
     grep -Eq '^POSTGRES_DB=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is missing POSTGRES_DB"
-    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$AI_TUTOR_DB_ENV_SOURCE" && die "AI Tutor database environment still contains placeholders"
+    has_placeholders "$AI_TUTOR_DB_ENV_SOURCE" && die "AI Tutor database environment still contains placeholders"
     install -o root -g root -m 0600 "$AI_TUTOR_DB_ENV_SOURCE" "$AI_TUTOR_DB_ENV"
     echo "Installed $AI_TUTOR_DB_ENV"
     ;;
@@ -294,7 +327,7 @@ case "${1:-}" in
     no_extra_args "$@"
     [ -f "$AI_TUTOR_ENV_SOURCE" ] || die "AI Tutor environment source does not exist: $AI_TUTOR_ENV_SOURCE"
     grep -q '^NODE_ENV=production$' "$AI_TUTOR_ENV_SOURCE" || die "AI Tutor environment must set NODE_ENV=production"
-    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$AI_TUTOR_ENV_SOURCE" && die "AI Tutor environment still contains placeholders"
+    has_placeholders "$AI_TUTOR_ENV_SOURCE" && die "AI Tutor environment still contains placeholders"
     install -o root -g eduai -m 0640 "$AI_TUTOR_ENV_SOURCE" "$AI_TUTOR_ENV"
     echo "Installed $AI_TUTOR_ENV"
     ;;
@@ -327,7 +360,7 @@ case "${1:-}" in
     grep -q '^NODE_ENV=production$' "$QM_ENV_SOURCE" || die "Question Maker environment must set NODE_ENV=production"
     grep -Eq '^DATABASE_URL=.+$' "$QM_ENV_SOURCE" || die "Question Maker environment is missing DATABASE_URL"
     grep -Eq '^EDUAI_API_KEY=.+$' "$QM_ENV_SOURCE" || die "Question Maker environment is missing EDUAI_API_KEY"
-    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$QM_ENV_SOURCE" && die "Question Maker environment still contains placeholders"
+    has_placeholders "$QM_ENV_SOURCE" && die "Question Maker environment still contains placeholders"
     install -o root -g eduai -m 0640 "$QM_ENV_SOURCE" "$QM_ENV"
     echo "Installed $QM_ENV"
     ;;

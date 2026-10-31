@@ -14,8 +14,6 @@ import { toast } from "sonner";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   PageTabs,
-  PageTabsList,
-  PageTabsTrigger,
   PageTabsContent,
   CourseHeroCard,
   DetailPageScaffold,
@@ -52,6 +50,7 @@ import { QuestionModal } from "../components/questions/QuestionModal";
 import { CourseOverviewTab } from "./course-detail/CourseOverviewTab";
 import { CourseBanksTab } from "./course-detail/CourseBanksTab";
 import { resolveCourseTab, type ActiveTab } from "./course-detail/courseTabs";
+import { useReportCanvasLink } from "@/components/layout/QmLayoutContext";
 import { CourseTopicsHeroAction } from "./course-detail/CourseTopicsHeroAction";
 import { CourseCanvasTab } from "./course-detail/CourseCanvasTab";
 import type { QuestionAnalyticsProps } from "@eduai/ui";
@@ -157,6 +156,7 @@ export const CourseDetailPage = () => {
   const openCanvasImport = useCallback(() => setIsCanvasImportOpen(true), []);
   const { canUseCanvas, canUseLinkedCanvas, canvasLinkStatus, handleImportFromCanvas } =
     useCanvasAccess(courseId, canManageCanvas, hasCourseAccess, openCanvasImport);
+  useReportCanvasLink(courseId, canvasLinkStatus);
 
   const tabParam = searchParams.get("tab");
   const canManageAssessmentForCourse = canManageAssessment && hasCourseAccess;
@@ -1070,17 +1070,17 @@ export const CourseDetailPage = () => {
       }
     >
       <PageTabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
-        <PageTabsList>
-          <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
-          <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
-          <PageTabsTrigger value="assessments" data-tour="assessment-tab">
-            Assessments
-          </PageTabsTrigger>
-          {canUseLinkedCanvas && <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>}
-        </PageTabsList>
+        {/* The sections are picked from the shell's course menu (`?tab=`), so
+            there is no tab list here; each panel is a labelled region instead
+            of a tabpanel pointing at a trigger that no longer exists. */}
 
-        <PageTabsContent value="overview" className="space-y-6">
+        <PageTabsContent
+          value="overview"
+          className="space-y-6"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Overview"
+        >
           <CourseOverviewTab
             questionsCount={questionsTotal}
             assessmentsCount={assessmentsTotal}
@@ -1099,7 +1099,13 @@ export const CourseDetailPage = () => {
           />
         </PageTabsContent>
 
-        <PageTabsContent value="questions" className="space-y-6">
+        <PageTabsContent
+          value="questions"
+          className="space-y-6"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Questions"
+        >
           {questionsError && (
             <Alert variant="destructive" className="mb-4">
               <AlertDescription>{questionsError}</AlertDescription>
@@ -1159,7 +1165,13 @@ export const CourseDetailPage = () => {
           )}
         </PageTabsContent>
 
-        <PageTabsContent value="banks" className="space-y-6">
+        <PageTabsContent
+          value="banks"
+          className="space-y-6"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Banks"
+        >
           <CourseBanksTab
             banks={banks}
             canWrite={canManageAssessmentForCourse}
@@ -1172,7 +1184,13 @@ export const CourseDetailPage = () => {
           />
         </PageTabsContent>
 
-        <PageTabsContent value="assessments" className="space-y-6">
+        <PageTabsContent
+          value="assessments"
+          className="space-y-6"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Assessments"
+        >
           {assessmentsError && (
             <Alert variant="destructive" className="mb-4">
               <AlertDescription>{assessmentsError}</AlertDescription>
@@ -1200,7 +1218,13 @@ export const CourseDetailPage = () => {
           />
         </PageTabsContent>
 
-        <PageTabsContent value="canvas" className="space-y-6">
+        <PageTabsContent
+          value="canvas"
+          className="space-y-6"
+          role="region"
+          aria-labelledby={undefined}
+          aria-label="Canvas"
+        >
           {courseId && canUseLinkedCanvas && (
             <CourseCanvasTab
               courseId={courseId}

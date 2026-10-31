@@ -12,7 +12,7 @@ name: PR Patch Coverage (advisory)
 #
 # Why patch coverage and not a whole-file % delta: file-% swings for reasons unrelated to the
 # PR (denominator shifts, deletions, moves), so it is a noisy signal. Patch coverage isolates
-# the new code — see eduai-summer-2026/scripts/pr-patch-coverage.js.
+# the new code — see scripts/coverage/pr-patch-coverage.js.
 
 on:
   pull_request:
@@ -155,7 +155,7 @@ jobs:
         env:
           BASE_REF: origin/${{ github.event.pull_request.base.ref }}
           WARN_THRESHOLD: '80'
-        run: node eduai-summer-2026/scripts/pr-patch-coverage.js > patch-coverage-comment.md
+        run: node scripts/coverage/pr-patch-coverage.js > patch-coverage-comment.md
 
       # Sticky comment via gh CLI — no third-party action. Find our previous comment by the
       # HTML marker and update it in place; otherwise create one. Best-effort, never fails.

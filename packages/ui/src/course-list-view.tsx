@@ -516,7 +516,7 @@ export function buildStatusFilterGroup<T>(
     getValue: (course) => (getIsPublished(course) ? "published" : "draft"),
     options: [
       { value: "published", label: "Published" },
-      { value: "draft", label: "Draft" },
+      { value: "draft", label: "Unpublished" },
     ],
   };
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { SettingsView } from "~/components/settings/settings-view";
+import { PROVIDER_KEY_GUIDE_URL } from "~/components/settings/provider-account-notice";
 import { authClient } from "~/lib/auth/client";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { usePolicyGate } from "~/components/policy/policy-gate";
@@ -86,6 +87,22 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("SettingsView — Providers tab (#2062)", () => {
+  it("says a provider account comes first and links the key guide", async () => {
+    renderView();
+    clickTab(/providers/i);
+
+    expect(
+      await screen.findByText(/You need an account with the provider first/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/subscription is not an API key/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /how to get an api key/i })).toHaveAttribute(
+      "href",
+      PROVIDER_KEY_GUIDE_URL,
+    );
+  });
 });
 
 describe("SettingsView — tab visibility by role", () => {

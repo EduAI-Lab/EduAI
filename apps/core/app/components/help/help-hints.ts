@@ -14,16 +14,17 @@ export const CORE_HELP = {
   },
   coursePublishing: {
     title: "Publishing",
-    summary: "Draft courses are hidden from students until you publish them.",
+    summary: "Unpublished courses are hidden from students until you publish them.",
     details:
-      "While a course is a draft, only course staff and administrators can open it, and self-enrollment links won't let anyone join. Publish it when it's ready; unpublishing removes student access again without deleting anything.",
+      "While a course is unpublished, only course staff and administrators can open it, and self-enrollment links won't let anyone join. Publish it when it's ready; unpublishing removes student access again without deleting anything.",
     href: "/help#publishing",
   },
   materialVisibility: {
-    title: "Student visibility",
-    summary: "Hide a material from students, or schedule when they can see it.",
+    title: "What students see",
+    summary:
+      "Show or hide course files for students: all at once, by topic, or one file at a time.",
     details:
-      "A hidden material is invisible to students and isn't used to answer their chat questions. A scheduled material stays hidden until the date you choose. Instructors and TAs always see every material.",
+      "A hidden file isn't shown to students and isn't used to answer their chat questions. Hiding a topic hides its files and its name. A scheduled file stays hidden until its date. Instructors and TAs always see every file.",
     href: "/help#publishing",
   },
   chatScope: {

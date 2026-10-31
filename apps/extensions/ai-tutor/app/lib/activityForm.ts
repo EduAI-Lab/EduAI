@@ -207,7 +207,7 @@ export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateRe
 
   const textAnswer = values.textAnswer.trim();
   if (!textAnswer) {
-    return { error: "Provide the expected answer." };
+    return { error: "Provide a reference answer." };
   }
 
   return {

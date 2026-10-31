@@ -3,7 +3,7 @@
  *
  * `/dashboard` is the shared landing page for every role (`role-routing.ts`);
  * for a STUDENT it renders `DashboardStudentView`: a four-stat row, the
- * course-status donut + lessons-completed meter, "Your courses", the
+ * course-status donut + activities-completed meter, "Your courses", the
  * "Continue learning" resume panel, and three quick actions.
  *
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
@@ -24,10 +24,10 @@ test.describe("AI Tutor STUDENT — dashboard overview", () => {
     }
   });
 
-  test("shows the course-status donut and lessons-completed meter", async ({ page }) => {
+  test("shows the course-status donut and activities-completed meter", async ({ page }) => {
     await loginAsStudent(page, "at-student-dash-analytics");
     await expect(page.getByText("Course status", { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("Lessons completed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Activities completed", { exact: true })).toBeVisible();
     // With no enrolments the donut collapses to its empty copy rather than a
     // zero-slice chart.
     await expect(page.getByText("No enrolled courses yet.")).toBeVisible();

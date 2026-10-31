@@ -225,6 +225,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 - TAs can only delete materials they personally uploaded (`CourseMaterial.uploadedBy === user.id`). Instructors can delete any material in their course.
 - Students cannot upload, list, preview or download materials (#1962). Course chat is their way into a course.
 - A published course whose instructor turned on file sharing (#2002) lets its students list and preview materials, each still behind its own student visibility gate. Upload, rename and delete stay staff-only. The setting is changed by ADMIN, UNIT_ADMIN(D) or INSTRUCTOR(C) (`PATCH /api/courses/:id/student-visibility`).
+- Which files and topics students see (#2061) is read and changed by the same audience, on the course Settings tab only (`GET` and `PATCH /api/courses/:id/student-visibility`). TAs and students are refused both. A file is shown to a student only when its own switch is on, its scheduled date has passed, Canvas does not hide it, and no approved topic it is filed under is hidden; the student file gate and course chat's retrieval apply the same rule.
 
 ---
 

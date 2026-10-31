@@ -7,6 +7,7 @@ vi.mock("~/hooks/use-api-keys", () => ({
 }));
 
 import { ProvidersSettings } from "~/components/settings/providers-settings";
+import { PROVIDER_KEY_GUIDE_URL } from "~/components/settings/provider-account-notice";
 
 function apiKeysState(overrides: Partial<ReturnType<typeof mockUseApiKeys>> = {}) {
   return {
@@ -24,6 +25,17 @@ function apiKeysState(overrides: Partial<ReturnType<typeof mockUseApiKeys>> = {}
 describe("ProvidersSettings", () => {
   beforeEach(() => {
     mockUseApiKeys.mockReset();
+  });
+
+  it("says a provider account comes first and links the key guide (#2062)", () => {
+    mockUseApiKeys.mockReturnValue(apiKeysState());
+    render(<ProvidersSettings />);
+
+    expect(screen.getByText(/You need an account with the provider first/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /how to get an api key/i })).toHaveAttribute(
+      "href",
+      PROVIDER_KEY_GUIDE_URL,
+    );
   });
 
   it('renders each provider with a "Get a key" link when unconfigured', () => {
