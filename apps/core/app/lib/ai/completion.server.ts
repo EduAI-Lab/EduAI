@@ -27,6 +27,7 @@ import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-saf
 import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
+import { platformKeyFor } from "~/lib/assistant/user-ai-keys.server";
 
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 8192;
@@ -469,7 +470,9 @@ export function resolveCompletionPrompt(
   // system message (sanitize usually nulls empties; `||` keeps the contract tight).
   const baseSystem = systemFromBody || systemFromMessage;
   if (!baseSystem) {
-    return { error: "systemPrompt is required (body field or one system message)" };
+    return {
+      error: "systemPrompt is required (body field or one system message)",
+    };
   }
 
   if (conversationMessages.length === 0) {
@@ -636,6 +639,21 @@ export async function runCompletion(request: CompletionRequest) {
       mergedSettings.isEnabled = rawRequestSettings.isEnabled;
     }
     mergedApiKeys[provider] = mergedSettings;
+  }
+
+  // #1899: with no key in the request or saved for the user, fall back to the
+  // deployment's own key, the same last tier as `resolveProviderKey`. A setting
+  // the caller explicitly disabled stays disabled.
+  const selectedSettings = mergedApiKeys[parsedModel.providerId];
+  if (!selectedSettings?.apiKey) {
+    const platformKey = platformKeyFor(parsedModel.providerId)?.apiKey;
+    if (platformKey) {
+      mergedApiKeys[parsedModel.providerId] = {
+        ...selectedSettings,
+        apiKey: platformKey,
+        isEnabled: selectedSettings?.isEnabled ?? true,
+      };
+    }
   }
 
   const validatedApiKeys = mergeLocalInferenceFromEnv(

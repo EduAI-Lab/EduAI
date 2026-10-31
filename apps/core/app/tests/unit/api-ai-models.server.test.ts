@@ -52,6 +52,7 @@ const MODEL_ROW = {
   type: "CHAT",
   providerId: "provider-1",
   supportsTools: true,
+  provider: { id: "provider-1", name: "openai" },
 };
 
 function request(
@@ -73,6 +74,7 @@ async function body(response: Response) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "admin-1", role: "ADMIN" },
   } as never);
@@ -134,6 +136,7 @@ describe("GET /api/ai-models", () => {
   });
 
   it("returns paginated models filtered by search and providerId", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
     vi.mocked(prisma.$transaction).mockResolvedValue([1, [MODEL_ROW]] as never);
 
     const response = await handleAiModelsApiRequest(
@@ -141,8 +144,29 @@ describe("GET /api/ai-models", () => {
     );
     expect(response.status).toBe(200);
     const payload = await body(response);
-    expect(payload.data).toEqual([MODEL_ROW]);
+    expect(payload.data).toEqual([{ ...MODEL_ROW, platformKeyAvailable: false }]);
     expect(payload.total).toBe(1);
+  });
+
+  // #1899: AI Tutor reads this flag to stop asking students for a key Core holds.
+  it("flags models whose provider has a deployment key in Core", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-deployment");
+    const bedrockRow = {
+      ...MODEL_ROW,
+      id: "model-2",
+      provider: { id: "provider-2", name: "bedrock" },
+    };
+    vi.mocked(prisma.$transaction).mockResolvedValue([2, [MODEL_ROW, bedrockRow]] as never);
+
+    const response = await handleAiModelsApiRequest(
+      request("GET", "/api/ai-models?page=1&pageSize=25"),
+    );
+    const payload = await body(response);
+    expect(
+      payload.data.map((model: { platformKeyAvailable: boolean }) => model.platformKeyAvailable),
+    ).toEqual([true, false]);
+    // The flag is a boolean only; the key itself never leaves Core.
+    expect(JSON.stringify(payload)).not.toContain("sk-deployment");
   });
 });
 
