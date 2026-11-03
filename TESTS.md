@@ -1290,6 +1290,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`auth-verify-email.route.test.ts`](apps/core/app/tests/unit/auth-verify-email.route.test.ts) | (#1942) The loader returns `{ email }`: empty for a signed-out visitor and for a stale unverified session (whose address is still never exposed). |
 | [`auth-forgot-password.route.test.tsx`](apps/core/app/tests/unit/auth-forgot-password.route.test.tsx) | (#1942) Every outcome redirects to a bare `/auth/reset-password`; the address travels in an HttpOnly cookie scoped to that page, and the reset loader reads it back. |
 | [`auth-reset-password.route.test.tsx`](apps/core/app/tests/unit/auth-reset-password.route.test.tsx) | (#1942) The loader ignores an address in the URL and a cookie that does not hold one. |
+| [`tas.server.test.ts`](apps/core/app/tests/unit/tas.server.test.ts) | (#2112) `convertInstructorEnrollmentsToTA` turns a demoted user's active INSTRUCTOR enrollments into TA: a no-op with none, converts every row and hands the course head to the successor when another instructor remains, and returns `INSTRUCTOR_FLOOR_VIOLATION` with the blocked course IDs (writing nothing) when the user is a sole instructor. 3 cases. |
 
 ## EduAI Integration Tests
 

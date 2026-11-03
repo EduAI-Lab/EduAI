@@ -1,5 +1,10 @@
 import type { Prisma, UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import {
+  instructorFloorViolation,
+  lockCourseEnrollmentMutations,
+  reassignPrimaryIfNeeded,
+} from "./enrollments.server";
 import { AddTASchema, RemoveTASchema, type AddTAInput, type RemoveTAInput } from "./schemas";
 
 // A TA is a course-level role, modelled as an Enrollment with role = "TA".
@@ -189,4 +194,35 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
     taId: existing.id,
     taName: existing.user?.name ?? null,
   } as const;
+}
+
+/**
+ * #2112: a STUDENT-platform user may not hold INSTRUCTOR enrollments. Turns each
+ * active one into TA. Checks every floor before writing anything.
+ */
+export async function convertInstructorEnrollmentsToTA(
+  tx: Prisma.TransactionClient,
+  userId: string,
+) {
+  const rows = await tx.enrollment.findMany({
+    where: { userId, role: "INSTRUCTOR", isActive: true },
+    select: { id: true, courseId: true, role: true, isActive: true },
+    orderBy: { courseId: "asc" }, // fixed lock order avoids deadlocks
+  });
+  if (rows.length === 0) return { ok: true, convertedCourseIds: [] } as const;
+  const blockedCourseIds: string[] = [];
+  for (const row of rows) {
+    await lockCourseEnrollmentMutations(tx, row.courseId);
+    if (await instructorFloorViolation(tx, row)) blockedCourseIds.push(row.courseId);
+  }
+  if (blockedCourseIds.length > 0) {
+    return { error: "INSTRUCTOR_FLOOR_VIOLATION", blockedCourseIds } as const;
+  }
+  const courseIds = rows.map((row) => row.courseId);
+  await tx.enrollment.updateMany({
+    where: { id: { in: rows.map((row) => row.id) } },
+    data: { role: "TA" },
+  });
+  for (const courseId of courseIds) await reassignPrimaryIfNeeded(tx, courseId, userId);
+  return { ok: true, convertedCourseIds: courseIds } as const;
 }
