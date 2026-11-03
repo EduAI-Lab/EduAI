@@ -205,7 +205,8 @@ export async function convertInstructorEnrollmentsToTA(
   userId: string,
 ) {
   const rows = await tx.enrollment.findMany({
-    where: { userId, role: "INSTRUCTOR", isActive: true },
+    // shortcut: deleted courses are skipped, a restored course keeps the stale INSTRUCTOR row, handle on restore if that matters
+    where: { userId, role: "INSTRUCTOR", isActive: true, course: { deletedAt: null } },
     select: { id: true, courseId: true, role: true, isActive: true },
     orderBy: { courseId: "asc" }, // fixed lock order avoids deadlocks
   });
@@ -220,7 +221,8 @@ export async function convertInstructorEnrollmentsToTA(
   }
   const courseIds = rows.map((row) => row.courseId);
   await tx.enrollment.updateMany({
-    where: { id: { in: rows.map((row) => row.id) } },
+    // re-assert role/isActive: a row changed concurrently since the read must not be flipped
+    where: { id: { in: rows.map((row) => row.id) }, role: "INSTRUCTOR", isActive: true },
     data: { role: "TA" },
   });
   for (const courseId of courseIds) await reassignPrimaryIfNeeded(tx, courseId, userId);

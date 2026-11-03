@@ -264,8 +264,18 @@ describe("convertInstructorEnrollmentsToTA", () => {
     const result = await convertInstructorEnrollmentsToTA(prismaMock as never, USER.id);
 
     expect(result).toEqual({ ok: true, convertedCourseIds: ["course-a", "course-b"] });
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: USER.id,
+          role: "INSTRUCTOR",
+          isActive: true,
+          course: { deletedAt: null },
+        },
+      }),
+    );
     expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["e-a", "e-b"] } },
+      where: { id: { in: ["e-a", "e-b"] }, role: "INSTRUCTOR", isActive: true },
       data: { role: "TA" },
     });
     expect(prismaMock.course.update).toHaveBeenCalledWith({

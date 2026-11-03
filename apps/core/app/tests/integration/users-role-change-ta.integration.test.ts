@@ -149,6 +149,19 @@ describe("PATCH /api/users/:id — instructor enrollments on a change to STUDENT
     expect(await enrollmentRole(courseB, targetId)).toBe("INSTRUCTOR");
   });
 
+  it("ignores a soft-deleted course where the user is the sole instructor", async () => {
+    const { targetId, courseA, courseB } = await setup("INSTRUCTOR");
+    await prisma.enrollment.deleteMany({ where: { courseId: courseB } });
+    await enrollInstructor(courseB, targetId, new Date("2025-01-01"));
+    await prisma.course.update({ where: { id: courseB }, data: { deletedAt: new Date() } });
+
+    const res = await patchUser(targetId, { role: "STUDENT", taCourseIds: [] });
+
+    expect(res.status).toBe(200);
+    expect(await enrollmentRole(courseA, targetId)).toBe("TA");
+    expect(await enrollmentRole(courseB, targetId)).toBe("INSTRUCTOR");
+  });
+
   it("converts enrollments when taCourseIds is omitted", async () => {
     const { targetId, courseA, courseB } = await setup("INSTRUCTOR");
 
