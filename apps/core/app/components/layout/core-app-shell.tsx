@@ -200,7 +200,8 @@ export function CoreAppShell({
         mainClassName={mainClassName}
         providerClassName={providerClassName}
       >
-        {pathname === "/dashboard" ? (
+        {/* The admin dashboard places its own Getting started card in its grid. */}
+        {pathname === "/dashboard" && user.role !== "ADMIN" ? (
           <OnboardingChecklist
             platform="core"
             userId={user.id}
