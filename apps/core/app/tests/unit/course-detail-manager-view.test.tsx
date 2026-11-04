@@ -238,9 +238,14 @@ describe("CourseDetailManagerView — tabs and overview", () => {
     expect(screen.getAllByText("No TAs assigned").length).toBeGreaterThan(0);
   });
 
-  it("shows the AI response style summary when the course has AI config", () => {
+  it("says custom instructions are set when the course has instructions but no style tags", () => {
     renderView();
-    expect(screen.getByTestId("response-style-summary")).toBeInTheDocument();
+    expect(screen.getByText("Custom instructions are set.")).toBeInTheDocument();
+  });
+
+  it("shows the AI response style summary when the course has style tags", () => {
+    renderView({ course: { ...COURSE, responseStyleTags: ["concise"] } });
+    expect(screen.getAllByTestId("response-style-summary").length).toBeGreaterThan(0);
   });
 
   it("renders the chat history tab content", () => {

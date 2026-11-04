@@ -12,7 +12,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
-import { CourseHeader } from "~/components/courses/course-header";
+import { BannerBadge, CourseHeader } from "~/components/courses/course-header";
 import { StudentCourseMaterials } from "~/components/courses/student-course-materials";
 import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
 import {
@@ -36,6 +36,31 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h2>
       {children}
     </section>
+  );
+}
+
+function StudyCard({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon: typeof IconMessage;
+  title: string;
+  description: string;
+  action: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-[var(--course-border)] bg-card p-4 shadow-xs">
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-9 items-center justify-center rounded-md bg-[var(--course-muted)] text-[var(--course-accent)]">
+          <Icon className="size-5" aria-hidden="true" />
+        </span>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      </div>
+      <p className="flex-1 text-sm text-muted-foreground">{description}</p>
+      <div>{action}</div>
+    </div>
   );
 }
 
@@ -64,60 +89,55 @@ export function CourseDetailStudentView({ course, topics, tas = [], aiTutorUrl }
         year={course.year}
         name={displayName}
         accentColor={accentColor}
-        actions={
-          <>
-            <Button asChild size="sm">
-              <Link to={`/chat?courseId=${encodeURIComponent(course.id)}`}>
-                <IconMessage className="size-4" aria-hidden="true" />
-                Chat about this course
-              </Link>
-            </Button>
-            {aiTutorUrl && (
-              <Button asChild size="sm" variant="outline">
-                <a href={aiTutorUrl}>
-                  <IconMessageChatbot className="size-4" aria-hidden="true" />
-                  Open AI Tutor
-                </a>
-              </Button>
-            )}
-          </>
-        }
+        badges={<BannerBadge>Enrolled</BannerBadge>}
+        topics={topics.map((t) => t.name)}
         menu={
           <CourseCardCustomizePopover
             courseName={course.name}
             courseCode={course.code}
             preference={cardPreference}
             onApply={(update) => setCoursePreference(course.id, update)}
-            tone="plain"
           />
         }
       />
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="flex min-w-0 flex-col gap-6">
-          {course.description && (
-            <Section title="About this course">
-              <p className="text-sm leading-relaxed text-foreground">{course.description}</p>
-            </Section>
-          )}
-
-          <Section title="Topics">
-            {topics.length > 0 ? (
-              <ul className="flex flex-wrap gap-2">
-                {topics.map((t) => (
-                  <li
-                    key={t.id}
-                    className="rounded-full border border-[var(--course-border)] bg-[var(--course-muted)] px-3 py-1 text-xs font-medium text-foreground"
-                  >
-                    {t.name}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Your instructor hasn't listed topics yet.
-              </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StudyCard
+              icon={IconMessage}
+              title="Course Chat"
+              description="Ask questions and get answers based on what your instructor has shared."
+              action={
+                <Button asChild size="sm">
+                  <Link to={`/chat?courseId=${encodeURIComponent(course.id)}`}>
+                    Chat about this course
+                  </Link>
+                </Button>
+              }
+            />
+            {aiTutorUrl && (
+              <StudyCard
+                icon={IconMessageChatbot}
+                title="AI Tutor"
+                description="Work through guided lessons and practice on this course's topics."
+                action={
+                  <Button asChild size="sm" variant="outline">
+                    <a href={aiTutorUrl}>Open AI Tutor</a>
+                  </Button>
+                }
+              />
             )}
+          </div>
+
+          <Section title="About this course">
+            <p className="text-sm leading-relaxed text-foreground">
+              {course.description || (
+                <span className="text-muted-foreground">
+                  Your instructor hasn't added a description yet.
+                </span>
+              )}
+            </p>
           </Section>
 
           {course.studentFilesVisible && (

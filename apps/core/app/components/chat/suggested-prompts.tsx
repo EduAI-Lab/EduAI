@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  IconBulb,
+  IconCalendarCheck,
+  IconListDetails,
+  IconPencilQuestion,
+  type Icon,
+} from "@tabler/icons-react";
+
 import { PressSurface } from "~/components/motion/press-surface";
 import { useMotionReducedPreference } from "~/components/assistive/ui-preferences-provider";
 
@@ -10,23 +18,31 @@ export interface SuggestedPromptsProps {
 
 const LAUNCH_MS = 280;
 
-const STARTERS: { label: string; prompt: string }[] = [
+const STARTERS: { label: string; hint: string; icon: Icon; prompt: string }[] = [
   {
     label: "Explain a concept",
+    hint: "In plain words, with an example",
+    icon: IconBulb,
     prompt:
       "Explain a challenging concept from my course in simple terms with one real-world example.",
   },
   {
     label: "Build a study plan",
+    hint: "Most important topics first",
+    icon: IconCalendarCheck,
     prompt:
       "Help me create a short study plan for my upcoming exam with the most important topics first.",
   },
   {
     label: "Practice problems",
+    hint: "Check your understanding",
+    icon: IconPencilQuestion,
     prompt: "Create a few practice problems for what I'm studying so I can check my understanding.",
   },
   {
     label: "Summarize readings",
+    hint: "The key points, in a short list",
+    icon: IconListDetails,
     prompt: "Summarize the key points from this week's material in a short, scannable list.",
   },
 ];
@@ -69,7 +85,7 @@ export function SuggestedPrompts({ onSelectPrompt, disabled }: SuggestedPromptsP
 
   return (
     <div
-      className="mt-8 flex w-full max-w-2xl flex-wrap items-center justify-center gap-2"
+      className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2.5 sm:grid-cols-2"
       role="group"
       aria-label="Suggested prompts"
     >
@@ -80,9 +96,13 @@ export function SuggestedPrompts({ onSelectPrompt, disabled }: SuggestedPromptsP
           launching={launchingLabel === item.label}
           dimmed={launchingLabel !== null && launchingLabel !== item.label}
           onClick={() => handleSelect(item)}
-          className="rounded-full border border-border/60 bg-muted/35 px-4 py-2 text-sm text-foreground/85 hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
+          className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs hover:border-primary/40 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
         >
-          {item.label}
+          <item.icon className="mt-0.5 size-5 shrink-0 text-primary-text" aria-hidden="true" />
+          <span className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">{item.label}</span>
+            <span className="text-xs text-muted-foreground">{item.hint}</span>
+          </span>
         </PressSurface>
       ))}
     </div>

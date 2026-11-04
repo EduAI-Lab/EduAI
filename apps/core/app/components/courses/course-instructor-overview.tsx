@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { Avatar } from "@eduai/ui";
+import { Link } from "react-router";
+import {
+  IconChevronRight,
+  IconFiles,
+  IconSettings,
+  IconTags,
+  IconUsers,
+} from "@tabler/icons-react";
+import { Avatar, courseThemeVars, resolvePaletteAccent } from "@eduai/ui";
 
 import { CourseInstructorsPanel } from "~/components/courses/course-instructors-panel";
 import { CourseNextSteps, type CourseNextStep } from "~/components/courses/course-next-steps";
@@ -10,6 +18,42 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 
 type Instructor = Parameters<typeof CourseInstructorsPanel>[0]["instructors"][number];
+
+function QuickLink({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  to,
+}: {
+  icon: typeof IconFiles;
+  label: string;
+  value?: number;
+  hint: string;
+  to: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group flex flex-col gap-1 rounded-lg border border-border bg-card p-4 shadow-xs transition-colors hover:border-[var(--course-accent)] hover:bg-[var(--course-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="flex items-center justify-between gap-2 text-sm font-semibold text-foreground">
+        <span className="inline-flex items-center gap-2">
+          <Icon className="size-4 text-[var(--course-accent)]" aria-hidden="true" />
+          {label}
+        </span>
+        <IconChevronRight
+          className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+          aria-hidden="true"
+        />
+      </span>
+      {value !== undefined && (
+        <span className="text-2xl font-semibold text-foreground">{value}</span>
+      )}
+      <span className="text-xs text-muted-foreground">{hint}</span>
+    </Link>
+  );
+}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -84,6 +128,7 @@ export function CourseInstructorOverview({
   materials,
   topics,
   studentCount,
+  canManageSettings,
   instructors,
   tas,
   canPublish,
@@ -92,34 +137,52 @@ export function CourseInstructorOverview({
   materials: { status: string }[];
   topics: string[];
   studentCount: number;
+  canManageSettings: boolean;
   instructors: Instructor[];
   tas: CourseTA[];
   canPublish: boolean;
 }) {
   const ready = materials.filter((m) => m.status === "READY").length;
-  const hasAiStyle =
-    (course.responseStyleTags ?? []).length > 0 &&
-    courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions);
+  const styleTags = course.responseStyleTags ?? [];
+  const hasAiStyle = courseHasAiConfig(styleTags, course.aiInstructions);
 
   return (
-    <>
+    <div style={courseThemeVars(resolvePaletteAccent(course.id))}>
       <CourseNextSteps
         steps={courseSetupSteps({ materials, isPublished: course.isPublished, canPublish })}
       />
 
-      <dl className="mb-6 flex flex-wrap gap-x-10 gap-y-3">
-        {[
-          ["Students", studentCount],
-          ["Materials", materials.length],
-          ["Ready for chat", ready],
-          ["Topics", topics.length],
-        ].map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="text-xl font-semibold text-foreground">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <nav aria-label="Course sections" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <QuickLink
+          icon={IconFiles}
+          label="Materials"
+          value={materials.length}
+          hint={`${ready} ready for chat`}
+          to={courseNavSearch("materials")}
+        />
+        <QuickLink
+          icon={IconTags}
+          label="Topics"
+          value={topics.length}
+          hint="What the course covers"
+          to={courseNavSearch("topics")}
+        />
+        <QuickLink
+          icon={IconUsers}
+          label="Students"
+          value={studentCount}
+          hint="Enrolled and active"
+          to={courseNavSearch("enrollments")}
+        />
+        {canManageSettings && (
+          <QuickLink
+            icon={IconSettings}
+            label="Settings"
+            hint="AI style and what students see"
+            to={courseNavSearch("settings")}
+          />
+        )}
+      </nav>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -130,25 +193,13 @@ export function CourseInstructorOverview({
               )}
             </p>
           </Section>
-          <Section title="Topics">
-            {topics.length > 0 ? (
-              <ul className="flex flex-wrap gap-2">
-                {topics.map((t) => (
-                  <li
-                    key={t}
-                    className="rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-medium text-foreground"
-                  >
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No topics yet.</p>
-            )}
-          </Section>
           {hasAiStyle && (
             <Section title="AI response style">
-              <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
+              {styleTags.length > 0 ? (
+                <CourseResponseStyleSummary tagIds={styleTags} />
+              ) : (
+                <p className="text-sm text-foreground">Custom instructions are set.</p>
+              )}
             </Section>
           )}
         </div>
@@ -178,6 +229,6 @@ export function CourseInstructorOverview({
           </Section>
         </aside>
       </div>
-    </>
+    </div>
   );
 }
