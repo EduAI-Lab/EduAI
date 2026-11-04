@@ -15,6 +15,9 @@ import {
   IconDownload,
   IconLink,
   IconCopy,
+  IconDotsVertical,
+  IconWorldOff,
+  IconWorldUpload,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { CoursePublishControl } from "~/components/courses/course-publish-control";
@@ -55,7 +58,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@eduai/ui";
+import { CourseHeader } from "~/components/courses/course-header";
+import { CourseInstructorOverview } from "~/components/courses/course-instructor-overview";
 import { PageTabs, PageTabsContent } from "@eduai/ui";
 import { CourseHeroCard } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
@@ -448,6 +457,7 @@ export function CourseDetailManagerView({
     setUploadOpen(true);
   };
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
+  const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const deleteMaterialTitle = materials.find((m) => m.id === deleteMaterialId)?.title;
   const [deletingMaterial, setDeletingMaterial] = useState(false);
@@ -1037,6 +1047,9 @@ export function CourseDetailManagerView({
     [onReprocessMaterial],
   );
 
+  // #2105: instructors get the compact Canvas-style header and overview; the
+  // admin and unit-admin course pages keep the hero (owned by the admin redesign).
+  const canvasStyle = access === "instructor";
   // B2: top-right hero badges
   const topRightBadges: string[] = course.isActive ? ["Active"] : [];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
@@ -1048,16 +1061,86 @@ export function CourseDetailManagerView({
   return (
     <DetailPageScaffold
       hero={
-        <CourseHeroCard
-          code={course.code}
-          term={course.term}
-          year={course.year}
-          name={course.name}
-          description={course.description}
-          accentColor={resolvePaletteAccent(course.id)}
-          topRightBadges={topRightBadges}
-          topics={topics.map((t) => t.name)}
-        />
+        canvasStyle ? (
+          <CourseHeader
+            code={course.code}
+            term={course.term}
+            year={course.year}
+            name={course.name}
+            accentColor={resolvePaletteAccent(course.id)}
+            badges={
+              <StatusBadge
+                active={course.isPublished}
+                activeLabel="Published"
+                inactiveLabel="Unpublished"
+              />
+            }
+            actions={
+              // The Materials section carries its own upload button.
+              canManage &&
+              activeTab !== "materials" && (
+                <Button size="sm" onClick={openUploadDialog}>
+                  <IconUpload className="size-4" aria-hidden="true" />
+                  Upload material
+                </Button>
+              )
+            }
+            menu={
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" aria-label="Course actions">
+                      <IconDotsVertical className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[190px]">
+                    {canPublishCourse && onPublishChange && (
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={() => setPublishConfirmOpen(true)}
+                      >
+                        {course.isPublished ? (
+                          <IconWorldOff className="size-4 text-muted-foreground" />
+                        ) : (
+                          <IconWorldUpload className="size-4 text-muted-foreground" />
+                        )}
+                        {course.isPublished ? "Unpublish course" : "Publish course"}
+                      </DropdownMenuItem>
+                    )}
+                    {canManageRagSettings && (
+                      <DropdownMenuItem asChild className="gap-2">
+                        <Link to={courseNavSearch("settings")}>
+                          <IconSettings className="size-4 text-muted-foreground" />
+                          Course settings
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {canPublishCourse && onPublishChange && (
+                  <CoursePublishControl
+                    courseLabel={`${course.code} — ${course.name}`}
+                    isPublished={course.isPublished}
+                    onPublishChange={onPublishChange}
+                    confirmOpen={publishConfirmOpen}
+                    onConfirmOpenChange={setPublishConfirmOpen}
+                  />
+                )}
+              </>
+            }
+          />
+        ) : (
+          <CourseHeroCard
+            code={course.code}
+            term={course.term}
+            year={course.year}
+            name={course.name}
+            description={course.description}
+            accentColor={resolvePaletteAccent(course.id)}
+            topRightBadges={topRightBadges}
+            topics={topics.map((t) => t.name)}
+          />
+        )
       }
     >
       {/* A2: Upload modal */}
@@ -1244,137 +1327,157 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-          {/* Stat row */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
-            <StatCard label="Students" value={studentCount} />
-            <StatCard label="Materials" value={materials.length} />
-            <StatCard label="Embedded" value={readyMaterials} />
-          </div>
+          {canvasStyle ? (
+            <CourseInstructorOverview
+              course={course}
+              materials={materials}
+              topics={topics.map((t) => t.name)}
+              studentCount={studentCount}
+              instructors={displayInstructors}
+              tas={tas}
+              canPublish={canPublishCourse}
+            />
+          ) : (
+            <>
+              {/* Stat row */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                <StatCard label="Students" value={studentCount} />
+                <StatCard label="Materials" value={materials.length} />
+                <StatCard label="Embedded" value={readyMaterials} />
+              </div>
 
-          {/* B1+B3: Info grid — collapses when instructor missing */}
-          <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
-            {/* B3: Enriched info card */}
-            <Card>
-              <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                <p className="text-[13px] font-semibold text-foreground">Course information</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                      Code
-                    </p>
-                    <p className="text-sm text-foreground">{course.code}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                      Term
-                    </p>
-                    <p className="text-sm text-foreground">{termLabel(course.term, course.year)}</p>
-                  </div>
-                  {course.department && (
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                        Course Code
-                      </p>
-                      <p className="text-sm text-foreground">{course.department}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                      Status
-                    </p>
-                    <StatusBadge active={course.isActive} />
-                  </div>
-                  <div>
-                    <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                      Published
-                      <HelpHint {...CORE_HELP.coursePublishing} LinkComponent={Link} />
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge
-                        active={course.isPublished}
-                        activeLabel="Published"
-                        inactiveLabel="Unpublished"
-                      />
-                      {publishControl}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                      Materials
-                    </p>
-                    <p className="text-sm text-foreground">
-                      {materials.length} file{materials.length !== 1 ? "s" : ""} · {readyMaterials}{" "}
-                      embedded
-                    </p>
-                  </div>
-                </div>
-                {courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) && (
-                  <div className="pt-3 border-t border-border">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-                      AI response style
-                    </p>
-                    <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Instructor + TAs */}
-            {displayInstructors.length > 0 ? (
-              <Card>
-                <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <CourseInstructorsPanel instructors={displayInstructors} />
-                  <div>
-                    <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
-                      Teaching assistants
-                    </p>
-                    {tas.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {tas.map((ta) => (
-                          <div key={ta.id} className="flex items-center gap-1.5">
-                            <Avatar name={ta.user.name} size={22} radius={5} />
-                            <span className="text-xs text-foreground">{ta.user.name}</span>
-                          </div>
-                        ))}
+              {/* B1+B3: Info grid — collapses when instructor missing */}
+              <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
+                {/* B3: Enriched info card */}
+                <Card>
+                  <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+                    <p className="text-[13px] font-semibold text-foreground">Course information</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                          Code
+                        </p>
+                        <p className="text-sm text-foreground">{course.code}</p>
                       </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">{"No TAs assigned"}</span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                          Term
+                        </p>
+                        <p className="text-sm text-foreground">
+                          {termLabel(course.term, course.year)}
+                        </p>
+                      </div>
+                      {course.department && (
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                            Course Code
+                          </p>
+                          <p className="text-sm text-foreground">{course.department}</p>
                         </div>
+                      )}
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                          Status
+                        </p>
+                        <StatusBadge active={course.isActive} />
+                      </div>
+                      <div>
+                        <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                          Published
+                          <HelpHint {...CORE_HELP.coursePublishing} LinkComponent={Link} />
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge
+                            active={course.isPublished}
+                            activeLabel="Published"
+                            inactiveLabel="Unpublished"
+                          />
+                          {publishControl}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                          Materials
+                        </p>
+                        <p className="text-sm text-foreground">
+                          {materials.length} file{materials.length !== 1 ? "s" : ""} ·{" "}
+                          {readyMaterials} embedded
+                        </p>
+                      </div>
+                    </div>
+                    {courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) && (
+                      <div className="pt-3 border-t border-border">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                          AI response style
+                        </p>
+                        <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
                       </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
-                  <p className="text-sm font-semibold text-foreground">Instructor</p>
-                  <p className="text-xs text-muted-foreground">No professor assigned</p>
-                  <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
-                    Teaching assistants
-                  </p>
-                  {tas.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {tas.map((ta) => (
-                        <div key={ta.id} className="flex items-center gap-1.5">
-                          <Avatar name={ta.user.name} size={22} radius={5} />
-                          <span className="text-xs text-foreground">{ta.user.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground">{"No TAs assigned"}</span>
+                  </CardContent>
+                </Card>
+
+                {/* Instructor + TAs */}
+                {displayInstructors.length > 0 ? (
+                  <Card>
+                    <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+                      <CourseInstructorsPanel instructors={displayInstructors} />
+                      <div>
+                        <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
+                          Teaching assistants
+                        </p>
+                        {tas.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {tas.map((ta) => (
+                              <div key={ta.id} className="flex items-center gap-1.5">
+                                <Avatar name={ta.user.name} size={22} radius={5} />
+                                <span className="text-xs text-foreground">{ta.user.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-muted-foreground">
+                                {"No TAs assigned"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
+                      <p className="text-sm font-semibold text-foreground">Instructor</p>
+                      <p className="text-xs text-muted-foreground">No professor assigned</p>
+                      <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
+                        Teaching assistants
+                      </p>
+                      {tas.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {tas.map((ta) => (
+                            <div key={ta.id} className="flex items-center gap-1.5">
+                              <Avatar name={ta.user.name} size={22} radius={5} />
+                              <span className="text-xs text-foreground">{ta.user.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">
+                              {"No TAs assigned"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </>
+          )}
         </PageTabsContent>
 
         {/* ── Materials — A1+A2 rework ── */}

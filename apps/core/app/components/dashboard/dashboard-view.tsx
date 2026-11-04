@@ -281,7 +281,13 @@ function CourseListPanel({
   );
 }
 
-function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; loading: boolean }) {
+export function RecentChatsPanel({
+  chats,
+  loading,
+}: {
+  chats: DashboardRecentChat[];
+  loading: boolean;
+}) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<DashboardRecentChat | null>(null);
   const [transcript, setTranscript] = useState<ChatTranscript | null>(null);

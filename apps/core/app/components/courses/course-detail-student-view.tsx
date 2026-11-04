@@ -1,17 +1,7 @@
-import { IconMessage } from "@tabler/icons-react";
+import { IconMessage, IconMessageChatbot } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import {
-  Card,
-  CardContent,
-  CourseHeroCard,
-  DetailPageScaffold,
-  StatusBadge,
-  Avatar,
-  courseThemeVars,
-  Button,
-} from "@eduai/ui";
-import { termLabel } from "@eduai/ui";
+import { Avatar, Button, courseThemeVars } from "@eduai/ui";
 import {
   CourseInstructorsPanel,
   resolveDisplayInstructors,
@@ -22,8 +12,8 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
+import { CourseHeader } from "~/components/courses/course-header";
 import { StudentCourseMaterials } from "~/components/courses/student-course-materials";
-import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
 import {
   getCourseDisplayName,
@@ -34,31 +24,27 @@ interface Props {
   course: CourseDetail;
   topics: CourseTopic[];
   tas?: CourseTA[];
+  /** This course in AI Tutor, or null where AI Tutor isn't available to the viewer. */
+  aiTutorUrl?: string | null;
 }
 
-/**
- * The page's one action sits on the hero in solid white so it reads apart from
- * the glass topic chips beside it. Every course accent is chosen to carry a
- * white label (`COURSE_COLOR_PRESETS`), so the accent reads as a label on white.
- */
-const CHAT_ACTION_CLASS =
-  "bg-white text-[var(--course-accent)] shadow-sm hover:bg-white/90 hover:text-[var(--course-accent)]";
-
-function ThemedPanel({ children }: { children: ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Card className="border-[var(--course-border)] bg-[var(--course-surface)] border-l-[3px] border-l-[var(--course-accent)] shadow-sm">
+    <section className="flex flex-col gap-2">
+      <h2 className="border-b border-border pb-1.5 text-sm font-semibold text-foreground">
+        {title}
+      </h2>
       {children}
-    </Card>
+    </section>
   );
 }
 
 /**
- * A student's course page (#1962). Course chat is a student's way into a
- * course, so the page's main action opens course chat on this course. The
- * course's files are listed only where the course shares them with students
- * (#2002); otherwise there is no file list and no material count.
+ * A student's course home (#1962, Canvas-style since #2105): what the course is,
+ * the two ways to study it (course chat, then AI Tutor), its topics, and who
+ * teaches it. Files are listed only where the course shares them (#2002).
  */
-export function CourseDetailStudentView({ course, topics, tas = [] }: Props) {
+export function CourseDetailStudentView({ course, topics, tas = [], aiTutorUrl }: Props) {
   // #1841: every instructor of record, falling back to the single legacy field.
   const displayInstructors = resolveDisplayInstructors(course);
 
@@ -70,156 +56,106 @@ export function CourseDetailStudentView({ course, topics, tas = [] }: Props) {
   const hasAi =
     course.hasAiConfig ?? courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions);
 
-  // Top-right hero badges: enrollment + AI status
-  const topRightBadges: string[] = ["Enrolled", ...(hasAi ? ["AI-enabled"] : [])];
-
   return (
-    <DetailPageScaffold
-      style={courseThemeVars(accentColor)}
-      hero={
-        <CourseHeroCard
-          code={course.code}
-          term={course.term}
-          year={course.year}
-          name={displayName}
-          description={course.description}
-          accentColor={accentColor}
-          topRightBadges={topRightBadges}
-          topics={topics.map((t) => t.name)}
-          headerAction={
-            <CourseCardCustomizePopover
-              courseName={course.name}
-              courseCode={course.code}
-              preference={cardPreference}
-              onApply={(update) => setCoursePreference(course.id, update)}
-            />
-          }
-          topicsAction={
-            <Button asChild size="sm" className={CHAT_ACTION_CLASS}>
+    <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
+      <CourseHeader
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={displayName}
+        accentColor={accentColor}
+        actions={
+          <>
+            <Button asChild size="sm">
               <Link to={`/chat?courseId=${encodeURIComponent(course.id)}`}>
                 <IconMessage className="size-4" aria-hidden="true" />
                 Chat about this course
               </Link>
             </Button>
-          }
-        />
-      }
-    >
-      {/* B3: Enriched info card — always show; B1: no empty gaps */}
-      <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
-        <ScrollReveal index={1}>
-          <ThemedPanel>
-            <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-              <p className="text-[13px] font-semibold text-foreground">Course information</p>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                    Code
-                  </p>
-                  <p className="text-sm text-foreground">{course.code}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                    Term
-                  </p>
-                  <p className="text-sm text-foreground">{termLabel(course.term, course.year)}</p>
-                </div>
-                {course.department && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                      Course Code
-                    </p>
-                    <p className="text-sm text-foreground">{course.department}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                    Status
-                  </p>
-                  <StatusBadge active={course.isActive} />
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                    AI assistance
-                  </p>
-                  {hasAi ? (
-                    (course.responseStyleTags ?? []).length > 0 ? (
-                      <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
-                    ) : (
-                      <p className="text-sm text-foreground">Enabled</p>
-                    )
-                  ) : (
-                    <p className="text-sm text-foreground">Not configured</p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </ThemedPanel>
-        </ScrollReveal>
+            {aiTutorUrl && (
+              <Button asChild size="sm" variant="outline">
+                <a href={aiTutorUrl}>
+                  <IconMessageChatbot className="size-4" aria-hidden="true" />
+                  Open AI Tutor
+                </a>
+              </Button>
+            )}
+          </>
+        }
+        menu={
+          <CourseCardCustomizePopover
+            courseName={course.name}
+            courseCode={course.code}
+            preference={cardPreference}
+            onApply={(update) => setCoursePreference(course.id, update)}
+            tone="plain"
+          />
+        }
+      />
 
-        {/* Instructor + TAs — visible to students so they know their teaching team */}
-        {displayInstructors.length > 0 ? (
-          <ScrollReveal index={2}>
-            <ThemedPanel>
-              <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                <CourseInstructorsPanel instructors={displayInstructors} />
-                <div>
-                  <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
-                    Teaching assistants
-                  </p>
-                  {tas.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {tas.map((ta) => (
-                        <div key={ta.id} className="flex items-center gap-1.5">
-                          <Avatar name={ta.user.name} size={22} radius={5} />
-                          <span className="text-xs text-foreground">{ta.user.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground">No TAs assigned</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </ThemedPanel>
-          </ScrollReveal>
-        ) : (
-          <ScrollReveal index={2}>
-            <ThemedPanel>
-              <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
-                <p className="text-sm font-semibold text-foreground">Instructor</p>
-                <p className="text-xs text-muted-foreground">No professor assigned</p>
-                <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
-                  Teaching assistants
-                </p>
-                {tas.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {tas.map((ta) => (
-                      <div key={ta.id} className="flex items-center gap-1.5">
-                        <Avatar name={ta.user.name} size={22} radius={5} />
-                        <span className="text-xs text-foreground">{ta.user.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-muted-foreground">No TAs assigned</span>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </ThemedPanel>
-          </ScrollReveal>
-        )}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          {course.description && (
+            <Section title="About this course">
+              <p className="text-sm leading-relaxed text-foreground">{course.description}</p>
+            </Section>
+          )}
+
+          <Section title="Topics">
+            {topics.length > 0 ? (
+              <ul className="flex flex-wrap gap-2">
+                {topics.map((t) => (
+                  <li
+                    key={t.id}
+                    className="rounded-full border border-[var(--course-border)] bg-[var(--course-muted)] px-3 py-1 text-xs font-medium text-foreground"
+                  >
+                    {t.name}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Your instructor hasn't listed topics yet.
+              </p>
+            )}
+          </Section>
+
+          {course.studentFilesVisible && (
+            <StudentCourseMaterials key={course.id} courseId={course.id} />
+          )}
+        </div>
+
+        <aside className="flex flex-col gap-6">
+          <Section title="Teaching team">
+            {displayInstructors.length > 0 ? (
+              <CourseInstructorsPanel instructors={displayInstructors} />
+            ) : (
+              <p className="text-xs text-muted-foreground">No professor assigned</p>
+            )}
+            <div className="mt-2">
+              <p className="mb-2 text-xs font-semibold text-foreground">Teaching assistants</p>
+              {tas.length > 0 ? (
+                <ul className="flex flex-col gap-1.5">
+                  {tas.map((ta) => (
+                    <li key={ta.id} className="flex items-center gap-1.5">
+                      <Avatar name={ta.user.name} size={22} radius={5} />
+                      <span className="text-xs text-foreground">{ta.user.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">No TAs assigned</p>
+              )}
+            </div>
+          </Section>
+
+          {hasAi && (course.responseStyleTags ?? []).length > 0 && (
+            <Section title="How the AI answers">
+              <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
+            </Section>
+          )}
+        </aside>
       </div>
-      {course.studentFilesVisible && (
-        <StudentCourseMaterials key={course.id} courseId={course.id} />
-      )}
-    </DetailPageScaffold>
+    </div>
   );
 }

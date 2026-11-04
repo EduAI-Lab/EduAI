@@ -1570,16 +1570,13 @@ describe("ChatScreen — inside the Course Chat app (#1996)", () => {
     }
   });
 
-  it("a read-only transcript still gets the Course Chat shell", async () => {
+  it("a read-only transcript still gets the chat rail", async () => {
     renderChatScreen({ ...makePersistedTranscript(), canEdit: false });
     // The read-only transcript is a modal sheet, so the shell behind it is
-    // aria-hidden while it is open.
+    // aria-hidden while it is open. #2105: a non-admin keeps Core's rail on chat.
     const rail = screen.getByRole("navigation", { name: "Global", hidden: true });
     expect(
-      within(rail).getByRole("button", {
-        name: "Switch app, current app: Course Chat",
-        hidden: true,
-      }),
+      within(rail).getByRole("link", { name: "Course Chat", hidden: true }),
     ).toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "History", hidden: true })).toBeInTheDocument();
   });
