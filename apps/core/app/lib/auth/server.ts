@@ -578,6 +578,18 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
+    // Feeds the admin dashboard's "Accounts that never signed in". Every
+    // sign-in path (email, invitation acceptance, dev quick login) creates a
+    // session through better-auth, so this one hook covers them all.
+    session: {
+      create: {
+        after: async (session) => {
+          await prisma.user
+            .update({ where: { id: session.userId }, data: { lastSignInAt: new Date() } })
+            .catch(() => {});
+        },
+      },
+    },
     account: {
       create: {
         // #339: stamp passwordChangedAt on the same write as the password so
