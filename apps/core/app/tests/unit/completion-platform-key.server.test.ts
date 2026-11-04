@@ -111,4 +111,28 @@ describe("runCompletion key order (#1899)", () => {
     expect(result).toMatchObject({ ok: false, code: "INVALID_PROVIDER_CONFIG" });
     expect(createAIProviderRegistry).not.toHaveBeenCalled();
   });
+
+  // Review: `saveAssistantPreference` writes model-only rows with the column
+  // default `isEnabled: false`; that must not block the platform key.
+  it("uses the deployment key over a keyless stored row that defaulted to disabled", async () => {
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "platform-key");
+    vi.mocked(getUserProviderSettings).mockResolvedValue({ google: { isEnabled: false } });
+
+    await completion();
+
+    expect(registrySettings().google).toMatchObject({
+      apiKey: "platform-key",
+      isEnabled: true,
+    });
+  });
+
+  it("does not fall back when the deployment opts out", async () => {
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "platform-key");
+    vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", "false");
+
+    const result = await completion();
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_PROVIDER_CONFIG" });
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
 });

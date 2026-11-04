@@ -1082,11 +1082,18 @@ async function generateWithSupervisor({
   // without a key of their own can still use it. Ask Core only when a key is
   // missing, so a student who brings their own key costs no extra catalog read.
   const missingKey = (provider, key) => providerRequiresApiKey(provider) && !key;
-  const coreKeyedProviders =
-    missingKey(resolvedKeys.tutorProvider, resolvedKeys.tutorApiKey) ||
-    missingKey(resolvedKeys.supervisorProvider, resolvedKeys.supervisorApiKey)
+  const tutorKeyMissing = missingKey(resolvedKeys.tutorProvider, resolvedKeys.tutorApiKey);
+  const coreCatalog =
+    tutorKeyMissing || missingKey(resolvedKeys.supervisorProvider, resolvedKeys.supervisorApiKey)
       ? await loadProvidersWithCoreKey()
       : new Set();
+  // A Core outage is not the student's missing key; say so instead of a 400.
+  if (tutorKeyMissing && coreCatalog === null) {
+    const error = new Error("AI models are temporarily unavailable. Please try again.");
+    error.status = 503;
+    throw error;
+  }
+  const coreKeyedProviders = coreCatalog ?? new Set();
   const keyAvailable = (provider, key) =>
     !missingKey(provider, key) || coreKeyedProviders.has(provider);
 

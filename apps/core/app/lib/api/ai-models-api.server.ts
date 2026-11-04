@@ -14,14 +14,13 @@ import {
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withNoStore } from "~/lib/api/cache-control.server";
 import { PROVIDER_CONFIGS, type SupportedProvider } from "~/lib/ai/provider-types";
-import { platformKeyFor } from "~/lib/assistant/user-ai-keys.server";
+import { completionPlatformKey } from "~/lib/assistant/user-ai-keys.server";
 
+// Keyed providers only: local inference needs no key, and Bedrock never serves a pick.
 function hasPlatformKey(providerName: string): boolean {
-  // Bedrock is overflow-only, so its credential never serves a caller's pick.
-  if (providerName === "bedrock") return false;
   if (!Object.prototype.hasOwnProperty.call(PROVIDER_CONFIGS, providerName)) return false;
   // SAFETY: the own-property check above proves `providerName` is a PROVIDER_CONFIGS key.
-  return platformKeyFor(providerName as SupportedProvider) !== null;
+  return completionPlatformKey(providerName as SupportedProvider) !== null;
 }
 
 export async function handleAiModelsApiRequest(request: Request) {

@@ -21,9 +21,12 @@ vi.mock("../../src/services/eduaiClient.js", () => ({
   listEduAiModels,
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   // Core's catalog: no provider has a deployment key unless a test says so.
   listEduAiModels.mockReset().mockResolvedValue([]);
+  const { resetCoreKeyedProvidersCacheForTests } =
+    await import("../../src/services/aiModelPolicy.js");
+  resetCoreKeyedProvidersCacheForTests();
 });
 
 afterEach(() => {
@@ -215,7 +218,31 @@ describe("providers Core holds a deployment key for need no student key (#1899)"
     expect(listEduAiModels).not.toHaveBeenCalled();
   });
 
-  it("fails closed when Core's catalog cannot be read", async () => {
+  it("reuses the catalog read across turns", async () => {
+    listEduAiModels.mockResolvedValue(coreCatalog(true));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ content: "Try isolating x." }) }),
+    );
+
+    const { generateGuideResponse } = await import("../../src/services/aiGuidance.js");
+    const turn = () =>
+      generateGuideResponse({
+        activity: activity(),
+        knowledgeLevel: "beginner",
+        message: "Give me a hint",
+        studentAnswer: null,
+        tutorModelId: "google:gemini-test",
+        dualLoopEnabled: false,
+        cookie: "session=canary",
+      });
+    await turn();
+    await turn();
+
+    expect(listEduAiModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed with a 503, not a missing-key 400, when Core's catalog cannot be read", async () => {
     listEduAiModels.mockRejectedValue(new Error("Core down"));
     vi.stubGlobal("fetch", vi.fn());
 
@@ -230,7 +257,10 @@ describe("providers Core holds a deployment key for need no student key (#1899)"
         dualLoopEnabled: false,
         cookie: "session=canary",
       }),
-    ).rejects.toThrow("API key is required for the selected tutor provider");
+    ).rejects.toMatchObject({
+      status: 503,
+      message: "AI models are temporarily unavailable. Please try again.",
+    });
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

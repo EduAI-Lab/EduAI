@@ -168,6 +168,18 @@ describe("GET /api/ai-models", () => {
     // The flag is a boolean only; the key itself never leaves Core.
     expect(JSON.stringify(payload)).not.toContain("sk-deployment");
   });
+
+  it("flags no model when the deployment opts out of the completion fallback", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-deployment");
+    vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", "false");
+    vi.mocked(prisma.$transaction).mockResolvedValue([1, [MODEL_ROW]] as never);
+
+    const response = await handleAiModelsApiRequest(
+      request("GET", "/api/ai-models?page=1&pageSize=25"),
+    );
+    const payload = await body(response);
+    expect(payload.data[0].platformKeyAvailable).toBe(false);
+  });
 });
 
 describe("POST /api/ai-models", () => {

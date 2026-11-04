@@ -100,6 +100,15 @@ export function platformKeyFor(provider: SupportedProvider): ResolvedProviderKey
 }
 
 /**
+ * #1899: the deployment key `/api/completion` may fall back to. These keys double
+ * as RAG embedding keys, so `COMPLETION_PLATFORM_KEY_FALLBACK=false` keeps them for embeddings only.
+ */
+export function completionPlatformKey(provider: SupportedProvider): string | null {
+  if (process.env.COMPLETION_PLATFORM_KEY_FALLBACK?.trim().toLowerCase() === "false") return null;
+  return platformKeyFor(provider)?.apiKey ?? null;
+}
+
+/**
  * The one resolution order every AI feature shares:
  * request-pasted key → the user's saved key → the platform key → none.
  * A blank pasted key counts as nothing pasted. The result remembers its tier so a
