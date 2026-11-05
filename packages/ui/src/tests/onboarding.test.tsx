@@ -146,22 +146,31 @@ describe("onboarding progress", () => {
   });
 });
 
+/** A dashboard with local state, so a remount would show up as a reset counter. */
+function Dashboard({ withSlot = false }: { withSlot?: boolean }) {
+  const [clicks, setClicks] = React.useState(0);
+  return (
+    <div>
+      <button type="button" onClick={() => setClicks((n) => n + 1)}>
+        clicked {clicks}
+      </button>
+      {withSlot && <aside aria-label="Side" {...{ [ONBOARDING_SLOT_ATTRIBUTE]: "" }} />}
+    </div>
+  );
+}
+
+function LateDashboard() {
+  const [loaded, setLoaded] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setLoaded(true), 0);
+    return () => clearTimeout(t);
+  }, []);
+  return loaded ? <Dashboard withSlot /> : <p>Loading</p>;
+}
+
 describe("onboarding placement", () => {
   const navigate = vi.fn();
   const props = { platform: "core" as const, role: "STUDENT", userId: "one", navigate };
-
-  /** A dashboard with local state, so a remount would show up as a reset counter. */
-  function Dashboard({ withSlot = false }: { withSlot?: boolean }) {
-    const [clicks, setClicks] = React.useState(0);
-    return (
-      <div>
-        <button type="button" onClick={() => setClicks((n) => n + 1)}>
-          clicked {clicks}
-        </button>
-        {withSlot && <aside aria-label="Side" {...{ [ONBOARDING_SLOT_ATTRIBUTE]: "" }} />}
-      </div>
-    );
-  }
 
   it("comes back collapsed to a one-line strip once a task is done, unless kept open", () => {
     window.localStorage.setItem("eduai:onboarding:v1:core:one", "core.courses");
@@ -191,14 +200,6 @@ describe("onboarding placement", () => {
   });
 
   it("moves into a slot that only appears once the dashboard has loaded", async () => {
-    function LateDashboard() {
-      const [loaded, setLoaded] = React.useState(false);
-      React.useEffect(() => {
-        const t = setTimeout(() => setLoaded(true), 0);
-        return () => clearTimeout(t);
-      }, []);
-      return loaded ? <Dashboard withSlot /> : <p>Loading</p>;
-    }
     render(
       <OnboardingChecklist {...props}>
         <LateDashboard />
