@@ -19,6 +19,10 @@ const mockImportIntoCourse = vi.fn();
 const mockPublishModule = vi.fn();
 const mockUnpublishModule = vi.fn();
 
+// The course banner's publish control revalidates through a data router these tests don't mount.
+vi.mock("~/components/courses/useCoursePublishToggle", () => ({
+  useCoursePublishToggle: () => ({ requestToggle: () => {}, dialog: null }),
+}));
 vi.mock("~/lib/api", () => ({
   default: {
     courseById: vi.fn().mockResolvedValue({ id: 42, title: "Test Course", isPublished: true }),

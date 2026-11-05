@@ -37,6 +37,8 @@ type PublishMenuProps = {
   onMove?: () => void;
   /** Noun for the menu copy, e.g. "module" / "lesson". */
   itemLabel?: string;
+  /** The item's name, so each trigger in a list is told apart ("More options for …"). */
+  itemTitle?: string;
   className?: string;
 };
 
@@ -61,6 +63,7 @@ export function PublishMenu({
   onDelete,
   onMove,
   itemLabel = "item",
+  itemTitle,
   className,
 }: PublishMenuProps) {
   const blocked = Boolean(blockedReason);
@@ -76,7 +79,7 @@ export function PublishMenu({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="More options"
+          aria-label={itemTitle ? `More options for ${itemTitle}` : "More options"}
           className={cn("size-8 text-muted-foreground hover:text-foreground", className)}
         >
           <IconDotsVertical className="size-4" aria-hidden="true" />

@@ -59,7 +59,12 @@ import AddActivityPanel from "../components/AddActivityPanel";
 import ActivityDetailsCard from "../components/ActivityDetailsCard";
 import EditActivityPanel from "../components/EditActivityPanel";
 import { LessonReading } from "../components/lessons/LessonReading";
-import { ModuleHero } from "../components/lessons/ModuleHero";
+import {
+  BANNER_PRIMARY_ACTION_CLASS,
+  BANNER_SECONDARY_ACTION_CLASS,
+  BannerBadge,
+  CourseHeader,
+} from "../components/layout/CourseHeader";
 import { accentForCourse } from "~/lib/course-display";
 import api from "../lib/api";
 import type { ActivityUpdateBody, ImportableActivity } from "../lib/api";
@@ -100,7 +105,7 @@ import {
   DragHandle,
   courseThemeVars,
 } from "@eduai/ui";
-import { splitTitle } from "~/lib/course-title";
+import { splitTitle, titleName } from "~/lib/course-title";
 import { cn } from "~/lib/utils";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { PermissionGate } from "@eduai/ui";
@@ -885,30 +890,28 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   return (
     <CourseTopicsProvider value={courseTopics}>
       <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-        <ModuleHero
-          eyebrow="Lesson"
-          orderText={orderText}
-          title={lesson?.title || "Lesson"}
-          // The lesson body renders in full below, as students see it (#2026).
-          description={module?.title || "Activity editor"}
-          accentColor={accentColor}
-          stats={
-            oActivities.length > 0
-              ? [
-                  {
-                    label: oActivities.length === 1 ? "activity" : "activities",
-                    value: oActivities.length,
-                  },
-                ]
-              : undefined
+        <CourseHeader
+          eyebrow={[
+            orderText ? `Lesson ${orderText}` : "Lesson",
+            module?.title && titleName(module.title),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          title={titleName(lesson?.title || "Lesson")}
+          accentColor={accentColor ?? "var(--primary)"}
+          badges={
+            lesson ? (
+              <BannerBadge>{lesson.isPublished ? "Published" : "Unpublished"}</BannerBadge>
+            ) : undefined
           }
+          meta={`${activitiesTotal} ${activitiesTotal === 1 ? "activity" : "activities"}`}
           actions={
             <PermissionGate allow={perms.canManageContent}>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                className={BANNER_SECONDARY_ACTION_CLASS}
                 onClick={openImportDialog}
               >
                 <IconFileImport className="size-4" aria-hidden="true" />
@@ -917,7 +920,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               <Button
                 type="button"
                 size="sm"
-                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+                className={BANNER_PRIMARY_ACTION_CLASS}
+                aria-expanded={showAddPanel}
                 onClick={() => setShowAddPanel((open) => !open)}
               >
                 <IconPlus className="size-4" aria-hidden="true" />
@@ -930,14 +934,23 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         {lesson?.contentMd?.trim() && <LessonReading contentMd={lesson.contentMd} />}
 
         <div className="space-y-4">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-lg font-semibold text-foreground">Activities</h2>
-            {oActivities.length > 0 && (
-              <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-muted px-2 text-xs font-semibold text-muted-foreground">
-                {oActivities.length}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-foreground">
+              Activities
+              <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                ({activitiesTotal})
               </span>
-            )}
+            </h2>
+            <ListSearchInput
+              value={search}
+              label="Search activities"
+              placeholder="Search activities…"
+              onSearchChange={setActivitySearch}
+            />
           </div>
+          {searching && perms.canManageContent ? (
+            <p className="text-sm text-muted-foreground">Clear the search to reorder activities.</p>
+          ) : null}
 
           <PermissionGate allow={perms.canManageContent}>
             <Dialog open={showAddPanel} onOpenChange={(open) => setShowAddPanel(open)}>
@@ -956,20 +969,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </DialogContent>
             </Dialog>
           </PermissionGate>
-
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <ListSearchInput
-              value={search}
-              label="Search activities"
-              placeholder="Search activities…"
-              onSearchChange={setActivitySearch}
-            />
-            {searching && perms.canManageContent ? (
-              <p className="text-sm text-muted-foreground">
-                Clear the search to reorder activities.
-              </p>
-            ) : null}
-          </div>
 
           {oActivities.length === 0 ? (
             <Card>

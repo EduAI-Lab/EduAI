@@ -17,6 +17,10 @@ const mockModulesForCourse = vi
   .mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 });
 const mockSetSearchParams = vi.fn();
 
+// The course banner's publish control revalidates through a data router these tests don't mount.
+vi.mock("~/components/courses/useCoursePublishToggle", () => ({
+  useCoursePublishToggle: () => ({ requestToggle: () => {}, dialog: null }),
+}));
 vi.mock("~/lib/api", () => ({
   default: {
     courseById: vi.fn().mockResolvedValue({}),

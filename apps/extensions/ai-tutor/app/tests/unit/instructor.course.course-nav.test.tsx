@@ -13,6 +13,10 @@ import type { Route } from "../../routes/+types/instructor.course";
 let searchParams = new URLSearchParams();
 let publishedNav: CourseNavConfig | undefined;
 
+// The course banner's publish control revalidates through a data router these tests don't mount.
+vi.mock("~/components/courses/useCoursePublishToggle", () => ({
+  useCoursePublishToggle: () => ({ requestToggle: () => {}, dialog: null }),
+}));
 vi.mock("~/lib/api", () => ({
   default: {
     courseById: vi.fn().mockResolvedValue({}),
@@ -146,7 +150,7 @@ describe("instructor.course — section clamp on per-course role change (#1648)"
     expect(publishedNav?.items.map((item) => item.key)).toEqual(["content"]);
     expect(publishedNav?.activeKey).toBe("content");
     expect(screen.queryByTestId("analytics-panel")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Modules" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: /^Modules/ })).toBeInTheDocument();
   });
 });
 

@@ -34,7 +34,6 @@ import {
   Button,
   Card,
   ConfirmDialog,
-  CourseHeroCard,
   DetailPageScaffold,
   Dialog,
   DialogContent,
@@ -60,7 +59,17 @@ import {
   Textarea,
 } from "@eduai/ui";
 import { PublishMenu } from "../components/PublishMenu";
-import { ModuleCard } from "../components/courses/ModuleCard";
+import { ContentList, ContentListRow } from "../components/courses/ContentListRow";
+import { CourseNextSteps } from "../components/courses/CourseNextSteps";
+import { CourseBannerMenu } from "../components/courses/CourseBannerMenu";
+import { useCoursePublishToggle } from "../components/courses/useCoursePublishToggle";
+import {
+  BANNER_PRIMARY_ACTION_CLASS,
+  BANNER_SECONDARY_ACTION_CLASS,
+  BannerBadge,
+  CourseHeader,
+} from "../components/layout/CourseHeader";
+import { titleName } from "~/lib/course-title";
 import {
   accentForCourse,
   courseCode,
@@ -262,6 +271,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     title: string;
   } | null>(null);
   const [reorderingModules, setReorderingModules] = useState(false);
+  const { requestToggle: requestCoursePublish, dialog: coursePublishDialog } =
+    useCoursePublishToggle();
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -581,23 +592,69 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     <DetailPageScaffold
       padding="app"
       hero={
-        <CourseHeroCard
-          code={courseCode(course)}
-          term={courseTerm(course)}
-          year={courseYear(course)}
-          name={courseName(course)}
-          description={course.description}
-          accentColor={accentForCourse(course)}
-          // #1207: the chip row shows a page of topics; append a "+N more" chip
-          // rather than ending silently at the page bound.
-          topics={[
-            ...courseTopics.topics.map((topic) => topic.name),
-            ...(courseTopics.total > courseTopics.topics.length
-              ? [`+${courseTopics.total - courseTopics.topics.length} more`]
-              : []),
-          ]}
-          topRightBadges={[course.isPublished ? "Published" : "Unpublished"]}
-          topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
+        <CourseHeader
+          eyebrow={`${courseCode(course)} · ${termLabel(courseTerm(course), courseYear(course))}`}
+          title={courseName(course)}
+          accentColor={accentColor}
+          badges={<BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>}
+          meta={
+            activeTab === "content" && course.description ? (
+              <span className="line-clamp-2">{course.description}</span>
+            ) : undefined
+          }
+          // Topics only on Content, so the other sections keep a slim banner.
+          // #1207: the chips show a page of topics; "+N more" says so.
+          topics={
+            activeTab === "content"
+              ? [
+                  ...courseTopics.topics.map((topic) => topic.name),
+                  ...(courseTopics.total > courseTopics.topics.length
+                    ? [`+${courseTopics.total - courseTopics.topics.length} more`]
+                    : []),
+                ]
+              : []
+          }
+          topicsAction={
+            activeTab === "content" ? (
+              <CourseTopicsHeroAction course={course} courseTopics={courseTopics} />
+            ) : undefined
+          }
+          actions={
+            <>
+              {/* #1660: TA excluded — a TA already has a real (non-preview)
+                  view of this course via /student. */}
+              {perms.canPreviewAsStudent && numericCourseId != null ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={BANNER_SECONDARY_ACTION_CLASS}
+                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
+                >
+                  <IconEye className="size-4" aria-hidden="true" />
+                  Preview as student
+                </Button>
+              ) : null}
+              <PermissionGate allow={perms.canManageContent}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className={BANNER_PRIMARY_ACTION_CLASS}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  <IconPlus className="size-4" aria-hidden="true" />
+                  Add module
+                </Button>
+              </PermissionGate>
+            </>
+          }
+          menu={
+            <CourseBannerMenu
+              course={course}
+              canPublish={perms.canPublishContent}
+              onTogglePublish={() => requestCoursePublish(course)}
+            />
+          }
         />
       }
     >
@@ -612,45 +669,73 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           aria-labelledby={undefined}
           aria-label="Content"
         >
-          <div className="flex items-center justify-between gap-3">
+          {perms.canManageContent && (
+            <CourseNextSteps
+              steps={[
+                {
+                  key: "module",
+                  label: "Add a module",
+                  // A search narrows the count, so only an unfiltered zero means none.
+                  done: searching || modulesTotal > 0,
+                  detail:
+                    "Modules hold your lessons and activities. Add one, or import one from another course.",
+                  onSelect: () => setCreateOpen(true),
+                },
+                {
+                  key: "course",
+                  label: "Publish the course",
+                  done: course.isPublished,
+                  detail: course.isPublished
+                    ? "Students can see this course."
+                    : "Students can't see this course yet. Modules can only be published after it is.",
+                  onSelect: perms.canPublishContent
+                    ? () => requestCoursePublish(course)
+                    : undefined,
+                },
+                {
+                  key: "publish-module",
+                  label: "Publish a module",
+                  done: oModules.some((m) => m.isPublished),
+                  detail:
+                    "Unpublished modules stay hidden. Use a module's ⋯ menu to publish it, then publish its lessons.",
+                },
+              ]}
+            />
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
-              <h2 className="text-lg font-semibold text-foreground">Modules</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                Modules
+                <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                  ({modulesTotal})
+                </span>
+              </h2>
               <HelpHint {...AI_TUTOR_HELP.publishingHierarchy} LinkComponent={Link} />
             </div>
-            <div className="flex items-center gap-2">
-              {/* #1660: TA excluded — a TA already has a real (non-preview)
-                  view of this course via /student, not a preview of someone
-                  else's. */}
-              {perms.canPreviewAsStudent && numericCourseId != null ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <ListSearchInput
+                value={search}
+                label="Search modules"
+                placeholder="Search modules…"
+                onSearchChange={setModuleSearch}
+              />
+              <PermissionGate allow={perms.canManageContent}>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
+                  onClick={() => handleImportOpenChange(true)}
                 >
-                  <IconEye className="size-4" aria-hidden="true" />
-                  Preview as student
+                  <IconDownload className="size-4" aria-hidden="true" />
+                  Import
                 </Button>
-              ) : null}
-              <PermissionGate allow={perms.canManageContent}>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleImportOpenChange(true)}
-                  >
-                    <IconDownload className="size-4" aria-hidden="true" />
-                    Import
-                  </Button>
-                  <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-                    <IconPlus className="size-4" aria-hidden="true" />
-                    Add module
-                  </Button>
-                </div>
               </PermissionGate>
             </div>
           </div>
+          {searching && perms.canManageContent ? (
+            <p className="text-sm text-muted-foreground">Clear the search to reorder modules.</p>
+          ) : null}
 
           <PermissionGate allow={perms.canManageContent}>
             <Dialog
@@ -910,38 +995,30 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </Dialog>
           </PermissionGate>
 
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <ListSearchInput
-              value={search}
-              label="Search modules"
-              placeholder="Search modules…"
-              onSearchChange={setModuleSearch}
-            />
-            {searching && perms.canManageContent ? (
-              <p className="text-sm text-muted-foreground">Clear the search to reorder modules.</p>
-            ) : null}
-          </div>
-
           {oModules.length === 0 ? (
             <Card>
               <EmptyState
                 icon={<IconLayoutGrid size={22} aria-hidden="true" />}
                 title={searching ? "No modules match your search." : "No modules yet."}
+                description={
+                  searching || !perms.canManageContent
+                    ? undefined
+                    : "Add a module, or import one from another course to get started."
+                }
               />
             </Card>
           ) : (
             <SortableProvider
               ids={oModules.map((m) => m.id)}
               onReorder={reorderModulesList}
-              strategy="grid"
+              strategy="list"
               disabled={
                 !perms.canManageContent || modulesTotal < 2 || reorderingModules || searching
               }
             >
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <ContentList label="Modules">
                 {oModules.map((m, idx) => {
-                  const canPublish = course?.isPublished;
-                  const blocked = !m.isPublished && !canPublish;
+                  const blocked = !m.isPublished && !course?.isPublished;
                   const tooltipMessage = blocked
                     ? `Publish ${m.title} after publishing ${course?.title ?? "the parent course"}.`
                     : null;
@@ -950,15 +1027,19 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   return (
                     <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
                       {({ handleProps }) => (
-                        <ModuleCard
+                        <ContentListRow
+                          kind="Module"
                           // Absolute ordinal, so numbering continues across
                           // pages instead of restarting at 1 on page 2.
-                          index={absoluteOrdinal(page, pageSize, idx)}
-                          title={m.title}
-                          description={m.description}
+                          orderLabel={String(absoluteOrdinal(page, pageSize, idx) + 1).padStart(
+                            2,
+                            "0",
+                          )}
+                          title={titleName(m.title)}
+                          summary={m.description}
+                          href={`/instructor/module/${m.id}`}
                           accentColor={accentColor}
                           isPublished={m.isPublished}
-                          onClick={() => navigate(`/instructor/module/${m.id}`)}
                           leading={
                             canReorder ? (
                               <DragHandle
@@ -967,13 +1048,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                               />
                             ) : undefined
                           }
-                          actions={
+                          menu={
                             perms.canPublishContent || perms.canManageContent ? (
                               <PublishMenu
                                 isPublished={m.isPublished}
                                 pending={busy}
                                 blockedReason={tooltipMessage}
                                 itemLabel="module"
+                                itemTitle={titleName(m.title)}
                                 onToggle={
                                   perms.canPublishContent
                                     ? () => {
@@ -992,9 +1074,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                                 onDelete={
                                   perms.canManageContent ? () => setDeletingModule(m) : undefined
                                 }
-                                // Cross-page move: drag can only reach rows
-                                // on this page, so anything further needs an
-                                // explicit destination (#1207).
+                                // Cross-page move: drag can only reach rows on
+                                // this page (#1207).
                                 onMove={
                                   perms.canManageContent && modulesTotal > 1 && !searching
                                     ? () => setMovingModule(m)
@@ -1008,7 +1089,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     </SortableItem>
                   );
                 })}
-              </div>
+              </ContentList>
             </SortableProvider>
           )}
 
@@ -1104,6 +1185,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           setPendingPublish(null);
         }}
       />
+      {coursePublishDialog}
     </DetailPageScaffold>
   );
 }
