@@ -1,14 +1,12 @@
 /**
  * AI Tutor INSTRUCTOR — course detail workflows (browser-driven).
  *
- * The course page is one hero plus four tabs. Which tabs exist is decided by
+ * The course page is one banner (`CourseHeader`) plus four tabs. Which tabs exist is decided by
  * `getCourseDetailTabs`, and an instructor gets all four — Content, Submissions,
  * Feedback and Analytics — because `canViewCourseAnalytics` and
  * `canViewCourseFeedback` both admit the `instructor` access level.
  *
- * What is *not* here matters as much: course publish state is a read-only badge
- * (the publish action lives only on the dashboard's drafts panel, so there is
- * one entry point rather than two), and a Core-sourced course exposes no manual
+ * What is *not* here matters as much: a Core-sourced course exposes no manual
  * topic control because AI Tutor pulls its topics from Core on every read.
  */
 import { test, expect } from "@playwright/test";
@@ -43,17 +41,19 @@ test.afterAll(async () => {
 });
 
 test.describe("INSTRUCTOR course detail", () => {
-  test("the course hero names the course, its state and its topics", async ({ page }) => {
+  test("the course banner names the course, its state and its topics", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
 
     await expect(page.getByText(fx.course.code).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: fx.course.name })).toBeVisible();
-    // Publish state is a read-only badge here; the action lives on the
-    // dashboard's drafts panel so there is exactly one place to publish from.
+    await expect(page.getByRole("heading", { level: 1, name: fx.course.name })).toBeVisible();
     await expect(page.getByText("Published").first()).toBeVisible();
     // Topics come from Core through the sync-on-read seam and render as chips.
     await expect(page.getByText(fx.seededTopic!).first()).toBeVisible();
+
+    // The banner's ⋯ menu carries the course publish toggle.
+    await page.getByRole("button", { name: `${fx.course.code} course actions` }).click();
+    await expect(page.getByRole("menuitem", { name: "Unpublish course" })).toBeVisible();
   });
 
   test("a Core-sourced course offers no manual topic control", async ({ page }) => {
@@ -84,21 +84,25 @@ test.describe("INSTRUCTOR course detail", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
 
-    await expect(page.getByRole("heading", { name: "Modules" })).toBeVisible();
-    await expect(page.getByText(spine.moduleTitle).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: /^Modules\s*\(\d+\)$/ })).toBeVisible();
+    const modules = page.getByRole("list", { name: "Modules" });
+    await expect(
+      modules.getByRole("link", { name: new RegExp(`^Module \\d+: ${spine.moduleTitle}$`) }),
+    ).toBeVisible({ timeout: 30_000 });
   });
 
   test("drilling down reaches the module and then the lesson", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
 
-    await page.getByText(spine.moduleTitle).first().click();
+    await page.getByRole("link", { name: new RegExp(`: ${spine.moduleTitle}$`) }).click();
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/module/${spine.moduleId}`);
-    await expect(page.getByText(spine.lessonTitle).first()).toBeVisible({ timeout: 30_000 });
+    const lesson = page.getByRole("link", { name: new RegExp(`: ${spine.lessonTitle}$`) });
+    await expect(lesson).toBeVisible({ timeout: 30_000 });
 
-    await page.getByText(spine.lessonTitle).first().click();
+    await lesson.click();
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/lesson/${spine.lessonId}`);
-    await expect(page.getByRole("heading", { name: "Activities" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Activities\s*\(\d+\)$/ })).toBeVisible();
   });
 
   test("the breadcrumb course switcher moves between taught courses", async ({ page }) => {
@@ -177,7 +181,9 @@ test.describe("INSTRUCTOR course detail", () => {
     // page's worth of modules.
     await page.goto(`${AI_TUTOR_URL}/instructor/courses/${fx.course.atCourseId}?page=9999`);
 
-    await expect(page.getByRole("heading", { name: "Modules" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: /^Modules\s*\(\d+\)$/ })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page).not.toHaveURL(/[?&]page=9999/);
     await expect(page.getByText(spine.moduleTitle).first()).toBeVisible();
   });

@@ -2,13 +2,13 @@
  * AI Tutor INSTRUCTOR — dashboard workflows (browser-driven).
  *
  * `/dashboard` is the shared landing page for every role; the INSTRUCTOR branch
- * renders `DashboardInstructorView`. Everything on it is scoped server-side to
- * the courses this user is enrolled on as INSTRUCTOR: the stat tiles and donut
- * from `GET /api/me/dashboard-stats`, the course panels from a bounded page of
- * `GET /api/courses`.
+ * renders `DashboardInstructorView` (the shared `TeachingDashboard`). Everything
+ * on it is scoped server-side to the courses this user is enrolled on as
+ * INSTRUCTOR: the "At a glance" stats from `GET /api/me/dashboard-stats`, the
+ * course grid and drafts from a bounded page of `GET /api/courses`.
  *
- * These tests assert the instructor *shape* of the page (which tiles, which
- * quick actions, which panel) rather than exact counts — the E2E database is
+ * These tests assert the instructor *shape* of the page (which stats, which
+ * sections, which card links) rather than exact counts — the E2E database is
  * shared, so the numbers move between runs.
  */
 import { test, expect } from "@playwright/test";
@@ -30,7 +30,7 @@ const LOADER_COURSE_QUERY = "/api/courses?page=1&pageSize=200";
 test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
   try {
-    // Two taught courses, one published and one draft, so both the donut and
+    // Two taught courses, one published and one draft, so both the grid and
     // the "Needs attention" panel have something real to render.
     fx = await createTeachingInstructor(playwright, ctx, {
       publishCourse: true,
@@ -49,9 +49,9 @@ test.afterAll(async () => {
  * Where the second (draft) course sits among the drafts the panel loaded, read
  * from the very call the loader makes.
  *
- * The panel renders the newest draft as a hero plus at most four more rows, all
- * drawn from one bounded page of a database shared across runs — so a busy
- * database, rather than a regression, is what would otherwise fail these tests.
+ * The panel renders at most five draft rows, drawn from one bounded page of a
+ * database shared across runs — so a busy database, rather than a regression,
+ * is what would otherwise fail these tests.
  * Returns the index among drafts, or -1.
  */
 async function draftIndex(page: import("@playwright/test").Page): Promise<number> {
@@ -65,57 +65,78 @@ async function draftIndex(page: import("@playwright/test").Page): Promise<number
 }
 
 test.describe("INSTRUCTOR dashboard", () => {
-  test("the stat grid reports the instructor's own course rollup", async ({ page }) => {
+  test("At a glance reports the instructor's own course rollup", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    // The four tiles defined by DashboardInstructorView. "Courses teaching" is
-    // the label no other role's dashboard uses — a unit admin gets "Unit
-    // courses" from the same grid position.
+    // The four stats defined by DashboardInstructorView. "Courses teaching" is
+    // the label no other role's dashboard uses — a unit admin gets "Unit courses".
+    const glance = page.getByRole("region", { name: "At a glance" });
+    await expect(glance.getByRole("heading", { name: "At a glance" })).toBeVisible();
     for (const label of ["Courses teaching", "Published", "Unpublished", "Synced from EduAI"]) {
-      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+      await expect(glance.getByText(label, { exact: true })).toBeVisible();
     }
   });
 
-  test("the publish-status donut is rendered from the same rollup", async ({ page }) => {
+  test("the course grid offers card and list layouts", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await expect(page.getByRole("heading", { name: "Publish status" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Unpublished courses" })).toBeVisible();
-    await expect(page.getByText("Courses", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Courses", exact: true })).toBeVisible();
+    const card = page.getByRole("radio", { name: "Card view" });
+    const list = page.getByRole("radio", { name: "List view" });
+    await expect(card).toHaveAttribute("aria-checked", "true");
+
+    // Both layouts render the same course link.
+    await list.click();
+    await expect(list).toHaveAttribute("aria-checked", "true");
+    await expect(courseLink(page, fx.course.atCourseId)).toBeVisible();
   });
 
-  test("the your-courses panel links through to a course this instructor teaches", async ({
+  test("the courses-you-teach grid links through to a course this instructor teaches", async ({
     page,
   }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await expect(page.getByRole("heading", { name: "Your courses" })).toBeVisible();
-    const link = courseLink(page, fx.course.atCourseId);
+    const teaching = page.getByRole("region", { name: "Courses you teach" });
+    const link = teaching.getByRole("link", { name: new RegExp(`^${fx.course.code} · `) });
     await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", `/instructor/courses/${fx.course.atCourseId}`);
     await link.click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${fx.course.atCourseId}`);
     await expect(page.getByText(fx.course.code).first()).toBeVisible();
   });
 
-  test("quick actions offer the instructor's three entry points", async ({ page }) => {
+  test("each course card carries the instructor's section shortcuts", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await expect(page.getByRole("heading", { name: "Quick actions" })).toBeVisible();
-    // The copy is instructor-specific ("everything you teach"), not the unit
-    // admin's "every course in your authorized units".
-    await expect(page.getByText("See everything you teach.")).toBeVisible();
-    await expect(page.getByText("Manage your AI providers and accessibility.")).toBeVisible();
-    // "Publish content" points at the first draft course, or the list when
-    // there is none — either way it is a link, never a publish action here.
-    await expect(page.getByText("Publish content")).toBeVisible();
+    const id = fx.course.atCourseId;
+    const sections = page.getByRole("navigation", { name: `${fx.course.code} sections` });
+    await expect(sections.getByRole("link", { name: "Content" })).toHaveAttribute(
+      "href",
+      `/instructor/courses/${id}`,
+    );
+    await expect(sections.getByRole("link", { name: "Analytics" })).toHaveAttribute(
+      "href",
+      `/instructor/courses/${id}?tab=analytics`,
+    );
+    await expect(sections.getByRole("link", { name: "Preview as student" })).toHaveAttribute(
+      "href",
+      `/student/courses/${id}`,
+    );
+
+    // The ⋯ menu carries the course publish toggle — the grid's own publish control.
+    await page.getByRole("button", { name: `${fx.course.code} actions` }).click();
+    await expect(page.getByRole("menuitem", { name: "Unpublish course" })).toBeVisible();
   });
 
-  test("View courses navigates to the taught-course list", async ({ page }) => {
+  test("All drafts navigates to the taught-course list filtered to drafts", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
 
-    await page.getByRole("link", { name: /View courses/ }).click();
-    await page.waitForURL(`${AI_TUTOR_URL}/instructor`);
+    await page
+      .getByRole("region", { name: "Needs attention" })
+      .getByRole("link", { name: /All drafts/ })
+      .click();
+    await page.waitForURL(`${AI_TUTOR_URL}/instructor?status=draft`);
     await expect(page.getByText("Browse your courses and manage their content.")).toBeVisible();
   });
 
@@ -123,7 +144,8 @@ test.describe("INSTRUCTOR dashboard", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     const draft = fx.second!;
 
-    await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
+    const attention = page.getByRole("region", { name: "Needs attention" });
+    await expect(attention.getByRole("heading", { name: "Needs attention" })).toBeVisible();
 
     const index = await draftIndex(page);
     expect(index, "fixture draft must be among the loaded drafts").toBeGreaterThanOrEqual(0);
@@ -132,9 +154,9 @@ test.describe("INSTRUCTOR dashboard", () => {
     // Two separate controls per draft, not one card doing double duty: the
     // publish action and the navigation are addressable independently, so a
     // click meant for one can never fire the other.
-    await expect(page.getByRole("button", { name: `Publish ${draft.code}` })).toBeVisible();
+    await expect(attention.getByRole("button", { name: `Publish ${draft.code}` })).toBeVisible();
 
-    await page.getByRole("button", { name: new RegExp(`^Open ${draft.code}`) }).click();
+    await attention.getByRole("link", { name: new RegExp(`^${draft.code}`) }).click();
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${draft.atCourseId}`);
   });
 
@@ -198,9 +220,7 @@ test.describe("INSTRUCTOR dashboard", () => {
     // set, so a bounded page has to say so instead of implying completeness.
     //
     // The expectation is derived from the very call the loader makes, rather
-    // than accepting whichever affordance happens to be on screen: `Browse all`
-    // is rendered unconditionally by DashboardView, so asserting on it would
-    // pass whether or not the disclosure works.
+    // than accepting whichever affordance happens to be on screen.
     const coursePage = await (
       await page.request.get(`${AI_TUTOR_API_URL}${LOADER_COURSE_QUERY}`)
     ).json();
@@ -208,14 +228,17 @@ test.describe("INSTRUCTOR dashboard", () => {
     const total: number = coursePage.total;
 
     const notice = page.getByTestId("truncated-list-notice");
+    const allCourses = page.getByRole("link", { name: /^All [\d,]+ courses$/ });
     if (total > shown) {
       await expect(notice.first()).toBeVisible();
       await expect(notice.first()).toContainText(
         `Showing ${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} courses`,
       );
+      await expect(allCourses).toHaveAttribute("href", "/instructor");
     } else {
       // Nothing was withheld — the notice must not cry wolf.
       await expect(notice).toHaveCount(0);
+      await expect(allCourses).toHaveCount(0);
     }
   });
 
