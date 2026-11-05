@@ -559,6 +559,8 @@ export function CourseDashboard({
         </div>
 
         <aside className="flex flex-col gap-6" aria-label="Activity">
+          {/* The shell's Getting started card renders here instead of taking its own column. */}
+          <div data-onboarding-slot="" className="empty:hidden" />
           <SidePanel
             title="Recent conversations"
             action={
