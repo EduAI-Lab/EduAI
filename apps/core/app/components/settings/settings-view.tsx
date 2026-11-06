@@ -40,6 +40,7 @@ import {
   type ApiKeyExpirationChoice,
 } from "~/lib/api-keys/expiration";
 import { formatUsage, secondsUntilGrantEnds } from "~/lib/api-keys/api-access";
+import { formatDate, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 type ServerApiKey = {
   id: string;
@@ -67,7 +68,9 @@ export type SettingsApiAccess = {
 const UNTIL_ACCESS_ENDS = "grant-end";
 type KeyExpirationChoice = ApiKeyExpirationChoice | typeof UNTIL_ACCESS_ENDS;
 
-const accessEndFormat = new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" });
+/** The grant's end date. Settings is SSR'd, so the zone comes from `useFormatScope` (#1941). */
+const formatAccessEnd = (iso: string, scope: FormatScope) =>
+  formatDate(iso, { ...scope, locale: "en-CA" }, { dateStyle: "medium" });
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN", "UNIT_ADMIN"]);
 
 /**
@@ -97,6 +100,7 @@ export function SettingsView({
   apiAccess = null,
 }: SettingsViewProps) {
   const { isEnabled } = usePolicyGate();
+  const formatScope = useFormatScope();
   const roleHasCanvas = CANVAS_SETTINGS_ROLES.has(role ?? "");
   const canvasEnabled =
     role === "ADMIN" ||
@@ -114,7 +118,7 @@ export function SettingsView({
         ...API_KEY_EXPIRATION_OPTIONS.filter((option) => option.seconds <= grantSecondsLeft),
         {
           value: UNTIL_ACCESS_ENDS,
-          label: `Until access ends (${accessEndFormat.format(new Date(grantee.expiresAt))})`,
+          label: `Until access ends (${formatAccessEnd(grantee.expiresAt, formatScope)})`,
         },
       ]
     : API_KEY_EXPIRATION_OPTIONS;
@@ -426,7 +430,7 @@ export function SettingsView({
                                             : "text-muted-foreground"
                                       }
                                     >
-                                      {formatExpirationLabel(k.expiresAt)}
+                                      {formatExpirationLabel(k.expiresAt, Date.now(), formatScope)}
                                     </div>
                                   </div>
                                 )}
@@ -615,12 +619,13 @@ export function SettingsView({
 
 /** What a grantee's access allows and how much of today's allowance is left (#2039). */
 function ApiAccessSummaryCard({ access }: { access: SettingsApiAccess }) {
+  const formatScope = useFormatScope();
   return (
     <Card>
       <CardHeader>
         <CardTitle>Your API access</CardTitle>
         <CardDescription>
-          An admin gave you access until {accessEndFormat.format(new Date(access.expiresAt))}. After
+          An admin gave you access until {formatAccessEnd(access.expiresAt, formatScope)}. After
           that your keys stop working.
         </CardDescription>
       </CardHeader>

@@ -64,6 +64,7 @@ import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { asPresentText } from "~/lib/json-value";
+import { formatDate, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
@@ -107,12 +108,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
-const formatDate = (s: string) =>
-  new Date(s).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+const formatInviteDate = (s: string, scope: FormatScope) =>
+  formatDate(
+    s,
+    { ...scope, locale: "en-US" },
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+  );
 
 function StatusBadge({ invite }: { invite: Invitation }) {
   if (invite.status === "PENDING" && invite.isExpired) {
@@ -156,6 +161,7 @@ export default function InvitationsPage() {
   const defaultRole: InviteRole = defaultInviteRoleFor(user.role) ?? "STUDENT";
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const formatScope = useFormatScope();
   const [role, setRole] = useState<InviteRole>(defaultRole);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -396,10 +402,10 @@ export default function InvitationsPage() {
                                   <StatusBadge invite={invite} />
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  {formatDate(invite.createdAt)}
+                                  {formatInviteDate(invite.createdAt, formatScope)}
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  {formatDate(invite.expiresAt)}
+                                  {formatInviteDate(invite.expiresAt, formatScope)}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {invite.status === "PENDING" && (

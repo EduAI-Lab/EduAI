@@ -17,6 +17,7 @@ import {
 import { termLabel } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { formatRelativeTime, useFormatScope } from "~/lib/hydration-format";
 
 // Only ever rendered inside the transcript dialog, and it pulls the heavy
 // chat-message chunk (streamdown + shiki). Load it on open so the dashboard's
@@ -105,23 +106,6 @@ export type DashboardViewProps = {
    */
   emptyCoursesMessage?: string;
 };
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -285,6 +269,7 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<DashboardRecentChat | null>(null);
   const [transcript, setTranscript] = useState<ChatTranscript | null>(null);
+  const formatScope = useFormatScope();
   const [transcriptLoading, setTranscriptLoading] = useState(false);
 
   const handleOpen = async (chat: DashboardRecentChat) => {
@@ -361,16 +346,15 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
                       </span>
                     )}
                   </div>
-                  {/* Recent chats are SSR'd now (#1220), so this relative
-                      timestamp renders on the server too; its value depends on
-                      the wall clock and timezone, so suppress the expected
-                      server/client hydration diff (React's canonical timestamp
-                      case) rather than mismatch-warn on every dashboard load. */}
+                  {/* Recent chats are SSR'd (#1220). The scope pins the zone of
+                      the older-than-a-week date (#1941); the suppress covers only
+                      the wall-clock race at a minute boundary, and the scope's
+                      post-hydration re-render corrects the text either way. */}
                   <span
                     suppressHydrationWarning
                     className="text-[11px] text-muted-foreground shrink-0 ml-2"
                   >
-                    {relativeTime(chat.updatedAt)}
+                    {formatRelativeTime(chat.updatedAt, formatScope)}
                   </span>
                 </div>
                 <p className="text-[13px] text-foreground leading-snug line-clamp-2">

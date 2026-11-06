@@ -1,5 +1,6 @@
 import type { JsonValue } from "~/lib/json-value";
 import { asJsonArray, asJsonObject, asText } from "~/lib/json-value";
+import { formatDateTime, useFormatScope } from "~/lib/hydration-format";
 import { useState } from "react";
 import { Card, CardContent, Button } from "@eduai/ui";
 import {
@@ -93,6 +94,7 @@ export function CourseChatsPanel({
   onLoadMore,
 }: Props) {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const formatScope = useFormatScope();
 
   if (loading) {
     return (
@@ -142,7 +144,7 @@ export function CourseChatsPanel({
                 {extra ? ` · ${extra}` : ""}
               </span>
               <span className="text-xs text-muted-foreground">
-                {new Date(chat.updatedAt).toLocaleString()}
+                {formatDateTime(chat.updatedAt, formatScope)}
               </span>
             </Button>
           );
