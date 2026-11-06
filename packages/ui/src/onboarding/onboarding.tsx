@@ -72,10 +72,17 @@ function useOnboardingSlot(root: React.RefObject<HTMLDivElement | null>) {
   React.useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    const find = () => setSlot(el.querySelector<HTMLElement>(`[${ONBOARDING_SLOT_ATTRIBUTE}]`));
+    let current: HTMLElement | null = null;
+    const find = () => {
+      current = el.querySelector<HTMLElement>(`[${ONBOARDING_SLOT_ATTRIBUTE}]`);
+      setSlot(current);
+    };
     find();
-    // Dashboards often render their side column only once their data loads.
-    const observer = new MutationObserver(find);
+    // Dashboards often render their side column only once their data loads. Re-query only
+    // while there is no slot or it has left the page, not on every mutation.
+    const observer = new MutationObserver(() => {
+      if (!current?.isConnected) find();
+    });
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [root]);
@@ -96,6 +103,13 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
   const listId = React.useId();
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const slot = useOnboardingSlot(bodyRef);
+  const anchorRef = React.useRef<HTMLDivElement>(null);
+  const [host, setHost] = React.useState<HTMLDivElement | null>(null);
+  React.useLayoutEffect(() => {
+    const el = document.createElement("div");
+    setHost(el);
+    return () => el.remove();
+  }, []);
 
   // Layout effect: a client navigation reads the saved state before paint, so a closed card
   // never reserves its column for a frame.
@@ -261,6 +275,18 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
   // changes, so the dashboard itself never remounts.
   const placement = hidden ? null : slot ? "slot" : collapsed ? "strip" : "column";
 
+  // The card always renders into one host node, moved between places, so it never remounts.
+  React.useLayoutEffect(() => {
+    const target = placement === "slot" ? slot : placement ? anchorRef.current : null;
+    if (!host || host.parentNode === target) return;
+    const active = document.activeElement;
+    const focused = active instanceof HTMLElement && host.contains(active) ? active : null;
+    if (target) target.appendChild(host);
+    else host.remove();
+    // Moving a node drops focus to <body>, so hand it back.
+    if (focused && target && document.activeElement !== focused) focused.focus();
+  });
+
   return (
     <div className="@container/onboarding">
       <div
@@ -268,19 +294,23 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
           placement === "column" ? "flex flex-col @2xl/onboarding:flex-row" : "flex flex-col"
         }
       >
-        {placement === "strip" && <div className="px-4 pt-4 lg:px-6">{card}</div>}
-        {placement === "column" && (
-          // Stacks above only when the page itself is too narrow for two columns. Not reserved
-          // before the saved state is read, so a closed card never moves the dashboard.
-          <div className="shrink-0 px-4 pt-6 lg:px-6 @2xl/onboarding:order-last @2xl/onboarding:w-80 @2xl/onboarding:pl-0">
-            {card}
-          </div>
-        )}
+        {/* Stacks above only when the page itself is too narrow for two columns. Not reserved
+            before the saved state is read, so a closed card never moves the dashboard. */}
+        <div
+          ref={anchorRef}
+          className={
+            placement === "column"
+              ? "shrink-0 px-4 pt-6 lg:px-6 @2xl/onboarding:order-last @2xl/onboarding:w-80 @2xl/onboarding:pl-0"
+              : placement === "strip"
+                ? "px-4 pt-4 lg:px-6"
+                : "hidden"
+          }
+        />
         <div ref={bodyRef} className="min-w-0 flex-1">
           {children}
         </div>
       </div>
-      {placement === "slot" && slot && createPortal(card, slot)}
+      {host && placement && createPortal(card, host)}
     </div>
   );
 }

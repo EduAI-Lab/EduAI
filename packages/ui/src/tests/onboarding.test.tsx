@@ -199,6 +199,49 @@ describe("onboarding placement", () => {
     expect(view.container.innerHTML).not.toContain("w-80");
   });
 
+  it("keeps focus on the toggle across expand, collapse, and a move into the slot", async () => {
+    window.localStorage.setItem("eduai:onboarding:v1:core:one", "core.courses");
+    const view = render(
+      <OnboardingChecklist {...props}>
+        <Dashboard />
+      </OnboardingChecklist>,
+    );
+    const toggle = screen.getByRole("button", { name: "Expand" });
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Collapse" })).toBe(toggle);
+    expect(document.activeElement).toBe(toggle);
+    fireEvent.click(toggle);
+    expect(document.activeElement).toBe(toggle);
+    view.rerender(
+      <OnboardingChecklist {...props}>
+        <Dashboard withSlot />
+      </OnboardingChecklist>,
+    );
+    await act(async () => {});
+    const side = screen.getByRole("complementary", { name: "Side" });
+    expect(within(side).getByRole("button", { name: "Expand" })).toBe(toggle);
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("does not re-query for the slot while it is still on the page", async () => {
+    render(
+      <OnboardingChecklist {...props}>
+        <Dashboard withSlot />
+      </OnboardingChecklist>,
+    );
+    const spy = vi.spyOn(Element.prototype, "querySelector");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    await act(async () => {});
+    const slotQueries = spy.mock.calls.filter(([s]) => s === `[${ONBOARDING_SLOT_ATTRIBUTE}]`);
+    spy.mockRestore();
+    expect(slotQueries).toHaveLength(0);
+    expect(
+      within(screen.getByRole("complementary", { name: "Side" })).getByText("Getting started"),
+    ).toBeInTheDocument();
+  });
+
   it("moves into a slot that only appears once the dashboard has loaded", async () => {
     render(
       <OnboardingChecklist {...props}>
