@@ -107,6 +107,8 @@ function ContextMenuItem({
   className,
   inset,
   variant = "default",
+  disabled,
+  onClick,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Item> & {
   inset?: boolean;
@@ -114,6 +116,9 @@ function ContextMenuItem({
 }) {
   return (
     <ContextMenuPrimitive.Item
+      disabled={disabled}
+      // Radix skips `onSelect` on a disabled item but still runs `onClick`.
+      onClick={disabled ? undefined : onClick}
       data-slot="context-menu-item"
       data-inset={inset}
       data-variant={variant}

@@ -60,6 +60,8 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  disabled,
+  onClick,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean;
@@ -67,6 +69,9 @@ function DropdownMenuItem({
 }) {
   return (
     <DropdownMenuPrimitive.Item
+      disabled={disabled}
+      // Radix skips `onSelect` on a disabled item but still runs `onClick`.
+      onClick={disabled ? undefined : onClick}
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
