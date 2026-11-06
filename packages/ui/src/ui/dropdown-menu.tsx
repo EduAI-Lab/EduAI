@@ -10,7 +10,9 @@ const menuItemBaseClassName = [
   "relative flex items-center gap-1.5 whitespace-nowrap border border-transparent rounded-[var(--radius-base)] px-2 py-1.5 font-medium font-sans",
   "cursor-pointer transition-[background,opacity,filter,box-shadow] duration-150 ease-in-out",
   "outline-none focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)]",
-  "disabled:cursor-not-allowed disabled:opacity-50",
+  // Menu items are not form controls, so `:disabled` never matches them; Radix
+  // marks a disabled item with `data-disabled` instead.
+  "data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
   "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 ].join(" ");
 
