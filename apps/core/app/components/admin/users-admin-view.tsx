@@ -17,7 +17,7 @@ import {
 import { ApiError } from "~/hooks/api/config";
 import type { CreateUserInput, PlatformUser, UpdateUserInput } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
-import type { UsersQuery, UserStats } from "~/hooks/api/use-users";
+import type { BulkDeleteFailure, UsersQuery, UserStats } from "~/hooks/api/use-users";
 
 // Only mounted when an admin opens a user's chat history, and it pulls the heavy
 // chat-message chunk (streamdown + shiki). Load it on open so the users admin
@@ -59,6 +59,8 @@ export type UsersAdminViewProps = {
   onCreateUser: (data: CreateUserInput) => Promise<void>;
   onUpdateUser: (id: string, data: UpdateUserInput) => Promise<void>;
   onDeleteUser: (id: string) => Promise<void>;
+  /** Deletes several users, resolving with the ones that could not be deleted. */
+  onDeleteUsers: (ids: string[]) => Promise<BulkDeleteFailure[]>;
   onToggleUserActive: (user: PlatformUser) => Promise<void>;
 };
 
@@ -73,6 +75,7 @@ export function UsersAdminView({
   onCreateUser,
   onUpdateUser,
   onDeleteUser,
+  onDeleteUsers,
   onToggleUserActive,
 }: UsersAdminViewProps) {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
@@ -116,6 +119,20 @@ export function UsersAdminView({
       // Before #1959 this was the only trace of a failed delete, so the button
       // looked like it did nothing.
       toast.error(deleteUserErrorMessage(err instanceof ApiError ? err.message : null));
+    }
+  };
+
+  // Each failure gets its own toast with the person's name, so a partly
+  // failed bulk delete says exactly who is left and why.
+  const handleDeleteUsers = async (selected: PlatformUser[]) => {
+    const failures = await onDeleteUsers(selected.map((user) => user.id));
+    const deleted = selected.length - failures.length;
+    if (deleted > 0) toast.success(`Deleted ${deleted} ${deleted === 1 ? "user" : "users"}.`);
+    for (const failure of failures) {
+      const user = selected.find((candidate) => candidate.id === failure.id);
+      toast.error(
+        `${user?.name || user?.email || "A user"}: ${deleteUserErrorMessage(failure.code)}`,
+      );
     }
   };
 
@@ -196,6 +213,7 @@ export function UsersAdminView({
                     setUserDialogOpen(true);
                   }}
                   onDelete={handleDeleteUser}
+                  onDeleteMany={handleDeleteUsers}
                   onToggleActive={handleToggleUserActive}
                   onViewChatHistory={(user) => {
                     setHistoryUser({ id: user.id, name: user.name });

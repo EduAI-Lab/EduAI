@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { apiFetch } from "~/hooks/api/config";
+import { ApiError, apiFetch } from "~/hooks/api/config";
+
+/** A user a bulk delete could not remove, with the API's error code (e.g. `CANNOT_DELETE_SELF`). */
+export type BulkDeleteFailure = { id: string; code: string | null };
 import {
   DEFAULT_PAGE_SIZE,
   MAX_IDS_PER_REQUEST,
@@ -131,6 +134,27 @@ export function useUsers(options: UseUsersOptions = {}) {
     [refresh],
   );
 
+  /**
+   * Deletes each user in turn — there is no bulk endpoint, so this is one
+   * `DELETE /api/users/:id` per user — then refreshes once. A failure does not
+   * stop the rest; each one comes back with the API's error code.
+   */
+  const deleteUsers = useCallback(
+    async (ids: string[]): Promise<BulkDeleteFailure[]> => {
+      const failures: BulkDeleteFailure[] = [];
+      for (const id of ids) {
+        try {
+          await apiFetch<void>(`/api/users/${id}`, { method: "DELETE" });
+        } catch (err) {
+          failures.push({ id, code: err instanceof ApiError ? err.message : null });
+        }
+      }
+      await refresh();
+      return failures;
+    },
+    [refresh],
+  );
+
   const toggleUserActive = useCallback(
     async (user: PlatformUser) => {
       await updateUser(user.id, { isActive: !user.isActive });
@@ -150,6 +174,7 @@ export function useUsers(options: UseUsersOptions = {}) {
     createUser,
     updateUser,
     deleteUser,
+    deleteUsers,
     toggleUserActive,
   };
 }

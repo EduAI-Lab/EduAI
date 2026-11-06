@@ -4,7 +4,7 @@
  * picker asks for one bounded page rather than the unbounded course list it used
  * to request.
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -22,8 +22,12 @@ vi.mock("~/hooks/api/use-courses", () => ({
 }));
 
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
 vi.mock("sonner", () => ({
-  toast: { error: (...a: unknown[]) => toastError(...a) },
+  toast: {
+    error: (...a: unknown[]) => toastError(...a),
+    success: (...a: unknown[]) => toastSuccess(...a),
+  },
 }));
 
 // UserFormDialog is a fully-featured react-hook-form component covered by its
@@ -112,6 +116,7 @@ function renderView(overrides: Partial<React.ComponentProps<typeof UsersAdminVie
         onCreateUser={vi.fn()}
         onUpdateUser={vi.fn()}
         onDeleteUser={vi.fn()}
+        onDeleteUsers={vi.fn().mockResolvedValue([])}
         onToggleUserActive={vi.fn()}
         {...overrides}
       />
@@ -347,5 +352,78 @@ describe("UsersAdminView — search", () => {
     await waitFor(() =>
       expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ search: "student" })),
     );
+  });
+});
+
+describe("UsersAdminView — bulk selection", () => {
+  const other = {
+    ...user,
+    id: "u2",
+    email: "other@example.com",
+    name: "Other Two",
+  } as PlatformUser;
+  const me = { ...user, id: "admin-1", email: "me@example.com", name: "Me Admin" } as PlatformUser;
+
+  const selectAll = () => fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+  const bulkBar = () => screen.queryByRole("region", { name: "Bulk actions" });
+
+  it("shows the bulk bar with the selected count only while rows are selected", () => {
+    renderView({ users: [user, other] });
+    expect(bulkBar()).not.toBeInTheDocument();
+
+    selectAll();
+    expect(bulkBar()).toHaveTextContent("2 selected");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(bulkBar()).not.toBeInTheDocument();
+  });
+
+  it("deletes the selected users, skips your own account and says so, then clears", async () => {
+    const onDeleteUsers = vi.fn().mockResolvedValue([]);
+    renderView({ users: [user, other, me], onDeleteUsers });
+
+    selectAll();
+    expect(bulkBar()).toHaveTextContent("3 selected");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("permanently delete 2 selected users");
+    expect(dialog).toHaveTextContent("Your own account is selected and will be skipped.");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(onDeleteUsers).toHaveBeenCalledWith(["u1", "u2"]));
+    await waitFor(() => expect(bulkBar()).not.toBeInTheDocument());
+    expect(toastSuccess).toHaveBeenCalledWith("Deleted 2 users.");
+  });
+
+  it("names each user a bulk delete could not remove", async () => {
+    const onDeleteUsers = vi
+      .fn()
+      .mockResolvedValue([{ id: "u2", code: "CANNOT_DELETE_USER_WITH_DATA" }]);
+    renderView({ users: [user, other], onDeleteUsers });
+
+    selectAll();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        expect.stringMatching(/^Other Two: .*Deactivate the account instead/),
+      ),
+    );
+    expect(toastSuccess).toHaveBeenCalledWith("Deleted 1 user.");
+  });
+
+  it("clears the selection when the search changes", () => {
+    renderView({ users: [user, other] });
+    selectAll();
+    expect(bulkBar()).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter by name or email"), {
+      target: { value: "other" },
+    });
+    expect(bulkBar()).not.toBeInTheDocument();
   });
 });
