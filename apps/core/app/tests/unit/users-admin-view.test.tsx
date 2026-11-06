@@ -170,6 +170,19 @@ const openRowMenu = () => {
   });
 };
 
+describe("UsersAdminView — your own account", () => {
+  it("disables Delete and the row checkbox on your own row", () => {
+    renderView({ currentUserId: user.id });
+
+    expect(screen.getByRole("checkbox", { name: "Select row" })).toBeDisabled();
+    openRowMenu();
+    expect(screen.getByRole("menuitem", { name: /delete/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+});
+
 describe("UsersAdminView — create user", () => {
   it("opens the form dialog in create mode from the Add User button", () => {
     renderView();

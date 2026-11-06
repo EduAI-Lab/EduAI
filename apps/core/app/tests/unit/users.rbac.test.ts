@@ -383,6 +383,16 @@ describe("PATCH /api/users/:id — admin-floor invariant (AUTH-04)", () => {
   });
 });
 
+describe("DELETE /api/users/:id — your own account", () => {
+  it("refuses to let an admin delete their own account", async () => {
+    const res = await action(makeDelete("admin-1"));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "CANNOT_DELETE_SELF" });
+    expect(prisma.user.delete).not.toHaveBeenCalled();
+  });
+});
+
 describe("DELETE /api/users/:id — admin-floor invariant (AUTH-04)", () => {
   it("blocks deleting the last other active ADMIN", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
