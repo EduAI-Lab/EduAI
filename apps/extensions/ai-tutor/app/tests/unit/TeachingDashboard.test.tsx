@@ -69,4 +69,31 @@ describe("TeachingDashboard", () => {
     expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(2);
     expect(window.localStorage.getItem("eduai.aiTutor.dashboard.courseView")).toBe("list");
   });
+
+  it("nests card titles under the section headings when there are several sections", () => {
+    render(
+      <MemoryRouter>
+        <TeachingDashboard
+          sections={[
+            { kind: "assisting", courses: [published] },
+            {
+              kind: "taking",
+              courses: [{ ...draft, progress: { completed: 1, total: 2, percentage: 50 } }],
+            },
+          ]}
+          stats={[]}
+          showDrafts={false}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByRole("heading", { name: /courses you assist/i, level: 3 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "COSC 101 · Intro", level: 4 })).toBeInTheDocument();
+  });
+
+  it("keeps card titles at h3 under the lone Courses heading", () => {
+    renderDashboard();
+    expect(screen.getByRole("heading", { name: "COSC 101 · Intro", level: 3 })).toBeInTheDocument();
+  });
 });

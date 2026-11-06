@@ -222,6 +222,8 @@ type CardProps = {
   onTogglePublish: (course: Course) => void;
   /** e.g. a "Synced from EduAI" chip. */
   extraBadges?: ReactNode;
+  /** One level below whatever heading the card sits under. */
+  headingLevel?: 3 | 4;
 };
 
 function StatusLine({ course, kind }: { course: Course; kind: TeachingCourseKind }) {
@@ -250,9 +252,11 @@ export function CourseGridCard({
   canPublish,
   onTogglePublish,
   extraBadges,
+  headingLevel = 3,
 }: CardProps) {
   const accent = accentForCourse(course);
   const label = `${courseCode(course)} · ${courseName(course)}`;
+  const Heading = headingLevel === 4 ? "h4" : "h3";
   return (
     <article
       className="group/card relative flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-shadow focus-within:shadow-md hover:shadow-md"
@@ -271,14 +275,14 @@ export function CourseGridCard({
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 px-4 pt-3 pb-2">
-        <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug">
+        <Heading className="line-clamp-2 text-[15px] font-semibold leading-snug">
           <Link
             to={courseHref(course, kind)}
             className="text-[color-mix(in_oklch,var(--course-accent)_72%,var(--foreground))] after:absolute after:inset-0 after:content-[''] hover:underline focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
           >
             {label}
           </Link>
-        </h3>
+        </Heading>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <StatusLine course={course} kind={kind} />
           {extraBadges}
@@ -520,6 +524,7 @@ export function TeachingDashboard({
                     links={linksFor(course, kind)}
                     canPublish={canPublish}
                     onTogglePublish={setPending}
+                    headingLevel={visible.length > 1 ? 4 : 3}
                   />
                 ))}
               </div>
