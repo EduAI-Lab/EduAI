@@ -11,6 +11,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   QmCourseGridCard,
+  QmCourseListHeader,
   QmCourseListRow,
   QmCourseStatusPill,
   qmCourseLinks,
@@ -30,6 +31,8 @@ const course: Course = {
 };
 
 afterEach(cleanup);
+
+const cols = (c: string) => c.split(" ").filter((t) => /grid-cols-/.test(t));
 
 const wrap = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
@@ -83,12 +86,13 @@ describe("QmCourseGridCard", () => {
     expect(screen.queryByRole("menuitem", { name: "Open course" })).toBeNull();
   });
 
-  it("shows the department on the banner only with showDepartment", () => {
+  it("shows the department label on the banner only with showDepartment", () => {
     const { unmount } = wrap(<QmCourseGridCard course={course} links={[]} showDepartment />);
-    expect(screen.getByText("COSC")).toBeInTheDocument();
+    expect(screen.getByText("Computer Science")).toBeInTheDocument();
+    expect(screen.queryByText("COSC")).toBeNull();
     unmount();
     wrap(<QmCourseGridCard course={course} links={[]} />);
-    expect(screen.queryByText("COSC")).toBeNull();
+    expect(screen.queryByText("Computer Science")).toBeNull();
   });
 });
 
@@ -116,6 +120,25 @@ describe("QmCourseListRow", () => {
         }),
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows the course name with the full name as its title", () => {
+    wrap(<QmCourseListRow course={course} />);
+    expect(screen.getByRole("link", { name: "Intro" })).toHaveAttribute("title", "Intro");
+  });
+
+  it("shares its column template with the header and keeps a minimum width for the name", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <QmCourseListHeader />
+        <QmCourseListRow course={course} />
+      </MemoryRouter>,
+    );
+    const [header, row] = Array.from(container.children).map((el) => el.className);
+    expect(cols(row).length).toBeGreaterThan(0);
+    expect(cols(row)).toEqual(cols(header));
+    // Fixed columns once squeezed the name to 0 width at ~700px; it must keep a floor.
+    expect(cols(row).join(" ")).toMatch(/minmax\(8rem,/);
   });
 
   it("shows a dash without updatedAt", () => {

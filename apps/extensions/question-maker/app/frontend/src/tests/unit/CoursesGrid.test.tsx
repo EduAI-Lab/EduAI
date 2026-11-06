@@ -118,9 +118,9 @@ describe("CoursesGrid", () => {
     expect(screen.getByRole("link", { name: "Intro to CS" })).toHaveAttribute("href", "/courses/1");
   });
 
-  it("puts the department code on the banner when showDepartment is set", () => {
+  it("puts the department label on the banner when showDepartment is set", () => {
     renderGrid({ courses: [makeCourse({ department: "COSC" as any })], showDepartment: true });
-    expect(screen.getByText("COSC")).toBeInTheDocument();
+    expect(screen.getByText("Computer Science")).toBeInTheDocument();
   });
 
   it("shows a Canvas shortcut only for a linked course", () => {

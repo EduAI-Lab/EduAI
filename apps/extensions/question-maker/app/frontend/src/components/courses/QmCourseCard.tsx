@@ -198,7 +198,7 @@ export function QmCourseGridCard({
       <div className="relative h-[78px] shrink-0" style={{ background: "var(--course-accent)" }}>
         {showDepartment && course.department && (
           <span className="absolute bottom-2 left-4 text-[10px] font-semibold uppercase tracking-wide text-white/80">
-            {course.department}
+            {getDepartmentLabel(course.department)}
           </span>
         )}
         <div className="absolute right-2 top-2 z-10">
@@ -233,8 +233,10 @@ export function QmCourseGridCard({
   );
 }
 
+// Name keeps a minmax floor: with all-fixed neighbours it collapsed to 0 width in a
+// ~700px column. Department and Last updated only show from lg, where there is room.
 const LIST_GRID =
-  "grid grid-cols-[6rem_minmax(0,1fr)_auto] sm:grid-cols-[7rem_minmax(0,1fr)_6rem_7rem_minmax(0,10rem)_6rem_1.5rem] items-center gap-3 px-3";
+  "grid grid-cols-[6rem_minmax(0,1fr)_auto] sm:grid-cols-[6rem_minmax(8rem,1fr)_5rem_6.5rem_1rem] lg:grid-cols-[6rem_minmax(8rem,2fr)_5rem_6.5rem_minmax(0,1fr)_3.5rem_1rem] items-center gap-2 px-3";
 
 export function QmCourseListHeader() {
   return (
@@ -246,8 +248,8 @@ export function QmCourseListHeader() {
       <span>Name</span>
       <span className="hidden sm:block">Term</span>
       <span>Status</span>
-      <span className="hidden sm:block">Department</span>
-      <span className="hidden sm:block">Last updated</span>
+      <span className="hidden lg:block">Department</span>
+      <span className="hidden lg:block">Last updated</span>
       <span className="hidden sm:block" />
     </div>
   );
@@ -264,17 +266,21 @@ export function QmCourseListRow({ course }: { course: Course }) {
       className={`${LIST_GRID} relative h-9 border-b text-sm last:border-b-0 hover:bg-muted/40`}
     >
       <span className="truncate font-bold text-[var(--course-accent)]">{course.code ?? "—"}</span>
-      <Link to={`/courses/${course.id}`} className="truncate after:absolute after:inset-0">
+      <Link
+        to={`/courses/${course.id}`}
+        title={course.name}
+        className="truncate after:absolute after:inset-0"
+      >
         {course.name}
       </Link>
       <span className="hidden truncate sm:block">{termLabel(course.term, course.year)}</span>
       <span>
         <QmCourseStatusPill isPublished={course.isPublished} />
       </span>
-      <span className="hidden truncate sm:block">
+      <span className="hidden truncate lg:block">
         {course.department ? getDepartmentLabel(course.department) : "—"}
       </span>
-      <span className="hidden sm:block">
+      <span className="hidden lg:block">
         {updated && !Number.isNaN(updated.getTime())
           ? updated.toLocaleDateString(undefined, { month: "short", day: "numeric" })
           : "—"}
