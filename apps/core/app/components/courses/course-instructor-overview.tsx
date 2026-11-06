@@ -7,7 +7,7 @@ import {
   IconTags,
   IconUsers,
 } from "@tabler/icons-react";
-import { Avatar, courseThemeVars, resolvePaletteAccent } from "@eduai/ui";
+import { Avatar, StatusBadge, courseThemeVars, resolvePaletteAccent } from "@eduai/ui";
 
 import { CourseInstructorsPanel } from "~/components/courses/course-instructors-panel";
 import { CourseNextSteps, type CourseNextStep } from "~/components/courses/course-next-steps";
@@ -152,7 +152,8 @@ export function CourseInstructorOverview({
         steps={courseSetupSteps({ materials, isPublished: course.isPublished, canPublish })}
       />
 
-      <nav aria-label="Course sections" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Not "Course …": that would also match the shell's course menu landmark. */}
+      <nav aria-label="Quick links" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <QuickLink
           icon={IconFiles}
           label="Materials"
@@ -204,7 +205,21 @@ export function CourseInstructorOverview({
           )}
         </div>
 
-        <aside>
+        <aside className="flex flex-col gap-6">
+          <Section title="Course details">
+            <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-xs">
+              {course.department && (
+                <>
+                  <dt className="text-muted-foreground">Department</dt>
+                  <dd className="text-foreground">{course.department}</dd>
+                </>
+              )}
+              <dt className="text-muted-foreground">Status</dt>
+              <dd>
+                <StatusBadge active={course.isActive} />
+              </dd>
+            </dl>
+          </Section>
           <Section title="Teaching team">
             {instructors.length > 0 ? (
               <CourseInstructorsPanel instructors={instructors} />

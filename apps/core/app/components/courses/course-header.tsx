@@ -18,6 +18,7 @@ export function CourseHeader({
   term,
   year,
   name,
+  department,
   accentColor,
   badges,
   topics = [],
@@ -28,6 +29,7 @@ export function CourseHeader({
   term: string;
   year?: number | string | null;
   name: string;
+  department?: string | null;
   accentColor: CourseAccentColor;
   /** Status pills beside the code (e.g. Published). */
   badges?: ReactNode;
@@ -45,6 +47,7 @@ export function CourseHeader({
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-widest opacity-85">
               <span>
                 {code} · {termLabel(term, year)}
+                {department && ` · ${department}`}
               </span>
               {badges}
             </div>
@@ -75,6 +78,11 @@ export function CourseHeader({
       </HeroShell>
     </header>
   );
+}
+
+/** Active/Inactive, so an archived course doesn't read as a live one. */
+export function ActiveBannerBadge({ active }: { active: boolean }) {
+  return <BannerBadge>{active ? "Active" : "Inactive"}</BannerBadge>;
 }
 
 /** A status pill that reads on the banner. */

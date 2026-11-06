@@ -63,6 +63,7 @@ import {
   DropdownMenuTrigger,
 } from "@eduai/ui";
 import {
+  ActiveBannerBadge,
   BANNER_PRIMARY_ACTION_CLASS,
   BannerBadge,
   CourseHeader,
@@ -1053,8 +1054,14 @@ export function CourseDetailManagerView({
           term={course.term}
           year={course.year}
           name={course.name}
+          department={course.department}
           accentColor={resolvePaletteAccent(course.id)}
-          badges={<BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>}
+          badges={
+            <>
+              <ActiveBannerBadge active={course.isActive} />
+              <BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>
+            </>
+          }
           // Topic chips only on Overview, so the other sections keep a slim banner.
           topics={activeTab === "overview" ? topics.map((t) => t.name) : []}
           actions={
