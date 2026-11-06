@@ -181,6 +181,21 @@ describe("UsersAdminView — your own account", () => {
       "true",
     );
   });
+
+  it("does nothing when the disabled Deactivate or Delete is clicked on your own row", () => {
+    const onToggleUserActive = vi.fn();
+    const onDeleteUser = vi.fn();
+    renderView({ currentUserId: user.id, onToggleUserActive, onDeleteUser });
+
+    openRowMenu();
+    // A disabled item leaves the menu open, so both clicks land in one opening.
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onToggleUserActive).not.toHaveBeenCalled();
+    expect(onDeleteUser).not.toHaveBeenCalled();
+  });
 });
 
 describe("UsersAdminView — create user", () => {
@@ -312,14 +327,42 @@ describe("UsersAdminView — delete user", () => {
 });
 
 describe("UsersAdminView — toggle active", () => {
-  it("calls onToggleUserActive with the user from the row menu", async () => {
+  it("asks before deactivating, then calls onToggleUserActive with the user", async () => {
     const onToggleUserActive = vi.fn().mockResolvedValue(undefined);
     renderView({ onToggleUserActive, currentUserId: "someone-else" });
 
     openRowMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate|activate/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Student One won't be able to sign in");
+    expect(onToggleUserActive).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
     await waitFor(() => expect(onToggleUserActive).toHaveBeenCalledWith(user));
+  });
+
+  it("leaves the user active when the deactivate dialog is cancelled", () => {
+    const onToggleUserActive = vi.fn();
+    renderView({ onToggleUserActive, currentUserId: "someone-else" });
+
+    openRowMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onToggleUserActive).not.toHaveBeenCalled();
+  });
+
+  it("activates an inactive user straight away, without a dialog", async () => {
+    const onToggleUserActive = vi.fn().mockResolvedValue(undefined);
+    const inactive = { ...user, isActive: false } as PlatformUser;
+    renderView({ users: [inactive], onToggleUserActive, currentUserId: "someone-else" });
+
+    openRowMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^activate/i }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(onToggleUserActive).toHaveBeenCalledWith(inactive));
   });
 
   it("logs when onToggleUserActive rejects", async () => {
@@ -328,7 +371,8 @@ describe("UsersAdminView — toggle active", () => {
     renderView({ onToggleUserActive, currentUserId: "someone-else" });
 
     openRowMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate|activate/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
 
     await waitFor(() =>
       expect(consoleError).toHaveBeenCalledWith("Failed to toggle user:", expect.any(Error)),

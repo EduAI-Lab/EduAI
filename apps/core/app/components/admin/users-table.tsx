@@ -139,6 +139,7 @@ function RowActions({
   currentUserId,
   onEdit,
   onRequestDelete,
+  onRequestDeactivate,
   onToggleActive,
   onViewChatHistory,
 }: {
@@ -146,6 +147,7 @@ function RowActions({
   currentUserId: string;
   onEdit: (user: User) => void;
   onRequestDelete: (user: User) => void;
+  onRequestDeactivate: (user: User) => void;
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
 }) {
@@ -183,7 +185,11 @@ function RowActions({
               </a>
             </DropdownMenuItem>
           )}
-        <DropdownMenuItem onClick={() => onToggleActive(user)} disabled={isCurrentUser}>
+        <DropdownMenuItem
+          // Deactivating asks first (see the table's dialog); activating doesn't.
+          onClick={() => (user.isActive ? onRequestDeactivate(user) : onToggleActive(user))}
+          disabled={isCurrentUser}
+        >
           {user.isActive ? (
             <IconUserOff className="mr-2 h-4 w-4" />
           ) : (
@@ -222,6 +228,7 @@ export function UsersTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [userToDeactivate, setUserToDeactivate] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -348,6 +355,7 @@ export function UsersTable({
             currentUserId={currentUserId}
             onEdit={onEdit}
             onRequestDelete={setUserToDelete}
+            onRequestDeactivate={setUserToDeactivate}
             onToggleActive={onToggleActive}
             onViewChatHistory={onViewChatHistory}
           />
@@ -911,6 +919,37 @@ export function UsersTable({
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Single-user deactivate dialog, beside the delete one for the same reason. */}
+      <AlertDialog
+        open={!!userToDeactivate}
+        onOpenChange={(open) => {
+          if (!open) setUserToDeactivate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {userToDeactivate?.name || userToDeactivate?.email} won't be able to sign in until
+              their account is activated again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (userToDeactivate) {
+                  onToggleActive(userToDeactivate);
+                  setUserToDeactivate(null);
+                }
+              }}
+            >
+              Deactivate
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
