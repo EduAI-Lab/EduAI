@@ -100,8 +100,11 @@ describe("scoped formatters (#1941)", () => {
   });
 
   it("formatDateTime includes the time in the scope's zone", () => {
-    expect(formatDateTime(EARLY_UTC, VANCOUVER, { dateStyle: "medium", timeStyle: "short" })).toBe(
-      "Nov 4, 2026, 8:30 PM",
+    // A summer instant: newer tzdata keeps BC on daylight time from November
+    // 2026, so a November time would differ by an hour between ICU versions.
+    const SUMMER_UTC = "2026-07-05T04:30:00Z";
+    expect(formatDateTime(SUMMER_UTC, VANCOUVER, { dateStyle: "medium", timeStyle: "short" })).toBe(
+      "Jul 4, 2026, 9:30 PM",
     );
   });
 
