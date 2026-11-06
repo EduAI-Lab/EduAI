@@ -37,6 +37,7 @@ function input(over: Partial<QmDashboardInput> = {}): QmDashboardInput {
     questionsFailed: false,
     questionTotal: null,
     assessments: [],
+    assessmentsFailed: false,
     unhandledBugReports: null,
     bugReportsCapped: false,
     ...over,
@@ -181,6 +182,11 @@ describe("shared rules", () => {
     const stats = buildGlanceStats(i);
     expect(stats.find((s) => s.label === "Questions")?.value).toBe("—");
     expect(stats.find((s) => s.label === "Reviewed variants")?.value).toBe("—");
+  });
+
+  it("shows a dash for Assessments when the assessments fetch failed", () => {
+    const stats = buildGlanceStats(input({ assessmentsFailed: true }));
+    expect(stats.find((s) => s.label === "Assessments")?.value).toBe("—");
   });
 
   it("caps no-question rows at 3, sorted by code", () => {

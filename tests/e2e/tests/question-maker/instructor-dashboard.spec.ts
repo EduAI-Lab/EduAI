@@ -59,7 +59,10 @@ test.describe("Question Maker instructor dashboard", () => {
       ).toHaveCount(0);
 
       // The card title links to the course workspace.
-      await page.getByRole("link", { name: new RegExp(name) }).click();
+      await card
+        .getByRole("heading", { level: 3 })
+        .getByRole("link", { name: new RegExp(name) })
+        .click();
       await expect(page).toHaveURL(new RegExp(`/courses/${qmCourseId}(\\?|$)`));
 
       // The list toggle survives a reload.

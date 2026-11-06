@@ -49,6 +49,7 @@ export type QmDashboardInput = {
   questionsFailed: boolean;
   questionTotal: number | null;
   assessments: Assessment[];
+  assessmentsFailed: boolean;
   unhandledBugReports: number | null;
   bugReportsCapped: boolean;
 };
@@ -153,7 +154,7 @@ export function buildGlanceStats(input: QmDashboardInput): QmGlanceStat[] {
   const { total, drafts, ai } = variantCounts(input.questions);
   const questions = failed ? DASH : fmt(input.questionTotal ?? input.questions.length);
   const draftsWaiting = failed ? DASH : fmt(drafts);
-  const assessments = fmt(input.assessments.length);
+  const assessments = input.assessmentsFailed ? DASH : fmt(input.assessments.length);
   const courses = fmt(input.courses.length);
 
   if (input.role === "ADMIN") {

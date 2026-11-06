@@ -10,13 +10,20 @@ import { CoursesGrid } from "@/components/courses/CoursesGrid";
 import type { Course } from "@/types/question";
 
 const { linkedIds } = vi.hoisted(() => ({ linkedIds: { current: new Set<number>() } }));
-vi.mock("@/hooks/useCanvasLinks", () => ({ useCanvasLinks: () => linkedIds.current }));
+const { canvasSpy } = vi.hoisted(() => ({ canvasSpy: vi.fn() }));
+vi.mock("@/hooks/useCanvasLinks", () => ({
+  useCanvasLinks: (ids: number[], enabled: boolean) => {
+    canvasSpy(ids, enabled);
+    return linkedIds.current;
+  },
+}));
 vi.mock("@/hooks/useQmPermissions", () => ({
   useQmPermissions: () => ({ canManageCanvas: true }),
 }));
 
 beforeEach(() => {
   linkedIds.current = new Set();
+  canvasSpy.mockClear();
   window.localStorage.clear();
 });
 afterEach(() => cleanup());
@@ -134,5 +141,12 @@ describe("CoursesGrid", () => {
     });
     expect(screen.getByText(/CPSC 101/)).toBeInTheDocument();
     expect(screen.queryByText(/HIDE ME/)).toBeNull();
+  });
+
+  it("looks up Canvas links in card view only", () => {
+    renderGrid();
+    expect(canvasSpy).toHaveBeenLastCalledWith([1], true);
+    fireEvent.click(screen.getByRole("radio", { name: "List view" }));
+    expect(canvasSpy).toHaveBeenLastCalledWith([1], false);
   });
 });

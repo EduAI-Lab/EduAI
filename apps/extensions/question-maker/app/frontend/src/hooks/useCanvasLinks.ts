@@ -10,10 +10,13 @@ export function __resetCanvasLinkCache(): void {
   linkCache.clear();
 }
 
+// shortcut: only the first 48 ids are looked up (cards past that show no Canvas shortcut; the Canvas tab stays on the course page), upgrade to a batched endpoint when lists outgrow it
+export const CANVAS_LINK_LIMIT = 48;
+
 /** Ids of the given courses that are linked to a Canvas course. */
 export function useCanvasLinks(courseIds: number[], enabled: boolean): ReadonlySet<number> {
   const [linked, setLinked] = useState<ReadonlySet<number>>(EMPTY);
-  const key = courseIds.join(",");
+  const key = courseIds.slice(0, CANVAS_LINK_LIMIT).join(",");
 
   useEffect(() => {
     if (!enabled) return;

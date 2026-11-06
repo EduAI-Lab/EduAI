@@ -104,7 +104,11 @@ test.describe("Question Maker role access", () => {
 
       await expect(page.getByText("Access restricted", { exact: true })).toHaveCount(0);
       // Cards render "CODE · Name", so match the link by name, not exact text.
-      await expect(page.getByRole("link", { name: /QM TA Assigned Course/ })).toBeVisible();
+      await expect(
+        page
+          .getByRole("heading", { level: 3 })
+          .getByRole("link", { name: /QM TA Assigned Course/ }),
+      ).toBeVisible();
       await expect(page.getByRole("link", { name: /QM TA Unassigned Course/ })).toHaveCount(0);
 
       await page.goto(`${QM_FRONTEND_URL}/courses/${qmCourseId}`);

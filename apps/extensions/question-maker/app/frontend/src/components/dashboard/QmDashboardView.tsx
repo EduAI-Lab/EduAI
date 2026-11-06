@@ -199,7 +199,7 @@ export function QmDashboardView({
             <>
               {visible.map((section) => (
                 <div key={section.key} className="flex flex-col gap-2">
-                  {visible.length > 1 && (
+                  {section.title && (
                     <h3 className="text-sm font-semibold text-muted-foreground">
                       {section.title} ({section.courses.length})
                     </h3>

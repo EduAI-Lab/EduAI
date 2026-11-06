@@ -49,7 +49,11 @@ export default function DashboardPage() {
   const { displayCourses, isLoading: coursesLoading } = useDisplayCourses();
   const { stats: questionStats } = useQuestionStats();
   const { questions, isLoading: questionsLoading, error: questionsError } = useAllQuestions();
-  const { assessments, isLoading: assessmentsLoading } = useAllAssessments();
+  const {
+    assessments,
+    isLoading: assessmentsLoading,
+    error: assessmentsError,
+  } = useAllAssessments();
   const { canTriageBugReports, canManageCanvas } = useQmPermissions();
   const ai = useAiServicesStatus();
   const [bugs, setBugs] = useState<BugSummary>(null);
@@ -84,6 +88,7 @@ export default function DashboardPage() {
       questionsFailed: questionsError !== null,
       questionTotal: questionStats?.totalQuestions ?? null,
       assessments,
+      assessmentsFailed: assessmentsError !== null,
       unhandledBugReports: bugs?.unhandled ?? null,
       bugReportsCapped: bugs?.capped ?? false,
     }),
@@ -95,6 +100,7 @@ export default function DashboardPage() {
       questionsError,
       questionStats,
       assessments,
+      assessmentsError,
       bugs,
     ],
   );
@@ -132,7 +138,7 @@ export default function DashboardPage() {
       sections={sections}
       courseTotal={courseTotal}
       coursesLoading={coursesLoading}
-      sideLoading={questionsLoading || assessmentsLoading}
+      sideLoading={coursesLoading || questionsLoading || assessmentsLoading}
       attentionRows={attentionRows}
       stats={stats}
       linksFor={(c) => qmCourseLinks(c, linked.has(c.id))}

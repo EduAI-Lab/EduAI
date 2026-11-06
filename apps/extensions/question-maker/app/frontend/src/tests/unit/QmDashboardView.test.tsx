@@ -64,6 +64,18 @@ describe("QmDashboardView", () => {
     ).toBeVisible();
   });
 
+  it("keeps the written-out unit heading with a single section", () => {
+    renderView({
+      sections: [
+        { key: "unit", title: "Courses in Computer Science", courses: [course(2, "B 2")] },
+      ],
+      courseTotal: 1,
+    });
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Courses in Computer Science (1)" }),
+    ).toBeVisible();
+  });
+
   it("switches to the list table", () => {
     renderView();
     fireEvent.click(screen.getByRole("radio", { name: "List view" }));

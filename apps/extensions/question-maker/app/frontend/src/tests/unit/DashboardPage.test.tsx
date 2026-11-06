@@ -54,14 +54,21 @@ const course = (id: number, accessLevel = "instructor") => ({
 });
 
 function setup(
-  o: { user?: any; courses?: any[]; questionsError?: string; canTriage?: boolean } = {},
+  o: {
+    user?: any;
+    courses?: any[];
+    questionsError?: string;
+    canTriage?: boolean;
+    coursesLoading?: boolean;
+    assessmentsError?: string;
+  } = {},
 ) {
   mocks.useAuth.mockReturnValue({
     user: o.user ?? { name: "Jane Doe", role: "INSTRUCTOR", questionMakerRole: "INSTRUCTOR" },
   });
   mocks.useDisplayCourses.mockReturnValue({
     displayCourses: o.courses ?? [course(1)],
-    isLoading: false,
+    isLoading: o.coursesLoading ?? false,
   });
   mocks.useQuestionStats.mockReturnValue({ stats: { totalQuestions: 10 } });
   mocks.useAllQuestions.mockReturnValue({
@@ -69,7 +76,11 @@ function setup(
     isLoading: false,
     error: o.questionsError ?? null,
   });
-  mocks.useAllAssessments.mockReturnValue({ assessments: [], isLoading: false });
+  mocks.useAllAssessments.mockReturnValue({
+    assessments: [],
+    isLoading: false,
+    error: o.assessmentsError ?? null,
+  });
   mocks.useQmPermissions.mockReturnValue({
     canTriageBugReports: o.canTriage ?? false,
     canManageCanvas: false,
@@ -145,5 +156,17 @@ describe("DashboardPage", () => {
     setup({ questionsError: "cap" });
     render(<DashboardPage />);
     expect(lastProps.attentionRows.some((r: any) => /waiting for review/.test(r.text))).toBe(false);
+  });
+
+  it("keeps the side column loading while courses load", () => {
+    setup({ coursesLoading: true });
+    render(<DashboardPage />);
+    expect(lastProps.sideLoading).toBe(true);
+  });
+
+  it("shows a dash for Assessments when the assessments fetch failed", () => {
+    setup({ assessmentsError: "boom" });
+    render(<DashboardPage />);
+    expect(lastProps.stats.find((s: any) => s.label === "Assessments").value).toBe("—");
   });
 });

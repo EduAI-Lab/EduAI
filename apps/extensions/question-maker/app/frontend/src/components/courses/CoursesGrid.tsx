@@ -47,9 +47,11 @@ export function CoursesGrid({
   matchesFilter,
 }: CoursesGridProps) {
   const [view, setView] = useQmCourseView();
+  const { canManageCanvas } = useQmPermissions();
+  // The list view renders no Canvas links, so it makes no lookups.
   const linked = useCanvasLinks(
     courses.map((c) => c.id),
-    useQmPermissions().canManageCanvas,
+    canManageCanvas && view === "card",
   );
   const filterGroups: CourseFilterGroup<Course>[] = [
     {

@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import canvasService from "@/services/canvasService";
-import { __resetCanvasLinkCache, useCanvasLinks } from "@/hooks/useCanvasLinks";
+import { CANVAS_LINK_LIMIT, __resetCanvasLinkCache, useCanvasLinks } from "@/hooks/useCanvasLinks";
 
 vi.mock("@/services/canvasService", () => ({
   default: { getCourseLink: vi.fn() },
@@ -54,5 +54,12 @@ describe("useCanvasLinks", () => {
     const { result } = renderHook(() => useCanvasLinks([1, 2], false));
     expect(getCourseLink).not.toHaveBeenCalled();
     expect(result.current.size).toBe(0);
+  });
+
+  it("looks up at most CANVAS_LINK_LIMIT courses", async () => {
+    getCourseLink.mockResolvedValue({ status: "unlinked" });
+    const ids = Array.from({ length: CANVAS_LINK_LIMIT + 20 }, (_, i) => i + 1);
+    renderHook(() => useCanvasLinks(ids, true));
+    await waitFor(() => expect(getCourseLink).toHaveBeenCalledTimes(CANVAS_LINK_LIMIT));
   });
 });
