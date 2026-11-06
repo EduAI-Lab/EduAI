@@ -23,7 +23,10 @@ test.describe("Question Maker courses page", () => {
 
       await signInThroughPage(page, instructor, `${QM_FRONTEND_URL}/courses`);
 
-      await expect(page.getByRole("heading", { name: "Courses", exact: true })).toBeVisible();
+      // The shell also renders an sr-only <h1> page title; the visible heading is in main.
+      await expect(
+        page.getByRole("main").getByRole("heading", { name: "Courses", exact: true }),
+      ).toBeVisible();
       await expect(page.getByText("Courses you teach, including ones you co-teach.")).toBeVisible();
       await expect(page.getByText(/(Current|Upcoming|Previous) term/).first()).toBeVisible();
 
