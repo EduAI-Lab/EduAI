@@ -19,15 +19,8 @@
  *   app/components/admin/AiOversightPanel.tsx
  */
 import { useState } from "react";
-import {
-  Badge,
-  PageHeading,
-  PageTabs,
-  PageTabsContent,
-  PageTabsList,
-  PageTabsTrigger,
-} from "@eduai/ui";
-import { IconBrain, IconBug, IconSettings } from "@tabler/icons-react";
+import { useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
+import { Badge, PageHeading } from "@eduai/ui";
 import BugReportsTab from "~/components/admin/BugReportsTab";
 import { AdminSettingsPanel } from "~/components/admin/AdminSettingsPanel";
 import { AiOversightPanel } from "~/components/admin/AiOversightPanel";
@@ -42,6 +35,7 @@ import {
   type AdminSettingsLoaderData,
 } from "~/lib/admin-settings";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { ADMIN_SECTIONS, adminSectionFrom } from "~/lib/admin-sections";
 
 const ADMIN_ROLES: Role[] = ["ADMIN"];
 
@@ -72,62 +66,62 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   return { adminSettings, bugReports, aiTraces } satisfies AdminLoaderData;
 }
 
+/**
+ * Moving between sections only changes `?tab=`; every section's data is
+ * already loaded, so that alone never refetches it.
+ */
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (!formMethod && currentUrl.pathname === nextUrl.pathname) return false;
+  return defaultShouldRevalidate;
+}
+
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const { adminSettings, bugReports, aiTraces } = loaderData;
-  const [activeTab, setActiveTab] = useState("bug-reports");
+  // The section comes from `?tab=` (the shell's Administration menu links to
+  // each one), so a reload or a shared link keeps it.
+  const [searchParams] = useSearchParams();
+  const section = adminSectionFrom(searchParams);
+  const sectionLabel = ADMIN_SECTIONS.find(({ key }) => key === section)?.label ?? "";
   // Seeded from the loader, then kept in step with saves/clears inside the
   // panel — the loader is not revalidated, so reading it directly left the
   // badge claiming ".env" after an override had been saved.
   const [keyStatus, setKeyStatus] = useState<EduAiApiKeyStatus | null>(adminSettings.status);
   const sourceTag = keyStatus ? getApiKeySourceTag(keyStatus) : null;
 
-  useShellBreadcrumbs([{ label: "Admin" }]);
+  useShellBreadcrumbs([{ label: "Admin", href: "/admin" }, { label: sectionLabel }]);
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
       <PageHeading
-        heading="Admin console"
-        subheading="Triage bug reports, configure AI tutoring, and review AI oversight."
+        heading={sectionLabel}
+        subheading={section === "bug-reports" ? "Review AI Tutor bug reports." : undefined}
       />
 
-      <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <PageTabsList>
-          <PageTabsTrigger value="bug-reports">
-            <IconBug className="h-4 w-4" /> Bug reports
-          </PageTabsTrigger>
-          <PageTabsTrigger value="ai-settings">
-            <IconSettings className="h-4 w-4" /> AI settings
-          </PageTabsTrigger>
-          <PageTabsTrigger value="ai-oversight">
-            <IconBrain className="h-4 w-4" /> AI oversight
-          </PageTabsTrigger>
-        </PageTabsList>
+      {section === "bug-reports" && <BugReportsTab initialReports={bugReports} />}
 
-        <PageTabsContent value="bug-reports" className="space-y-6">
-          <BugReportsTab initialReports={bugReports} />
-        </PageTabsContent>
-
-        {sourceTag ? (
-          <PageTabsContent value="ai-settings" className="space-y-6">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">AI configuration</h2>
-                <p className="text-sm text-muted-foreground">
-                  Configure the AI loop policy and EduAI API integration.
-                </p>
-              </div>
-              <Badge variant={sourceTagBadgeVariant(keyStatus ?? adminSettings.status)}>
-                {sourceTag.label}
-              </Badge>
+      {section === "ai-settings" && sourceTag ? (
+        <div className="space-y-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">AI configuration</h2>
+              <p className="text-sm text-muted-foreground">
+                Configure the AI loop policy and EduAI API integration.
+              </p>
             </div>
-            <AdminSettingsPanel loaderData={adminSettings} onStatusChange={setKeyStatus} />
-          </PageTabsContent>
-        ) : null}
+            <Badge variant={sourceTagBadgeVariant(keyStatus ?? adminSettings.status)}>
+              {sourceTag.label}
+            </Badge>
+          </div>
+          <AdminSettingsPanel loaderData={adminSettings} onStatusChange={setKeyStatus} />
+        </div>
+      ) : null}
 
-        <PageTabsContent value="ai-oversight" className="space-y-6">
-          <AiOversightPanel initialTraces={aiTraces} />
-        </PageTabsContent>
-      </PageTabs>
+      {section === "ai-oversight" && <AiOversightPanel initialTraces={aiTraces} />}
     </div>
   );
 }

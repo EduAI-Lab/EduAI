@@ -89,7 +89,7 @@ test.describe("AI Tutor ADMIN — sidebar navigation", () => {
     await loginAsAdmin(page, "at-admin-nav-admin");
     await sidebar(page).getByRole("link", { name: "Admin", exact: true }).first().click();
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bug reports", exact: true })).toBeVisible();
   });
 
   test("the user menu exposes Settings and Log out", async ({ page }) => {
@@ -131,7 +131,7 @@ test.describe("AI Tutor ADMIN — command palette", () => {
     await page.keyboard.press("Enter");
 
     await expect(page).toHaveURL(/\/admin$/, { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bug reports", exact: true })).toBeVisible();
   });
 });
 
