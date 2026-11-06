@@ -1,4 +1,4 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
@@ -36,6 +36,19 @@ export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
   const { reports, total, isLoading, updateReportStatus, loadReportDetail } = useBugReports();
   const truncated = total !== null && total > reports.length;
+  // The open report lives in the URL, so it can be linked and survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openReportId = searchParams.get("report");
+  const setOpenReportId = (reportId: string | null) =>
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        if (reportId) next.set("report", reportId);
+        else next.delete("report");
+        return next;
+      },
+      { preventScrollReset: true },
+    );
 
   return (
     <CoreAppShell
@@ -67,6 +80,9 @@ export default function BugReportsPage() {
         />
         <BugReportsAdminView
           hideHeader
+          layout="panel"
+          openReportId={openReportId}
+          onOpenReportChange={setOpenReportId}
           reports={reports}
           isLoading={isLoading}
           onUpdateStatus={updateReportStatus}
