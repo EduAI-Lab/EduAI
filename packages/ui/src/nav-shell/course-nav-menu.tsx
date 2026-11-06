@@ -90,7 +90,10 @@ export function SectionNavMenu({
       <p className="px-4 pb-2 pt-4 text-sm font-semibold">{config.title}</p>
       <ul className="flex flex-col">
         {config.links.map((link) => {
-          const active = !link.external && isNavHrefActive(pathname, link.href);
+          const active =
+            config.activeKey !== undefined
+              ? link.key === config.activeKey
+              : !link.external && isNavHrefActive(pathname, link.href);
           const icon = link.icon && (
             <link.icon size={18} aria-hidden="true" className="shrink-0 text-muted-foreground" />
           );

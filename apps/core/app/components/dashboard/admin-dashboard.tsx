@@ -34,7 +34,7 @@ import type {
   AdminHealthStatus,
 } from "~/types/admin-dashboard";
 
-const AdminUsageChart = lazy(() => import("~/components/dashboard/admin-usage-chart"));
+const WeeklyUsageChart = lazy(() => import("@eduai/ui/weekly-usage-chart"));
 
 export const ADMIN_HERO_COPY = {
   heading: "Core overview",
@@ -248,7 +248,7 @@ function UsageCard({ data }: { data: AdminDashboardData["weeklyChats"] }) {
           placeholder
         ) : (
           <Suspense fallback={placeholder}>
-            <AdminUsageChart data={data} />
+            <WeeklyUsageChart data={data} seriesLabel="AI chats" />
           </Suspense>
         )}
       </div>

@@ -1,10 +1,11 @@
 /**
- * Weekly AI chats line chart for the admin dashboard. Kept in its own module so
- * the dashboard can lazy-load it: recharts is large and nothing else on the
- * page needs it (#1223).
+ * Weekly usage line chart for the admin dashboards (Core's AI chats, AI
+ * Tutor's tutoring sessions). A subpath export (`@eduai/ui/weekly-usage-chart`)
+ * so each app can lazy-load it: recharts is large and nothing else on the page
+ * needs it (#1223).
  *
  * Colours are theme tokens, so the chart follows the light/dark switch like the
- * `@eduai/ui` donuts do.
+ * donuts do.
  */
 import {
   CartesianGrid,
@@ -15,7 +16,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { AdminWeeklyChats } from "~/types/admin-dashboard";
+
+/** One week's count; `weekStart` is the Monday, as YYYY-MM-DD (UTC). */
+export type WeeklyUsagePoint = { weekStart: string; count: number };
 
 const LINE_COLOR = "var(--primary)";
 const GRID_COLOR = "var(--border)";
@@ -37,7 +40,7 @@ function weekLabel(weekStart: string): string {
 }
 
 /** Label only the first week of each month, so the axis reads Jun, Jul, Aug… */
-function monthTicks(data: AdminWeeklyChats[]): string[] {
+function monthTicks(data: WeeklyUsagePoint[]): string[] {
   const ticks: string[] = [];
   let lastMonth = "";
   for (const point of data) {
@@ -50,7 +53,14 @@ function monthTicks(data: AdminWeeklyChats[]): string[] {
   return ticks;
 }
 
-export default function AdminUsageChart({ data }: { data: AdminWeeklyChats[] }) {
+export default function WeeklyUsageChart({
+  data,
+  seriesLabel,
+}: {
+  data: WeeklyUsagePoint[];
+  /** What a point counts, for the tooltip (e.g. "AI chats"). */
+  seriesLabel: string;
+}) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
@@ -71,7 +81,7 @@ export default function AdminUsageChart({ data }: { data: AdminWeeklyChats[] }) 
         />
         <Tooltip
           labelFormatter={(value) => weekLabel(String(value))}
-          formatter={(value) => [value, "AI chats"]}
+          formatter={(value) => [value, seriesLabel]}
           contentStyle={{
             background: "var(--popover)",
             border: "1px solid var(--border)",

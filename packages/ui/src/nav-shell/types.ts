@@ -156,6 +156,11 @@ export type SectionNavConfig = {
   /** Heading above the links, and the menu's accessible name. */
   title: string;
   links: NavShellLink[];
+  /**
+   * The current link's `key`, for a section whose pages share one path and
+   * differ by query (`/admin?tab=…`). Without it the path decides.
+   */
+  activeKey?: string;
 };
 
 /**
