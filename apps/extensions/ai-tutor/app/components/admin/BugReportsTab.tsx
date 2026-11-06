@@ -11,18 +11,38 @@
  * List vs detail (#979): list rows omit the console/network/screenshot bodies
  * and carry only `has*` flags, so `onLoadDetail` below hands the shared view a
  * fetcher for `GET /api/admin/bug-reports/:id`.
+ *
+ * Laid out as on Core's Bug reports page: the compact table whose rows open
+ * the whole report in a side panel, the open report kept in `?report=` so it
+ * can be linked and survives a reload. The page header carries the title.
  */
+import { useSearchParams } from "react-router";
 import { BugReportsAdminView } from "@eduai/ui";
 import type { AdminBugReportRow, BugReportStatus } from "@eduai/ui";
 
 import api from "~/lib/api";
 
 export default function BugReportsTab({ initialReports }: { initialReports: AdminBugReportRow[] }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setOpenReportId = (reportId: string | null) =>
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        if (reportId) next.set("report", reportId);
+        else next.delete("report");
+        return next;
+      },
+      { preventScrollReset: true },
+    );
+
   return (
     <BugReportsAdminView
       className="animate-fade-up delay-150"
       reports={initialReports}
-      description="Review AI Tutor bug reports."
+      hideHeader
+      layout="panel"
+      openReportId={searchParams.get("report")}
+      onOpenReportChange={setOpenReportId}
       onUpdateStatus={(reportId: string, status: BugReportStatus) =>
         api.updateAdminBugReportStatus(reportId, { status })
       }
