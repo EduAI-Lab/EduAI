@@ -53,7 +53,7 @@ import { extensionIcon } from "~/components/layout/core-nav-model";
 
 export type CourseDashboardRole = "INSTRUCTOR" | "TA" | "STUDENT";
 type CourseView = "card" | "list";
-type CourseKind = "teaching" | "assisting" | "taking";
+export type CourseKind = "teaching" | "assisting" | "taking";
 
 const VIEW_STORAGE_KEY = "eduai.dashboard.courseView";
 
@@ -105,7 +105,7 @@ type CourseLink = {
  * materials, the course assistant (published courses only — `/instructor/chat`
  * loads nothing else), and the extensions.
  */
-function courseLinks(
+export function courseLinks(
   course: DashboardCourse,
   kind: CourseKind,
   extensions: { id: string; name: string; url: string }[],
