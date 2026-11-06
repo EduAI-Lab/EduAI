@@ -236,16 +236,17 @@ export function QmCourseGridCard({
 // The list sits in columns of very different widths (dashboard vs full-width Courses
 // page), so layout follows the container, not the viewport (Tailwind v4 @container).
 // Narrow (<440px): stacked two-line row, no header. Medium: Code/Name/Term/Status.
-// Wide (>=640px): adds Department and Last updated. A column that cannot fit its text
-// is dropped, never squeezed; the wide template is sized to fit exactly at 640px.
+// Wide (>=704px): adds Department and Last updated. A column that cannot fit its text
+// is dropped, never squeezed; the wide template is sized to fit exactly at 704px
+// (columns + gaps + padding), with room for "2026-27W1" and the "LAST UPDATED" header.
 // Tailwind only sees literal class strings, so breakpoints are spelled out, not interpolated.
 export const LIST_GRID = [
   "items-center gap-x-2 px-3",
   "grid-cols-[auto_minmax(0,1fr)_1rem]",
-  "@[27.5rem]:grid-cols-[5.5rem_minmax(6.5rem,1fr)_4.5rem_6rem_1rem]",
-  "@[40rem]:grid-cols-[5.5rem_minmax(8rem,2fr)_4.5rem_6rem_minmax(7rem,1fr)_3.5rem_1rem]",
+  "@[27.5rem]:grid-cols-[5.5rem_minmax(6rem,1fr)_5.5rem_6rem_1rem]",
+  "@[44rem]:grid-cols-[5.5rem_minmax(8rem,2fr)_5.5rem_6rem_minmax(7rem,1fr)_6rem_1rem]",
 ].join(" ");
-export const LIST_WIDE_ONLY = "hidden truncate @[40rem]:block";
+export const LIST_WIDE_ONLY = "hidden truncate @[44rem]:block";
 
 export function QmCourseListHeader() {
   return (

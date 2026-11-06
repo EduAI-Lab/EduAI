@@ -139,13 +139,13 @@ describe("QmCourseListRow", () => {
     // One shared template, switching on container width at the same breakpoints.
     expect(cols(row.className)).toEqual(cols(header.className));
     expect(cols(row.className).join(" ")).toContain("@[27.5rem]:grid-cols-");
-    expect(cols(row.className).join(" ")).toContain("@[40rem]:grid-cols-");
+    expect(cols(row.className).join(" ")).toContain("@[44rem]:grid-cols-");
     // Narrow mode is a stacked row with no column header.
     expect(header).toHaveClass("hidden", "@[27.5rem]:grid");
     expect(row).not.toHaveClass("hidden");
     // Department and Last updated exist only in the wide layout.
     for (const text of ["Computer Science", "Department", "Last updated"]) {
-      expect(screen.getByText(text)).toHaveClass("hidden", "@[40rem]:block");
+      expect(screen.getByText(text)).toHaveClass("hidden", "@[44rem]:block");
     }
     // Code, name, term and status always render (the stacked row shows them).
     for (const text of ["COSC 101", "Intro", "2026-27W1", "Published"]) {
