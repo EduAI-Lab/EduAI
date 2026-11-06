@@ -57,6 +57,7 @@ beforeEach(() => {
     maxTokens: 8192,
   });
   vi.mocked(getUserProviderSettings).mockResolvedValue({});
+  vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", "true");
 });
 
 afterEach(() => {
@@ -126,13 +127,17 @@ describe("runCompletion key order (#1899)", () => {
     });
   });
 
-  it("does not fall back when the deployment opts out", async () => {
-    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "platform-key");
-    vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", "false");
+  // Review: off by default so a deployment never bills student chat without opting in.
+  it.each([undefined, "", "false", "1", "yes"])(
+    "does not fall back unless the deployment opts in (flag %j)",
+    async (flag) => {
+      vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "platform-key");
+      vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", flag);
 
-    const result = await completion();
+      const result = await completion();
 
-    expect(result).toMatchObject({ ok: false, code: "INVALID_PROVIDER_CONFIG" });
-    expect(createAIProviderRegistry).not.toHaveBeenCalled();
-  });
+      expect(result).toMatchObject({ ok: false, code: "INVALID_PROVIDER_CONFIG" });
+      expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    },
+  );
 });

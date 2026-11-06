@@ -151,6 +151,7 @@ describe("GET /api/ai-models", () => {
   // #1899: AI Tutor reads this flag to stop asking students for a key Core holds.
   it("flags models whose provider has a deployment key in Core", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-deployment");
+    vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", "true");
     const bedrockRow = {
       ...MODEL_ROW,
       id: "model-2",
@@ -169,9 +170,9 @@ describe("GET /api/ai-models", () => {
     expect(JSON.stringify(payload)).not.toContain("sk-deployment");
   });
 
-  it("flags no model when the deployment opts out of the completion fallback", async () => {
+  it("flags no model unless the deployment opts in to the completion fallback", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-deployment");
-    vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", "false");
+    vi.stubEnv("COMPLETION_PLATFORM_KEY_FALLBACK", undefined);
     vi.mocked(prisma.$transaction).mockResolvedValue([1, [MODEL_ROW]] as never);
 
     const response = await handleAiModelsApiRequest(

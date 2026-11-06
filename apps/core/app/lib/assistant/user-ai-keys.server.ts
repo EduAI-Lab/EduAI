@@ -100,11 +100,11 @@ export function platformKeyFor(provider: SupportedProvider): ResolvedProviderKey
 }
 
 /**
- * #1899: the deployment key `/api/completion` may fall back to. These keys double
- * as RAG embedding keys, so `COMPLETION_PLATFORM_KEY_FALLBACK=false` keeps them for embeddings only.
+ * #1899: the deployment key `/api/completion` may fall back to. Opt-in via
+ * `COMPLETION_PLATFORM_KEY_FALLBACK=true`: these keys double as RAG embedding keys and have no spend cap.
  */
 export function completionPlatformKey(provider: SupportedProvider): string | null {
-  if (process.env.COMPLETION_PLATFORM_KEY_FALLBACK?.trim().toLowerCase() === "false") return null;
+  if (process.env.COMPLETION_PLATFORM_KEY_FALLBACK?.trim().toLowerCase() !== "true") return null;
   return platformKeyFor(provider)?.apiKey ?? null;
 }
 
