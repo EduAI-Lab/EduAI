@@ -13,6 +13,7 @@ import { Textarea } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { IconMessage } from "@tabler/icons-react";
 import { SYSTEM_PROMPT_MAX_CHARS_DEFAULT } from "~/lib/ai/prompt-safety";
+import { formatNumber, useFormatScope } from "~/lib/hydration-format";
 
 export interface SystemPromptSettingsProps {
   systemPrompt?: string | null;
@@ -22,6 +23,7 @@ export interface SystemPromptSettingsProps {
 export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSettingsProps) {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState(systemPrompt || "");
+  const formatScope = useFormatScope();
 
   useEffect(() => {
     setPrompt(systemPrompt || "");
@@ -72,8 +74,8 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
             />
             <p className="text-xs text-muted-foreground">
               The system prompt guides the AI&apos;s behavior and responses. Leave empty to use the
-              default prompt. Max {SYSTEM_PROMPT_MAX_CHARS_DEFAULT.toLocaleString()} characters (
-              {prompt.length.toLocaleString()} used).
+              default prompt. Max {formatNumber(SYSTEM_PROMPT_MAX_CHARS_DEFAULT, formatScope)}{" "}
+              characters ({formatNumber(prompt.length, formatScope)} used).
             </p>
           </div>
         </div>

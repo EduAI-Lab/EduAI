@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "@eduai/ui";
 import { Link } from "react-router";
 import { cn } from "~/lib/utils";
+import { formatDate, useFormatScope } from "~/lib/hydration-format";
 import {} from "@tabler/icons-react";
 
 import { Button } from "@eduai/ui";
@@ -28,6 +29,7 @@ export interface CanvasFetchDialogProps {
 }
 
 export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps) {
+  const formatScope = useFormatScope();
   const [courses, setCourses] = useState<CanvasCoursePickerItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -174,7 +176,7 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
                     <p className="text-sm text-muted-foreground">{course.courseCode}</p>
                     {course.lastSyncedAt && (
                       <p className="text-xs text-muted-foreground">
-                        Last fetched {new Date(course.lastSyncedAt).toLocaleDateString()}
+                        Last fetched {formatDate(course.lastSyncedAt, formatScope)}
                       </p>
                     )}
                   </div>

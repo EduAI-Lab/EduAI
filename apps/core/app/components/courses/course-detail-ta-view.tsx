@@ -44,6 +44,7 @@ import {
   CourseResponseStyleSummary,
 } from "~/components/courses/course-response-style-settings";
 import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
+import { formatDate, useFormatScope } from "~/lib/hydration-format";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
@@ -118,6 +119,7 @@ export function CourseDetailTaView({
   onCreateTopic,
   onDeleteTopic,
 }: Props) {
+  const formatScope = useFormatScope();
   // #1841: every instructor of record, falling back to the single legacy field.
   const displayInstructors = resolveDisplayInstructors(course);
 
@@ -507,7 +509,7 @@ export function CourseDetailTaView({
               mimeType: m.mimeType,
               meta: (
                 <>
-                  {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  {formatSize(m.fileSize)} · {formatDate(m.createdAt, formatScope)}
                 </>
               ),
             }))}

@@ -14,6 +14,7 @@ import type {
   DuplicateCourseSummary,
   DuplicateResolution,
 } from "~/hooks/api/use-courses";
+import { formatDate, useFormatScope } from "~/lib/hydration-format";
 
 interface DuplicateCourseDialogProps {
   warning: CourseDuplicateError | null;
@@ -32,6 +33,7 @@ export function DuplicateCourseDialog({
   onCancel,
 }: DuplicateCourseDialogProps) {
   const [pending, setPending] = useState(false);
+  const formatScope = useFormatScope();
 
   const resolve = async (resolution: DuplicateResolution) => {
     setPending(true);
@@ -76,7 +78,7 @@ export function DuplicateCourseDialog({
                     <p className="text-sm text-muted-foreground">
                       {describe(course)}
                       {course.deletedAt &&
-                        ` · deleted ${new Date(course.deletedAt).toLocaleDateString()}`}
+                        ` · deleted ${formatDate(course.deletedAt, formatScope)}`}
                     </p>
                   </div>
                   {course.canRestore ? (

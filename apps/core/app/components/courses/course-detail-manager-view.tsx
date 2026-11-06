@@ -117,6 +117,7 @@ import {
 } from "~/lib/courses/course-nav-items";
 import { PolicyTooltip, usePolicyGate } from "~/components/policy/policy-gate";
 import { ASSISTANT_DISPLAY_NAME } from "~/lib/assistant/assistant-settings";
+import { formatDate, formatDateTime, useFormatScope } from "~/lib/hydration-format";
 
 /**
  * One active INSTRUCTOR enrollment, as the course loader projects it (#1840).
@@ -306,6 +307,7 @@ function formatSize(bytes: number): string {
  * material is plainly visible now.
  */
 function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
+  const formatScope = useFormatScope();
   if (material.visibleToStudents === false) {
     return (
       <span
@@ -323,13 +325,10 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
       <span
         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
         style={{ background: "oklch(0.97 0.03 250)", color: "oklch(0.5 0.15 250)" }}
-        title={`Visible to students on ${new Date(material.availableAt).toLocaleString()}`}
+        title={`Visible to students on ${formatDateTime(material.availableAt, formatScope)}`}
       >
         <IconClock className="h-3 w-3" />
-        {new Date(material.availableAt).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-        })}
+        {formatDate(material.availableAt, formatScope, { month: "short", day: "numeric" })}
       </span>
     );
   }
@@ -411,6 +410,7 @@ export function CourseDetailManagerView({
   showCanvasMaterialSync = false,
   onMaterialsRefresh,
 }: Props) {
+  const formatScope = useFormatScope();
   const [newTopic, setNewTopic] = useState("");
   const [canvasSyncOpen, setCanvasSyncOpen] = useState(false);
   // #1624: automatic topic provisioning status and the review actions for the
@@ -1418,7 +1418,7 @@ export function CourseDetailManagerView({
               failureCode: m.failureCode ?? null,
               meta: (
                 <>
-                  {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  {formatSize(m.fileSize)} · {formatDate(m.createdAt, formatScope)}
                   {m.status !== "FAILED" && renderMaterialTopics(m)}
                 </>
               ),
@@ -1954,7 +1954,7 @@ export function CourseDetailManagerView({
                                     {selfEnrollmentStatusLabel(link.status, course.isPublished)}
                                   </span>
                                   <span className="block text-xs text-muted-foreground">
-                                    Expires {new Date(link.expiresAt).toLocaleDateString()} ·{" "}
+                                    Expires {formatDate(link.expiresAt, formatScope)} ·{" "}
                                     {link.redemptionCount} use
                                     {link.redemptionCount === 1 ? "" : "s"}
                                     {link.maxRedemptions === null
