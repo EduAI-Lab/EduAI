@@ -76,7 +76,7 @@ export function DashboardStudentView({
           />
         )}
       </PanelCard>
-      <PanelCard title="Lessons completed">
+      <PanelCard title="Activities completed">
         <div className="flex flex-col gap-4 pt-1">
           <MeterBar
             label="Across all courses"
@@ -87,8 +87,8 @@ export function DashboardStudentView({
           />
           <p className="text-xs text-muted-foreground">
             {sumTotal === 0
-              ? "No lessons available yet."
-              : `${sumCompleted} of ${sumTotal} lessons complete.`}
+              ? "No activities available yet."
+              : `${sumCompleted} of ${sumTotal} activities complete.`}
           </p>
         </div>
       </PanelCard>

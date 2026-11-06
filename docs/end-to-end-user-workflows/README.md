@@ -59,6 +59,6 @@ For each workflow you test, fill in the row with the epic's five questions in mi
 
 **Security findings:** flag these clearly (e.g. prefix the row's finding with `SECURITY:`) so they're easy to grep for when triaging against the epic's "no unresolved role/permission leaks" requirement.
 
-**E2E tests:** every row needs a committed Playwright spec, not just a Claude simulation. Put it under `tests/e2e/tests/<core|ai-tutor|question-maker>/`, link it in the row's **E2E test** column, and add it to `TESTS.md` in the PR that introduces it — same as any other test, per the normal [PR conventions](../../eduai-summer-2026/CONVENTIONS.md).
+**E2E tests:** every row needs a committed Playwright spec, not just a Claude simulation. Put it under `tests/e2e/tests/<core|ai-tutor|question-maker>/`, link it in the row's **E2E test** column, and add it to `TESTS.md` in the PR that introduces it — same as any other test, per the normal [PR conventions](../CONVENTIONS.md).
 
 Full instructions are repeated briefly at the top of each markdown, since people will usually land there directly rather than here.
