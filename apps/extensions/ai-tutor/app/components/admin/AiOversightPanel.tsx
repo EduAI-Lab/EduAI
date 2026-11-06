@@ -63,12 +63,12 @@ function relativeTime(iso: string): string {
 }
 
 /** Sentence-case a raw mode/status value like "SOCRATIC" or "in_progress" for display. */
-function formatLabel(value: string): string {
+export function formatLabel(value: string): string {
   const words = value.toLowerCase().replace(/_/g, " ").trim();
   return words.length ? words[0].toUpperCase() + words.slice(1) : words;
 }
 
-function outcomeBadgeVariant(outcome?: string | null): "destructive" | "outline" {
+export function outcomeBadgeVariant(outcome?: string | null): "destructive" | "outline" {
   if (outcome && ERROR_STATUS_PATTERN.test(outcome)) return "destructive";
   return "outline";
 }
