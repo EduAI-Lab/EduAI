@@ -52,7 +52,7 @@ describe("getNavForUser — ADMIN role", () => {
     const group = result.find((item): item is NavGroupItem => "children" in item);
     expect(group).toBeDefined();
     expect(group!.key).toBe("admin-group");
-    expect(group!.title).toBe("Administration");
+    expect(group!.title).toBe("Admin");
     expect(group!.children).toHaveLength(8);
   });
 

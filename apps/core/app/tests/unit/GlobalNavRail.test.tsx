@@ -103,26 +103,26 @@ function railLabels(rail: HTMLElement): string[] {
 }
 
 describe("GlobalNavRail — entries", () => {
-  it("lists the student's entries in Canvas order, with no Administration", () => {
+  it("lists the student's entries in Canvas order, with no Admin entry", () => {
     const { rail } = renderRail("STUDENT");
     expect(railLabels(rail)).toEqual(["Account", "Dashboard", "Courses", "Help"]);
   });
 
-  it("adds Administration and Admin Chatbot for ADMIN, in order", () => {
+  it("adds Admin and Admin Chatbot for ADMIN, in order", () => {
     const { rail } = renderRail("ADMIN");
     expect(railLabels(rail)).toEqual([
       "Account",
       "Dashboard",
       "Courses",
-      "Administration",
+      "Admin",
       "Admin Chatbot",
       "Help",
     ]);
   });
 
-  it.each(["INSTRUCTOR", "TA", "UNIT_ADMIN"])("shows no Administration entry for %s", (role) => {
+  it.each(["INSTRUCTOR", "TA", "UNIT_ADMIN"])("shows no Admin entry for %s", (role) => {
     renderRail(role);
-    expect(screen.queryByRole("link", { name: "Administration" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
   });
 
   it("marks the current page's link with aria-current", () => {
@@ -153,20 +153,17 @@ describe("GlobalNavRail — entries", () => {
 });
 
 describe("GlobalNavRail — trays", () => {
-  it("takes Administration straight to User Management instead of opening a tray", () => {
+  it("takes Admin straight to User Management instead of opening a tray", () => {
     renderRail("ADMIN", { path: "/dashboard" });
-    const admin = screen.getByRole("link", { name: "Administration" });
+    const admin = screen.getByRole("link", { name: "Admin" });
     expect(admin).toHaveAttribute("href", "/admin/users");
     expect(admin).not.toHaveAttribute("aria-current");
-    expect(screen.queryByRole("button", { name: "Administration" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Admin" })).not.toBeInTheDocument();
   });
 
-  it("keeps Administration active on every admin page", () => {
+  it("keeps Admin active on every admin page", () => {
     renderRail("ADMIN", { path: "/admin/logs" });
-    expect(screen.getByRole("link", { name: "Administration" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(screen.getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   });
 
   it("opens a tray focused, and closes it on Escape with focus back on its trigger", async () => {

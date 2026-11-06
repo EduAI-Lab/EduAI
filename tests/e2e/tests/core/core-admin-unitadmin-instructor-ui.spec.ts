@@ -85,10 +85,10 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      // The rail's Administration entry (rbac/nav.ts ADMIN_NAV) goes straight
+      // The rail's Admin entry (rbac/nav.ts ADMIN_NAV) goes straight
       // to User Management; every admin page then shows the Administration
       // menu beside it, which stays open across admin pages.
-      const adminRailLink = page.getByRole("link", { name: "Administration", exact: true });
+      const adminRailLink = page.getByRole("link", { name: "Admin", exact: true });
       await expect(adminRailLink).toBeVisible();
       await adminRailLink.click();
       await page.waitForURL(/\/admin\/users/);

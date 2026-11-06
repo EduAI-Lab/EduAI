@@ -48,7 +48,7 @@ const TOPICS: HelpTopic[] = [
     icon: IconRocket,
     points: [
       "Your dashboard is home base — it greets you, surfaces quick stats, and lists your courses and recent conversations.",
-      "The navigation bar on the left is your main navigation. Account, Courses, Administration and Help open a panel beside it; collapse the bar to icons with the arrows at its bottom when you want more room.",
+      "The navigation bar on the left is your main navigation. Account, Courses and Help open a panel beside it, and Admin goes to the admin pages; collapse the bar to icons with the arrows at its bottom when you want more room.",
       "Switch between light and dark themes with the sun/moon button in the top-right of every page.",
       "Click the (?) button in the top-right corner of any page for help with that page, or to start the guided tour.",
       "Your dashboard has a Getting started checklist, and the main pages have a ▶ Page tour button in the header for a short walkthrough of that page.",

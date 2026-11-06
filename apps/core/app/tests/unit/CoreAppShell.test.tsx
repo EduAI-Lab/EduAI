@@ -381,18 +381,19 @@ describe("CoreAppShell — mobile drawer", () => {
     expect(drawer).toHaveAttribute("aria-modal", "true");
     expect(within(drawer).getByText("Test User")).toBeInTheDocument();
     expect(within(drawer).getByText("test@eduai.test")).toBeInTheDocument();
-    expect(within(drawer).getByText("Admin")).toBeInTheDocument();
+    // The role badge (its label is a text-xs span), not the "Admin" rail entry's accordion.
+    expect(within(drawer).getByText("Admin", { selector: "span.text-xs" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: /mode$/ })).toBeInTheDocument();
     expect(within(drawer).getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Log out" })).toBeInTheDocument();
   });
 
-  it("expands Administration and Help inline as accordions", async () => {
+  it("expands Admin and Help inline as accordions", async () => {
     renderShell({ path: "/dashboard" });
     setViewportWidth(375);
     const { drawer } = await openDrawer();
 
-    const admin = within(drawer).getByRole("button", { name: "Administration" });
+    const admin = within(drawer).getByRole("button", { name: "Admin" });
     expect(admin).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(admin);
     expect(admin).toHaveAttribute("aria-expanded", "true");
