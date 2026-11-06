@@ -23,7 +23,8 @@ import {
   type OnboardingTask,
 } from "@eduai/ui";
 
-import { CourseListPanel, relativeTime } from "~/components/dashboard/dashboard-view";
+import { CourseListPanel } from "~/components/dashboard/dashboard-view";
+import { relativeTime } from "~/lib/relative-time";
 import { auditActionLabel } from "~/lib/audit-action-labels";
 import type {
   AdminAttentionItem,
