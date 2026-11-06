@@ -15,15 +15,13 @@ type RoleConfig = {
 const ROLE_CONFIG = {
   admin: {
     heading: "Courses",
-    subheading:
-      "Every course you have access to appears here. Open a course to manage its question bank.",
+    subheading: "Browse every course and manage its questions.",
     emptyHint: "No courses linked yet. Add a course to start authoring.",
     showDepartment: true,
   },
   instructor: {
     heading: "Courses",
-    subheading:
-      "Select a course to manage its question bank and assessments. Shared courses are ones you co-teach via enrollment.",
+    subheading: "Courses you teach, including ones you co-teach.",
     emptyHint: "No courses yet. Add a course from your profile to get started.",
     // Spelled out rather than left absent: both arms answer the same questions,
     // so a reader does not have to know which keys each one happens to carry.

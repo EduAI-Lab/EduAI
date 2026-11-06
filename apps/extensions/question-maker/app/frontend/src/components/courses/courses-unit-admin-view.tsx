@@ -8,6 +8,7 @@ import {
   PageHeading,
 } from "@eduai/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { getDepartmentLabel } from "@/lib/units";
 import { CoursesGrid, type CoursesGridProps } from "./CoursesGrid";
 
 type CoursesUnitAdminViewProps = Omit<
@@ -21,28 +22,25 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
   const { user } = useAuth();
   const units = user?.authorizedUnits ?? [];
   const [unitFilter, setUnitFilter] = useState<string>("all");
-  const unitsLabel = units.length ? units.join(", ") : null;
+  const unitsLabel = units.length ? units.map(getDepartmentLabel).join(", ") : null;
 
   // Unit filtering flows through the shared course-list toolbar (next to the
   // search box) so it reads identically to the instructor status filter.
   const unitSelect =
     units.length > 1 ? (
-      <>
-        <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by unit</span>
-        <Select value={unitFilter} onValueChange={setUnitFilter}>
-          <SelectTrigger className="w-full sm:w-[160px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All units</SelectItem>
-            {units.map((unit) => (
-              <SelectItem key={unit} value={unit}>
-                {unit}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </>
+      <Select value={unitFilter} onValueChange={setUnitFilter}>
+        <SelectTrigger className="w-full sm:w-auto sm:min-w-40" aria-label="Unit">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All units</SelectItem>
+          {units.map((unit) => (
+            <SelectItem key={unit} value={unit}>
+              {getDepartmentLabel(unit)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     ) : undefined;
 
   return (
@@ -50,7 +48,7 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
       {units.length === 0 && (
         <div
           role="alert"
-          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
+          className="rounded-lg border border-[var(--color-warning-500)] bg-[var(--color-warning-100)] px-4 py-3 text-sm text-[var(--color-warning-700)]"
         >
           No authorized units are assigned to your account. You can still open courses where you are
           enrolled as an instructor. Contact a platform admin to update your unit access.
@@ -59,9 +57,7 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
       <PageHeading
         heading="Courses"
         subheading={
-          unitsLabel
-            ? `Courses in ${unitsLabel} that you can author in Question Maker. You can only edit courses in your own units.`
-            : "Courses you can author in Question Maker. You can only edit courses in your own units."
+          unitsLabel ? `Courses in ${unitsLabel} that you can author.` : "Courses you can author."
         }
       />
       <CoursesGrid
@@ -77,7 +73,7 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
         emptyHint={
           unitFilter === "all"
             ? "No courses in your unit yet. Link a course from your profile to begin."
-            : `No courses in ${unitFilter}. Try another unit or link a new course.`
+            : `No courses in ${getDepartmentLabel(unitFilter)}. Try another unit or link a new course.`
         }
       />
     </div>

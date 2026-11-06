@@ -1,18 +1,16 @@
 /**
  * Unit tests for CourseSelectionPage (#1544): role-based view selection and
- * the course-select handler. Child views and hooks are mocked so we exercise
+ * that cards are plain links. Child views and hooks are mocked so we exercise
  * only this page's own routing/dispatch logic.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
-const { navigateMock, useAuthMock, useDisplayCoursesMock } = vi.hoisted(() => ({
-  navigateMock: vi.fn(),
+const { useAuthMock, useDisplayCoursesMock } = vi.hoisted(() => ({
   useAuthMock: vi.fn(),
   useDisplayCoursesMock: vi.fn(),
 }));
 
-vi.mock("react-router", () => ({ useNavigate: () => navigateMock }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
 vi.mock("@/hooks/useDisplayCourses", () => ({ useDisplayCourses: () => useDisplayCoursesMock() }));
 
@@ -25,9 +23,9 @@ vi.mock("@/components/courses/courses-role-view", () => ({
       <div>
         role-view:{props.role}
         {props.courses.map((c: any) => (
-          <button key={c.id} onClick={() => props.onSelectCourse(c)}>
-            select-{c.id}
-          </button>
+          <a key={c.id} href={`/courses/${c.id}`}>
+            course-{c.id}
+          </a>
         ))}
       </div>
     );
@@ -70,10 +68,9 @@ describe("CourseSelectionPage", () => {
     expect(screen.getByText("role-view:instructor")).toBeInTheDocument();
   });
 
-  it("navigates to the course overview tab when a course is selected", () => {
+  it("renders cards as links to /courses/:id", () => {
     setup("ADMIN", [{ id: 7, name: "Data" }]);
     render(<CourseSelectionPage />);
-    fireEvent.click(screen.getByText("select-7"));
-    expect(navigateMock).toHaveBeenCalledWith("/courses/7?tab=overview");
+    expect(screen.getByText("course-7")).toHaveAttribute("href", "/courses/7");
   });
 });

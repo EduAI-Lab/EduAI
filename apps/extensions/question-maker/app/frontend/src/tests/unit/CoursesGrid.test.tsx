@@ -1,13 +1,24 @@
 /**
- * Unit tests for `CoursesGrid` (#1546): QM's thin wrapper over the shared
- * `@eduai/ui` CourseListView — click-to-select cards, empty state, and the
- * loading skeleton branch.
+ * Unit tests for `CoursesGrid` (#1546, #2119): QM's wrapper over the shared
+ * `@eduai/ui` CourseListView with Canvas-style cards, a table view, a Status
+ * filter and the card/list toggle.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { CoursesGrid } from "@/components/courses/CoursesGrid";
 import type { Course } from "@/types/question";
 
+const { linkedIds } = vi.hoisted(() => ({ linkedIds: { current: new Set<number>() } }));
+vi.mock("@/hooks/useCanvasLinks", () => ({ useCanvasLinks: () => linkedIds.current }));
+vi.mock("@/hooks/useQmPermissions", () => ({
+  useQmPermissions: () => ({ canManageCanvas: true }),
+}));
+
+beforeEach(() => {
+  linkedIds.current = new Set();
+  window.localStorage.clear();
+});
 afterEach(() => cleanup());
 
 function makeCourse(overrides: Partial<Course> = {}): Course {
@@ -21,158 +32,107 @@ function makeCourse(overrides: Partial<Course> = {}): Course {
   } as Course;
 }
 
+function renderGrid(props: Partial<Parameters<typeof CoursesGrid>[0]> = {}) {
+  return render(
+    <MemoryRouter>
+      <CoursesGrid courses={[makeCourse()]} isLoading={false} {...props} />
+    </MemoryRouter>,
+  );
+}
+
 describe("CoursesGrid", () => {
-  it("renders a course card for each course", () => {
-    render(<CoursesGrid courses={[makeCourse()]} isLoading={false} onSelectCourse={vi.fn()} />);
-    expect(screen.getByText("CPSC 101")).toBeInTheDocument();
-  });
-
-  it("calls onSelectCourse when a course card is clicked", () => {
-    const onSelectCourse = vi.fn();
-    const course = makeCourse();
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={onSelectCourse} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /CPSC 101/ }));
-    expect(onSelectCourse).toHaveBeenCalledWith(course);
-  });
-
-  it("supports keyboard activation on a course card", () => {
-    const onSelectCourse = vi.fn();
-    const course = makeCourse();
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={onSelectCourse} />);
-
-    fireEvent.keyDown(screen.getByRole("button", { name: /CPSC 101/ }), { key: "Enter" });
-    expect(onSelectCourse).toHaveBeenCalledWith(course);
+  it("renders each course as a link to /courses/:id with no tab", () => {
+    renderGrid();
+    const link = screen.getByRole("link", { name: /CPSC 101/ });
+    expect(link).toHaveAttribute("href", "/courses/1");
   });
 
   it("shows the empty state (with a default hint) when there are no courses", () => {
-    render(<CoursesGrid courses={[]} isLoading={false} onSelectCourse={vi.fn()} />);
+    renderGrid({ courses: [] });
     expect(screen.getByText("No courses yet")).toBeInTheDocument();
   });
 
   it("shows a custom empty hint when provided", () => {
-    render(
-      <CoursesGrid
-        courses={[]}
-        isLoading={false}
-        onSelectCourse={vi.fn()}
-        emptyHint="Ask an admin to enroll you."
-      />,
-    );
+    renderGrid({ courses: [], emptyHint: "Ask an admin to enroll you." });
     expect(screen.getByText("Ask an admin to enroll you.")).toBeInTheDocument();
   });
 
   it("shows a loading skeleton instead of course cards while isLoading", () => {
-    render(<CoursesGrid courses={[makeCourse()]} isLoading onSelectCourse={vi.fn()} />);
-    expect(screen.queryByText("CPSC 101")).toBeNull();
+    renderGrid({ isLoading: true });
+    expect(screen.queryByText(/CPSC 101/)).toBeNull();
   });
 
   it("points the guided tour at the first course on screen, with its route (#1754)", () => {
-    // The data lists an older term first, but the list shows newer terms
-    // first, so the tour must pick the first card in display order.
     const courses = [
       makeCourse({ id: 42, code: "CPSC 121", term: "W2", year: 2025 }),
       makeCourse({ id: 43, code: "CPSC 101", term: "W1", year: 2026 }),
     ];
-    render(<CoursesGrid courses={courses} isLoading={false} onSelectCourse={vi.fn()} />);
+    renderGrid({ courses });
     const first = document.querySelector('[data-tour="course-select"]');
     expect(first).toHaveAttribute("data-course-id", "43");
     expect(first).toHaveAttribute("data-tour-route", "/courses/43");
   });
 
   it("tags the empty state so the tour can explain linking a course", () => {
-    render(<CoursesGrid courses={[]} isLoading={false} onSelectCourse={vi.fn()} />);
+    renderGrid({ courses: [] });
     expect(document.querySelector('[data-tour="qm-courses-empty"]')).toBeInTheDocument();
   });
-});
 
-describe("CoursesGrid additional coverage", () => {
-  it("supports space-key activation on a course card", () => {
-    const onSelectCourse = vi.fn();
-    const course = makeCourse();
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={onSelectCourse} />);
-    fireEvent.keyDown(screen.getByRole("button", { name: /CPSC 101/ }), { key: " " });
-    expect(onSelectCourse).toHaveBeenCalledWith(course);
-  });
-
-  it("ignores other keys on a course card", () => {
-    const onSelectCourse = vi.fn();
-    render(
-      <CoursesGrid courses={[makeCourse()]} isLoading={false} onSelectCourse={onSelectCourse} />,
-    );
-    fireEvent.keyDown(screen.getByRole("button", { name: /CPSC 101/ }), { key: "a" });
-    expect(onSelectCourse).not.toHaveBeenCalled();
-  });
-
-  it('shows the "EduAI Core" badge for a linked course and "Local" for an unlinked one', () => {
-    const linked = makeCourse({ id: 1, coreCourseId: "core-1" });
-    const local = makeCourse({ id: 2, code: "LOCAL 1", coreCourseId: null });
-    render(<CoursesGrid courses={[linked, local]} isLoading={false} onSelectCourse={vi.fn()} />);
-    expect(screen.getByText("EduAI Core")).toBeInTheDocument();
-    expect(screen.getByText("Local")).toBeInTheDocument();
-  });
-
-  it('shows a "Synced today" badge for a very recent updatedAt', () => {
-    const course = makeCourse({ updatedAt: new Date().toISOString() });
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={vi.fn()} />);
-    expect(screen.getByText("Synced today")).toBeInTheDocument();
-  });
-
-  it('shows a "Synced yesterday" badge for a ~1 day old updatedAt', () => {
-    const course = makeCourse({
-      updatedAt: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString(),
+  it("drops the old chips and description", () => {
+    renderGrid({
+      courses: [makeCourse({ coreCourseId: "c1", updatedAt: new Date().toISOString() })],
     });
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={vi.fn()} />);
-    expect(screen.getByText("Synced yesterday")).toBeInTheDocument();
-  });
-
-  it('shows a "Synced Nd ago" badge for a few days old updatedAt', () => {
-    const course = makeCourse({
-      updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={vi.fn()} />);
-    expect(screen.getByText("Synced 3d ago")).toBeInTheDocument();
-  });
-
-  it("omits a synced badge for a course with no/invalid updatedAt", () => {
-    const course = makeCourse({ updatedAt: undefined });
-    render(<CoursesGrid courses={[course]} isLoading={false} onSelectCourse={vi.fn()} />);
+    expect(screen.queryByText("EduAI Core")).toBeNull();
     expect(screen.queryByText(/Synced/)).toBeNull();
+    expect(screen.queryByText("No description yet")).toBeNull();
   });
 
-  it("renders a department badge when showDepartment is set", () => {
-    const course = makeCourse({ department: "cs" as any });
-    render(
-      <CoursesGrid courses={[course]} isLoading={false} onSelectCourse={vi.fn()} showDepartment />,
-    );
-    // The department label rendering is delegated to the shared CourseCard;
-    // this asserts the wrapper still renders the course without throwing.
-    expect(screen.getByText("CPSC 101")).toBeInTheDocument();
+  it("puts the filter card class on the toolbar", () => {
+    renderGrid();
+    expect(document.querySelector(".shadow-xs.p-2\\.5")).toBeInTheDocument();
+  });
+
+  it("shows the status pill when statuses are mixed", () => {
+    renderGrid({
+      courses: [
+        makeCourse({ id: 1, isPublished: true }),
+        makeCourse({ id: 2, code: "CPSC 102", isPublished: false }),
+      ],
+    });
+    expect(screen.getAllByText("Published").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unpublished").length).toBeGreaterThan(0);
+  });
+
+  it("switches to the table, with one header per term group and the row date", () => {
+    renderGrid({ courses: [makeCourse({ updatedAt: "2025-03-04T12:00:00Z" })] });
+    fireEvent.click(screen.getByRole("radio", { name: /list/i }));
+    expect(screen.getAllByText("Last updated")).toHaveLength(1);
+    expect(screen.getByText("Mar 4")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Intro to CS" })).toHaveAttribute("href", "/courses/1");
+  });
+
+  it("puts the department code on the banner when showDepartment is set", () => {
+    renderGrid({ courses: [makeCourse({ department: "COSC" as any })], showDepartment: true });
+    expect(screen.getByText("COSC")).toBeInTheDocument();
+  });
+
+  it("shows a Canvas shortcut only for a linked course", () => {
+    linkedIds.current = new Set([1]);
+    renderGrid({ courses: [makeCourse({ id: 1 }), makeCourse({ id: 2, code: "CPSC 102" })] });
+    expect(screen.getAllByRole("link", { name: "Canvas" })).toHaveLength(1);
   });
 
   it("renders custom filters when provided", () => {
-    render(
-      <CoursesGrid
-        courses={[makeCourse()]}
-        isLoading={false}
-        onSelectCourse={vi.fn()}
-        filters={<div>My Filter</div>}
-      />,
-    );
+    renderGrid({ filters: <div>My Filter</div> });
     expect(screen.getByText("My Filter")).toBeInTheDocument();
   });
 
   it("applies a matchesFilter predicate to hide non-matching courses", () => {
-    const courses = [makeCourse({ id: 1 }), makeCourse({ id: 2, code: "HIDE ME" })];
-    render(
-      <CoursesGrid
-        courses={courses}
-        isLoading={false}
-        onSelectCourse={vi.fn()}
-        matchesFilter={(c) => c.id === 1}
-      />,
-    );
-    expect(screen.getByText("CPSC 101")).toBeInTheDocument();
-    expect(screen.queryByText("HIDE ME")).toBeNull();
+    renderGrid({
+      courses: [makeCourse({ id: 1 }), makeCourse({ id: 2, code: "HIDE ME" })],
+      matchesFilter: (c) => c.id === 1,
+    });
+    expect(screen.getByText(/CPSC 101/)).toBeInTheDocument();
+    expect(screen.queryByText(/HIDE ME/)).toBeNull();
   });
 });
