@@ -233,24 +233,34 @@ export function QmCourseGridCard({
   );
 }
 
-// Name keeps a minmax floor: with all-fixed neighbours it collapsed to 0 width in a
-// ~700px column. Department and Last updated only show from lg, where there is room.
-const LIST_GRID =
-  "grid grid-cols-[6rem_minmax(0,1fr)_auto] sm:grid-cols-[6rem_minmax(8rem,1fr)_5rem_6.5rem_1rem] lg:grid-cols-[6rem_minmax(8rem,2fr)_5rem_6.5rem_minmax(0,1fr)_3.5rem_1rem] items-center gap-2 px-3";
+// The list sits in columns of very different widths (dashboard vs full-width Courses
+// page), so layout follows the container, not the viewport (Tailwind v4 @container).
+// Narrow (<440px): stacked two-line row, no header. Medium: Code/Name/Term/Status.
+// Wide (>=640px): adds Department and Last updated. A column that cannot fit its text
+// is dropped, never squeezed; the wide template is sized to fit exactly at 640px.
+// Tailwind only sees literal class strings, so breakpoints are spelled out, not interpolated.
+export const LIST_GRID = [
+  "items-center gap-x-2 px-3",
+  "grid-cols-[auto_minmax(0,1fr)_1rem]",
+  "@[27.5rem]:grid-cols-[5.5rem_minmax(6.5rem,1fr)_4.5rem_6rem_1rem]",
+  "@[40rem]:grid-cols-[5.5rem_minmax(8rem,2fr)_4.5rem_6rem_minmax(7rem,1fr)_3.5rem_1rem]",
+].join(" ");
+export const LIST_WIDE_ONLY = "hidden truncate @[40rem]:block";
 
 export function QmCourseListHeader() {
   return (
-    <div
-      aria-hidden="true"
-      className={`${LIST_GRID} h-8 border-b bg-muted/50 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground`}
-    >
-      <span>Code</span>
-      <span>Name</span>
-      <span className="hidden sm:block">Term</span>
-      <span>Status</span>
-      <span className="hidden lg:block">Department</span>
-      <span className="hidden lg:block">Last updated</span>
-      <span className="hidden sm:block" />
+    <div className="@container" aria-hidden="true">
+      <div
+        className={`${LIST_GRID} hidden @[27.5rem]:grid h-8 border-b bg-muted/50 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground`}
+      >
+        <span>Code</span>
+        <span>Name</span>
+        <span>Term</span>
+        <span>Status</span>
+        <span className={LIST_WIDE_ONLY}>Department</span>
+        <span className={LIST_WIDE_ONLY}>Last updated</span>
+        <span />
+      </div>
     </div>
   );
 }
@@ -258,34 +268,39 @@ export function QmCourseListHeader() {
 export function QmCourseListRow({ course }: { course: Course }) {
   const updated = course.updatedAt ? new Date(course.updatedAt) : null;
   return (
-    <div
-      data-tour="course-select"
-      data-tour-route={`/courses/${course.id}`}
-      data-course-id={course.id}
-      style={courseThemeVars(qmCourseAccent(course))}
-      className={`${LIST_GRID} relative h-9 border-b text-sm last:border-b-0 hover:bg-muted/40`}
-    >
-      <span className="truncate font-bold text-[var(--course-accent)]">{course.code ?? "—"}</span>
-      <Link
-        to={`/courses/${course.id}`}
-        title={course.name}
-        className="truncate after:absolute after:inset-0"
+    <div className="@container">
+      <div
+        data-tour="course-select"
+        data-tour-route={`/courses/${course.id}`}
+        data-course-id={course.id}
+        style={courseThemeVars(qmCourseAccent(course))}
+        className={`${LIST_GRID} relative grid gap-y-1 border-b py-2 text-sm hover:bg-muted/40 @[27.5rem]:h-9 @[27.5rem]:py-0`}
       >
-        {course.name}
-      </Link>
-      <span className="hidden truncate sm:block">{termLabel(course.term, course.year)}</span>
-      <span>
-        <QmCourseStatusPill isPublished={course.isPublished} />
-      </span>
-      <span className="hidden truncate lg:block">
-        {course.department ? getDepartmentLabel(course.department) : "—"}
-      </span>
-      <span className="hidden lg:block">
-        {updated && !Number.isNaN(updated.getTime())
-          ? updated.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-          : "—"}
-      </span>
-      <IconChevronRight aria-hidden="true" className="hidden size-4 text-primary-text sm:block" />
+        <span className="truncate font-bold text-[var(--course-accent)]">{course.code ?? "—"}</span>
+        <Link
+          to={`/courses/${course.id}`}
+          title={course.name}
+          className="truncate after:absolute after:inset-0"
+        >
+          {course.name}
+        </Link>
+        <span className="truncate">{termLabel(course.term, course.year)}</span>
+        <span className="justify-self-start">
+          <QmCourseStatusPill isPublished={course.isPublished} />
+        </span>
+        <span className={LIST_WIDE_ONLY}>
+          {course.department ? getDepartmentLabel(course.department) : "—"}
+        </span>
+        <span className={LIST_WIDE_ONLY}>
+          {updated && !Number.isNaN(updated.getTime())
+            ? updated.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : "—"}
+        </span>
+        <IconChevronRight
+          aria-hidden="true"
+          className={`col-start-3 row-span-2 row-start-1 size-4 self-center text-primary-text @[27.5rem]:col-start-auto @[27.5rem]:row-span-1 @[27.5rem]:row-start-auto`}
+        />
+      </div>
     </div>
   );
 }

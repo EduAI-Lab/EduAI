@@ -127,18 +127,30 @@ describe("QmCourseListRow", () => {
     expect(screen.getByRole("link", { name: "Intro" })).toHaveAttribute("title", "Intro");
   });
 
-  it("shares its column template with the header and keeps a minimum width for the name", () => {
+  it("header and row share the container-query column template, wide-only cells and narrow stack", () => {
     const { container } = render(
       <MemoryRouter>
         <QmCourseListHeader />
         <QmCourseListRow course={course} />
       </MemoryRouter>,
     );
-    const [header, row] = Array.from(container.children).map((el) => el.className);
-    expect(cols(row).length).toBeGreaterThan(0);
-    expect(cols(row)).toEqual(cols(header));
-    // Fixed columns once squeezed the name to 0 width at ~700px; it must keep a floor.
-    expect(cols(row).join(" ")).toMatch(/minmax\(8rem,/);
+    const [header, row] = Array.from(container.children).map((el) => el.firstElementChild!);
+    for (const outer of Array.from(container.children)) expect(outer).toHaveClass("@container");
+    // One shared template, switching on container width at the same breakpoints.
+    expect(cols(row.className)).toEqual(cols(header.className));
+    expect(cols(row.className).join(" ")).toContain("@[27.5rem]:grid-cols-");
+    expect(cols(row.className).join(" ")).toContain("@[40rem]:grid-cols-");
+    // Narrow mode is a stacked row with no column header.
+    expect(header).toHaveClass("hidden", "@[27.5rem]:grid");
+    expect(row).not.toHaveClass("hidden");
+    // Department and Last updated exist only in the wide layout.
+    for (const text of ["Computer Science", "Department", "Last updated"]) {
+      expect(screen.getByText(text)).toHaveClass("hidden", "@[40rem]:block");
+    }
+    // Code, name, term and status always render (the stacked row shows them).
+    for (const text of ["COSC 101", "Intro", "2026-27W1", "Published"]) {
+      expect(within(row as HTMLElement).getByText(text)).not.toHaveClass("hidden");
+    }
   });
 
   it("shows a dash without updatedAt", () => {
