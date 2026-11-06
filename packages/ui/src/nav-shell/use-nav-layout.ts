@@ -7,6 +7,7 @@ const DESKTOP_QUERY = "(min-width: 1024px)";
 
 export const RAIL_COLLAPSED_KEY = "eduai.nav.railCollapsed";
 export const COURSE_MENU_OPEN_KEY = "eduai.nav.courseMenuOpen";
+export const SECTION_MENU_OPEN_KEY = "eduai.nav.sectionMenuOpen";
 
 /** Client-only: called from effects, never during render. */
 function readBreakpoint(): NavBreakpoint {

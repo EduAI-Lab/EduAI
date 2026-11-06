@@ -55,6 +55,11 @@ export interface BugReportsAdminViewProps {
   onLoadDetail?: (reportId: string) => Promise<Partial<AdminBugReportRow>>;
   title?: string;
   description?: string;
+  /**
+   * Leaves the card's title and description out, for a page that already
+   * shows them in its own page header (Core's admin pages).
+   */
+  hideHeader?: boolean;
   /** Only the platform-wide (Core) view shows which app a report came from. */
   showSourceColumn?: boolean;
   /**
@@ -73,6 +78,7 @@ export function BugReportsAdminView({
   onLoadDetail,
   title = "Bug reports",
   description = "Filter and update status for incoming reports.",
+  hideHeader = false,
   showSourceColumn = false,
   notice,
   isLoading = false,
@@ -244,10 +250,12 @@ export function BugReportsAdminView({
 
   return (
     <Card className={className}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
+      {!hideHeader && (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+      )}
       <CardContent className="space-y-4">
         {notice ? (
           <Alert>

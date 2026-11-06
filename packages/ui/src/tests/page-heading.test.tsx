@@ -43,4 +43,17 @@ describe("PageHeading", () => {
     const div = container.querySelector(".custom-heading-container");
     expect(div).toBeInTheDocument();
   });
+
+  it("puts the page's actions on the title row beside the heading", () => {
+    render(
+      <PageHeading
+        heading="Invitations"
+        className="page-header"
+        actions={<button type="button">Invite User</button>}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Invite User" });
+    const row = button.closest(".page-header");
+    expect(row).toContainElement(screen.getByRole("heading", { name: "Invitations" }));
+  });
 });

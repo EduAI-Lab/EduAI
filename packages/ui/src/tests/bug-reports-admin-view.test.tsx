@@ -42,6 +42,13 @@ describe("BugReportsAdminView", () => {
     expect(screen.getByText("Dropdown renders with no options")).toBeInTheDocument();
   });
 
+  it("leaves the card heading out for a page that has its own header", () => {
+    render(<BugReportsAdminView reports={ROWS} onUpdateStatus={vi.fn()} hideHeader />);
+
+    expect(screen.queryByText("Bug reports")).not.toBeInTheDocument();
+    expect(screen.getByText("Chat does not persist chatId")).toBeInTheDocument();
+  });
+
   it("shows the count row only once a filter is active", () => {
     render(<BugReportsAdminView reports={ROWS} onUpdateStatus={vi.fn()} />);
     expect(screen.queryByText(/Showing \d+ of \d+ reports/)).not.toBeInTheDocument();
