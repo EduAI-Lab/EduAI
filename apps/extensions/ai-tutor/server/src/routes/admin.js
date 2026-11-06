@@ -37,6 +37,7 @@ import {
 } from "../services/systemSettings.js";
 import { SecretEncryptionUnavailableError } from "../utils/encryption.js";
 import { getAiModelPolicyState, setAiModelPolicy } from "../services/aiModelPolicy.js";
+import { loadAdminDashboard } from "../services/adminDashboard.js";
 import { mapCoreAdminUser, mapCourseOffering } from "../utils/mappers.js";
 import { parsePaginationParams, paginated, PaginationError } from "../utils/pagination.js";
 import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
@@ -535,6 +536,21 @@ router.patch(
     }
   },
 );
+
+/**
+ * GET /admin/dashboard — the ADMIN dashboard's AI Tutor rollup: content and
+ * tutoring totals, "Needs your attention" counts, AI tutor health and weekly
+ * tutoring sessions. Course and bug-report counts stay on /me/dashboard-stats.
+ *
+ * Auth: ADMIN.
+ */
+router.get("/admin/dashboard", requireRole("ADMIN"), async (_req, res) => {
+  try {
+    res.json(await loadAdminDashboard());
+  } catch (e) {
+    sendSafeError(res, e, "Internal server error");
+  }
+});
 
 router.get("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, res) => {
   try {
