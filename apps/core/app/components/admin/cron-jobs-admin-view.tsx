@@ -9,6 +9,7 @@ import {
   CardTitle,
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -27,6 +28,7 @@ import {
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
 import { useCronJobStatuses } from "~/hooks/api/use-cron-job-status";
+import { relativeTime } from "~/lib/relative-time";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -142,12 +144,16 @@ function formatDuration(startedAt: string, finishedAt: string | null) {
 // ── Run history dialog ────────────────────────────────────────────────────────
 
 interface RunHistoryDialogProps {
-  jobName: string;
+  /** The job's schedule expression, script and settings, which the jobs table no longer shows, head the dialog. */
+  job: CronJobEntry | null;
   open: boolean;
   onClose: () => void;
+  /** Opens Edit settings for the job; shown under its settings when it has any. */
+  onEditSettings: (job: CronJobEntry) => void;
 }
 
-function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
+function RunHistoryDialog({ job, open, onClose, onEditSettings }: RunHistoryDialogProps) {
+  const jobName = job?.name ?? "";
   const [runs, setRuns] = useState<CronJobRunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
@@ -157,7 +163,7 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
     setLoading(true);
     fetch(`/api/admin/cron-jobs?job=${encodeURIComponent(jobName)}`)
       .then((r) => r.json())
-      .then((body: { runs: CronJobRunRow[] }) => setRuns(body.runs))
+      .then((body: { runs?: CronJobRunRow[] }) => setRuns(body.runs ?? []))
       .catch(() => setRuns([]))
       .finally(() => setLoading(false));
   }, [open, jobName]);
@@ -173,6 +179,43 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Run history — {jobName}</DialogTitle>
+            {job && (
+              <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="flex items-center gap-1.5">
+                  Schedule:
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {job.schedule}
+                  </Badge>
+                  {job.scheduleOverridden && (
+                    <span
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: "var(--color-warning-100)",
+                        color: "var(--color-warning-700)",
+                      }}
+                    >
+                      custom
+                    </span>
+                  )}
+                </span>
+                <span>
+                  Script: <span className="font-mono text-xs">{job.script}</span>
+                </span>
+              </DialogDescription>
+            )}
+            {job?.settings?.map((setting) => (
+              <p key={setting.key} className="text-xs text-muted-foreground">
+                {`${setting.label}: ${setting.value} (${setting.overridden ? "overridden" : "default"})`}
+              </p>
+            ))}
+            {job && job.triggerEnabled !== false && (job.settings?.length ?? 0) > 0 && (
+              <button
+                onClick={() => onEditSettings(job)}
+                className="self-start text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
+              >
+                Edit settings
+              </button>
+            )}
           </DialogHeader>
           {loading ? (
             <div className="flex items-center justify-center py-8">
@@ -625,7 +668,7 @@ export interface CronJobsAdminViewProps {
 export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps) {
   const { jobs, refresh: fetchStatuses, setJobs } = useCronJobStatuses(true, initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
-  const [historyJob, setHistoryJob] = useState<string | null>(null);
+  const [historyJob, setHistoryJob] = useState<CronJobEntry | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
   const [editSettingsJob, setEditSettingsJob] = useState<CronJobEntry | null>(null);
   const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
@@ -655,13 +698,13 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const successCount = jobs.filter((j) => j.lastRun?.status === "SUCCESS").length;
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">
       <PageHeading
         heading="Cron Jobs"
         subheading="Registered server cron jobs and their current status"
       />
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total jobs</CardDescription>
@@ -714,7 +757,6 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
               <TableRow>
                 <TableHead>Job</TableHead>
                 <TableHead>Schedule</TableHead>
-                <TableHead>Script</TableHead>
                 <TableHead>Last run</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Status</TableHead>
@@ -731,45 +773,29 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                       <div className="font-medium text-sm">{job.name}</div>
                       <div className="text-xs text-muted-foreground">{job.description}</div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {job.schedule}
-                        </Badge>
-                        {job.scheduleOverridden && (
-                          <span
-                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                            style={{
-                              background: "var(--color-warning-100)",
-                              color: "var(--color-warning-700)",
-                            }}
-                          >
-                            custom
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-muted-foreground">{job.scheduleLabel}</span>
-                        {job.triggerEnabled !== false && (
-                          <button
-                            onClick={() => setEditScheduleJob(job)}
-                            className="text-[11px] text-primary-text underline-offset-2 hover:underline cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </div>
-                      {job.settings?.map((setting) => (
-                        <div key={setting.key} className="text-xs text-muted-foreground mt-1">
-                          {`${setting.label}: ${setting.value} (${setting.overridden ? "overridden" : "default"})`}
-                        </div>
-                      ))}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {job.script}
+                    <TableCell className="text-sm">
+                      {/* The schedule itself opens Edit schedule. */}
+                      {job.triggerEnabled !== false ? (
+                        <button
+                          onClick={() => setEditScheduleJob(job)}
+                          title="Edit schedule"
+                          aria-label={`${job.scheduleLabel} (edit schedule)`}
+                          className="text-left text-primary-text underline-offset-2 hover:underline cursor-pointer"
+                        >
+                          {job.scheduleLabel}
+                        </button>
+                      ) : (
+                        job.scheduleLabel
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {formatDateTime(job.lastRun?.startedAt ?? null)}
+                      {job.lastRun ? (
+                        <span title={formatDateTime(job.lastRun.startedAt)}>
+                          {relativeTime(job.lastRun.startedAt)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {job.lastRun
@@ -788,19 +814,11 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => setHistoryJob(job.name)}
+                          onClick={() => setHistoryJob(job)}
                           className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
                         >
                           History
                         </button>
-                        {job.triggerEnabled !== false && (job.settings?.length ?? 0) > 0 && (
-                          <button
-                            onClick={() => setEditSettingsJob(job)}
-                            className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
-                          >
-                            Edit settings
-                          </button>
-                        )}
                         {job.triggerEnabled !== false && (
                           <Button
                             size="sm"
@@ -822,9 +840,13 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
       </Card>
 
       <RunHistoryDialog
-        jobName={historyJob ?? ""}
+        job={historyJob}
         open={historyJob !== null}
         onClose={() => setHistoryJob(null)}
+        onEditSettings={(job) => {
+          setHistoryJob(null);
+          setEditSettingsJob(job);
+        }}
       />
 
       <EditScheduleDialog
