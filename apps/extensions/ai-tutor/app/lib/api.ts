@@ -44,6 +44,7 @@ import {
   chatMessagesSchema,
   chatSessionRowSchema,
   courseDetailSchema,
+  adminDashboardSchema,
   courseFacetsSchema,
   courseSchema,
   dashboardStatsSchema,
@@ -1192,6 +1193,8 @@ export const api = {
   moduleContext: (moduleId: number) =>
     decode(http(`/api/modules/${moduleId}/context`), moduleContextSchema),
   dashboardStats: () => decode(http("/api/me/dashboard-stats"), dashboardStatsSchema),
+  /** ADMIN only: content, tutoring, attention, AI health and weekly sessions. */
+  adminDashboard: () => decode(http("/api/admin/dashboard"), adminDashboardSchema),
   adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
     const search = new URLSearchParams();
     if (params?.unit) search.set("unit", params.unit);

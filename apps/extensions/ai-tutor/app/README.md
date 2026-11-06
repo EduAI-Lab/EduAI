@@ -65,8 +65,9 @@ app/
       CourseTopicsHeroAction.tsx, ModuleCard.tsx, SubmissionCard.tsx
     dashboard/
       DashboardView.tsx              #   Shared presentational shell
-      Dashboard{Student,Ta,Instructor,UnitAdmin,Admin}View.tsx  # Per-role content
-      ContinueLearningPanel.tsx, NeedsAttentionPanel.tsx, BugReportTriagePanel.tsx
+      Dashboard{Student,Ta,Instructor,UnitAdmin}View.tsx  # Per-role content
+      AdminDashboard.tsx             #   ADMIN: Core's admin dashboard layout, AI Tutor data
+      ContinueLearningPanel.tsx, NeedsAttentionPanel.tsx
       dashboard-helpers.ts
     help/
       HelpView.tsx
