@@ -1,7 +1,8 @@
 /**
  * AI Tutor — ADMIN console workflows (`/admin`), driven through the browser.
  *
- * Three tabs, all ADMIN-only except AI oversight (also UNIT_ADMIN):
+ * Three sections, ADMIN-only, picked from the Administration menu beside
+ * the page (`?tab=`), as on Core's admin pages:
  *   • Bug reports — triage queue: filter, sort, open, change status
  *   • AI settings — loop policy + the EduAI API key
  *   • AI oversight — recent AI tutoring traces
@@ -47,17 +48,27 @@ async function submitBugReport(
 }
 
 test.describe("AI Tutor ADMIN — admin console shell", () => {
-  test("offers the bug-report, AI-settings, and AI-oversight tabs", async ({ page }) => {
+  test("lists Bug reports, AI settings and AI oversight in the Administration menu", async ({
+    page,
+  }) => {
     await loginAsAdmin(page, "at-admin-console-tabs");
     await gotoAiTutor(page, "/admin");
 
-    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
-    await expect(
-      page.getByText("Triage bug reports, configure AI tutoring, and review AI oversight."),
-    ).toBeVisible();
-    for (const tab of ["Bug reports", "AI settings", "AI oversight"]) {
-      await expect(page.getByRole("tab", { name: tab })).toBeVisible();
+    const menu = page.getByRole("navigation", { name: "Administration" });
+    for (const section of ["Bug reports", "AI settings", "AI oversight"]) {
+      await expect(menu.getByRole("link", { name: section, exact: true })).toBeVisible();
     }
+    // Bug reports opens by default, and each section is its own page.
+    await expect(menu.getByRole("link", { name: "Bug reports", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByRole("heading", { name: "Bug reports", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveCount(0);
+
+    await menu.getByRole("link", { name: "AI oversight", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\?tab=ai-oversight$/);
+    await expect(page.getByRole("heading", { name: "AI oversight", exact: true })).toBeVisible();
   });
 });
 
@@ -73,7 +84,8 @@ test.describe("AI Tutor ADMIN — bug-report triage", () => {
     const row = page.getByRole("row").filter({ hasText: description });
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expect(row).toContainText("Unhandled");
-    await expect(row).toContainText(admin.email);
+    // The compact row shows the reporter's name; the email is in the report's panel.
+    await expect(row).toContainText(admin.name);
   });
 
   test("the status of a report can be moved to Resolved", async ({ page }) => {
@@ -554,6 +566,6 @@ test.describe("AI Tutor ADMIN — anonymous bug reports", () => {
       timeout: 20_000,
     });
     await expect(page.getByRole("row").filter({ hasText: anonymous })).toHaveCount(0);
-    await expect(page.getByRole("row").filter({ hasText: named })).toContainText(admin.email);
+    await expect(page.getByRole("row").filter({ hasText: named })).toContainText(admin.name);
   });
 });

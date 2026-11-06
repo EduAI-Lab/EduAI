@@ -105,7 +105,7 @@ const ROUTES: PageHelpRoute[] = [
     content: {
       title: "Admin console",
       summary: "Triage bug reports, configure AI tutoring and review AI oversight.",
-      tips: ["Each area has its own tab at the top of the page."],
+      tips: ["Each area is listed in the Administration menu beside the page."],
       helpHref: "/help#admin",
     },
   },
