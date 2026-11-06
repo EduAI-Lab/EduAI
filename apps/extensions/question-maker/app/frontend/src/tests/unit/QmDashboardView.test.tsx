@@ -1,21 +1,32 @@
 /**
- * Unit tests for `QmDashboardView` (#1546): the fully props-driven dashboard —
- * onboarding-vs-stats branch, loading skeletons, empty recent activity, and
- * the analytics-visibility gate.
+ * Unit tests for `QmDashboardView` (#2119): the props-driven Canvas-style
+ * dashboard: sections, toggle, footer cap, side column and states.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QmDashboardView, type QmDashboardViewProps } from "@/components/dashboard/QmDashboardView";
+import type { Course } from "@/types/question";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
+
+const course = (id: number, code: string): Course =>
+  ({ id, code, name: `Name ${code}`, term: "W1", year: 2026 }) as Course;
 
 function renderView(props: Partial<QmDashboardViewProps> = {}) {
   const defaults: QmDashboardViewProps = {
-    stats: [{ label: "Questions", value: 10 }],
-    courses: [{ id: 1, code: "CPSC 101", name: "Intro to CS" }],
-    recentItems: [],
-    quickActions: [],
+    heading: "Welcome back, Ada.",
+    subheading: "Your courses and question writing.",
+    sections: [{ key: "all", title: "", courses: [course(1, "CPSC 101")] }],
+    courseTotal: 1,
+    coursesLoading: false,
+    sideLoading: false,
+    attentionRows: [],
+    stats: [{ label: "Questions", value: "10" }],
+    linksFor: () => [],
   };
   return render(
     <MemoryRouter>
@@ -25,158 +36,92 @@ function renderView(props: Partial<QmDashboardViewProps> = {}) {
 }
 
 describe("QmDashboardView", () => {
-  it("shows the onboarding card when there are no courses", () => {
-    renderView({ courses: [] });
-    expect(screen.getByText("Welcome to Question Maker")).toBeInTheDocument();
-    expect(screen.getByText("Browse your courses")).toBeInTheDocument();
-  });
-
-  it("shows stats and course list when courses exist", () => {
+  it("renders heading, subtitle, a single untitled section and linked cards", () => {
     renderView();
-    expect(screen.queryByText("Welcome to Question Maker")).toBeNull();
-    expect(screen.getByText("CPSC 101")).toBeInTheDocument();
-    expect(screen.getByText("Questions")).toBeInTheDocument();
+    expect(screen.getByText("Welcome back, Ada.")).toBeInTheDocument();
+    expect(screen.getByText("Your courses and question writing.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: /\(\d+\)/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /CPSC 101/ })).toHaveAttribute("href", "/courses/1");
+    expect(screen.queryByText("Quick actions")).toBeNull();
+    expect(screen.queryByText("Recent activity")).toBeNull();
   });
 
-  it("includes a personalized greeting when greetingName is provided", () => {
-    renderView({ greetingName: "Ada" });
-    expect(screen.getByText(/Ada/)).toBeInTheDocument();
-  });
-
-  it("shows the empty recent-activity state when there are no recent items", () => {
-    renderView({ recentItems: [] });
-    expect(screen.getByText("No recent activity yet.")).toBeInTheDocument();
-  });
-
-  it("renders recent activity items with a relative time label", () => {
+  it("renders titled sections with counts when more than one is non-empty", () => {
     renderView({
-      recentItems: [
+      sections: [
+        { key: "teach", title: "Courses you teach", courses: [course(1, "A 1")] },
         {
-          id: "q1",
-          label: "New MCQ question",
-          href: "/q/1",
-          updatedAt: new Date().toISOString(),
-          sublabel: "Question",
+          key: "unit",
+          title: "Courses in Computer Science",
+          courses: [course(2, "B 2"), course(3, "C 3")],
+        },
+      ],
+      courseTotal: 3,
+    });
+    expect(screen.getByRole("heading", { level: 3, name: "Courses you teach (1)" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Courses in Computer Science (2)" }),
+    ).toBeVisible();
+  });
+
+  it("switches to the list table", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("radio", { name: "List view" }));
+    expect(screen.getByText("Last updated")).toBeInTheDocument();
+  });
+
+  it("shows the truncation footer when only some courses are shown", () => {
+    renderView({
+      sections: [{ key: "all", title: "", courses: [course(1, "A 1"), course(2, "B 2")] }],
+      courseTotal: 8,
+    });
+    expect(screen.getByTestId("truncated-list-notice")).toHaveTextContent("Showing 2 of 8 courses");
+    expect(screen.getByRole("link", { name: /All 8 courses/ })).toHaveAttribute("href", "/courses");
+  });
+
+  it("renders attention rows as links and the drafts link", () => {
+    renderView({
+      attentionRows: [
+        {
+          key: "drafts",
+          text: "3 variants waiting for review",
+          actionLabel: "Review",
+          href: "/library?status=draft",
+          edgeColor: "var(--color-warning-500)",
         },
       ],
     });
-    expect(screen.getByText("New MCQ question")).toBeInTheDocument();
-    expect(screen.getByText("Just now")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Review: 3 variants waiting for review" }),
+    ).toHaveAttribute("href", "/library?status=draft");
+    expect(screen.getByRole("link", { name: /All drafts/ })).toHaveAttribute(
+      "href",
+      "/library?status=draft",
+    );
   });
 
-  it("shows loading skeletons for courses and does not render course rows", () => {
-    const { container } = renderView({ coursesLoading: true });
-    expect(screen.queryByText("CPSC 101")).toBeNull();
-    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+  it("shows the empty attention line", () => {
+    renderView();
+    expect(screen.getByText("Nothing needs attention right now.")).toBeInTheDocument();
   });
 
-  it("does not render the analytics section when totalQuestions is zero", () => {
-    renderView({
-      analytics: {
-        typeComposition: [],
-        difficulty: [],
-        totalQuestions: 0,
-        totalVariants: 0,
-        aiCount: 0,
-        humanCount: 0,
-        reviewedCount: 0,
-      },
-    });
-    // No direct text assertion on the chart itself; just ensure the onboarding-vs-stats branch rendered normally.
-    expect(screen.getByText("CPSC 101")).toBeInTheDocument();
-  });
-});
-
-describe("QmDashboardView additional coverage", () => {
-  it("shows loading skeletons for recent activity", () => {
-    const { container } = renderView({
-      recentLoading: true,
-      recentItems: [{ id: "q1", label: "x", href: "/x", updatedAt: new Date().toISOString() }],
-    });
-    expect(screen.queryByText("x")).toBeNull();
-    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+  it("renders stat detail text", () => {
+    renderView({ stats: [{ label: "Reviewed variants", value: "22", detail: "of 5" }] });
+    expect(screen.getByText("Reviewed variants")).toBeInTheDocument();
+    expect(screen.getByText("of 5")).toBeInTheDocument();
   });
 
-  it('defaults the recent-item sublabel to "Activity" when absent', () => {
-    renderView({
-      recentItems: [
-        { id: "q1", label: "No sublabel item", href: "/q/1", updatedAt: new Date().toISOString() },
-      ],
-    });
-    expect(screen.getByText("Activity")).toBeInTheDocument();
+  it("shows skeletons and no cards while loading", () => {
+    renderView({ coursesLoading: true, sideLoading: true, sections: [] });
+    expect(screen.getAllByTestId("course-skeleton")).toHaveLength(3);
+    expect(screen.getByTestId("attention-skeleton")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /CPSC/ })).toBeNull();
   });
 
-  it("formats minutes/hours/yesterday/days-ago relative times", () => {
-    const now = Date.now();
-    renderView({
-      recentItems: [
-        {
-          id: "m",
-          label: "Mins item",
-          href: "/m",
-          updatedAt: new Date(now - 5 * 60_000).toISOString(),
-        },
-        {
-          id: "h",
-          label: "Hours item",
-          href: "/h",
-          updatedAt: new Date(now - 3 * 60 * 60_000).toISOString(),
-        },
-        {
-          id: "y",
-          label: "Yesterday item",
-          href: "/y",
-          updatedAt: new Date(now - 26 * 60 * 60_000).toISOString(),
-        },
-        {
-          id: "d",
-          label: "Days item",
-          href: "/d",
-          updatedAt: new Date(now - 3 * 24 * 60 * 60_000).toISOString(),
-        },
-        {
-          id: "old",
-          label: "Old item",
-          href: "/old",
-          updatedAt: new Date(now - 30 * 24 * 60 * 60_000).toISOString(),
-        },
-      ],
-    });
-    expect(screen.getByText("5m ago")).toBeInTheDocument();
-    expect(screen.getByText("3h ago")).toBeInTheDocument();
-    expect(screen.getByText("Yesterday")).toBeInTheDocument();
-    expect(screen.getByText("3 days ago")).toBeInTheDocument();
-    expect(screen.getByText("Old item")).toBeInTheDocument();
-  });
-
-  it("renders the analytics section when totalQuestions > 0", () => {
-    renderView({
-      analytics: {
-        typeComposition: [{ label: "MCQ", value: 5, color: "#000" }] as any,
-        difficulty: [{ label: "Easy", value: 5, color: "#000" }],
-        totalQuestions: 5,
-        totalVariants: 8,
-        aiCount: 3,
-        humanCount: 2,
-        reviewedCount: 1,
-      },
-    });
-    expect(screen.getByText("CPSC 101")).toBeInTheDocument();
-  });
-
-  it("caps the course list panel to 5 courses", () => {
-    const courses = Array.from({ length: 8 }, (_, i) => ({
-      id: i,
-      code: `C${i}`,
-      name: `Course ${i}`,
-    }));
-    renderView({ courses });
-    expect(screen.getByText("C0")).toBeInTheDocument();
-    expect(screen.queryByText("C7")).toBeNull();
-  });
-
-  it("renders a default (non-personalized) greeting when greetingName is absent", () => {
-    renderView({ greetingName: undefined });
-    expect(screen.getByText(/Good (morning|afternoon|evening)/)).toBeInTheDocument();
+  it("shows the empty copy and a Courses link with no courses", () => {
+    renderView({ sections: [], courseTotal: 0 });
+    expect(screen.getByText(/You don't have any courses yet/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Go to Courses/ })).toHaveAttribute("href", "/courses");
+    expect(screen.getByText("At a glance")).toBeInTheDocument();
   });
 });

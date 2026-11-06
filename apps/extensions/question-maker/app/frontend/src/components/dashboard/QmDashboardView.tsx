@@ -1,331 +1,230 @@
+// Mirrors apps/extensions/ai-tutor/app/components/dashboard/TeachingDashboard.tsx
 /**
- * Presentational QM dashboard. Mirrors Core's DashboardView layout but is
- * fully props-driven (no service calls) and surfaces recent questions/assessments
- * instead of chats — QM has no chat. Adds an at-a-glance analytics row and a
- * first-run onboarding state when the user has no courses yet.
+ * Presentational QM dashboard (#2119): a Canvas-style course grid with Needs
+ * attention and At a glance in a slim side column. Fully props-driven; the
+ * per-role numbers come from `qmDashboardModel` via `DashboardPage`.
  */
+import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { IconChevronRight, IconHistory, IconArrowRight, IconSparkles } from "@tabler/icons-react";
+import { PageHeading, Skeleton } from "@eduai/ui";
+import type { Course } from "@/types/question";
 import {
-  StatCard,
-  COURSE_COLORS,
-  Button,
-  QuestionAnalytics,
-  QuickActionsPanel,
-  type QuickAction,
-  type DonutSegment,
-} from "@eduai/ui";
+  QmCourseGridCard,
+  QmCourseListHeader,
+  QmCourseListRow,
+  QmCourseViewToggle,
+  useQmCourseView,
+  type QmCourseLink,
+  type QmCourseView,
+} from "@/components/courses/QmCourseCard";
+import type { QmAttentionRow, QmDashboardSection } from "./qmDashboardModel";
 
-export type QmDashboardStat = {
-  label: string;
-  value: string | number;
-};
-
-export type QmDashboardCourse = {
-  id: number;
-  code: string;
-  name: string;
-};
-
-export type QmDashboardRecentItem = {
-  id: string;
-  label: string;
-  sublabel?: string;
-  href: string;
-  updatedAt: string;
-};
-
-/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing imports. */
-export type QmDashboardQuickAction = QuickAction;
-
-export type QmDashboardAnalytics = {
-  typeComposition: DonutSegment[];
-  difficulty: { label: string; value: number; color: string }[];
-  totalQuestions: number;
-  totalVariants: number;
-  aiCount: number;
-  humanCount: number;
-  reviewedCount: number;
-};
+export type QmGlanceCell = { label: string; value: ReactNode; detail?: string };
 
 export type QmDashboardViewProps = {
-  greetingName?: string;
-  stats: QmDashboardStat[];
-  courses: QmDashboardCourse[];
-  coursesLoading?: boolean;
-  recentItems: QmDashboardRecentItem[];
-  recentLoading?: boolean;
-  quickActions: QmDashboardQuickAction[];
-  analytics?: QmDashboardAnalytics;
+  heading: string;
+  subheading: string;
+  sections: QmDashboardSection[];
+  courseTotal: number;
+  coursesLoading: boolean;
+  sideLoading: boolean;
+  attentionRows: QmAttentionRow[];
+  stats: QmGlanceCell[];
+  linksFor: (course: Course) => QmCourseLink[];
 };
 
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
+const GRID = "grid grid-cols-1 gap-3 @md/dashboard:grid-cols-2 @3xl/dashboard:grid-cols-3";
 
-function greeting(hour: number): string {
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-function AnalyticsSection({ analytics }: { analytics: QmDashboardAnalytics }) {
-  // Global dashboard: no topicCoverage → renders the 3-panel layout.
-  return <QuestionAnalytics {...analytics} />;
-}
-
-function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
-  const steps = [
-    {
-      n: 1,
-      title: "Open a course",
-      body: "Your EduAI courses appear automatically — pick one to start.",
-      tile: "bg-secondary/15 text-secondary",
-    },
-    {
-      n: 2,
-      title: "Add questions",
-      body: "Write them yourself or let AI draft a first pass you can refine.",
-      tile: "bg-accent/15 text-accent",
-    },
-    {
-      n: 3,
-      title: "Build assessments",
-      body: "Assemble questions into quizzes and exams, then export or push to Canvas.",
-      tile: "bg-[var(--color-gold-500)]/15 text-[var(--color-gold-600)]",
-    },
-  ];
+function SkeletonCard() {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
-      <div className="flex flex-col gap-3 border-b border-border bg-linear-to-br from-secondary/10 via-accent/5 to-transparent p-6 md:p-8">
-        <div className="flex size-11 items-center justify-center rounded-lg bg-linear-to-br from-secondary to-accent text-white shadow-sm">
-          <IconSparkles className="size-6" />
-        </div>
-        <h2 className="text-lg font-semibold text-foreground">Welcome to Question Maker</h2>
-        <p className="max-w-xl text-sm text-muted-foreground">
-          Build, vary, and assemble course questions — with AI on tap. Here's how to get rolling.
-        </p>
-        <div className="mt-1">
-          <Button asChild>
-            <Link to="/courses">
-              {hasCourses ? "Go to your courses" : "Browse your courses"}
-              <IconArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
+    <div
+      data-testid="course-skeleton"
+      className="overflow-hidden rounded-lg border border-border bg-card shadow-xs"
+    >
+      <Skeleton className="h-[78px] rounded-none" />
+      <div className="space-y-2 px-4 pt-3 pb-3">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-3 w-1/2" />
       </div>
-      <ol className="grid gap-px bg-border @xl/dashboard:grid-cols-3">
-        {steps.map((s) => (
-          <li key={s.n} className="bg-card p-5">
-            <div
-              className={`mb-2 flex size-6 items-center justify-center rounded-full text-xs font-bold ${s.tile}`}
-            >
-              {s.n}
-            </div>
-            <div className="text-sm font-semibold text-foreground">{s.title}</div>
-            <div className="mt-1 text-xs leading-snug text-muted-foreground">{s.body}</div>
-          </li>
-        ))}
-      </ol>
+      <Skeleton className="mx-2 mb-2 h-6 w-1/3" />
     </div>
   );
 }
 
-function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; loading: boolean }) {
-  if (loading) {
+function CourseSection({
+  section,
+  view,
+  linksFor,
+}: {
+  section: QmDashboardSection;
+  view: QmCourseView;
+  linksFor: (course: Course) => QmCourseLink[];
+}) {
+  if (view === "list") {
     return (
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="flex animate-pulse items-center gap-4 border-b border-border px-5 py-4 last:border-b-0"
-          >
-            <div className="h-11 w-1 shrink-0 rounded-sm bg-muted" />
-            <div className="flex-1 space-y-2">
-              <div className="h-3.5 w-24 rounded bg-muted" />
-              <div className="h-3 w-48 rounded bg-muted" />
-            </div>
-          </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <QmCourseListHeader />
+        {section.courses.map((c) => (
+          <QmCourseListRow key={c.id} course={c} />
         ))}
       </div>
     );
   }
-
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
-      {courses.slice(0, 5).map((course, i) => (
-        <Link
-          key={course.id}
-          to={`/courses/${course.id}`}
-          className="flex items-center gap-4 border-b border-border px-5 py-[14px] transition-colors last:border-b-0 hover:bg-muted/40"
-        >
-          <div
-            className="h-11 w-1 shrink-0 rounded-sm"
-            style={{ background: COURSE_COLORS[i % COURSE_COLORS.length] }}
-          />
-          <div className="min-w-0 flex-1">
-            <span className="text-sm font-semibold text-foreground">{course.code}</span>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">{course.name}</div>
-          </div>
-          <IconChevronRight size={16} className="shrink-0 text-muted-foreground" />
-        </Link>
+    <div className={GRID}>
+      {section.courses.map((c) => (
+        <QmCourseGridCard key={c.id} course={c} links={linksFor(c)} />
       ))}
     </div>
   );
 }
 
-function RecentActivityPanel({
-  items,
-  loading,
-}: {
-  items: QmDashboardRecentItem[];
-  loading: boolean;
-}) {
-  if (loading) {
-    return (
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
-        {[0, 1, 2].map((i) => (
+function AttentionPanel({ rows, loading }: { rows: QmAttentionRow[]; loading: boolean }) {
+  return (
+    <section data-tour="dashboard-needs-attention" className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Needs attention</h2>
+        <Link to="/library?status=draft" className="text-xs font-semibold text-primary-text">
+          All drafts ›
+        </Link>
+      </div>
+      {loading ? (
+        <div className="space-y-2 py-2" data-testid="attention-skeleton">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="py-2 text-xs text-muted-foreground">Nothing needs attention right now.</p>
+      ) : (
+        <ul>
+          {rows.map((row) => (
+            <li key={row.key} className="flex items-start gap-2 py-2">
+              <span
+                aria-hidden="true"
+                className="w-[3px] self-stretch rounded-full"
+                style={{ background: row.edgeColor }}
+              />
+              <span className="min-w-0 flex-1 text-xs font-semibold text-foreground">
+                {row.text}
+              </span>
+              <Link
+                to={row.href}
+                aria-label={`${row.actionLabel}: ${row.text}`}
+                className="shrink-0 text-xs font-semibold text-primary-text"
+              >
+                {row.actionLabel} ›
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function GlancePanel({ stats, loading }: { stats: QmGlanceCell[]; loading: boolean }) {
+  const lastRowStart = stats.length - (stats.length % 2 === 0 ? 2 : 1);
+  return (
+    <section data-tour="dashboard-stats" className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold text-foreground">At a glance</h2>
+      <dl className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
+        {stats.map((s, i) => (
           <div
-            key={i}
-            className="animate-pulse space-y-2 border-b border-border px-5 py-[14px] last:border-b-0"
+            key={s.label}
+            className={`p-3 odd:border-r border-border ${i < lastRowStart ? "border-b" : ""}`}
           >
-            <div className="flex justify-between">
-              <div className="h-3 w-16 rounded bg-muted" />
-              <div className="h-3 w-12 rounded bg-muted" />
-            </div>
-            <div className="h-3.5 w-4/5 rounded bg-muted" />
+            <dt className="text-[11px] text-muted-foreground">{s.label}</dt>
+            <dd className="text-base font-semibold tabular-nums">
+              {loading ? <Skeleton className="h-5 w-10" /> : s.value}
+              {!loading && s.detail && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">{s.detail}</span>
+              )}
+            </dd>
           </div>
         ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
-      {items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
-          <IconHistory size={24} className="mb-2 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No recent activity yet.</p>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          {items.map((item) => (
-            <Link
-              key={item.id}
-              to={item.href}
-              className="block w-full border-b border-border px-5 py-[14px] text-left transition-colors last:border-b-0 hover:bg-muted/40"
-            >
-              <div className="mb-1 flex items-center justify-between">
-                <span className="shrink-0 text-[10px] font-semibold text-primary-text">
-                  {item.sublabel ?? "Activity"}
-                </span>
-                <span className="ml-2 shrink-0 text-[11px] text-muted-foreground">
-                  {relativeTime(item.updatedAt)}
-                </span>
-              </div>
-              <p className="line-clamp-2 text-[13px] leading-snug text-foreground">{item.label}</p>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+      </dl>
+    </section>
   );
 }
 
 export function QmDashboardView({
-  greetingName,
+  heading,
+  subheading,
+  sections,
+  courseTotal,
+  coursesLoading,
+  sideLoading,
+  attentionRows,
   stats,
-  courses,
-  coursesLoading = false,
-  recentItems,
-  recentLoading = false,
-  quickActions,
-  analytics,
+  linksFor,
 }: QmDashboardViewProps) {
-  const now = new Date();
-  const hello = greetingName
-    ? `${greeting(now.getHours())}, ${greetingName}`
-    : greeting(now.getHours());
-  const dateLabel = now.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  const showOnboarding = !coursesLoading && courses.length === 0;
-  const showAnalytics = Boolean(analytics && analytics.totalQuestions > 0);
+  const [view, setView] = useQmCourseView();
+  const shown = sections.reduce((n, s) => n + s.courses.length, 0);
+  const visible = sections.filter((s) => s.courses.length > 0);
+  const empty = !coursesLoading && shown === 0;
 
   return (
     <div className="@container/dashboard flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
-      {/* Hero */}
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">{hello}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">{dateLabel}</p>
-      </div>
-
-      {showOnboarding ? (
-        <>
-          <OnboardingCard hasCourses={courses.length > 0} />
-          <div>
-            <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Quick actions</h2>
-            <QuickActionsPanel actions={quickActions} LinkComponent={Link} />
+      <PageHeading
+        heading={heading}
+        subheading={subheading}
+        headingClassName="text-[28px] font-bold tracking-tight"
+      />
+      <div className="grid gap-8 @4xl/dashboard:grid-cols-[minmax(0,1fr)_260px]">
+        <div data-tour="dashboard-courses" className="flex min-w-0 flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[15px] font-semibold text-foreground">Courses</h2>
+            <QmCourseViewToggle view={view} onChange={setView} />
           </div>
-        </>
-      ) : (
-        <>
-          {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-3 @xl/dashboard:grid-cols-4">
-            {stats.map((s) => (
-              <StatCard key={s.label} label={s.label} value={s.value} />
-            ))}
-          </div>
-
-          {/* Analytics */}
-          {showAnalytics && analytics && <AnalyticsSection analytics={analytics} />}
-
-          {/* 2-column body */}
-          <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_360px] @3xl/dashboard:items-stretch">
-            <div className="flex flex-col gap-6">
-              <div>
-                <div className="mb-3.5 flex items-center justify-between">
-                  <h2 className="text-[15px] font-semibold text-foreground">Your courses</h2>
-                  <Link
-                    to="/courses"
-                    className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
-                  >
-                    Browse all <IconChevronRight size={13} />
+          {coursesLoading ? (
+            <div className={GRID}>
+              {[0, 1, 2].map((i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : empty ? (
+            <div className="rounded-lg border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
+              <p>
+                You don't have any courses yet. Courses come from EduAI Core and appear here once
+                you teach one.
+              </p>
+              <Link
+                to="/courses"
+                className="mt-2 inline-block text-xs font-semibold text-primary-text"
+              >
+                Go to Courses ›
+              </Link>
+            </div>
+          ) : (
+            <>
+              {visible.map((section) => (
+                <div key={section.key} className="flex flex-col gap-2">
+                  {visible.length > 1 && (
+                    <h3 className="text-sm font-semibold text-muted-foreground">
+                      {section.title} ({section.courses.length})
+                    </h3>
+                  )}
+                  <CourseSection section={section} view={view} linksFor={linksFor} />
+                </div>
+              ))}
+              {courseTotal > shown && (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground" data-testid="truncated-list-notice">
+                    Showing {shown} of {courseTotal} courses
+                  </p>
+                  <Link to="/courses" className="text-xs font-semibold text-primary-text">
+                    All {courseTotal} courses ›
                   </Link>
                 </div>
-                <CourseListPanel courses={courses} loading={coursesLoading} />
-              </div>
-
-              <div>
-                <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Quick actions</h2>
-                <QuickActionsPanel actions={quickActions} LinkComponent={Link} />
-              </div>
-            </div>
-
-            <div className="flex h-full flex-col">
-              <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Recent activity</h2>
-              <div className="flex-1">
-                <RecentActivityPanel items={recentItems} loading={recentLoading} />
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+              )}
+            </>
+          )}
+        </div>
+        <aside aria-label="Activity" className="flex flex-col gap-6">
+          <AttentionPanel rows={attentionRows} loading={sideLoading} />
+          <GlancePanel stats={stats} loading={sideLoading} />
+        </aside>
+      </div>
     </div>
   );
 }
