@@ -124,6 +124,7 @@ function wrap(modules = [module_]) {
       course,
       modules,
       modulesTotal: modules.length,
+      moduleCounts: { all: modules.length, publishedOffPage: 0 },
       page: 1,
       pageSize: 25,
       search: "",

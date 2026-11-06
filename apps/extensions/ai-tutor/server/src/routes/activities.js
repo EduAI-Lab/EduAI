@@ -602,7 +602,9 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
     const searchFragment = activitySearchWhere(search);
     const whereClause = searchFragment ? { AND: [{ lessonId }, searchFragment] } : { lessonId };
 
-    const [total, activities] = await prisma.$transaction([
+    // Staff also get the lesson-wide count, which a search never narrows.
+    const staffCounts = hasElevatedAccess ? [prisma.activity.count({ where: { lessonId } })] : [];
+    const [total, activities, unfilteredTotal] = await prisma.$transaction([
       prisma.activity.count({ where: whereClause }),
       prisma.activity.findMany({
         where: whereClause,
@@ -617,6 +619,7 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
           },
         },
       }),
+      ...staffCounts,
     ]);
 
     // For students, add completion status to each activity
@@ -638,13 +641,14 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
     } else {
-      res.json(
-        paginated(
+      res.json({
+        ...paginated(
           activities.map((activity) => mapActivity(activity, { includeAnswer: true })),
           total,
           pageParams,
         ),
-      );
+        unfilteredTotal,
+      });
     }
   } catch (e) {
     if (e instanceof PaginationError) {

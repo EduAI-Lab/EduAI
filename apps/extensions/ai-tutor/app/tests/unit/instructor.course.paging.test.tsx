@@ -114,6 +114,7 @@ function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
       course,
       modules,
       modulesTotal: 60,
+      moduleCounts: { all: 60, publishedOffPage: 0 },
       page: 1,
       pageSize: 25,
       search: "",

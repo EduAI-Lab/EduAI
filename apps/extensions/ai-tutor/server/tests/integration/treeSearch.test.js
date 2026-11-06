@@ -208,6 +208,31 @@ describe("Tree endpoint search (#1207)", () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("SEARCH_INVALID");
     });
+
+    it("gives staff the course-wide and published counts a search never narrows", async () => {
+      await prisma.module.create({
+        data: { title: "Draft", position: 3, isPublished: false, courseOfferingId: seed.course.id },
+      });
+
+      const res = await request(profApp)
+        .get(`/api/courses/${seed.course.id}/modules`)
+        .query({ page: 1, pageSize: 25, search: "Graph Algorithms" });
+
+      expect(res.body.total).toBe(1);
+      expect(res.body.unfilteredTotal).toBe(4);
+      expect(res.body.publishedTotal).toBe(3);
+    });
+
+    it("leaves the staff counts off a student's page", async () => {
+      const studentApp = await enrollStudent();
+      const res = await request(studentApp)
+        .get(`/api/courses/${seed.course.id}/modules`)
+        .query({ page: 1, pageSize: 25 });
+
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty("unfilteredTotal");
+      expect(res.body).not.toHaveProperty("publishedTotal");
+    });
   });
 
   describe("GET /modules/:moduleId/lessons", () => {
@@ -242,6 +267,11 @@ describe("Tree endpoint search (#1207)", () => {
         .query({ page: 1, pageSize: 25, search: "dijkstra" });
       expect(asStudent.body.total).toBe(1);
       expect(asStudent.body.data[0].title).toBe("Dijkstra walkthrough");
+
+      // Staff also get the module-wide counts: the seeded lesson plus both above.
+      expect(asProf.body.unfilteredTotal).toBe(3);
+      expect(asProf.body.publishedTotal).toBe(2);
+      expect(asStudent.body).not.toHaveProperty("unfilteredTotal");
     });
   });
 
@@ -269,6 +299,8 @@ describe("Tree endpoint search (#1207)", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.total).toBe(1);
+      // The lesson-wide count, which the search doesn't narrow.
+      expect(res.body.unfilteredTotal).toBe(2);
     });
 
     it("matches the instructions", async () => {

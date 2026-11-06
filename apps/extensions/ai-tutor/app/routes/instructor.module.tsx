@@ -77,6 +77,7 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { publishedCount, treeCounts } from "~/lib/tree-counts";
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -119,6 +120,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     module,
     lessons: lessonsPage.data,
     lessonsTotal: lessonsPage.total,
+    lessonCounts: treeCounts(lessonsPage),
     moduleOrder: moduleContext.moduleOrdinal,
     page: lessonsPage.page,
     pageSize: lessonsPage.pageSize,
@@ -142,6 +144,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     module,
     lessons: initialLessons,
     lessonsTotal: initialLessonsTotal,
+    lessonCounts: initialLessonCounts,
     moduleOrder,
     page,
     pageSize,
@@ -152,6 +155,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   // `total` is state, not a loader constant — refresh/create/import replace
   // `lessons`, and the pager reads this.
   const [lessonsTotal, setLessonsTotal] = useState(initialLessonsTotal);
+  // `lessonsTotal` counts search matches; the banner and heading need the module's.
+  const [lessonCounts, setLessonCounts] = useState(initialLessonCounts);
   // #1207: reorder works across pages now via `PATCH /lessons/:id/position`;
   // it is only disabled while a search is active, because a filtered list hides
   // the rows between two visible matches.
@@ -201,6 +206,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     setPrevInitialLessons(initialLessons);
     setLessons(initialLessons);
     setLessonsTotal(initialLessonsTotal);
+    setLessonCounts(initialLessonCounts);
   }
 
   const goToPage = (nextPage: number) => {
@@ -233,6 +239,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       const lessonData = await api.lessonsForModule(numericModuleId, { page, search });
       setLessons(lessonData.data);
       setLessonsTotal(lessonData.total);
+      setLessonCounts(treeCounts(lessonData));
     } catch (error) {
       console.error("Failed to refresh lessons", error);
     }
@@ -536,14 +543,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       : { label: "Module" },
   ]);
 
-  const publishedCount = oLessons.filter((lesson) => lesson.isPublished).length;
   const moduleLabel = moduleOrder > 0 ? `Module ${String(moduleOrder).padStart(2, "0")}` : "Module";
-  // Counts describe the loaded page, so only claim "published" when it's all of them.
   const lessonMeta =
-    lessonsTotal === 0
+    lessonCounts.all === 0
       ? null
-      : `${lessonsTotal} ${lessonsTotal === 1 ? "lesson" : "lessons"}` +
-        (oLessons.length === lessonsTotal ? ` · ${publishedCount} published` : "");
+      : `${lessonCounts.all} ${lessonCounts.all === 1 ? "lesson" : "lessons"} · ` +
+        `${publishedCount(lessonCounts, oLessons)} published`;
 
   return (
     <DetailPageScaffold
@@ -563,9 +568,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               {module?.description ? (
                 <span className="line-clamp-2">{module.description}</span>
               ) : null}
-              {!searching && lessonMeta && (
-                <span className="mt-0.5 block text-xs opacity-90">{lessonMeta}</span>
-              )}
+              {lessonMeta && <span className="mt-0.5 block text-xs opacity-90">{lessonMeta}</span>}
             </>
           }
           actions={
@@ -878,7 +881,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-foreground">
           Lessons
-          <span className="ml-1.5 text-sm font-normal text-muted-foreground">({lessonsTotal})</span>
+          <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+            ({lessonCounts.all})
+          </span>
         </h2>
         <ListSearchInput
           value={search}

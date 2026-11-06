@@ -90,6 +90,7 @@ function renderPage() {
     course,
     modules: [],
     modulesTotal: 0,
+    moduleCounts: { all: 0, publishedOffPage: 0 },
     page: 1,
     pageSize: 25,
     search: "",

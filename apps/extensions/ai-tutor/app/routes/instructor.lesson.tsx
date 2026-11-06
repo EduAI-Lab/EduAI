@@ -155,6 +155,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
+    activityCount: activitiesPage.unfilteredTotal ?? activitiesPage.total,
     page: activitiesPage.page,
     pageSize: activitiesPage.pageSize,
     search,
@@ -171,6 +172,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     lesson,
     activities: initialActivities,
     activitiesTotal: initialActivitiesTotal,
+    activityCount: initialActivityCount,
     page,
     pageSize,
     search,
@@ -184,6 +186,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // duplicate all change the list, so the truncation flag has to move with them
   // or it goes stale and re-enables reorder once the list crosses the bound.
   const [activitiesTotal, setActivitiesTotal] = useState(initialActivitiesTotal);
+  // `activitiesTotal` counts search matches; the banner and heading need the lesson's.
+  const [activityCount, setActivityCount] = useState(initialActivityCount);
   // #1207: reorder works across pages via `PATCH /activities/:id/position`; it
   // is disabled only while a search is active, because a filtered list hides
   // the rows between two visible matches.
@@ -312,6 +316,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setPrevInitialActivities(initialActivities);
     setActivities(initialActivities);
     setActivitiesTotal(initialActivitiesTotal);
+    setActivityCount(initialActivityCount);
   }
 
   const beginEditingActivity = (activity: Activity) => {
@@ -382,6 +387,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       const activityData = await api.activitiesForLesson(numericLessonId, { page, search });
       setActivities(activityData.data);
       setActivitiesTotal(activityData.total);
+      setActivityCount(activityData.unfilteredTotal ?? activityData.total);
     } catch (error) {
       console.error("Failed to refresh activities", error);
     }
@@ -484,6 +490,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       // Keep `total` in step with the local removal so the pager stays accurate
       // without a refetch.
       setActivitiesTotal((prev) => Math.max(0, prev - 1));
+      setActivityCount((prev) => Math.max(0, prev - 1));
       if (editingActivityId === activityId) {
         cancelEditingActivity();
       }
@@ -904,7 +911,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               <BannerBadge>{lesson.isPublished ? "Published" : "Unpublished"}</BannerBadge>
             ) : undefined
           }
-          meta={`${activitiesTotal} ${activitiesTotal === 1 ? "activity" : "activities"}`}
+          meta={`${activityCount} ${activityCount === 1 ? "activity" : "activities"}`}
           actions={
             <PermissionGate allow={perms.canManageContent}>
               <Button
@@ -938,7 +945,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             <h2 className="text-lg font-semibold text-foreground">
               Activities
               <span className="ml-1.5 text-sm font-normal text-muted-foreground">
-                ({activitiesTotal})
+                ({activityCount})
               </span>
             </h2>
             <ListSearchInput

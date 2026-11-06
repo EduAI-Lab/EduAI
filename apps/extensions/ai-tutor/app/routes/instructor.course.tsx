@@ -104,6 +104,7 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { publishedCount, treeCounts } from "~/lib/tree-counts";
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -136,6 +137,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     course,
     modules: modulesPage.data,
     modulesTotal: modulesPage.total,
+    moduleCounts: treeCounts(modulesPage),
     page: modulesPage.page,
     pageSize: modulesPage.pageSize,
     search,
@@ -186,6 +188,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     course,
     modules: initialModules,
     modulesTotal: initialModulesTotal,
+    moduleCounts: initialModuleCounts,
     page,
     pageSize,
     search,
@@ -237,6 +240,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   // `total` is state, not a loader constant — refresh/create/import all replace
   // `modules`, and the pager reads this.
   const [modulesTotal, setModulesTotal] = useState(initialModulesTotal);
+  // `modulesTotal` counts search matches; the banner and steps need the course's.
+  const [moduleCounts, setModuleCounts] = useState(initialModuleCounts);
   // #1207: reorder is no longer disabled past the page bound — a drag persists
   // an absolute ordinal via `PATCH /modules/:id/position`, so the rows this
   // page never loaded get shifted server-side. It IS disabled while a search is
@@ -289,6 +294,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     setPrevInitialModules(initialModules);
     setModules(initialModules);
     setModulesTotal(initialModulesTotal);
+    setModuleCounts(initialModuleCounts);
   }
 
   const goToPage = (nextPage: number) => {
@@ -323,6 +329,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       const modulesData = await api.modulesForCourse(numericCourseId, { page, search });
       setModules(modulesData.data);
       setModulesTotal(modulesData.total);
+      setModuleCounts(treeCounts(modulesData));
     } catch (error) {
       console.error("Failed to refresh modules", error);
     }
@@ -675,8 +682,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 {
                   key: "module",
                   label: "Add a module",
-                  // A search narrows the count, so only an unfiltered zero means none.
-                  done: searching || modulesTotal > 0,
+                  done: moduleCounts.all > 0,
                   detail:
                     "Modules hold your lessons and activities. Add one, or import one from another course.",
                   onSelect: () => setCreateOpen(true),
@@ -695,7 +701,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 {
                   key: "publish-module",
                   label: "Publish a module",
-                  done: oModules.some((m) => m.isPublished),
+                  done: publishedCount(moduleCounts, oModules) > 0,
                   detail:
                     "Unpublished modules stay hidden. Use a module's ⋯ menu to publish it, then publish its lessons.",
                 },
@@ -708,7 +714,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               <h2 className="text-lg font-semibold text-foreground">
                 Modules
                 <span className="ml-1.5 text-sm font-normal text-muted-foreground">
-                  ({modulesTotal})
+                  ({moduleCounts.all})
                 </span>
               </h2>
               <HelpHint {...AI_TUTOR_HELP.publishingHierarchy} LinkComponent={Link} />
