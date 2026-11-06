@@ -208,4 +208,14 @@ describe("QuestionBankPage", () => {
     await waitFor(() => expect(lastHookArgs().filters.questionBankId).toBeNull());
     expect(lastHookArgs().courseId).toBeUndefined();
   });
+
+  it("seeds the draft filter from ?status=draft", () => {
+    setup();
+    render(
+      <MemoryRouter initialEntries={["/library?status=draft"]}>
+        <QuestionBankPage />
+      </MemoryRouter>,
+    );
+    expect(lastHookArgs().filters).toMatchObject({ draftStatus: "draft" });
+  });
 });

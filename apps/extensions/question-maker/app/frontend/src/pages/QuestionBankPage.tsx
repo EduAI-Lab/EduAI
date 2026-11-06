@@ -9,6 +9,7 @@
  * The bank facet is enabled once a course is picked, since bank ids are course-scoped (#1762).
  */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { PageHeading, Badge, QuestionStatusBadge, EmptyState, Button } from "@eduai/ui";
 import {
   IconStack2,
@@ -62,9 +63,14 @@ const difficultyOf = (q: Question) => repVariant(q)?.difficulty;
 const courseLabel = (q: Question) => q.course?.code ?? q.course?.name ?? `Course ${q.courseId}`;
 
 export default function QuestionBankPage() {
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
+  // Read ?status=draft once, on first render; the user can clear it afterwards.
+  const [filters, setFilters] = useState<QuestionFilters>(() => ({
+    ...EMPTY_QUESTION_FILTERS,
+    draftStatus: searchParams.get("status") === "draft" ? "draft" : "all",
+  }));
   const [courseFilter, setCourseFilter] = useState<string>(COURSE_ALL);
   const [sortBy, setSortBy] = useState<QuestionSort>("newest");
   const [preview, setPreview] = useState<Question | null>(null);
