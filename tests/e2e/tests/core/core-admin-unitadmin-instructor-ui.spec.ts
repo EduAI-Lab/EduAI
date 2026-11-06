@@ -111,7 +111,9 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
         { path: "/admin/cron-jobs", navName: "Cron Jobs", pageTitle: "Cron Jobs" },
       ];
       for (const { path, navName, pageTitle } of adminLinks) {
-        const navLink = adminMenu.getByRole("link", { name: navName, exact: true });
+        // A count badge (e.g. "3 unhandled") joins the link's name, so match
+        // the label at the start rather than the whole name.
+        const navLink = adminMenu.getByRole("link", { name: new RegExp(`^${navName}( |$)`) });
         await expect(navLink).toBeVisible();
         await navLink.click();
         await page.waitForURL(new RegExp(path.replace(/\//g, "\\/")));
@@ -143,7 +145,8 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
     try {
       await skipDashboardTour(page);
       await injectSession(page, ctx);
-      await page.goto(`${CORE_URL}/admin/settings`);
+      // The instructor policies sit on the Roles tab.
+      await page.goto(`${CORE_URL}/admin/settings?tab=roles`);
       await page.waitForLoadState("networkidle");
 
       // admin.settings.tsx renders each policy-flags.ts entry as a Radix
