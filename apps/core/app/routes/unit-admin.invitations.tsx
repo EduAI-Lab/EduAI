@@ -209,7 +209,7 @@ export default function UnitAdminInvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status, data?.details));
+        setFormError(errorMessage(data?.error, res.status, data?.fields ?? data?.details));
         return;
       }
       setDialogOpen(false);
@@ -548,6 +548,7 @@ function errorMessage(code: JsonValue, status: number, details?: JsonValue): str
       return "A user with that email already exists.";
     case "FORBIDDEN_ROLE":
       return "You can only invite instructors and students.";
+    case "VALIDATION_ERROR":
     case "Invalid input":
       // Surface the specific field reason (e.g. the UBC-email gate) when present.
       return firstFieldError(details) ?? "Please check the fields and try again.";
