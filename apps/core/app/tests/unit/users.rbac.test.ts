@@ -574,7 +574,11 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
   it("assigns selected courses to an effective STUDENT in the user update transaction", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
-    vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    // previous TA rows, INSTRUCTOR rows to convert (#2112), existing enrollments
+    vi.mocked(prisma.enrollment.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
 
     const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
     const body = await res.json();
@@ -602,7 +606,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
       expect.objectContaining({ enrolledCourses: 0, assistedCourses: 1 }),
     );
     expect(body.taCourseIds).toEqual(["course-1"]);
-    expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(3);
   });
 
   it("rejects non-empty TA courses when the effective platform role is not STUDENT", async () => {
@@ -637,6 +641,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
     vi.mocked(prisma.enrollment.findMany)
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { id: "enrollment-1", courseId: "course-1", role: "INSTRUCTOR", isActive: true },
       ] as never);
@@ -653,6 +658,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-new" }] as never);
     vi.mocked(prisma.enrollment.findMany)
       .mockResolvedValueOnce([{ courseId: "course-old" }] as never)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
     const res = await action(
@@ -679,7 +685,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
       },
       data: { role: "STUDENT", isActive: true },
     });
-    expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(3);
   });
 
   it("audit-logs the previous and new platform roles plus TA courses cleared by demotion", async () => {

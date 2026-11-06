@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
-  course: { findMany: vi.fn() },
+  course: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+  $queryRaw: vi.fn(),
   enrollment: {
     findMany: vi.fn(),
     findFirst: vi.fn(),
@@ -16,6 +17,7 @@ const prismaMock = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    count: vi.fn(),
   },
 }));
 
@@ -26,6 +28,7 @@ import {
   addCourseTA,
   removeCourseTA,
   reconcileUserTACourses,
+  convertInstructorEnrollmentsToTA,
 } from "~/lib/courses/tas.server";
 
 const COURSE_ID = "course-1";
@@ -234,5 +237,64 @@ describe("reconcileUserTACourses", () => {
     expect(result).toEqual({ error: "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" });
     expect(prismaMock.enrollment.create).not.toHaveBeenCalled();
     expect(prismaMock.enrollment.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("convertInstructorEnrollmentsToTA", () => {
+  const rows = [
+    { id: "e-a", courseId: "course-a", role: "INSTRUCTOR", isActive: true },
+    { id: "e-b", courseId: "course-b", role: "INSTRUCTOR", isActive: true },
+  ];
+
+  it("is a no-op when the user has no INSTRUCTOR enrollments", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+
+    const result = await convertInstructorEnrollmentsToTA(prismaMock as never, USER.id);
+
+    expect(result).toEqual({ ok: true, convertedCourseIds: [] });
+    expect(prismaMock.enrollment.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("converts every row to TA and hands the course head to the successor", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue(rows);
+    prismaMock.enrollment.count.mockResolvedValue(2);
+    prismaMock.course.findUnique.mockResolvedValue({ instructorId: USER.id });
+    prismaMock.enrollment.findFirst.mockResolvedValue({ userId: "u-2" });
+
+    const result = await convertInstructorEnrollmentsToTA(prismaMock as never, USER.id);
+
+    expect(result).toEqual({ ok: true, convertedCourseIds: ["course-a", "course-b"] });
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: USER.id,
+          role: "INSTRUCTOR",
+          isActive: true,
+          course: { deletedAt: null },
+        },
+      }),
+    );
+    expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["e-a", "e-b"] }, role: "INSTRUCTOR", isActive: true },
+      data: { role: "TA" },
+    });
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "course-a" },
+      data: { instructorId: "u-2" },
+    });
+  });
+
+  it("blocks with INSTRUCTOR_FLOOR_VIOLATION when the user is the sole instructor", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue(rows);
+    prismaMock.enrollment.count.mockResolvedValue(1);
+
+    const result = await convertInstructorEnrollmentsToTA(prismaMock as never, USER.id);
+
+    expect(result).toEqual({
+      error: "INSTRUCTOR_FLOOR_VIOLATION",
+      blockedCourseIds: ["course-a", "course-b"],
+    });
+    expect(prismaMock.enrollment.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
   });
 });

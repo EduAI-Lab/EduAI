@@ -4,7 +4,7 @@ import type { Prisma, UserRole } from "@prisma/client";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
-import { reconcileUserTACourses } from "~/lib/courses/tas.server";
+import { convertInstructorEnrollmentsToTA, reconcileUserTACourses } from "~/lib/courses/tas.server";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { withIdempotency } from "~/lib/idempotency.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
@@ -444,9 +444,16 @@ export async function handleUsersApiRequest(request: Request) {
             },
           });
 
+        // #2112: a STUDENT-platform user may not keep INSTRUCTOR enrollments. Runs on
+        // every role/TA save, not only on a role change, so it also repairs users
+        // demoted before this fix.
+        const convertsInstructorEnrollments =
+          effectiveRole === "STUDENT" &&
+          (result.data.role !== undefined || taCourseIds !== undefined);
         const shouldReconcileTACourses =
           taCourseIds !== undefined ||
-          (result.data.role !== undefined && effectiveRole !== "STUDENT");
+          (result.data.role !== undefined && effectiveRole !== "STUDENT") ||
+          convertsInstructorEnrollments;
 
         let previousTACourseIds: string[] = [];
         let activeTACourseIds: string[];
@@ -461,11 +468,25 @@ export async function handleUsersApiRequest(request: Request) {
               where: { userId, role: "TA", isActive: true },
               select: { courseId: true },
             });
+            let convertedCourseIds: readonly string[] = [];
+            if (convertsInstructorEnrollments) {
+              const conversion = await convertInstructorEnrollmentsToTA(tx, userId);
+              if (conversion.error) return { error: conversion.error } as const;
+              convertedCourseIds = conversion.convertedCourseIds;
+            }
+            // Without taCourseIds a STUDENT keeps their current TA courses; any other role clears them.
+            const desiredTACourseIds = [
+              ...(taCourseIds ??
+                (convertsInstructorEnrollments
+                  ? previousTAEnrollments.map((enrollment) => enrollment.courseId)
+                  : [])),
+              ...convertedCourseIds,
+            ];
             const reconciliation = await reconcileUserTACourses(
               tx,
               userId,
               effectiveRole!,
-              taCourseIds ?? [],
+              desiredTACourseIds,
             );
             if (reconciliation.error) {
               return { error: reconciliation.error } as const;
@@ -479,7 +500,8 @@ export async function handleUsersApiRequest(request: Request) {
 
           if (transactionResult.error) {
             const status =
-              transactionResult.error === "TA_INSTRUCTOR_ENROLLMENT_CONFLICT"
+              transactionResult.error === "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" ||
+              transactionResult.error === "INSTRUCTOR_FLOOR_VIOLATION"
                 ? 409
                 : transactionResult.error === "TA_COURSE_NOT_FOUND"
                   ? 404
