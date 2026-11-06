@@ -306,4 +306,21 @@ describe("CourseListView — controlled mode", () => {
 
     expect(screen.getAllByTestId("card")).toHaveLength(2);
   });
+
+  it("merges toolbarClassName onto the toolbar and renders sectionHeader once per term section", () => {
+    const { container } = renderList({
+      toolbarClassName: "custom-toolbar",
+      sectionHeader: <div data-testid="section-header" />,
+    });
+
+    expect(container.querySelector(".custom-toolbar")).not.toBeNull();
+    expect(screen.getAllByTestId("section-header")).toHaveLength(3);
+  });
+
+  it("renders no section header or toolbar class by default", () => {
+    const { container } = renderList();
+
+    expect(screen.queryByTestId("section-header")).toBeNull();
+    expect(container.querySelector(".custom-toolbar")).toBeNull();
+  });
 });

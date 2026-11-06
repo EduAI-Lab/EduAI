@@ -105,6 +105,10 @@ export interface CourseListViewProps<T> {
   noResultsState?: React.ReactNode;
   /** Override the responsive card grid classes. */
   gridClassName?: string;
+  /** Extra classes merged onto the toolbar wrapper. */
+  toolbarClassName?: string;
+  /** Rendered as the first child of each term section's grid. */
+  sectionHeader?: React.ReactNode;
   className?: string;
 
   // ── Controlled (server-driven) mode ─────────────────────────────────
@@ -207,6 +211,8 @@ export function CourseListView<T>({
   emptyState = null,
   noResultsState,
   gridClassName = DEFAULT_GRID,
+  toolbarClassName,
+  sectionHeader,
   className,
   searchValue,
   onSearchChange,
@@ -379,7 +385,7 @@ export function CourseListView<T>({
 
   return (
     <div className={cn("space-y-6", className)}>
-      <div className="flex flex-col gap-3">
+      <div className={cn("flex flex-col gap-3", toolbarClassName)}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative sm:w-72 sm:shrink-0">
             <IconSearch
@@ -486,6 +492,7 @@ export function CourseListView<T>({
                 )
               ) : null}
               <div className={gridClassName}>
+                {sectionHeader}
                 {section.items.map((course) => (
                   <React.Fragment key={getKey(course)}>
                     {renderCard(course, courses.indexOf(course))}
