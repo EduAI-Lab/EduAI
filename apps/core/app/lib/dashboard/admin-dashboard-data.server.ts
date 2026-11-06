@@ -6,6 +6,7 @@
  * byte, like the other roles' dashboards (#1220).
  */
 import prisma from "~/lib/prisma.server";
+import { countUnhandledBugReports, pendingInvitationWhere } from "~/lib/admin/nav-counts.server";
 import { listCoursesForUser } from "~/lib/courses/server";
 import { listCronJobStatuses, type CronJobEntry } from "~/lib/db.cron-jobs.server";
 import { classifyCloudStatus, type ServiceState } from "~/lib/ai/service-status.server";
@@ -228,10 +229,10 @@ export async function loadAdminDashboardData(user: User): Promise<AdminDashboard
     prisma.user.count({
       where: { role: "UNIT_ADMIN", isActive: true, authorizedUnits: { isEmpty: true } },
     }),
-    prisma.bugReport.count({ where: { status: "UNHANDLED" } }),
-    prisma.invitation.count({ where: { status: "PENDING", expiresAt: { gt: now } } }),
+    countUnhandledBugReports(),
+    prisma.invitation.count({ where: pendingInvitationWhere(now) }),
     prisma.invitation.findFirst({
-      where: { status: "PENDING", expiresAt: { gt: now } },
+      where: pendingInvitationWhere(now),
       orderBy: { createdAt: "asc" },
       select: { createdAt: true },
     }),
