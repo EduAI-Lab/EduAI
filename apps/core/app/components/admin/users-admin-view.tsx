@@ -3,7 +3,17 @@ import { toast } from "sonner";
 
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
 import { UsersTable } from "~/components/admin/users-table";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
+import { IconPlus } from "@tabler/icons-react";
+
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  PageHeading,
+} from "@eduai/ui";
 import { ApiError } from "~/hooks/api/config";
 import type { CreateUserInput, PlatformUser, UpdateUserInput } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
@@ -136,6 +146,17 @@ export function UsersAdminView({
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <div className="px-4 lg:px-6">
             <PageHeading
+              actions={
+                <Button
+                  onClick={() => {
+                    setEditingUser(null);
+                    setUserDialogOpen(true);
+                  }}
+                >
+                  <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
+                  Add User
+                </Button>
+              }
               heading="User management"
               subheading={
                 <>
@@ -178,10 +199,6 @@ export function UsersAdminView({
                   onToggleActive={handleToggleUserActive}
                   onViewChatHistory={(user) => {
                     setHistoryUser({ id: user.id, name: user.name });
-                  }}
-                  onCreateUser={() => {
-                    setEditingUser(null);
-                    setUserDialogOpen(true);
                   }}
                 />
               </CardContent>

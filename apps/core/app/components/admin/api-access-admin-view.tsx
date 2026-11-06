@@ -100,14 +100,19 @@ export function ApiAccessAdminView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-4 md:py-6 lg:px-6">
       <PageHeading
         heading="API Access"
         subheading="People who aren't admins can only use an API key once you give them access here."
+        actions={
+          <Button onClick={openDialog}>
+            <IconPlus className="mr-1 h-4 w-4" /> Give API access
+          </Button>
+        }
       />
 
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <CardHeader>
           <div className="space-y-1.5">
             <CardTitle>Access grants</CardTitle>
             <CardDescription>
@@ -116,9 +121,6 @@ export function ApiAccessAdminView({
               hours.
             </CardDescription>
           </div>
-          <Button onClick={openDialog} className="shrink-0">
-            <IconPlus className="mr-1 h-4 w-4" /> Give API access
-          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2">

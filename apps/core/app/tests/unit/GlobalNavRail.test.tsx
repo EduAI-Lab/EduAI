@@ -122,7 +122,7 @@ describe("GlobalNavRail — entries", () => {
 
   it.each(["INSTRUCTOR", "TA", "UNIT_ADMIN"])("shows no Administration entry for %s", (role) => {
     renderRail(role);
-    expect(screen.queryByRole("button", { name: "Administration" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Administration" })).not.toBeInTheDocument();
   });
 
   it("marks the current page's link with aria-current", () => {
@@ -153,31 +153,35 @@ describe("GlobalNavRail — entries", () => {
 });
 
 describe("GlobalNavRail — trays", () => {
-  it("opens the Administration tray with the admin links and focuses into it", async () => {
-    renderRail("ADMIN");
-    const trigger = screen.getByRole("button", { name: "Administration" });
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(trigger);
-
-    const tray = await screen.findByRole("dialog", { name: "Administration" });
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-    for (const name of ["User Management", "AI Management", "Bug Reports", "Cron Jobs"]) {
-      expect(within(tray).getByRole("link", { name })).toBeInTheDocument();
-    }
-    await waitFor(() => expect(tray.contains(document.activeElement)).toBe(true));
+  it("takes Administration straight to User Management instead of opening a tray", () => {
+    renderRail("ADMIN", { path: "/dashboard" });
+    const admin = screen.getByRole("link", { name: "Administration" });
+    expect(admin).toHaveAttribute("href", "/admin/users");
+    expect(admin).not.toHaveAttribute("aria-current");
+    expect(screen.queryByRole("button", { name: "Administration" })).not.toBeInTheDocument();
   });
 
-  it("closes on Escape and hands focus back to its trigger", async () => {
-    renderRail("ADMIN");
-    const trigger = screen.getByRole("button", { name: "Administration" });
+  it("keeps Administration active on every admin page", () => {
+    renderRail("ADMIN", { path: "/admin/logs" });
+    expect(screen.getByRole("link", { name: "Administration" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("opens a tray focused, and closes it on Escape with focus back on its trigger", async () => {
+    renderRail("STUDENT");
+    const trigger = screen.getByRole("button", { name: "Help" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(trigger);
-    const tray = await screen.findByRole("dialog", { name: "Administration" });
+    const tray = await screen.findByRole("dialog", { name: "Help" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(tray.contains(document.activeElement)).toBe(true));
 
     fireEvent.keyDown(tray, { key: "Escape" });
 
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Administration" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("dialog", { name: "Help" })).not.toBeInTheDocument(),
     );
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(document.activeElement).toBe(trigger);

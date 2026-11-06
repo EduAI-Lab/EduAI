@@ -74,7 +74,7 @@ test.beforeAll(async ({ playwright }) => {
 // ===========================================================================
 
 test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
-  test("rail's Administration tray lists every admin page; each loads without redirect", async ({
+  test("rail's Administration link opens User Management; the Administration menu reaches every admin page", async ({
     page,
     playwright,
   }) => {
@@ -85,27 +85,18 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
       await page.goto(`${CORE_URL}/dashboard`);
       await page.waitForLoadState("networkidle");
 
-      // The Administration entry (rbac/nav.ts ADMIN_NAV) opens a flyout tray
-      // beside the rail; its links only exist while the tray is open, and
-      // choosing one closes it — so every link below reopens the tray first.
-      const adminTrayTrigger = page.getByRole("button", { name: "Administration" });
-      const adminTray = page.getByRole("dialog", { name: "Administration" });
-      await expect(adminTrayTrigger).toBeVisible();
-      await adminTrayTrigger.click();
-
-      // Click through, not just goto, for at least the first link to prove
-      // the expanded nav itself is wired up correctly. `exact: true` is
-      // required — the dashboard's admin-console card also has an accessible
-      // name starting with "User management" (its description text folds in),
-      // which a plain substring match would also hit.
-      const userManagementNavLink = adminTray.getByRole("link", {
-        name: "User Management",
-        exact: true,
-      });
-      await expect(userManagementNavLink).toBeVisible();
-      await userManagementNavLink.click();
+      // The rail's Administration entry (rbac/nav.ts ADMIN_NAV) goes straight
+      // to User Management; every admin page then shows the Administration
+      // menu beside it, which stays open across admin pages.
+      const adminRailLink = page.getByRole("link", { name: "Administration", exact: true });
+      await expect(adminRailLink).toBeVisible();
+      await adminRailLink.click();
       await page.waitForURL(/\/admin\/users/);
       await expect(page).not.toHaveURL(/\/auth\/login/);
+      const adminMenu = page.getByRole("navigation", { name: "Administration" });
+      await expect(
+        adminMenu.getByRole("link", { name: "User Management", exact: true }),
+      ).toHaveAttribute("aria-current", "page");
 
       // Click each remaining Administration link (not page.goto) so the nav
       // itself is proven wired up, and assert page-specific content (each
@@ -120,8 +111,7 @@ test.describe("Admin (admin@eduai.local) — console UI walkthrough", () => {
         { path: "/admin/cron-jobs", navName: "Cron Jobs", pageTitle: "Cron Jobs" },
       ];
       for (const { path, navName, pageTitle } of adminLinks) {
-        await adminTrayTrigger.click();
-        const navLink = adminTray.getByRole("link", { name: navName, exact: true });
+        const navLink = adminMenu.getByRole("link", { name: navName, exact: true });
         await expect(navLink).toBeVisible();
         await navLink.click();
         await page.waitForURL(new RegExp(path.replace(/\//g, "\\/")));

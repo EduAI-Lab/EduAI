@@ -284,21 +284,21 @@ export default function InvitationsPage() {
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
             <div className="px-4 lg:px-6">
-              <div className="flex items-start justify-between gap-4">
-                <PageHeading
-                  heading="Invitations"
-                  subheading="Invite administrators, unit admins, instructors, and students to the platform"
-                />
-                <Button
-                  onClick={() => {
-                    resetForm();
-                    setDialogOpen(true);
-                  }}
-                >
-                  <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
-                  Invite User
-                </Button>
-              </div>
+              <PageHeading
+                heading="Invitations"
+                subheading="Invite administrators, unit admins, instructors, and students to the platform"
+                actions={
+                  <Button
+                    onClick={() => {
+                      resetForm();
+                      setDialogOpen(true);
+                    }}
+                  >
+                    <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
+                    Invite User
+                  </Button>
+                }
+              />
             </div>
 
             {notice && (

@@ -11,6 +11,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
   BugReportsAdminView,
+  PageHeading,
 } from "@eduai/ui";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
@@ -59,17 +60,23 @@ export default function BugReportsPage() {
         </Breadcrumb>
       }
     >
-      <BugReportsAdminView
-        reports={reports}
-        isLoading={isLoading}
-        onUpdateStatus={updateReportStatus}
-        onLoadDetail={loadReportDetail}
-        showSourceColumn
-        description="Triage platform bug reports from every EduAI app."
-        notice={
-          truncated ? `Showing the ${reports.length} most recent of ${total} reports.` : undefined
-        }
-      />
+      <div className="flex flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">
+        <PageHeading
+          heading="Bug reports"
+          subheading="Triage platform bug reports from every EduAI app."
+        />
+        <BugReportsAdminView
+          hideHeader
+          reports={reports}
+          isLoading={isLoading}
+          onUpdateStatus={updateReportStatus}
+          onLoadDetail={loadReportDetail}
+          showSourceColumn
+          notice={
+            truncated ? `Showing the ${reports.length} most recent of ${total} reports.` : undefined
+          }
+        />
+      </div>
     </CoreAppShell>
   );
 }

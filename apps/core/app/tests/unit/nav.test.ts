@@ -65,10 +65,10 @@ describe("getNavForUser — ADMIN role", () => {
       "admin-ai",
       "admin-bugs",
       "admin-invites",
-      "admin-settings",
-      "admin-logs",
       "admin-cron",
+      "admin-logs",
       "admin-api-access",
+      "admin-settings",
     ]);
   });
 

@@ -256,6 +256,90 @@ describe("CoreAppShell — Course Chat as its own app (#1996)", () => {
   });
 });
 
+/** What the stubbed endpoints answer: the badge counts, cron statuses, or an empty list. */
+type StubBody =
+  | { unhandledBugReports: number; pendingInvitations: number }
+  | { jobs: Array<{ name: string; lastRun: { status: string } }> }
+  | { data: never[] };
+
+/** A fetch answering the admin badge endpoints, everything else with an empty list. */
+function stubAdminFetch() {
+  const json = (body: StubBody) => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "Content-Type": "application/json" }),
+    json: () => Promise.resolve(body),
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url === "/api/admin/nav-counts") {
+        return Promise.resolve(json({ unhandledBugReports: 6, pendingInvitations: 0 }));
+      }
+      if (url === "/api/admin/cron-jobs") {
+        return Promise.resolve(
+          json({
+            jobs: [
+              { name: "backup-nightly", lastRun: { status: "ERROR" } },
+              { name: "ai-status-probe", lastRun: { status: "SUCCESS" } },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(json({ data: [] }));
+    }),
+  );
+}
+
+describe("CoreAppShell — Administration menu", () => {
+  beforeEach(stubAdminFetch);
+
+  it("stays beside every admin page with the current page marked", () => {
+    renderShell({ path: "/admin/logs" });
+    const menu = screen.getByRole("navigation", { name: "Administration" });
+    const links = within(menu).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual([
+      "User Management",
+      "AI Management",
+      "Bug Reports",
+      "Invitations",
+      "Cron Jobs",
+      "Logs",
+      "API Access",
+      "Settings",
+    ]);
+    expect(within(menu).getByRole("link", { name: "Logs" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Hide Administration menu" })).toBeInTheDocument();
+  });
+
+  it("shows the unhandled and failed counts, and no badge for a zero count", async () => {
+    renderShell({ path: "/admin/users" });
+    const menu = screen.getByRole("navigation", { name: "Administration" });
+    expect(await within(menu).findByLabelText("6 unhandled")).toBeInTheDocument();
+    expect(await within(menu).findByLabelText("1 failed")).toBeInTheDocument();
+    expect(within(menu).queryByLabelText(/pending/)).not.toBeInTheDocument();
+  });
+
+  it("is not drawn off the admin pages", () => {
+    renderShell({ path: "/dashboard" });
+    expect(screen.queryByRole("navigation", { name: "Administration" })).not.toBeInTheDocument();
+  });
+
+  it("opens as an overlay drawer on tablets", async () => {
+    renderShell({ path: "/admin/cron-jobs" });
+    setViewportWidth(900);
+    fireEvent.click(screen.getByRole("button", { name: "Show Administration menu" }));
+    const drawer = await screen.findByRole("dialog", { name: "Administration menu" });
+    expect(within(drawer).getByRole("link", { name: /Cron Jobs/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+});
+
 describe("CoreAppShell — tablet", () => {
   it("opens the course menu as an overlay drawer from the hamburger", async () => {
     renderShell({ courseNav: STAFF_COURSE_NAV });
