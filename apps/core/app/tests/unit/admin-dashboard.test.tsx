@@ -7,7 +7,7 @@ import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
-vi.mock("~/components/dashboard/admin-usage-chart", () => ({
+vi.mock("@eduai/ui/weekly-usage-chart", () => ({
   default: ({ data }: { data: unknown[] }) => <div data-testid="usage-chart">{data.length}</div>,
 }));
 

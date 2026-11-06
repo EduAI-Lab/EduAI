@@ -227,8 +227,9 @@ export async function clickSidebar(page: Page, label: string): Promise<void> {
 
 /**
  * Open a section by its visible label and wait for it to take effect. A course
- * page's sections live in the shell's course menu (links that set `?tab=`);
- * other pages (admin, settings) keep a `PageTabs` tablist. Right after a reload
+ * page's sections live in the shell's course menu, and the admin console's in
+ * its Administration menu (links that set `?tab=`); other pages (settings)
+ * keep a `PageTabs` tablist. Right after a reload
  * either can be painted before it is interactive, so a bare click is retried.
  */
 export async function openTab(page: Page, label: string | RegExp): Promise<void> {
@@ -241,7 +242,7 @@ export async function openTab(page: Page, label: string | RegExp): Promise<void>
     timeout: 30_000,
   });
 
-  const courseMenu = page.getByRole("navigation", { name: "Course" });
+  const courseMenu = page.getByRole("navigation", { name: /^(Course|Administration)$/ });
   if (await courseMenu.count()) {
     const link = courseMenu.getByRole("link", { name: label });
     await expect(async () => {
