@@ -17,6 +17,7 @@ import {
 import { termLabel } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { relativeTime } from "~/lib/relative-time";
 
 // Only ever rendered inside the transcript dialog, and it pulls the heavy
 // chat-message chunk (streamdown + shiki). Load it on open so the dashboard's
@@ -108,29 +109,15 @@ export type DashboardViewProps = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-function CourseListPanel({
+export function CourseListPanel({
   courses,
   loading,
   title,
   chatHref = "/chat",
   emptyMessage,
+  framed = true,
 }: {
   courses: DashboardCourse[];
   loading: boolean;
@@ -138,8 +125,14 @@ function CourseListPanel({
   chatHref?: string;
   /** Role-specific copy for the no-courses state (see `emptyCoursesMessage`). */
   emptyMessage?: string;
+  /**
+   * False when a parent card already supplies the border (the admin dashboard's
+   * Courses card), so the rows are not boxed twice.
+   */
+  framed?: boolean;
 }) {
   const navigate = useNavigate();
+  const frame = framed ? "rounded-xl border border-border shadow-2xs bg-card" : "";
   if (loading) {
     return (
       <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
@@ -173,7 +166,7 @@ function CourseListPanel({
     }
 
     return (
-      <div className="rounded-xl border border-border bg-card shadow-2xs px-5 py-8 text-center">
+      <div className={`px-5 py-8 text-center ${frame}`}>
         <p className="text-sm text-muted-foreground">No courses found.</p>
         <Link
           to="/courses"
@@ -186,7 +179,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
+    <div className={`overflow-hidden ${frame}`}>
       {courses.slice(0, 5).map((course, i) => (
         <Link
           key={course.id}

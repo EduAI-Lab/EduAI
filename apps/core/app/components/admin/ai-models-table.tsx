@@ -108,7 +108,10 @@ export function AIModelsTable({
   onToggleActive,
 }: AIModelsTableProps) {
   return (
-    <div className="rounded-md border">
+    // Context and Pricing are the lowest-priority columns: below 1536px they are
+    // hidden (both stay in the model's edit dialog), and anything still too wide
+    // scrolls inside this box rather than the page.
+    <div className="overflow-hidden rounded-md border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -116,8 +119,8 @@ export function AIModelsTable({
             <TableHead>Provider</TableHead>
             <TableHead>Type</TableHead>
             <TableHead>Auto Tier</TableHead>
-            <TableHead>Context</TableHead>
-            <TableHead>Pricing</TableHead>
+            <TableHead className="hidden 2xl:table-cell">Context</TableHead>
+            <TableHead className="hidden 2xl:table-cell">Pricing</TableHead>
             <TableHead>Features</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -179,8 +182,10 @@ export function AIModelsTable({
                   <span className="text-xs text-muted-foreground">Not in pool</span>
                 )}
               </TableCell>
-              <TableCell className="text-sm">{formatTokens(model.maxTokens)}</TableCell>
-              <TableCell>
+              <TableCell className="hidden text-sm 2xl:table-cell">
+                {formatTokens(model.maxTokens)}
+              </TableCell>
+              <TableCell className="hidden 2xl:table-cell">
                 <div className="text-sm">
                   <div>In: {formatPrice(model.inputPricing)}</div>
                   <div className="text-muted-foreground">

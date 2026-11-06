@@ -1,4 +1,4 @@
-import { Link, useLoaderData, redirect } from "react-router";
+import { Link, useLoaderData, redirect, useSearchParams } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
@@ -26,6 +26,9 @@ import {
   AlertDescription,
   AlertTitle,
   HelpHint,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@eduai/ui";
 import { apiFetch } from "~/hooks/api/config";
 import { usePolicies } from "~/hooks/api/use-policies";
@@ -57,12 +60,6 @@ const PERMISSION_GROUPS: {
     match: (p) => p === "instructors",
   },
   {
-    id: "students",
-    title: "Students",
-    description: "What users with the STUDENT role may do.",
-    match: (p) => p === "students",
-  },
-  {
     id: "tas",
     title: "Teaching Assistants",
     description: "What users with the TA role may do.",
@@ -75,12 +72,36 @@ const PERMISSION_GROUPS: {
     match: (p) => p === "unitAdmins",
   },
   {
+    id: "students",
+    title: "Students",
+    description: "What users with the STUDENT role may do.",
+    match: (p) => p === "students",
+  },
+  {
     id: "general",
     title: "General",
     description: "Settings that apply to everyone, not just one role.",
     match: () => true,
   },
 ];
+
+/**
+ * The page's tabs, in order. The selected one lives in `?tab=` so a reload or
+ * a shared link keeps it; anything else falls back to General.
+ */
+const SETTINGS_TABS = [
+  { id: "general", label: "General" },
+  { id: "ai", label: "AI & limits" },
+  { id: "roles", label: "Roles" },
+] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
+
+/** Which permission groups each tab shows; the AI tab's cards are its own. */
+const TAB_GROUPS = new Map<SettingsTab, string[]>([
+  ["general", ["general"]],
+  ["ai", []],
+  ["roles", ["instructors", "tas", "unitAdmins", "students"]],
+]);
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -115,6 +136,9 @@ export default function AdminSettingsPage() {
     assistantSettings,
   } = useLoaderData<typeof loader>();
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies();
+  const [searchParams] = useSearchParams();
+  const tab: SettingsTab =
+    SETTINGS_TABS.find((candidate) => candidate.id === searchParams.get("tab"))?.id ?? "general";
 
   // Bucket each flag into the first group whose `match` passes, preserving the
   // PERMISSION_GROUPS order; drop empty groups so we never render a stray card.
@@ -124,6 +148,9 @@ export default function AdminSettingsPage() {
       (def) => PERMISSION_GROUPS.find((g) => g.match(def.key.split(".")[0]))?.id === group.id,
     ),
   })).filter((group) => group.items.length > 0);
+  const tabGroups = (TAB_GROUPS.get(tab) ?? []).flatMap(
+    (id) => groups.find((group) => group.id === id) ?? [],
+  );
 
   return (
     <CoreAppShell
@@ -163,6 +190,21 @@ export default function AdminSettingsPage() {
               />
             </div>
 
+            <div className="px-4 lg:px-6">
+              {/* Tabs are links so each one is linkable and survives a reload. */}
+              <Tabs value={tab}>
+                <TabsList>
+                  {SETTINGS_TABS.map(({ id, label }) => (
+                    <TabsTrigger key={id} value={id} asChild>
+                      <Link to={`?tab=${id}`} preventScrollReset>
+                        {label}
+                      </Link>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
+
             {error ? (
               <div className="px-4 lg:px-6">
                 <p className="text-destructive text-sm" role="alert">
@@ -181,65 +223,72 @@ export default function AdminSettingsPage() {
                   </AlertDescription>
                 </Alert>
               ) : null}
-              <ChatDailyLimitSettingsCard
-                initialSettings={chatDailyLimits}
-                onSave={async (settings: ChatDailyLimitSettings) => {
-                  await apiFetch("/api/admin/chat-daily-limits", {
-                    method: "PATCH",
-                    body: JSON.stringify(settings),
-                  });
-                }}
-              />
-              <AssistantToggleCard initialSettings={assistantSettings} />
-              <BedrockOverflowSettingsCard
-                initialSettings={bedrockSettings}
-                tokenConfigured={bedrockTokenConfigured}
-                onSave={async (settings: BedrockOverflowSettings) => {
-                  await apiFetch("/api/admin/bedrock-settings", {
-                    method: "PATCH",
-                    body: JSON.stringify(settings),
-                  });
-                }}
-              />
-              {isLoading ? (
-                <Card>
-                  <CardContent className="pt-6">
-                    <p className="text-muted-foreground text-sm">Loading…</p>
-                  </CardContent>
-                </Card>
-              ) : groups.length === 0 ? (
-                <Card>
-                  <CardContent className="pt-6">
-                    <p className="text-muted-foreground text-sm">No configurable policies.</p>
-                  </CardContent>
-                </Card>
+              {tab === "ai" ? (
+                <>
+                  <ChatDailyLimitSettingsCard
+                    initialSettings={chatDailyLimits}
+                    onSave={async (settings: ChatDailyLimitSettings) => {
+                      await apiFetch("/api/admin/chat-daily-limits", {
+                        method: "PATCH",
+                        body: JSON.stringify(settings),
+                      });
+                    }}
+                  />
+                  <BedrockOverflowSettingsCard
+                    initialSettings={bedrockSettings}
+                    tokenConfigured={bedrockTokenConfigured}
+                    onSave={async (settings: BedrockOverflowSettings) => {
+                      await apiFetch("/api/admin/bedrock-settings", {
+                        method: "PATCH",
+                        body: JSON.stringify(settings),
+                      });
+                    }}
+                  />
+                </>
               ) : (
-                groups.map((group) => (
-                  <Card key={group.id}>
-                    <CardHeader>
-                      <CardTitle>{group.title}</CardTitle>
-                      <CardDescription>{group.description}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-6">
-                      {group.items.map((def) => (
-                        <div key={def.key} className="flex items-start justify-between gap-4">
-                          <div className="space-y-1">
-                            <Label htmlFor={def.key} className="text-base">
-                              {def.label}
-                            </Label>
-                            <p className="text-muted-foreground text-sm">{def.description}</p>
-                          </div>
-                          <Switch
-                            id={def.key}
-                            aria-label={def.label}
-                            checked={policies[def.key] ?? def.default}
-                            onCheckedChange={(value) => setPolicy(def.key, value)}
-                          />
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                ))
+                <>
+                  {isLoading ? (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <p className="text-muted-foreground text-sm">Loading…</p>
+                      </CardContent>
+                    </Card>
+                  ) : tabGroups.length === 0 ? (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <p className="text-muted-foreground text-sm">No configurable policies.</p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    tabGroups.map((group) => (
+                      <Card key={group.id}>
+                        <CardHeader>
+                          <CardTitle>{group.title}</CardTitle>
+                          <CardDescription>{group.description}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-6">
+                          {group.items.map((def) => (
+                            <div key={def.key} className="flex items-start justify-between gap-4">
+                              <div className="space-y-1">
+                                <Label htmlFor={def.key} className="text-base">
+                                  {def.label}
+                                </Label>
+                                <p className="text-muted-foreground text-sm">{def.description}</p>
+                              </div>
+                              <Switch
+                                id={def.key}
+                                aria-label={def.label}
+                                checked={policies[def.key] ?? def.default}
+                                onCheckedChange={(value) => setPolicy(def.key, value)}
+                              />
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                  {tab === "general" && <AssistantToggleCard initialSettings={assistantSettings} />}
+                </>
               )}
             </div>
           </div>

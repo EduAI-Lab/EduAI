@@ -4,7 +4,7 @@
  * picker asks for one bounded page rather than the unbounded course list it used
  * to request.
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -22,8 +22,12 @@ vi.mock("~/hooks/api/use-courses", () => ({
 }));
 
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
 vi.mock("sonner", () => ({
-  toast: { error: (...a: unknown[]) => toastError(...a) },
+  toast: {
+    error: (...a: unknown[]) => toastError(...a),
+    success: (...a: unknown[]) => toastSuccess(...a),
+  },
 }));
 
 // UserFormDialog is a fully-featured react-hook-form component covered by its
@@ -112,6 +116,7 @@ function renderView(overrides: Partial<React.ComponentProps<typeof UsersAdminVie
         onCreateUser={vi.fn()}
         onUpdateUser={vi.fn()}
         onDeleteUser={vi.fn()}
+        onDeleteUsers={vi.fn().mockResolvedValue([])}
         onToggleUserActive={vi.fn()}
         {...overrides}
       />
@@ -164,6 +169,34 @@ const openRowMenu = () => {
     ctrlKey: false,
   });
 };
+
+describe("UsersAdminView — your own account", () => {
+  it("disables Delete and the row checkbox on your own row", () => {
+    renderView({ currentUserId: user.id });
+
+    expect(screen.getByRole("checkbox", { name: "Select row" })).toBeDisabled();
+    openRowMenu();
+    expect(screen.getByRole("menuitem", { name: /delete/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("does nothing when the disabled Deactivate or Delete is clicked on your own row", () => {
+    const onToggleUserActive = vi.fn();
+    const onDeleteUser = vi.fn();
+    renderView({ currentUserId: user.id, onToggleUserActive, onDeleteUser });
+
+    openRowMenu();
+    // A disabled item leaves the menu open, so both clicks land in one opening.
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onToggleUserActive).not.toHaveBeenCalled();
+    expect(onDeleteUser).not.toHaveBeenCalled();
+  });
+});
 
 describe("UsersAdminView — create user", () => {
   it("opens the form dialog in create mode from the Add User button", () => {
@@ -294,14 +327,42 @@ describe("UsersAdminView — delete user", () => {
 });
 
 describe("UsersAdminView — toggle active", () => {
-  it("calls onToggleUserActive with the user from the row menu", async () => {
+  it("asks before deactivating, then calls onToggleUserActive with the user", async () => {
     const onToggleUserActive = vi.fn().mockResolvedValue(undefined);
     renderView({ onToggleUserActive, currentUserId: "someone-else" });
 
     openRowMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate|activate/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Student One won't be able to sign in");
+    expect(onToggleUserActive).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
     await waitFor(() => expect(onToggleUserActive).toHaveBeenCalledWith(user));
+  });
+
+  it("leaves the user active when the deactivate dialog is cancelled", () => {
+    const onToggleUserActive = vi.fn();
+    renderView({ onToggleUserActive, currentUserId: "someone-else" });
+
+    openRowMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onToggleUserActive).not.toHaveBeenCalled();
+  });
+
+  it("activates an inactive user straight away, without a dialog", async () => {
+    const onToggleUserActive = vi.fn().mockResolvedValue(undefined);
+    const inactive = { ...user, isActive: false } as PlatformUser;
+    renderView({ users: [inactive], onToggleUserActive, currentUserId: "someone-else" });
+
+    openRowMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^activate/i }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(onToggleUserActive).toHaveBeenCalledWith(inactive));
   });
 
   it("logs when onToggleUserActive rejects", async () => {
@@ -310,7 +371,8 @@ describe("UsersAdminView — toggle active", () => {
     renderView({ onToggleUserActive, currentUserId: "someone-else" });
 
     openRowMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate|activate/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
 
     await waitFor(() =>
       expect(consoleError).toHaveBeenCalledWith("Failed to toggle user:", expect.any(Error)),
@@ -347,5 +409,78 @@ describe("UsersAdminView — search", () => {
     await waitFor(() =>
       expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ search: "student" })),
     );
+  });
+});
+
+describe("UsersAdminView — bulk selection", () => {
+  const other = {
+    ...user,
+    id: "u2",
+    email: "other@example.com",
+    name: "Other Two",
+  } as PlatformUser;
+  const me = { ...user, id: "admin-1", email: "me@example.com", name: "Me Admin" } as PlatformUser;
+
+  const selectAll = () => fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+  const bulkBar = () => screen.queryByRole("region", { name: "Bulk actions" });
+
+  it("shows the bulk bar with the selected count only while rows are selected", () => {
+    renderView({ users: [user, other] });
+    expect(bulkBar()).not.toBeInTheDocument();
+
+    selectAll();
+    expect(bulkBar()).toHaveTextContent("2 selected");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(bulkBar()).not.toBeInTheDocument();
+  });
+
+  it("deletes the selected users, skips your own account and says so, then clears", async () => {
+    const onDeleteUsers = vi.fn().mockResolvedValue([]);
+    renderView({ users: [user, other, me], onDeleteUsers });
+
+    selectAll();
+    expect(bulkBar()).toHaveTextContent("3 selected");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("permanently delete 2 selected users");
+    expect(dialog).toHaveTextContent("Your own account is selected and will be skipped.");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(onDeleteUsers).toHaveBeenCalledWith(["u1", "u2"]));
+    await waitFor(() => expect(bulkBar()).not.toBeInTheDocument());
+    expect(toastSuccess).toHaveBeenCalledWith("Deleted 2 users.");
+  });
+
+  it("names each user a bulk delete could not remove", async () => {
+    const onDeleteUsers = vi
+      .fn()
+      .mockResolvedValue([{ id: "u2", code: "CANNOT_DELETE_USER_WITH_DATA" }]);
+    renderView({ users: [user, other], onDeleteUsers });
+
+    selectAll();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        expect.stringMatching(/^Other Two: .*Deactivate the account instead/),
+      ),
+    );
+    expect(toastSuccess).toHaveBeenCalledWith("Deleted 1 user.");
+  });
+
+  it("clears the selection when the search changes", () => {
+    renderView({ users: [user, other] });
+    selectAll();
+    expect(bulkBar()).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter by name or email"), {
+      target: { value: "other" },
+    });
+    expect(bulkBar()).not.toBeInTheDocument();
   });
 });

@@ -30,7 +30,7 @@ import {
   type ViewerType,
 } from "./bug-reports-utils";
 
-function StatusSelect({
+export function StatusSelect({
   reportId,
   status,
   disabled,
@@ -65,7 +65,7 @@ function StatusSelect({
   );
 }
 
-function SortHeader({
+export function SortHeader({
   title,
   sortKey,
   activeSortKey,

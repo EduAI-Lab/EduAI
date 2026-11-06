@@ -6,6 +6,7 @@ import type {
   FilterFn,
   PaginationState,
   Row,
+  RowSelectionState,
   SortingState,
   VisibilityState,
 } from "@tanstack/react-table";
@@ -98,6 +99,11 @@ export interface UsersTableProps {
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
   onCreateUser?: () => void;
+  /**
+   * Deletes the selected users (your own account already left out). The bulk
+   * bar waits on it and clears the selection once it settles.
+   */
+  onDeleteMany?: (users: User[]) => Promise<void>;
 }
 
 const formatDate = (dateString: string) => {
@@ -133,6 +139,7 @@ function RowActions({
   currentUserId,
   onEdit,
   onRequestDelete,
+  onRequestDeactivate,
   onToggleActive,
   onViewChatHistory,
 }: {
@@ -140,6 +147,7 @@ function RowActions({
   currentUserId: string;
   onEdit: (user: User) => void;
   onRequestDelete: (user: User) => void;
+  onRequestDeactivate: (user: User) => void;
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
 }) {
@@ -177,7 +185,11 @@ function RowActions({
               </a>
             </DropdownMenuItem>
           )}
-        <DropdownMenuItem onClick={() => onToggleActive(user)} disabled={isCurrentUser}>
+        <DropdownMenuItem
+          // Deactivating asks first (see the table's dialog); activating doesn't.
+          onClick={() => (user.isActive ? onRequestDeactivate(user) : onToggleActive(user))}
+          disabled={isCurrentUser}
+        >
           {user.isActive ? (
             <IconUserOff className="mr-2 h-4 w-4" />
           ) : (
@@ -209,9 +221,14 @@ export function UsersTable({
   onToggleActive,
   onViewChatHistory,
   onCreateUser,
+  onDeleteMany,
 }: UsersTableProps) {
   const id = useId();
+  // Keyed by user id (see `getRowId`), so a selection names people, not row positions.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [userToDeactivate, setUserToDeactivate] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -338,6 +355,7 @@ export function UsersTable({
             currentUserId={currentUserId}
             onEdit={onEdit}
             onRequestDelete={setUserToDelete}
+            onRequestDeactivate={setUserToDeactivate}
             onToggleActive={onToggleActive}
             onViewChatHistory={onViewChatHistory}
           />
@@ -365,7 +383,10 @@ export function UsersTable({
     onPaginationChange: setPagination,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id,
     state: {
+      rowSelection,
       sorting,
       pagination,
       columnFilters,
@@ -394,6 +415,12 @@ export function UsersTable({
 
   const filterKey = `${nameFilter}|${roleFilter.join(",")}|${String(isActiveFilter)}`;
   const previousFilterKey = useRef(filterKey);
+
+  // "Select all" covers the current page, so a selection never outlives the
+  // rows it was made on: new filters, search, or page clear it.
+  useEffect(() => {
+    setRowSelection({});
+  }, [filterKey, pagination.pageIndex, pagination.pageSize]);
 
   useEffect(() => {
     // A changed filter invalidates the current offset — reset before fetching so
@@ -468,14 +495,22 @@ export function UsersTable({
     table.getColumn("isActive")?.setFilterValue(newFilterValue.length ? newFilterValue : undefined);
   };
 
-  const handleDeleteSelected = () => {
-    const selectedRows = table.getSelectedRowModel().rows;
-    selectedRows.forEach((row) => {
-      if (row.original.id !== currentUserId) {
-        onDelete(row.original.id);
-      }
-    });
-    table.resetRowSelection();
+  const selectedRows = table.getSelectedRowModel().rows;
+  // Your own account can be swept up by "Select all" but is never deleted.
+  const selfSelected = selectedRows.some((row) => row.original.id === currentUserId);
+  const deletable = selectedRows
+    .map((row) => row.original)
+    .filter((user) => user.id !== currentUserId);
+
+  const handleDeleteSelected = async () => {
+    setBulkDeleting(true);
+    try {
+      if (onDeleteMany) await onDeleteMany(deletable);
+      else for (const user of deletable) onDelete(user.id);
+    } finally {
+      setBulkDeleting(false);
+      setRowSelection({});
+    }
   };
 
   return (
@@ -622,49 +657,6 @@ export function UsersTable({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Delete selected button */}
-          {table.getSelectedRowModel().rows.length > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline">
-                  <IconTrash className="-ms-1 opacity-60" size={16} aria-hidden="true" />
-                  Delete
-                  <span className="bg-background text-muted-foreground/70 -me-1 inline-flex h-5 max-h-full items-center rounded border px-1 font-[inherit] text-[0.625rem] font-medium">
-                    {
-                      table
-                        .getSelectedRowModel()
-                        .rows.filter((row) => row.original.id !== currentUserId).length
-                    }
-                  </span>
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete{" "}
-                    {
-                      table
-                        .getSelectedRowModel()
-                        .rows.filter((row) => row.original.id !== currentUserId).length
-                    }{" "}
-                    selected{" "}
-                    {table
-                      .getSelectedRowModel()
-                      .rows.filter((row) => row.original.id !== currentUserId).length === 1
-                      ? "user"
-                      : "users"}
-                    .
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDeleteSelected}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-
           {/* Add user button */}
           {onCreateUser && (
             <Button onClick={onCreateUser}>
@@ -674,6 +666,46 @@ export function UsersTable({
           )}
         </div>
       </div>
+
+      {selectedRows.length > 0 && (
+        <div
+          role="region"
+          aria-label="Bulk actions"
+          className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"
+        >
+          <span className="font-medium">{selectedRows.length} selected</span>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={bulkDeleting || deletable.length === 0}>
+                <IconTrash className="-ms-1 opacity-60" size={16} aria-hidden="true" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete {deletable.length}{" "}
+                  selected {deletable.length === 1 ? "user" : "users"}.
+                  {selfSelected && " Your own account is selected and will be skipped."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteSelected}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setRowSelection({})}
+            disabled={bulkDeleting}
+          >
+            Clear selection
+          </Button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-background overflow-hidden rounded-md border">
@@ -887,6 +919,37 @@ export function UsersTable({
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Single-user deactivate dialog, beside the delete one for the same reason. */}
+      <AlertDialog
+        open={!!userToDeactivate}
+        onOpenChange={(open) => {
+          if (!open) setUserToDeactivate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {userToDeactivate?.name || userToDeactivate?.email} won't be able to sign in until
+              their account is activated again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (userToDeactivate) {
+                  onToggleActive(userToDeactivate);
+                  setUserToDeactivate(null);
+                }
+              }}
+            >
+              Deactivate
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

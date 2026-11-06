@@ -4,11 +4,14 @@ import { Link, useLocation, useNavigate } from "react-router";
 import {
   GettingStartedButton,
   CommandSearchButton,
+  isNavHrefActive,
   NavShell,
   OnboardingChecklist,
   PageTourButton,
   ThemeToggle,
+  TRAY_TITLES,
   type CourseNavConfig,
+  type SectionNavConfig,
 } from "@eduai/ui";
 
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
@@ -156,6 +159,13 @@ export function CoreAppShell({
   const chatModel = useCourseChatNavModel(user, openBugReport, chatApp ?? {});
   const model = isCourseChatPath(pathname) ? chatModel : coreModel;
   const navigate = useNavigate();
+  // Every Administration page keeps its menu beside the page, so moving
+  // between them never needs the rail's tray.
+  const adminNav: SectionNavConfig | undefined = coreModel.adminLinks.some((link) =>
+    isNavHrefActive(pathname, link.href),
+  )
+    ? { title: TRAY_TITLES.admin, links: coreModel.adminLinks }
+    : undefined;
 
   return (
     <CurrentUserIdProvider userId={user.id}>
@@ -166,6 +176,7 @@ export function CoreAppShell({
         title={resolveCoreHeaderTitle(pathname, title)}
         breadcrumbs={breadcrumbs}
         courseNav={courseNav}
+        sectionNav={adminNav}
         headerActions={
           <CoreHeaderActions
             extraActions={actions}
@@ -200,7 +211,8 @@ export function CoreAppShell({
         mainClassName={mainClassName}
         providerClassName={providerClassName}
       >
-        {pathname === "/dashboard" ? (
+        {/* The admin dashboard places its own Getting started card in its grid. */}
+        {pathname === "/dashboard" && user.role !== "ADMIN" ? (
           <OnboardingChecklist
             platform="core"
             userId={user.id}

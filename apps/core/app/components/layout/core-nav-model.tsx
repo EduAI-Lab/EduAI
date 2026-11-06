@@ -20,7 +20,9 @@ import {
 } from "@tabler/icons-react";
 
 import {
+  Badge,
   cn,
+  isNavHrefActive,
   termLabel,
   visibleAppsForRole,
   type NavShellCourse,
@@ -32,7 +34,8 @@ import type { User } from "~/lib/auth/types";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import { getNavForUser, getNavSecondaryForUser, type NavItemKey } from "~/lib/rbac";
 import { usePolicyGate } from "~/components/policy/policy-gate";
-import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status";
+import { useCronJobStatuses, type CronStatusColor } from "~/hooks/api/use-cron-job-status";
+import { useAdminNavCounts } from "~/hooks/api/use-admin-nav-counts";
 import type { loader as rootLoader } from "~/root";
 
 export const NAV_ICONS = {
@@ -152,11 +155,13 @@ export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellM
   // default-aware, no paint flash); fall back to the SSR-seeded policy gate.
   const rootData = useRouteLoaderData<typeof rootLoader>("root");
 
-  // The cron admin page owns polling while it is open, so this always-mounted
-  // nav never creates a concurrent request loop.
-  const cronStatusColor = useCronJobStatus(
-    user.role === "ADMIN" && pathname !== "/admin/cron-jobs",
-  );
+  // One shared store polls for every subscriber, so the cron page's own
+  // subscription joins this one's loop instead of starting a second.
+  const isAdmin = user.role === "ADMIN";
+  const cronStatus = useCronJobStatuses(isAdmin);
+  const cronStatusColor = cronStatus.color;
+  const failedCronJobs = cronStatus.jobs.filter((job) => job.lastRun?.status === "ERROR").length;
+  const navCounts = useAdminNavCounts(isAdmin && pathname.startsWith("/admin/"), pathname);
 
   const navItems = getNavForUser(user, {
     canInvite: rootData?.canInvite ?? isEnabled("unitAdmins.canInvite"),
@@ -175,12 +180,22 @@ export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellM
     if ("children" in item) {
       adminLinks = item.children.map((child) => ({
         ...toNavLink(child),
-        badge:
-          child.url === "/admin/cron-jobs" && cronStatusColor ? (
-            <CronBadgeDot color={cronStatusColor} />
-          ) : undefined,
+        badge: adminLinkBadge(child.url, {
+          cronStatusColor,
+          failedCronJobs,
+          unhandledBugReports: navCounts?.unhandledBugReports,
+          pendingInvitations: navCounts?.pendingInvitations,
+        }),
       }));
-      entries.push({ kind: "tray", tray: "admin", label: item.title, icon: NAV_ICONS[item.key] });
+      // Every admin page shows the Administration menu beside it, so the rail
+      // tile goes straight to the first page instead of opening the tray.
+      entries.push({
+        kind: "tray",
+        tray: "admin",
+        label: item.title,
+        icon: NAV_ICONS[item.key],
+        href: adminLinks.find((link) => !link.disabled)?.href,
+      });
     } else if (item.key === "courses") {
       entries.push({ kind: "tray", tray: "courses", label: item.title, icon: NAV_ICONS.courses });
     } else {
@@ -205,6 +220,49 @@ export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellM
     loadCourses: loadCoreNavCourses,
     currentAppId: CURRENT_APP_ID,
   };
+}
+
+/** A count badge for an Administration link; nothing for a zero or unknown count. */
+function CountBadge({
+  count,
+  label,
+  variant = "muted",
+}: {
+  count: number | undefined;
+  label: string;
+  variant?: "muted" | "destructive";
+}) {
+  if (!count) return null;
+  return (
+    <Badge variant={variant} size="sm" className="ml-auto" aria-label={`${count} ${label}`}>
+      {count}
+    </Badge>
+  );
+}
+
+function adminLinkBadge(
+  url: string,
+  counts: {
+    cronStatusColor: CronStatusColor | null;
+    failedCronJobs: number;
+    unhandledBugReports?: number;
+    pendingInvitations?: number;
+  },
+): React.ReactNode {
+  if (isNavHrefActive(url, "/admin/bug-reports")) {
+    return <CountBadge count={counts.unhandledBugReports} label="unhandled" />;
+  }
+  if (isNavHrefActive(url, "/admin/invitations")) {
+    return <CountBadge count={counts.pendingInvitations} label="pending" />;
+  }
+  if (isNavHrefActive(url, "/admin/cron-jobs")) {
+    // Failures show as a count; otherwise the status dot (running, all good) stays.
+    if (counts.failedCronJobs > 0) {
+      return <CountBadge count={counts.failedCronJobs} label="failed" variant="destructive" />;
+    }
+    return counts.cronStatusColor ? <CronBadgeDot color={counts.cronStatusColor} /> : undefined;
+  }
+  return undefined;
 }
 
 const loadCoreNavCourses = () => loadNavCourses((courseId) => `/courses/${courseId}`);

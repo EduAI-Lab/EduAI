@@ -232,4 +232,51 @@ describe("LogsAdminView", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
+
+  it("keeps Category, Outcome and the dates on one row, with the rest behind Advanced filters", () => {
+    renderLogsPage("/admin/logs?tab=audit&actionCode=LOGIN");
+
+    for (const label of ["Category", "Outcome", "Date from", "Date to"]) {
+      expect(screen.getByText(label, { selector: "label" })).toBeVisible();
+    }
+    const toggle = screen.getByRole("button", { name: /Advanced filters/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // Hidden but still in the form, so its value keeps submitting.
+    const actionCode = document.querySelector<HTMLInputElement>("input[name='actionCode']");
+    expect(actionCode?.value).toBe("LOGIN");
+    expect(actionCode).not.toBeVisible();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    for (const label of [
+      "Page size",
+      "Direction",
+      "Action code",
+      "Actor role",
+      "Entity type",
+      "Route path",
+    ]) {
+      expect(screen.getByText(label, { selector: "label" })).toBeVisible();
+    }
+  });
+
+  it("drops the Route column; the route stays in View details", async () => {
+    renderLogsPage("/admin/logs?tab=audit");
+    expect(screen.queryByRole("columnheader", { name: "Route" })).not.toBeInTheDocument();
+    expect(screen.queryByText("/login")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "View details" })[0]);
+    expect(await screen.findByText(/"routePath": "\/login"/)).toBeInTheDocument();
+  });
+
+  it("opens the retention policy from the header's Retention button", async () => {
+    renderLogsPage("/admin/logs?tab=audit");
+    expect(screen.queryByText("Save retention policy")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retention" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Retention" });
+    expect(dialog).toHaveTextContent("Audit retention (days)");
+    expect(dialog).toHaveTextContent("Save retention policy");
+  });
 });

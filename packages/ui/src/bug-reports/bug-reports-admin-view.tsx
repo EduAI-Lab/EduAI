@@ -10,7 +10,7 @@
  *
  * Anonymity masking is server-side (`bugReportMappers`); this only renders.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 
 import { hasAttachmentContent } from "@eduai/types";
@@ -18,8 +18,10 @@ import { IconAlertCircle } from "@tabler/icons-react";
 
 import { Alert, AlertDescription } from "../ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { BugReportsCompactTable } from "./bug-reports-compact-table";
 import { BugReportsTable } from "./bug-reports-table";
 import { BugReportsToolbar } from "./bug-reports-toolbar";
+import { ReportDetailPanel } from "./report-detail-panel";
 import { ReportViewerDialog } from "./report-viewers";
 import {
   buildBugReportCopyText,
@@ -55,6 +57,11 @@ export interface BugReportsAdminViewProps {
   onLoadDetail?: (reportId: string) => Promise<Partial<AdminBugReportRow>>;
   title?: string;
   description?: string;
+  /**
+   * Leaves the card's title and description out, for a page that already
+   * shows them in its own page header (Core's admin pages).
+   */
+  hideHeader?: boolean;
   /** Only the platform-wide (Core) view shows which app a report came from. */
   showSourceColumn?: boolean;
   /**
@@ -64,6 +71,19 @@ export interface BugReportsAdminViewProps {
   notice?: React.ReactNode;
   /** Replaces the table with a loading line while the owner fetches. */
   isLoading?: boolean;
+  /**
+   * "panel" (Core): a compact table — Status, Type, Description, Reporter,
+   * Date, "…" — whose rows open the whole report in a side panel, and a
+   * single-row filter bar. "table" (default) keeps every detail as a column.
+   */
+  layout?: "table" | "panel";
+  /**
+   * The report open in the panel, for an owner that keeps it in the URL
+   * (`?report=<id>`) so it can be linked and survives a reload. Leave both
+   * unset to let the view track it itself.
+   */
+  openReportId?: string | null;
+  onOpenReportChange?: (reportId: string | null) => void;
   className?: string;
 }
 
@@ -73,11 +93,22 @@ export function BugReportsAdminView({
   onLoadDetail,
   title = "Bug reports",
   description = "Filter and update status for incoming reports.",
+  hideHeader = false,
   showSourceColumn = false,
   notice,
   isLoading = false,
+  layout = "table",
+  openReportId,
+  onOpenReportChange,
   className,
 }: BugReportsAdminViewProps) {
+  const [ownOpenReportId, setOwnOpenReportId] = useState<string | null>(null);
+  const panelReportId = openReportId !== undefined ? openReportId : ownOpenReportId;
+  const setPanelReportId = (reportId: string | null) => {
+    if (openReportId === undefined) setOwnOpenReportId(reportId);
+    onOpenReportChange?.(reportId);
+  };
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [reports, setReports] = useState<AdminBugReportRow[]>(initialReports);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -163,19 +194,40 @@ export function BugReportsAdminView({
     return merged;
   };
 
+  // Fetch once per report, and only when it actually has diagnostics to fetch.
+  const needsDetailFor = (report: AdminBugReportRow | undefined) =>
+    onLoadDetail != null &&
+    report != null &&
+    report.consoleLogs == null &&
+    report.networkLogs == null &&
+    report.screenshot == null &&
+    (hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs) ||
+      hasAttachmentContent(report.networkLogs, report.hasNetworkLogs) ||
+      hasAttachmentContent(report.screenshot, report.hasScreenshot));
+
+  const panelReport =
+    panelReportId === null ? null : (reports.find((report) => report.id === panelReportId) ?? null);
+
+  // The panel shows the screenshot inline, so it pulls the report's bodies as
+  // soon as it opens — once per report; a failure leaves the buttons to retry.
+  const detailRequested = useRef<string | null>(null);
+  useEffect(() => {
+    if (layout !== "panel" || !panelReport || detailRequested.current === panelReport.id) return;
+    if (!needsDetailFor(panelReport)) return;
+    detailRequested.current = panelReport.id;
+    setLoadingDetailId(panelReport.id);
+    loadReportDetail(panelReport.id)
+      .catch(() => setError("Could not load bug report details. Please try again."))
+      .finally(() =>
+        setLoadingDetailId((current) => (current === panelReport.id ? null : current)),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, panelReport?.id]);
+
   const openViewer = async (type: Exclude<ViewerType, null>, reportId: string) => {
     setError(null);
     const report = reports.find((candidate) => candidate.id === reportId);
-    // Fetch once per report, and only when it actually has diagnostics to fetch.
-    const needsDetail =
-      onLoadDetail != null &&
-      report != null &&
-      report.consoleLogs == null &&
-      report.networkLogs == null &&
-      report.screenshot == null &&
-      (hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs) ||
-        hasAttachmentContent(report.networkLogs, report.hasNetworkLogs) ||
-        hasAttachmentContent(report.screenshot, report.hasScreenshot));
+    const needsDetail = needsDetailFor(report);
 
     if (!needsDetail) {
       setSelectedReportId(reportId);
@@ -244,10 +296,12 @@ export function BugReportsAdminView({
 
   return (
     <Card className={className}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
+      {!hideHeader && (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+      )}
       <CardContent className="space-y-4">
         {notice ? (
           <Alert>
@@ -264,6 +318,7 @@ export function BugReportsAdminView({
         ) : null}
 
         <BugReportsToolbar
+          compact={layout === "panel"}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
           typeFilter={typeFilter}
@@ -282,6 +337,19 @@ export function BugReportsAdminView({
           <p className="px-1 py-8 text-center text-sm text-muted-foreground">
             Loading bug reports…
           </p>
+        ) : layout === "panel" ? (
+          <BugReportsCompactTable
+            reports={filteredSortedReports}
+            sortKey={sortKey}
+            sortDirection={sortDirection}
+            onToggleSort={toggleSort}
+            updatingReportId={updatingReportId}
+            copiedReportId={copiedReportId}
+            hasActiveFilters={hasActiveFilters}
+            onStatusChange={onStatusChange}
+            onCopyReport={onCopyReport}
+            onOpenReport={setPanelReportId}
+          />
         ) : (
           <BugReportsTable
             reports={filteredSortedReports}
@@ -299,6 +367,21 @@ export function BugReportsAdminView({
         )}
       </CardContent>
 
+      {layout === "panel" && (
+        <ReportDetailPanel
+          report={panelReport}
+          open={panelReport !== null}
+          onOpenChange={(open) => {
+            if (!open) setPanelReportId(null);
+          }}
+          loadingDetail={loadingDetailId !== null && loadingDetailId === panelReportId}
+          updatingReportId={updatingReportId}
+          copiedReportId={copiedReportId}
+          onStatusChange={onStatusChange}
+          onCopyReport={onCopyReport}
+          onOpenViewer={openViewer}
+        />
+      )}
       <ReportViewerDialog viewerType={viewerType} report={selectedReport} onClose={closeViewer} />
     </Card>
   );

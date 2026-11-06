@@ -537,8 +537,8 @@ export function AiModelsAdminView({
                       </div>
                     )}
 
-                    <div className="flex items-center gap-4">
-                      <div className="relative flex-1 max-w-sm">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="relative flex-1 min-w-48 max-w-sm">
                         <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           aria-label="Search models"

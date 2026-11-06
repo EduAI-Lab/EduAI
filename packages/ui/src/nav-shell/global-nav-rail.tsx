@@ -157,6 +157,23 @@ export function GlobalNavRail({
                 </li>
               );
             }
+            if (entry.kind === "tray" && entry.href) {
+              return (
+                <li key={entry.tray}>
+                  <RailLink
+                    link={{
+                      key: entry.tray,
+                      label: entry.label,
+                      href: entry.href,
+                      icon: entry.icon,
+                    }}
+                    pathname={model.pathname}
+                    iconOnly={iconOnly}
+                    active={activeTray === entry.tray}
+                  />
+                </li>
+              );
+            }
             const icon = <entry.icon size={26} strokeWidth={1.6} aria-hidden="true" />;
             if (entry.kind === "panel") {
               const tray = `panel:${entry.key}` as const;
@@ -212,12 +229,15 @@ function RailLink({
   link,
   pathname,
   iconOnly,
+  active: activeOverride,
 }: {
   link: NavShellLink;
   pathname: string;
   iconOnly: boolean;
+  /** Overrides the href match, for a tile that stands for a whole section. */
+  active?: boolean;
 }) {
-  const active = !link.external && isNavHrefActive(pathname, link.href);
+  const active = activeOverride ?? (!link.external && isNavHrefActive(pathname, link.href));
   const body = (
     <>
       {link.icon && <link.icon size={26} strokeWidth={1.6} aria-hidden="true" />}

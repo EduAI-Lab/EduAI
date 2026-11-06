@@ -339,4 +339,5 @@ export { DetailPageScaffold } from "./detail-page-scaffold";
 export type { DetailPageScaffoldProps } from "./detail-page-scaffold";
 
 export { GettingStartedButton, OnboardingChecklist, PageTourButton } from "./onboarding/onboarding";
+export type { OnboardingTask } from "./onboarding/onboarding";
 export type { OnboardingPlatform } from "./onboarding/catalog";

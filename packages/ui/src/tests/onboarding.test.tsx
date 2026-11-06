@@ -142,6 +142,53 @@ describe("onboarding progress", () => {
   });
 });
 
+describe("inline checklist with its own tasks", () => {
+  const tasks = [
+    { id: "admin.invite-user", label: "Invite a user", href: "/admin/invitations" },
+    { id: "admin.review-roles", label: "Review user roles", href: "/admin/users" },
+  ];
+
+  it("renders only the card with the given tasks, and opens each task's page", () => {
+    const navigate = vi.fn();
+    render(
+      <OnboardingChecklist
+        platform="core"
+        role="ADMIN"
+        userId="a1"
+        navigate={navigate}
+        tasks={tasks}
+        layout="inline"
+        intro="Tick each task when done."
+      >
+        <p>dashboard body</p>
+      </OnboardingChecklist>,
+    );
+    expect(screen.queryByText("dashboard body")).toBeNull();
+    expect(screen.getByText("0 of 2 done")).toBeInTheDocument();
+    expect(screen.getByText("Tick each task when done.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Review user roles" }));
+    expect(navigate).toHaveBeenCalledWith("/admin/users");
+  });
+
+  it("collapses but cannot be closed, and still shows when the aside card was closed", () => {
+    window.localStorage.setItem("eduai:onboarding:v1:core:a1:panel", "dismissed");
+    render(
+      <OnboardingChecklist
+        platform="core"
+        role="ADMIN"
+        userId="a1"
+        navigate={vi.fn()}
+        tasks={tasks}
+        layout="inline"
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Close getting started" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(screen.queryByText("Invite a user")).toBeNull();
+    expect(screen.getByRole("button", { name: "Expand" })).toBeInTheDocument();
+  });
+});
+
 describe("page tours", () => {
   it("starts only on request and closes when navigating to a different page", () => {
     const view = render(<PageTourButton platform="core" pathname="/courses" role="STUDENT" />);
