@@ -1,184 +1,141 @@
 /**
- * QM dashboard container. Wires auth, courses, question/assessment data and
- * derives stats, analytics, and recent activity, then renders the presentational view.
+ * QM dashboard container (#2119). Wires auth, courses, question/assessment data,
+ * bug reports and AI status into the per-role model, then renders the presentational view.
  */
-import { useMemo } from "react";
-import { IconBooks, IconLibrary, IconHelpCircle, IconSettings } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import { Badge, type ServiceState } from "@eduai/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDisplayCourses } from "@/hooks/useDisplayCourses";
 import { useQuestionStats } from "@/hooks/useQuestionStats";
 import { useAllQuestions } from "@/hooks/useAllQuestions";
 import { useAllAssessments } from "@/hooks/useAllAssessments";
-import { questionTypeLabels, type QuestionType } from "@/types/question";
+import { useQmPermissions } from "@/hooks/useQmPermissions";
+import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import { useCanvasLinks } from "@/hooks/useCanvasLinks";
+import { bugReportApi } from "@/services/bugReportApi";
+import { qmCourseLinks } from "@/components/courses/QmCourseCard";
+import { QmDashboardView, type QmGlanceCell } from "@/components/dashboard/QmDashboardView";
 import {
-  QmDashboardView,
-  type QmDashboardCourse,
-  type QmDashboardRecentItem,
-  type QmDashboardStat,
-  type QmDashboardQuickAction,
-  type QmDashboardAnalytics,
-} from "@/components/dashboard/QmDashboardView";
+  buildAttentionRows,
+  buildGlanceStats,
+  buildSections,
+  dashboardRole,
+  firstNameOf,
+  heroCopy,
+  type QmDashboardInput,
+} from "@/components/dashboard/qmDashboardModel";
 
-const STAFF_ROLES = new Set(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
+const BUG_LIST_LIMIT = 100;
 
-const TYPE_COLORS = {
-  MCQ: "var(--color-series-3)",
-  SA: "var(--color-series-7)",
-  LA: "var(--color-series-8)",
-} satisfies Record<QuestionType, string>;
-// Pull from the shared difficulty tokens (index.css) so meters match every other
-// difficulty surface and adapt to light/dark automatically.
-const DIFF_COLORS = {
-  easy: "var(--diff-easy-solid)",
-  medium: "var(--diff-medium-solid)",
-  hard: "var(--diff-hard-solid)",
-};
+const WORD = {
+  operational: "OK",
+  degraded: "DEGRADED",
+  outage: "FAILED",
+  loading: "CHECKING",
+  unknown: "UNKNOWN",
+} satisfies Record<ServiceState, string>;
+
+function pill(state: ServiceState): "success" | "warning" | "destructive" | "muted" {
+  if (state === "operational") return "success";
+  if (state === "degraded") return "warning";
+  if (state === "outage") return "destructive";
+  return "muted";
+}
+
+type BugSummary = { unhandled: number; capped: boolean } | null;
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { displayCourses, isLoading: coursesLoading } = useDisplayCourses();
   const { stats: questionStats } = useQuestionStats();
-  const { questions, isLoading: questionsLoading } = useAllQuestions();
+  const { questions, isLoading: questionsLoading, error: questionsError } = useAllQuestions();
   const { assessments, isLoading: assessmentsLoading } = useAllAssessments();
+  const { canTriageBugReports, canManageCanvas } = useQmPermissions();
+  const ai = useAiServicesStatus();
+  const [bugs, setBugs] = useState<BugSummary>(null);
 
-  const firstName = user?.name?.trim().split(/\s+/)[0];
-  const isStaff = user ? STAFF_ROLES.has(user.role) : false;
-
-  const courses = useMemo<QmDashboardCourse[]>(
-    () =>
-      displayCourses.map((c) => ({
-        id: c.id,
-        code: c.code ?? "—",
-        name: c.name,
-      })),
-    [displayCourses],
-  );
-
-  const analytics = useMemo<QmDashboardAnalytics>(() => {
-    const typeCounts = { MCQ: 0, SA: 0, LA: 0 } satisfies Record<QuestionType, number>;
-    let easy = 0;
-    let medium = 0;
-    let hard = 0;
-    let ai = 0;
-    let human = 0;
-    let reviewed = 0;
-    let totalVariants = 0;
-
-    for (const q of questions) {
-      typeCounts[q.type] = (typeCounts[q.type] ?? 0) + 1;
-      for (const v of q.variants ?? []) {
-        totalVariants += 1;
-        const d = String(v.difficulty ?? "medium").toLowerCase();
-        if (d === "easy") easy += 1;
-        else if (d === "hard") hard += 1;
-        else medium += 1;
-        if (v.isAiGenerated) ai += 1;
-        else human += 1;
-        if (!v.isDraft) reviewed += 1;
-      }
-    }
-
-    const typeComposition = (["MCQ", "SA", "LA"] as const)
-      .map((t) => ({
-        label: questionTypeLabels[t],
-        value: typeCounts[t] ?? 0,
-        color: TYPE_COLORS[t],
-      }))
-      .filter((s) => s.value > 0);
-
-    return {
-      typeComposition,
-      difficulty: [
-        { label: "Easy", value: easy, color: DIFF_COLORS.easy },
-        { label: "Medium", value: medium, color: DIFF_COLORS.medium },
-        { label: "Hard", value: hard, color: DIFF_COLORS.hard },
-      ],
-      totalQuestions: questions.length,
-      totalVariants,
-      aiCount: ai,
-      humanCount: human,
-      reviewedCount: reviewed,
+  useEffect(() => {
+    if (!canTriageBugReports) return;
+    let cancelled = false;
+    bugReportApi
+      .list({ source: "QUESTION_MAKER" })
+      .then((rows) => {
+        if (cancelled) return;
+        setBugs({
+          unhandled: rows.filter((r) => r.status === "unhandled").length,
+          capped: rows.length >= BUG_LIST_LIMIT,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setBugs(null);
+      });
+    return () => {
+      cancelled = true;
     };
-  }, [questions]);
+  }, [canTriageBugReports]);
 
-  const questionCount = questionStats?.totalQuestions ?? questions.length;
-
-  const stats = useMemo<QmDashboardStat[]>(
-    () => [
-      { label: "Courses", value: displayCourses.length },
-      { label: "Questions", value: questionCount },
-      { label: "Assessments", value: assessments.length },
-      { label: "AI-generated", value: analytics.aiCount },
+  const role = dashboardRole(user?.questionMakerRole ?? user?.role);
+  const input = useMemo<QmDashboardInput>(
+    () => ({
+      role,
+      authorizedUnits: user?.authorizedUnits ?? [],
+      courses: displayCourses,
+      questions,
+      questionsFailed: questionsError !== null,
+      questionTotal: questionStats?.totalQuestions ?? null,
+      assessments,
+      unhandledBugReports: bugs?.unhandled ?? null,
+      bugReportsCapped: bugs?.capped ?? false,
+    }),
+    [
+      role,
+      user?.authorizedUnits,
+      displayCourses,
+      questions,
+      questionsError,
+      questionStats,
+      assessments,
+      bugs,
     ],
-    [displayCourses.length, questionCount, assessments.length, analytics.aiCount],
   );
 
-  const recentItems = useMemo<QmDashboardRecentItem[]>(() => {
-    const questionItems: QmDashboardRecentItem[] = questions.map((q) => ({
-      id: `question-${q.id}`,
-      label: q.description?.trim() || `${questionTypeLabels[q.type]} question`,
-      sublabel: "Question",
-      href: `/courses/${q.courseId}?tab=questions`,
-      updatedAt: q.updatedAt,
-    }));
-
-    const assessmentItems: QmDashboardRecentItem[] = assessments.map((a) => ({
-      id: `assessment-${a.id}`,
-      label: a.name,
-      sublabel: "Assessment",
-      href: a.courseId != null ? `/courses/${a.courseId}/assessments/${a.id}` : `/courses`,
-      updatedAt: a.updatedAt,
-    }));
-
-    return [...questionItems, ...assessmentItems]
-      .sort((x, y) => new Date(y.updatedAt).getTime() - new Date(x.updatedAt).getTime())
-      .slice(0, 6);
-  }, [questions, assessments]);
-
-  const quickActions = useMemo<QmDashboardQuickAction[]>(() => {
-    const actions: QmDashboardQuickAction[] = [
-      {
-        label: "Browse courses",
-        description: "Open any of your courses",
-        href: "/courses",
-        icon: <IconBooks size={16} stroke={1.75} />,
-      },
-      {
-        label: "Question Library",
-        description: "Search questions across courses",
-        href: "/library",
-        icon: <IconLibrary size={16} stroke={1.75} />,
-      },
-      {
-        label: "Help & shortcuts",
-        description: "Tips, tours, and keyboard shortcuts",
-        href: "/help",
-        icon: <IconHelpCircle size={16} stroke={1.75} />,
-      },
-    ];
-
-    if (isStaff) {
-      actions.push({
-        label: "Settings",
-        description: "Configure your workspace",
-        href: "/settings",
-        icon: <IconSettings size={16} stroke={1.75} />,
+  const { sections, courseTotal } = useMemo(() => buildSections(input), [input]);
+  const attentionRows = useMemo(() => buildAttentionRows(input), [input]);
+  const stats = useMemo<QmGlanceCell[]>(() => {
+    const cells: QmGlanceCell[] = buildGlanceStats(input);
+    if (role === "ADMIN") {
+      cells.push({
+        label: "AI models",
+        value: (
+          <div className="flex flex-col items-start gap-1">
+            <Badge size="sm" variant={pill(ai.ubc.state)}>
+              UBC {WORD[ai.ubc.state]}
+            </Badge>
+            <Badge size="sm" variant={pill(ai.cloud.state)}>
+              CLOUD {WORD[ai.cloud.state]}
+            </Badge>
+          </div>
+        ),
       });
     }
+    return cells;
+  }, [input, role, ai.ubc.state, ai.cloud.state]);
 
-    return actions;
-  }, [isStaff]);
+  const shownIds = useMemo(() => sections.flatMap((s) => s.courses.map((c) => c.id)), [sections]);
+  const linked = useCanvasLinks(shownIds, canManageCanvas);
+  const { heading, subheading } = heroCopy(role, firstNameOf(user?.name));
 
   return (
     <QmDashboardView
-      greetingName={firstName}
-      stats={stats}
-      courses={courses}
+      heading={heading}
+      subheading={subheading}
+      sections={sections}
+      courseTotal={courseTotal}
       coursesLoading={coursesLoading}
-      recentItems={recentItems}
-      recentLoading={questionsLoading || assessmentsLoading}
-      quickActions={quickActions}
-      analytics={analytics}
+      sideLoading={questionsLoading || assessmentsLoading}
+      attentionRows={attentionRows}
+      stats={stats}
+      linksFor={(c) => qmCourseLinks(c, linked.has(c.id))}
     />
   );
 }

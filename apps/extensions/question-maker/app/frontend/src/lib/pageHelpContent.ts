@@ -54,7 +54,7 @@ const ROUTES: PageHelpRoute[] = [
     match: "/dashboard",
     content: {
       title: "Dashboard",
-      summary: "Your home base: your courses, key stats and recent activity.",
+      summary: "Your home base: your courses, what needs attention and the numbers at a glance.",
       tips: [
         "Courses you teach in Core are added automatically when you sign in.",
         "Take the tour below for a walkthrough of writing questions and building an assessment.",
