@@ -433,7 +433,6 @@ export function TeachingDashboard({
   courseTotal,
   stats,
   showDrafts,
-  sidePanel,
 }: {
   sections: TeachingSection[];
   /** Full course count (#1208); the grid shows one bounded page. */
@@ -441,8 +440,6 @@ export function TeachingDashboard({
   stats: DashboardStatDef[];
   /** Instructors and unit admins see their unpublished courses on the side. */
   showDrafts: boolean;
-  /** An extra side panel, e.g. the TA's "Continue learning". */
-  sidePanel?: { title: string; content: ReactNode };
 }) {
   const [view, setView] = useCourseView();
   const perms = useAtPermissions();
@@ -570,7 +567,6 @@ export function TeachingDashboard({
             </div>
           </SidePanel>
         )}
-        {sidePanel && <SidePanel title={sidePanel.title}>{sidePanel.content}</SidePanel>}
         <SidePanel title="At a glance">
           <AtAGlance stats={stats} />
         </SidePanel>
