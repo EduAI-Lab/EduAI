@@ -2,7 +2,7 @@ import type { JsonValue } from "~/lib/json-value";
 import { useEffect, useState } from "react";
 import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
+import { IconPlus, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
 import {
   INVITE_NETWORK_ERROR,
@@ -37,10 +37,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   Select,
   SelectContent,
   SelectItem,
@@ -344,20 +340,30 @@ export default function InvitationsPage() {
                     Resend to issue a fresh link, or cancel to disable a pending invite
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="border-t p-0">
                   {loading ? (
-                    <p className="text-sm text-muted-foreground">Loading…</p>
+                    <p className="px-6 py-4 text-sm text-muted-foreground">Loading…</p>
                   ) : (
-                    <div className="overflow-hidden rounded-md border">
-                      <Table>
+                    <div>
+                      {/* Fixed columns with wrapping cells keep it inside the card at laptop
+                          widths, so there is no horizontal scrollbar. */}
+                      <Table className="table-fixed">
+                        <colgroup>
+                          <col className="w-[28%]" />
+                          <col className="w-[14%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[22%]" />
+                        </colgroup>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Email</TableHead>
+                            <TableHead className="pl-6">Email</TableHead>
                             <TableHead>Role</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Invited</TableHead>
                             <TableHead>Expires</TableHead>
-                            <TableHead className="w-10 text-right sr-only">Actions</TableHead>
+                            <TableHead className="pr-6 text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -373,7 +379,7 @@ export default function InvitationsPage() {
                           ) : (
                             invites.map((invite) => (
                               <TableRow key={invite.id}>
-                                <TableCell>
+                                <TableCell className="whitespace-normal break-words pl-6">
                                   <div className="font-medium">{invite.email}</div>
                                   {invite.name && (
                                     <div className="text-sm text-muted-foreground">
@@ -381,7 +387,7 @@ export default function InvitationsPage() {
                                     </div>
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="whitespace-normal">
                                   <Badge variant="outline">
                                     {ROLE_LABEL[invite.role] ?? invite.role}
                                   </Badge>
@@ -401,33 +407,27 @@ export default function InvitationsPage() {
                                 <TableCell className="text-sm">
                                   {formatDate(invite.expiresAt)}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell className="whitespace-normal pr-6 text-right">
                                   {invite.status === "PENDING" && (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-8 w-8 p-0"
-                                          aria-label="Open menu"
-                                        >
-                                          <IconDots className="h-4 w-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={() => handleResend(invite)}>
-                                          <IconMailForward className="mr-2 h-4 w-4" />
-                                          Resend / copy link
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={() => setCancelTarget(invite)}
-                                          className="text-destructive focus:text-destructive"
-                                        >
-                                          <IconBan className="mr-2 h-4 w-4" />
-                                          Cancel invitation
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleResend(invite)}
+                                      >
+                                        <IconMailForward className="h-4 w-4" aria-hidden="true" />
+                                        Resend / copy link
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setCancelTarget(invite)}
+                                        className="text-destructive hover:text-destructive"
+                                      >
+                                        <IconBan className="h-4 w-4" aria-hidden="true" />
+                                        Cancel invitation
+                                      </Button>
+                                    </div>
                                   )}
                                 </TableCell>
                               </TableRow>
