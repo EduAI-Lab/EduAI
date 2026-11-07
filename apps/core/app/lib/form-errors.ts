@@ -11,10 +11,21 @@ import { asJsonArray, asJsonObject, asPresentText } from "~/lib/json-value";
  * The client error mappers collapse "Invalid input" to a generic message, which
  * hides specific reasons (e.g. the #567 UBC-email gate). `firstFieldError` digs
  * out the first concrete field message so the form can show it instead.
+ *
+ * Routes migrated to `validationErrorFromZod` instead return
+ * `{ error: "VALIDATION_ERROR", fields: Record<string, string> }`; pass that
+ * `fields` map here too and the first non-empty message is returned.
  */
 export function firstFieldError(details: JsonValue | undefined): string | null {
   const flattened = asJsonObject(details);
   if (!flattened) return null;
+  if (!("fieldErrors" in flattened)) {
+    for (const message of Object.values(flattened)) {
+      const text = asPresentText(message);
+      if (text) return text;
+    }
+    return null;
+  }
   const fieldErrors = asJsonObject(flattened.fieldErrors);
   if (!fieldErrors) return null;
   for (const messages of Object.values(fieldErrors)) {
