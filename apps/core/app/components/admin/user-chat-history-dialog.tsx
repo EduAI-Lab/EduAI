@@ -15,6 +15,7 @@ import {
   type ChatTranscript,
 } from "~/hooks/api/use-chat-history";
 import { cn } from "~/lib/utils";
+import { formatDate, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 interface UserChatHistoryDialogProps {
   open: boolean;
@@ -23,7 +24,7 @@ interface UserChatHistoryDialogProps {
   userName: string;
 }
 
-function relativeTime(dateString: string): string {
+function relativeTime(dateString: string, scope: FormatScope): string {
   const date = new Date(dateString);
   const now = new Date();
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
@@ -37,7 +38,7 @@ function relativeTime(dateString: string): string {
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days}d ago`;
 
-  return date.toLocaleDateString();
+  return formatDate(date, scope);
 }
 
 export function UserChatHistoryDialog({
@@ -49,6 +50,7 @@ export function UserChatHistoryDialog({
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<ChatTranscript | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const formatScope = useFormatScope();
 
   const { chats, isLoading, error } = useChatHistory({
     userId,
@@ -140,7 +142,9 @@ export function UserChatHistoryDialog({
                             <span className="text-primary-text font-medium">{chat.courseCode}</span>
                           </div>
                         )}
-                        <span className="text-[12px]">{relativeTime(chat.updatedAt)}</span>
+                        <span className="text-[12px]">
+                          {relativeTime(chat.updatedAt, formatScope)}
+                        </span>
                         <span className="text-[12px]">· {chat.messageCount} msgs</span>
                       </div>
                     </div>

@@ -68,6 +68,7 @@ import { Switch } from "@eduai/ui";
 import type { PlatformUser } from "~/hooks/api/types";
 import { DEFAULT_PAGE_SIZE } from "~/hooks/api/pagination";
 import type { UsersQuery, UserSortField } from "~/hooks/api/use-users";
+import { formatDate, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 /** Roles the server accepts in `?role=`. */
 const USER_ROLE_OPTIONS = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
@@ -100,13 +101,16 @@ export interface UsersTableProps {
   onCreateUser?: () => void;
 }
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
+const formatCreatedDate = (dateString: string, scope: FormatScope) =>
+  formatDate(
+    dateString,
+    { ...scope, locale: "en-US" },
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+  );
 
 // Custom filter function for multi-column searching
 const multiColumnFilterFn: FilterFn<User> = (row, columnId, filterValue) => {
@@ -211,6 +215,7 @@ export function UsersTable({
   onCreateUser,
 }: UsersTableProps) {
   const id = useId();
+  const formatScope = useFormatScope();
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -316,7 +321,11 @@ export function UsersTable({
       {
         header: "Joined",
         accessorKey: "createdAt",
-        cell: ({ row }) => <span className="text-sm">{formatDate(row.getValue("createdAt"))}</span>,
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {formatCreatedDate(row.getValue("createdAt"), formatScope)}
+          </span>
+        ),
         size: 120,
       },
       {
@@ -347,7 +356,7 @@ export function UsersTable({
         enableSorting: false,
       },
     ],
-    [currentUserId, onEdit, onDelete, onToggleActive, onViewChatHistory],
+    [currentUserId, onEdit, onDelete, onToggleActive, onViewChatHistory, formatScope],
   );
 
   const table = useReactTable({

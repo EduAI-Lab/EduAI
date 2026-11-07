@@ -24,6 +24,7 @@ import {
 } from "@eduai/ui";
 
 import { CORE_HELP } from "~/components/help/help-hints";
+import { formatDate, useFormatScope } from "~/lib/hydration-format";
 
 interface CourseStudentVisibilitySettingsProps {
   courseId: string;
@@ -202,6 +203,7 @@ export function CourseStudentVisibilitySettings({
   courseId,
   onSaved,
 }: CourseStudentVisibilitySettingsProps) {
+  const formatScope = useFormatScope();
   const [state, setState] = useState<StudentVisibilityState | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -504,7 +506,7 @@ export function CourseStudentVisibilitySettings({
                     <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                       <IconClock className="h-3 w-3" />
                       From{" "}
-                      {new Date(file.availableAt ?? "").toLocaleDateString(undefined, {
+                      {formatDate(file.availableAt ?? "", formatScope, {
                         month: "short",
                         day: "numeric",
                       })}
