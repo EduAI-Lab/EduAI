@@ -60,6 +60,7 @@ import {
   okSchema,
   okWithRoleSchema,
   paginatedSchema,
+  treePageSchema,
   studentMetricRowSchema,
   submissionRowSchema,
   suggestedPromptSchema,
@@ -660,7 +661,7 @@ export const api = {
       http(
         `/api/courses/${courseId}/modules${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
       ),
-      paginatedSchema(moduleSchema),
+      treePageSchema(moduleSchema),
     ),
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
   createModule: (courseId: number, payload: ModuleCreatePayload) =>
@@ -700,7 +701,7 @@ export const api = {
       http(
         `/api/modules/${moduleId}/lessons${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
       ),
-      paginatedSchema(lessonSchema),
+      treePageSchema(lessonSchema),
     ),
   createLesson: (
     moduleId: number,
@@ -748,7 +749,7 @@ export const api = {
       http(
         `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
       ),
-      paginatedSchema(activitySchema),
+      treePageSchema(activitySchema),
     ),
   createActivity: (
     lessonId: number,

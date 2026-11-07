@@ -3,8 +3,8 @@
  *
  * Every role lands on the shared `/dashboard` (`role-routing.ts`), which renders
  * a role-specific view. A TA gets neither the student's four-stat learner row
- * nor the instructor's teaching rollup, but a dedicated "Assigned courses"
- * variant fed by the `{ role: "TA", yourCourses, publishedCourses,
+ * nor the instructor's teaching rollup, but a "Courses you assist" grid (the
+ * shared `TeachingDashboard`) fed by the `{ role: "TA", yourCourses, publishedCourses,
  * submissionsToReview }` branch in `server/src/routes/courses.js`.
  *
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
@@ -27,53 +27,61 @@ async function seedTaDashboard(page: Page, playwright: Pw, codePrefix = "TAD") {
 }
 
 test.describe("AI Tutor TA — dashboard", () => {
-  test("the dashboard renders the TA 'Assigned courses' variant", async ({ page, playwright }) => {
+  test("the dashboard renders the TA 'Courses you assist' variant", async ({
+    page,
+    playwright,
+  }) => {
     const { seeded } = await seedTaDashboard(page, playwright, "TDA");
     try {
       await gotoAiTutor(page, "/dashboard");
-      // The heading and subtitle are TA-specific — not the student's
+      // The section and subtitle are TA-specific — not the student's
       // "Continue where you left off" nor the instructor rollup.
-      await expect(page.getByRole("heading", { name: "Assigned courses" })).toBeVisible({
+      await expect(page.getByRole("region", { name: "Courses you assist" })).toBeVisible({
         timeout: 20_000,
       });
       await expect(page.getByText("Your assigned courses and student activity.")).toBeVisible();
+      // A TA can't publish, so there is no drafts panel.
+      await expect(page.getByRole("region", { name: "At a glance" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Needs attention" })).toHaveCount(0);
     } finally {
       await seeded.dispose();
     }
   });
 
-  test("an assigned course appears in the Assigned courses panel", async ({ page, playwright }) => {
+  test("an assigned course appears in the Courses you assist section", async ({
+    page,
+    playwright,
+  }) => {
     const { seeded } = await seedTaDashboard(page, playwright, "TDB");
     try {
       await gotoAiTutor(page, "/dashboard");
-      await expect(page.getByRole("link", { name: new RegExp(seeded.name) }).first()).toBeVisible({
-        timeout: 20_000,
-      });
+      const link = page
+        .getByRole("region", { name: "Courses you assist" })
+        .getByRole("link", { name: new RegExp(`^${seeded.code} · `) });
+      await expect(link).toBeVisible({ timeout: 20_000 });
+      await expect(link).toHaveAttribute("href", `/instructor/courses/${seeded.atCourseId}`);
     } finally {
       await seeded.dispose();
     }
   });
 
-  test("the quick actions are the TA set and 'View courses' opens the staff list", async ({
+  test("the course card offers the TA's sections and Content opens the staff view", async ({
     page,
     playwright,
   }) => {
     const { seeded } = await seedTaDashboard(page, playwright, "TDC");
     try {
       await gotoAiTutor(page, "/dashboard");
-      await expect(page.getByRole("heading", { name: "Quick actions" })).toBeVisible({
+      const sections = page.getByRole("navigation", { name: `${seeded.code} sections` });
+      await expect(sections.getByRole("link", { name: "Submissions" })).toBeVisible({
         timeout: 20_000,
       });
-      // The copy is TA-flavoured — the actions speak of courses "you assist
-      // with" and a course "you're enrolled in", the dual learner/staff surface.
-      for (const label of ["View courses", "Continue learning", "Open settings"]) {
-        await expect(page.getByRole("link", { name: new RegExp(label) }).first()).toBeVisible();
-      }
-      await page
-        .getByRole("link", { name: /View courses/ })
-        .first()
-        .click();
-      await expect(page).toHaveURL(/\/instructor$/, { timeout: 20_000 });
+      // #1660: a TA has a real student view, so no "Preview as student".
+      await expect(sections.getByRole("link", { name: "Preview as student" })).toHaveCount(0);
+      await sections.getByRole("link", { name: "Content" }).click();
+      await expect(page).toHaveURL(new RegExp(`/instructor/courses/${seeded.atCourseId}$`), {
+        timeout: 20_000,
+      });
     } finally {
       await seeded.dispose();
     }
@@ -101,16 +109,15 @@ test.describe("AI Tutor TA — dashboard", () => {
         answerText: "The base case returns without recursing, so the stack unwinds.",
       });
       await gotoAiTutor(page, "/dashboard");
-      await expect(page.getByRole("heading", { name: "Assigned courses" })).toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(page.getByRole("link", { name: new RegExp(seeded.name) }).first()).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: new RegExp(`^${seeded.code} · `) }).first(),
+      ).toBeVisible({ timeout: 20_000 });
 
-      // The StatCard renders the label and value as sibling <div>s; assert the
-      // value beside "To review" is non-zero.
-      const reviewLabel = page.getByText("To review", { exact: true });
+      // "At a glance" is a <dl>: assert the <dd> beside "To review" is non-zero.
+      const glance = page.getByRole("region", { name: "At a glance" });
+      const reviewLabel = glance.getByText("To review", { exact: true });
       await expect(reviewLabel).toBeVisible({ timeout: 20_000 });
-      const reviewValue = reviewLabel.locator("xpath=following-sibling::div").first();
+      const reviewValue = reviewLabel.locator("xpath=following-sibling::dd").first();
       await expect(reviewValue).toHaveText(/^[1-9]\d*$/);
     } finally {
       await seeded.dispose();
