@@ -40,7 +40,7 @@ describe("DashboardBody (TA)", () => {
   it("shows the TA course panel and recent conversations", () => {
     renderTaDashboard();
 
-    expect(screen.getByText("Assigned courses")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Courses" })).toBeInTheDocument();
     expect(screen.getByText("Recent conversations")).toBeInTheDocument();
   });
 });

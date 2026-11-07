@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, waitFor } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 
 import type { NavShellModel } from "@eduai/ui";
 import {
+  chatHistoryEntry,
   isCourseChatPath,
   useCourseChatNavModel,
   type CourseChatNavOptions,
@@ -21,7 +22,7 @@ const STUDENT = {
   updatedAt: new Date(),
 } as User;
 
-const HISTORY: CourseChatNavOptions["history"] = {
+const HISTORY_LIST: NonNullable<CourseChatNavOptions["history"]> = {
   chats: [],
   isLoading: false,
   error: null,
@@ -30,6 +31,7 @@ const HISTORY: CourseChatNavOptions["history"] = {
   onNewChat: vi.fn(),
   onRefresh: vi.fn().mockResolvedValue(undefined),
 };
+const HISTORY: CourseChatNavOptions["history"] = HISTORY_LIST;
 
 let courses: { id: string; code: string; name: string }[] = [];
 
@@ -99,6 +101,41 @@ describe("isCourseChatPath", () => {
     ["/dashboard", false],
   ])("%s → %s", (pathname, expected) => {
     expect(isCourseChatPath(pathname)).toBe(expected);
+  });
+});
+
+describe("chatHistoryEntry", () => {
+  it("is a History panel whose pick closes it before opening the chat", () => {
+    const onSelect = vi.fn();
+    const now = new Date().toISOString();
+    const entry = chatHistoryEntry({
+      ...HISTORY_LIST,
+      chats: [
+        {
+          id: "chat-1",
+          title: "Photosynthesis",
+          preview: null,
+          courseId: "c1",
+          courseCode: null,
+          courseName: null,
+          userId: "user-1",
+          userName: null,
+          userEmail: null,
+          messageCount: 2,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      onSelect,
+    });
+    if (entry.kind !== "panel") throw new Error("not a panel");
+    expect(entry).toMatchObject({ key: "history", label: "History" });
+
+    const close = vi.fn();
+    render(<MemoryRouter>{entry.render(close)}</MemoryRouter>);
+    fireEvent.click(screen.getByText("Photosynthesis"));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith("chat-1");
   });
 });
 

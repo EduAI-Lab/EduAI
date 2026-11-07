@@ -23,6 +23,7 @@ import type { DashboardStats } from "~/types/dashboard";
 import type { DashboardData } from "~/lib/dashboard/dashboard-data.server";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
 import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
+import { CourseDashboard } from "~/components/dashboard/course-dashboard";
 import type {
   DashboardCourse,
   DashboardStatDef,
@@ -273,9 +274,12 @@ export const DASHBOARD_CONFIG = {
 export function DashboardBody({
   effectiveRole,
   data,
+  userRole,
 }: {
   effectiveRole: EffectiveRole;
   data: DashboardData;
+  /** Platform role; picks which extensions the course cards link to. */
+  userRole?: string | null;
 }) {
   const config = DASHBOARD_CONFIG[effectiveRole];
   const ctx: DashboardStatContext = {
@@ -289,6 +293,20 @@ export function DashboardBody({
     activeCourseTotal: data.activeCourseTotal,
     activeCoursesLoading: false,
   };
+
+  // #2105: learners and teaching staff get the course-first dashboard.
+  if (effectiveRole === "INSTRUCTOR" || effectiveRole === "TA" || effectiveRole === "STUDENT") {
+    return (
+      <CourseDashboard
+        role={effectiveRole}
+        userRole={userRole}
+        launcherRole={effectiveRole === "TA" ? "TA" : (userRole ?? "STUDENT")}
+        data={data}
+        stats={config.statBuilder(ctx)}
+        emptyMessage={config.emptyCoursesMessage}
+      />
+    );
+  }
 
   return (
     <DashboardView

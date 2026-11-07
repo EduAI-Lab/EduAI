@@ -102,7 +102,13 @@ function renderShell({
   courseNav,
   path = "/courses/c1?tab=materials",
   chatApp,
-}: { courseNav?: CourseNavConfig; path?: string; chatApp?: CourseChatNavOptions } = {}) {
+  user = USER,
+}: {
+  courseNav?: CourseNavConfig;
+  path?: string;
+  chatApp?: CourseChatNavOptions;
+  user?: User;
+} = {}) {
   const router = createMemoryRouter(
     [
       {
@@ -111,7 +117,7 @@ function renderShell({
           <ThemeProvider>
             <PolicyProvider policies={{}}>
               <CoreAppShell
-                user={USER}
+                user={user}
                 title="Intro Biology"
                 courseNav={courseNav}
                 chatApp={chatApp}
@@ -244,6 +250,43 @@ describe("CoreAppShell — Course Chat as its own app (#1996)", () => {
     ).toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "History" })).toBeInTheDocument();
     expect(within(rail).queryByRole("link", { name: "Dashboard" })).toBeNull();
+  });
+
+  it("keeps Core's rail for a student, with History right after Course Chat (#2105)", () => {
+    const onNewChat = vi.fn();
+    renderShell({
+      path: "/chat",
+      chatApp: { history, onNewChat },
+      user: { ...USER, role: "STUDENT" },
+    });
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(
+      within(rail).getByRole("button", { name: "Switch app, current app: EduAI Core" }),
+    ).toBeInTheDocument();
+    expect(within(rail).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(within(rail).queryByRole("link", { name: "New chat" })).toBeNull();
+
+    const items = within(rail).getAllByRole("listitem");
+    const chatIndex = items.findIndex((item) =>
+      within(item).queryByRole("link", { name: "Course Chat" }),
+    );
+    expect(
+      within(items[chatIndex + 1]).getByRole("button", { name: "History" }),
+    ).toBeInTheDocument();
+
+    // Course Chat starts a new chat in place instead of reloading the page.
+    fireEvent.click(within(rail).getByRole("link", { name: "Course Chat" }));
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a student's Course Chat entry a plain link when the page has no history", () => {
+    renderShell({ path: "/chat", chatApp: {}, user: { ...USER, role: "STUDENT" } });
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(within(rail).getByRole("link", { name: "Course Chat" })).toHaveAttribute(
+      "href",
+      "/chat",
+    );
+    expect(within(rail).queryByRole("button", { name: "History" })).toBeNull();
   });
 
   it("stays Core everywhere else", () => {
