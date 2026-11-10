@@ -34,7 +34,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
-  const { reports, total, isLoading, updateReportStatus, loadReportDetail } = useBugReports();
+  const { reports, total, isLoading, updateReportStatus, loadReportDetail, saveReporterNote } =
+    useBugReports();
   const truncated = total !== null && total > reports.length;
   // The open report lives in the URL, so it can be linked and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,6 +88,7 @@ export default function BugReportsPage() {
           isLoading={isLoading}
           onUpdateStatus={updateReportStatus}
           onLoadDetail={loadReportDetail}
+          onSaveReporterNote={saveReporterNote}
           showSourceColumn
           notice={
             truncated ? `Showing the ${reports.length} most recent of ${total} reports.` : undefined

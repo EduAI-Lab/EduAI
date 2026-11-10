@@ -201,7 +201,13 @@ export type {
 } from "./settings/accessibility-settings";
 export { BugReportsAdminView } from "./bug-reports/bug-reports-admin-view";
 export type { BugReportsAdminViewProps } from "./bug-reports/bug-reports-admin-view";
-export type { AdminBugReportRow, BugReportStatus, BugReportContext } from "./bug-reports/types";
+export type {
+  AdminBugReportRow,
+  BugReportStatus,
+  BugReportContext,
+  ReporterNoteDelivery,
+  ReporterNoteInput,
+} from "./bug-reports/types";
 export {
   BUG_TYPE_LABELS,
   STATUS_LABELS,

@@ -132,3 +132,104 @@ describe("BugReportsAdminView — panel layout", () => {
     expect(onOpenReportChange).toHaveBeenCalledWith("r1");
   });
 });
+
+describe("BugReportsAdminView — reply to reporter", () => {
+  const openPanel = async () => {
+    fireEvent.click(reportRow());
+    return screen.findByRole("dialog");
+  };
+
+  it("leaves the section out when the owner can't save notes", async () => {
+    renderPanel();
+    const panel = await openPanel();
+    expect(within(panel).queryByText("Reply to reporter")).not.toBeInTheDocument();
+  });
+
+  it("saves the subject and message, emails them, and says so", async () => {
+    const onSaveReporterNote = vi.fn().mockResolvedValue({
+      delivery: "sent",
+      reporterNoteSubject: "Fixed",
+      reporterNote: "This is fixed now.",
+      reporterNoteUpdatedAt: "2026-09-17T10:00:00.000Z",
+      reporterNoteEmailedAt: "2026-09-17T10:00:00.000Z",
+    });
+    renderPanel({ onSaveReporterNote });
+    const panel = await openPanel();
+
+    const subject = within(panel).getByLabelText("Subject");
+    expect(subject).toHaveValue("Update on your EduAI bug report");
+    fireEvent.change(subject, { target: { value: "Fixed" } });
+    fireEvent.change(within(panel).getByLabelText("Message"), {
+      target: { value: " This is fixed now. " },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Save and email" }));
+
+    await waitFor(() =>
+      expect(onSaveReporterNote).toHaveBeenCalledWith("r1", {
+        subject: "Fixed",
+        body: "This is fixed now.",
+      }),
+    );
+    expect(await within(panel).findByRole("status")).toHaveTextContent(
+      "Saved and emailed to the reporter.",
+    );
+    expect(within(panel).getByText(/· emailed/)).toBeInTheDocument();
+    // The same note again would only email them twice.
+    expect(within(panel).getByRole("button", { name: "Save and email" })).toBeDisabled();
+  });
+
+  it("starts from the report's saved note, and needs both fields", async () => {
+    renderPanel({
+      reports: [
+        row({
+          reporterNoteSubject: "Working on it",
+          reporterNote: "We're looking into this.",
+          reporterNoteUpdatedAt: "2026-09-17T10:00:00.000Z",
+          reporterNoteEmailedAt: null,
+        }),
+      ],
+      onSaveReporterNote: vi.fn(),
+    });
+    const panel = await openPanel();
+
+    expect(within(panel).getByLabelText("Subject")).toHaveValue("Working on it");
+    expect(within(panel).getByLabelText("Message")).toHaveValue("We're looking into this.");
+    expect(within(panel).getByText(/· not emailed/)).toBeInTheDocument();
+    // Never delivered, so resending the same note is allowed.
+    const save = within(panel).getByRole("button", { name: "Save and email" });
+    expect(save).toBeEnabled();
+
+    fireEvent.change(within(panel).getByLabelText("Message"), { target: { value: "  " } });
+    expect(save).toBeDisabled();
+  });
+
+  it("says when the email couldn't be sent, and when saving failed", async () => {
+    const onSaveReporterNote = vi
+      .fn()
+      .mockResolvedValueOnce({ delivery: "not-sent" })
+      .mockRejectedValueOnce(new Error("boom"));
+    renderPanel({ onSaveReporterNote });
+    const panel = await openPanel();
+    fireEvent.change(within(panel).getByLabelText("Message"), { target: { value: "Fixed." } });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Save and email" }));
+    expect(await within(panel).findByRole("status")).toHaveTextContent(
+      "Saved, but the email couldn't be sent.",
+    );
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Save and email" }));
+    await waitFor(() =>
+      expect(within(panel).getByRole("status")).toHaveTextContent("Could not save the note."),
+    );
+  });
+
+  it("explains a reporter who can't be emailed and offers a plain Save", async () => {
+    renderPanel({
+      reports: [row({ reporterReachable: false })],
+      onSaveReporterNote: vi.fn(),
+    });
+    const panel = await openPanel();
+    expect(within(panel).getByText(/can't be emailed/)).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+});

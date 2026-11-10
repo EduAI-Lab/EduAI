@@ -35,7 +35,12 @@ import {
   type TypeFilter,
   type ViewerType,
 } from "./bug-reports-utils";
-import type { AdminBugReportRow, BugReportStatus } from "./types";
+import type {
+  AdminBugReportRow,
+  BugReportStatus,
+  ReporterNoteDelivery,
+  ReporterNoteInput,
+} from "./types";
 
 export interface BugReportsAdminViewProps {
   reports: AdminBugReportRow[];
@@ -55,6 +60,15 @@ export interface BugReportsAdminViewProps {
    * owner's list already carries the bodies — the view then renders what it has.
    */
   onLoadDetail?: (reportId: string) => Promise<Partial<AdminBugReportRow>>;
+  /**
+   * Saves the admin's status note on a report and emails it to the reporter,
+   * resolving with how delivery went and the updated note fields. The panel
+   * layout shows a "Reply to reporter" section only when this is set (Core).
+   */
+  onSaveReporterNote?: (
+    reportId: string,
+    note: ReporterNoteInput,
+  ) => Promise<{ delivery: ReporterNoteDelivery } & Partial<AdminBugReportRow>>;
   title?: string;
   description?: string;
   /**
@@ -91,6 +105,7 @@ export function BugReportsAdminView({
   reports: initialReports,
   onUpdateStatus,
   onLoadDetail,
+  onSaveReporterNote,
   title = "Bug reports",
   description = "Filter and update status for incoming reports.",
   hideHeader = false,
@@ -269,6 +284,16 @@ export function BugReportsAdminView({
     }
   };
 
+  const saveReporterNote = onSaveReporterNote
+    ? async (reportId: string, note: ReporterNoteInput) => {
+        const { delivery, ...updated } = await onSaveReporterNote(reportId, note);
+        setReports((current) =>
+          current.map((report) => (report.id === reportId ? { ...report, ...updated } : report)),
+        );
+        return { delivery };
+      }
+    : undefined;
+
   const onCopyReport = async (report: AdminBugReportRow) => {
     setError(null);
     try {
@@ -380,6 +405,7 @@ export function BugReportsAdminView({
           onStatusChange={onStatusChange}
           onCopyReport={onCopyReport}
           onOpenViewer={openViewer}
+          onSaveReporterNote={saveReporterNote}
         />
       )}
       <ReportViewerDialog viewerType={viewerType} report={selectedReport} onClose={closeViewer} />

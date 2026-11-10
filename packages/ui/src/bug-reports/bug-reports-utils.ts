@@ -430,6 +430,11 @@ export type RawAdminBugReport = {
   createdAt?: JsonValue;
   updatedAt?: JsonValue;
   context?: JsonValue;
+  reporterNoteSubject?: JsonValue;
+  reporterNote?: JsonValue;
+  reporterNoteUpdatedAt?: JsonValue;
+  reporterNoteEmailedAt?: JsonValue;
+  reporterReachable?: JsonValue;
 };
 
 /**
@@ -542,5 +547,10 @@ export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugRepo
     moduleTitle: optionalString(context.moduleTitle),
     lessonTitle: optionalString(context.lessonTitle),
     activityTitle: optionalString(context.activityTitle),
+    reporterNoteSubject: optionalString(raw.reporterNoteSubject),
+    reporterNote: optionalString(raw.reporterNote),
+    reporterNoteUpdatedAt: optionalIsoString(raw.reporterNoteUpdatedAt),
+    reporterNoteEmailedAt: optionalIsoString(raw.reporterNoteEmailedAt),
+    reporterReachable: optionalBoolean(raw.reporterReachable),
   };
 }

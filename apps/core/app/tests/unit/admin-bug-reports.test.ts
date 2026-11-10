@@ -26,7 +26,12 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/email/mailer.server", () => ({
+  sendEmail: vi.fn(),
+}));
+
 import { loader as adminLoader, action as adminAction } from "~/routes/api/admin.bug-reports";
+import { sendEmail } from "~/lib/email/mailer.server";
 import { loader as mineLoader } from "~/routes/api/bug-reports";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
@@ -332,6 +337,110 @@ describe("PATCH /api/admin/bug-reports/:id (#304)", () => {
       makeArgs("/api/admin/bug-reports/br-1", "PUT", {}, { id: "br-1" }),
     );
     expect(res.status).toBe(405);
+  });
+});
+
+describe("PATCH /api/admin/bug-reports/:id — reporter note", () => {
+  const NOTE = { subject: "Update on your EduAI bug report", body: "We're working on it." };
+  const patchNote = (reporterNote: RouteRequestBody, id = "br-1") =>
+    adminAction(makeArgs(`/api/admin/bug-reports/${id}`, "PATCH", { reporterNote }, { id }));
+
+  beforeEach(() => {
+    vi.mocked(prisma.bugReport.findUnique).mockResolvedValue({
+      description: "It broke",
+      createdAt: new Date("2026-06-01T00:00:00Z"),
+      user: { email: "reporter@test.com" },
+    } as never);
+    vi.mocked(prisma.bugReport.update).mockResolvedValue({} as never);
+    vi.mocked(sendEmail).mockResolvedValue({ delivered: true });
+  });
+
+  it("saves the note and emails the admin's subject and message to the reporter", async () => {
+    mockUser("ADMIN", "admin-1");
+    const res = await patchNote(NOTE);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      delivery: "sent",
+      reporterNoteSubject: NOTE.subject,
+      reporterNote: NOTE.body,
+      reporterReachable: true,
+    });
+    expect(body.reporterNoteEmailedAt).not.toBeNull();
+    expect(prisma.bugReport.update).toHaveBeenCalledWith({
+      where: { id: "br-1" },
+      data: expect.objectContaining({
+        reporterNoteSubject: NOTE.subject,
+        reporterNote: NOTE.body,
+        reporterNoteEmailedAt: null,
+      }),
+    });
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "reporter@test.com",
+        subject: NOTE.subject,
+        text: expect.stringContaining("We're working on it."),
+      }),
+    );
+    // The reporter's own report is quoted so they know which one it answers.
+    expect(vi.mocked(sendEmail).mock.calls[0][0].text).toContain('"It broke"');
+  });
+
+  it("keeps the note but reports not-sent when the email fails", async () => {
+    mockUser("ADMIN");
+    vi.mocked(sendEmail).mockRejectedValue(new Error("SMTP down"));
+    const res = await patchNote(NOTE);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ delivery: "not-sent", reporterNoteEmailedAt: null });
+    expect(prisma.bugReport.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves without emailing when the reporter has no address", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.bugReport.findUnique).mockResolvedValue({
+      description: "It broke",
+      createdAt: new Date("2026-06-01T00:00:00Z"),
+      user: null,
+    } as never);
+    const res = await patchNote(NOTE);
+
+    expect(await res.json()).toMatchObject({ delivery: "no-recipient", reporterReachable: false });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not leak the reporter's address in the response", async () => {
+    mockUser("ADMIN");
+    const res = await patchNote(NOTE);
+    expect(JSON.stringify(await res.json())).not.toContain("reporter@test.com");
+  });
+
+  it("rejects an empty subject or message with 422", async () => {
+    mockUser("ADMIN");
+    const res = await patchNote({ subject: "  ", body: "" });
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({
+      error: "VALIDATION_ERROR",
+      fields: { subject: "required", body: "required" },
+    });
+    expect(prisma.bugReport.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a missing report", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.bugReport.findUnique).mockResolvedValue(null);
+    const res = await patchNote(NOTE, "ghost");
+    expect(res.status).toBe(404);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a non-admin", async () => {
+    mockUser("INSTRUCTOR");
+    const res = await patchNote(NOTE);
+    expect(res.status).toBe(403);
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });
 

@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
 import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from "@eduai/ui";
-import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from "@eduai/ui";
+import type {
+  AdminBugReportRow,
+  BugReportStatus,
+  RawAdminBugReport,
+  ReporterNoteDelivery,
+  ReporterNoteInput,
+} from "@eduai/ui";
 import { asFiniteNumber } from "~/lib/json-value";
 
 /**
@@ -74,6 +80,23 @@ export function useBugReports() {
     return { status, updatedAt: new Date().toISOString() };
   }, []);
 
+  /** Saves the admin's status note on a report; the server emails it to the reporter. */
+  const saveReporterNote = useCallback(async (id: string, note: ReporterNoteInput) => {
+    const saved = await apiFetch<RawAdminBugReport & { delivery: ReporterNoteDelivery }>(
+      `/api/admin/bug-reports/${id}`,
+      { method: "PATCH", body: JSON.stringify({ reporterNote: note }) },
+    );
+    const row = normalizeAdminBugReportRow(saved);
+    return {
+      delivery: saved.delivery,
+      reporterNoteSubject: row.reporterNoteSubject,
+      reporterNote: row.reporterNote,
+      reporterNoteUpdatedAt: row.reporterNoteUpdatedAt,
+      reporterNoteEmailedAt: row.reporterNoteEmailedAt,
+      reporterReachable: row.reporterReachable,
+    } satisfies Partial<AdminBugReportRow> & { delivery: ReporterNoteDelivery };
+  }, []);
+
   return {
     reports,
     total,
@@ -82,5 +105,6 @@ export function useBugReports() {
     refresh,
     updateReportStatus,
     loadReportDetail,
+    saveReporterNote,
   };
 }

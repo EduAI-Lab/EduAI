@@ -14,6 +14,7 @@ import { Button } from "../ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { StatusSelect } from "./bug-reports-table";
 import { ScreenshotViewer } from "./report-viewers";
+import { ReporterNoteSection, type SaveReporterNote } from "./reporter-note-section";
 import type { AdminBugReportRow, BugReportStatus } from "./types";
 import {
   BUG_TYPE_LABELS,
@@ -44,6 +45,7 @@ export function ReportDetailPanel({
   onStatusChange,
   onCopyReport,
   onOpenViewer,
+  onSaveReporterNote,
 }: {
   report: AdminBugReportRow | null;
   open: boolean;
@@ -55,6 +57,8 @@ export function ReportDetailPanel({
   onStatusChange: (reportId: string, status: BugReportStatus) => void;
   onCopyReport: (report: AdminBugReportRow) => void;
   onOpenViewer: (type: Exclude<ViewerType, null>, reportId: string) => void | Promise<void>;
+  /** Saves and emails the admin's status note; the section is left out without it. */
+  onSaveReporterNote?: SaveReporterNote;
 }) {
   const role = report ? getReporterRole(report) : null;
   const email = report ? getReporterEmail(report) : null;
@@ -146,6 +150,12 @@ export function ReportDetailPanel({
                 <p className="text-sm text-muted-foreground">Loading…</p>
               ) : null}
             </section>
+
+            {onSaveReporterNote && (
+              <div className="border-t pt-6">
+                <ReporterNoteSection key={report.id} report={report} onSave={onSaveReporterNote} />
+              </div>
+            )}
           </div>
         ) : (
           <p className="p-4 text-sm text-muted-foreground">Report details unavailable.</p>

@@ -13,6 +13,7 @@ const AUDIT_ACTION_LABELS = new Map([
   ["COURSE_UPDATED", "Course updated"],
   ["ENROLLMENT_CSV_IMPORTED", "Enrollments imported"],
   ["BUG_REPORT_STATUS_CHANGED", "Bug report updated"],
+  ["BUG_REPORT_REPORTER_NOTE_SENT", "Bug reporter updated"],
   ["POLICY_FLAG_UPDATED", "Policy changed"],
   ["CANVAS_INTEGRATION_SAVED", "Canvas connected"],
   ["CANVAS_INTEGRATION_DELETED", "Canvas disconnected"],
