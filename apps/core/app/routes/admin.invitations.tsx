@@ -217,7 +217,7 @@ export default function InvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status, role, data?.details));
+        setFormError(errorMessage(data?.error, res.status, role, data?.fields ?? data?.details));
         return;
       }
       setDialogOpen(false);
@@ -565,6 +565,7 @@ function errorMessage(code: JsonValue, status: number, role?: string, details?: 
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
+    case "VALIDATION_ERROR":
     case "Invalid input": {
       // Surface the specific field reason (e.g. the UBC-email gate) when the
       // API returns one, instead of a generic "check the fields" message.

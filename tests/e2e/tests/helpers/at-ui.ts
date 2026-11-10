@@ -191,12 +191,34 @@ export function commandPalette(page: Page) {
 /**
  * The card-level link for a course in a course list.
  *
- * `CourseCard`'s clickable element is a transparent overlay `<a>` carrying only
- * an `aria-label`, so it has no visible text to match on — the href is what
- * identifies it.
+ * Matched by href so it works for both the staff `CourseGridCard` title link and
+ * the student `CourseCard` overlay `<a>`; `.first()` is the title, ahead of the
+ * card's section links.
  */
 export function courseLink(page: Page, courseId: number) {
   return page.locator(`a[href$="/courses/${courseId}"]`).first();
+}
+
+/**
+ * A module/lesson row's title link on a staff course or module page
+ * (`ContentListRow`), named "Module 01: <title>" / "Lesson 1.2: <title>".
+ * Anchored on `: <title>$` so "X" never matches "X (renamed)".
+ */
+export function contentRowLink(scope: Page | Locator, title: string): Locator {
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return scope.getByRole("link", { name: new RegExp(`: ${escaped}$`) });
+}
+
+/** The whole `ContentListRow` for `title`, for its badge, drag handle and ⋯ menu. */
+export function contentRow(scope: Page | Locator, title: string): Locator {
+  // `has` is resolved inside each listitem, so it must be built from the page.
+  const page = "goto" in scope ? scope : scope.page();
+  return scope.getByRole("listitem").filter({ has: contentRowLink(page, title) });
+}
+
+/** A row's ⋯ trigger, named per item ("More options for <title>"). */
+export function contentRowMenu(scope: Page | Locator, title: string): Locator {
+  return contentRow(scope, title).getByRole("button", { name: `More options for ${title}` });
 }
 
 /**

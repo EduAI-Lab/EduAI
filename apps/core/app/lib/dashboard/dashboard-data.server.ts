@@ -31,8 +31,8 @@ export type DashboardData = {
   activeCourseTotal?: number;
 };
 
-/** Course cards render at most five rows, so that is all the loader fetches. */
-const DASHBOARD_COURSE_LIMIT = 5;
+/** The course-card grid (#2105) shows up to this many; the rest are on /courses. */
+const DASHBOARD_COURSE_LIMIT = 24;
 /** Recent-conversations panel shows five. */
 const RECENT_CHATS_LIMIT = 5;
 

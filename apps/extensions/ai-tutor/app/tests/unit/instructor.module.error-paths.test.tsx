@@ -163,6 +163,7 @@ function wrap(lessons = [lesson]) {
       module: module_,
       lessons,
       lessonsTotal: lessons.length,
+      lessonCounts: { all: lessons.length, publishedOffPage: 0 },
       moduleOrder: 1,
       page: 1,
       pageSize: 25,

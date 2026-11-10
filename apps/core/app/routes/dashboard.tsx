@@ -135,7 +135,7 @@ function DashboardContent({
   return (
     <>
       <DashboardHero user={user} effectiveRole={effectiveRole} />
-      <DashboardBody effectiveRole={effectiveRole} data={dashboard} />
+      <DashboardBody effectiveRole={effectiveRole} data={dashboard} userRole={user.role} />
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">
           <CanvasDashboardCard disabled={!canvasPolicyOk} initialIntegration={canvasIntegration} />

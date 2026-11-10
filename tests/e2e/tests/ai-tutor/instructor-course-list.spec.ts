@@ -52,12 +52,18 @@ test.describe("INSTRUCTOR course list", () => {
   test("a course card carries its EduAI origin and publish state", async ({ page }) => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/instructor`);
 
-    // Courses are created in Core and sync here automatically — the badge is
-    // what makes that origin obvious rather than implied.
-    const card = page.locator(`a[href$="/courses/${fx.course.atCourseId}"]`).first();
-    await expect(card).toBeVisible();
-    await expect(page.getByText(fx.course.code).first()).toBeVisible();
-    await expect(page.getByText("EduAI").first()).toBeVisible();
+    const title = page.getByRole("link", { name: new RegExp(`^${fx.course.code} · `) });
+    const card = page.getByRole("article").filter({ has: title });
+    await expect(title).toBeVisible();
+    await expect(card.getByText("Published", { exact: true })).toBeVisible();
+    await expect(
+      card.getByRole("navigation", { name: `${fx.course.code} sections` }),
+    ).toBeVisible();
+
+    // Courses are created in Core and sync here — the card's ⋯ menu links back.
+    await card.getByRole("button", { name: `${fx.course.code} actions` }).click();
+    await expect(page.getByRole("menuitem", { name: "Open in EduAI" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Unpublish course" })).toBeVisible();
   });
 
   test("opening a course from the list reaches its detail page", async ({ page }) => {

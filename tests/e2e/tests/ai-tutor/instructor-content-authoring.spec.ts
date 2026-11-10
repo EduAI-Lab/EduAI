@@ -20,7 +20,7 @@ import {
   seedInstructorSpine,
   type InstructorFixture,
 } from "../helpers/at-instructor";
-import { gotoAiTutor } from "../helpers/at-ui";
+import { contentRow, contentRowMenu, gotoAiTutor } from "../helpers/at-ui";
 
 let fx: InstructorFixture;
 /** A module + lesson in the *second* taught course, used as the import source. */
@@ -52,30 +52,14 @@ function unique(prefix: string): string {
   return `${prefix} ${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1e4)}`;
 }
 
-/**
- * The module/lesson card for `title`.
- *
- * Two things make this less obvious than `getByRole("button", { name })`:
- *   - `ModuleCard`/`LessonCard` are `role=button` elements whose accessible name
- *     is their entire contents, so titles must be regex-escaped — a name like
- *     "… (renamed)" would otherwise be read as a capture group and silently stop
- *     matching the literal parentheses on the page.
- *   - Once a list holds two or more rows, each card grows a `DragHandle` button
- *     named "Drag to reorder <title>", which matches the same name. It carries no
- *     text of its own, so filtering on visible text keeps the card and drops it.
- */
-function card(page: import("@playwright/test").Page, title: string) {
-  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return page.getByRole("button", { name: new RegExp(escaped) }).filter({ hasText: title });
-}
+/** The module/lesson row for `title` (a `ContentListRow`). */
+const card = contentRow;
 
-/** Open the kebab menu on the card whose title is `title`. */
+/** Open the kebab menu on the row whose title is `title`. */
 async function openKebab(page: import("@playwright/test").Page, title: string) {
-  // Scoped through the card rather than found page-wide — otherwise the first
-  // kebab on the page wins regardless of which row it belongs to.
-  const row = card(page, title);
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.getByRole("button", { name: "More options" }).click();
+  // Named per row, so the first kebab on the page can't win by accident.
+  await expect(card(page, title)).toBeVisible({ timeout: 30_000 });
+  await contentRowMenu(page, title).click();
 }
 
 /**
@@ -84,9 +68,7 @@ async function openKebab(page: import("@playwright/test").Page, title: string) {
  * `SortableProvider` arms a `PointerSensor` with a 6px activation distance (so
  * the grip still supports plain clicks) and resolves the drop with
  * `closestCenter`. Driving the pointer rather than the KeyboardSensor keeps the
- * assertion independent of layout: arrow keys mean different things under the
- * grid strategy (modules, lessons) and the list strategy (activities), and the
- * grid's own row breaks move with the viewport.
+ * assertion independent of each list's sortable strategy.
  *
  * Takes the grip as a locator rather than a name: the activity list labels every
  * grip "Drag to reorder activity" when the activities have no title, so the
@@ -250,7 +232,7 @@ test.describe("INSTRUCTOR module authoring", () => {
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
     await expect(card(page, second)).toBeVisible({ timeout: 30_000 });
 
-    // The grip is the only drag activator — the rest of the card stays a normal
+    // The grip is the only drag activator — the rest of the row stays a normal
     // link, which is why dragging it has to be tested through the grip.
     const positions = async () => {
       const res = await page.request.get(
@@ -572,7 +554,7 @@ test.describe("INSTRUCTOR lesson authoring", () => {
     await expect(card(page, keep)).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole("button", { name: /E2E Other Lesson/ })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /E2E Other Lesson/ })).toHaveCount(0);
   });
 
   test("imports lessons from another course into this module", async ({ page }) => {
