@@ -106,7 +106,7 @@ function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: Eff
   });
 
   return (
-    <div className="px-4 lg:px-6 pt-6 pb-4" data-tour="dashboard-hero">
+    <div className="px-4 lg:px-6 pt-4 pb-3" data-tour="dashboard-hero">
       <PageHeading heading={heading} subheading={`${dateStr} · ${subheading}`} />
     </div>
   );

@@ -1,6 +1,6 @@
 /**
- * @file The ADMIN dashboard: four rows of paired cards (users + courses &
- * materials; needs your attention + system health; usage + courses; recent
+ * @file The ADMIN dashboard: four rows of paired cards (needs your attention +
+ * system health; users + courses & materials; usage + courses; recent
  * activity + getting started). Layout follows the admin redesign; every card is
  * the existing `PanelCard` with `Badge`, `CourseListPanel` and
  * `OnboardingChecklist` reused inside, so styling stays on the design system.
@@ -10,6 +10,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   IconActivity,
+  IconAlertTriangle,
   IconChevronRight,
   IconFileText,
   IconSparkles,
@@ -36,7 +37,7 @@ import type {
 const AdminUsageChart = lazy(() => import("~/components/dashboard/admin-usage-chart"));
 
 export const ADMIN_HERO_COPY = {
-  heading: "Platform overview",
+  heading: "Core overview",
   subheading: "EduAI platform health and usage at a glance.",
 };
 
@@ -68,7 +69,7 @@ function CardLink({ to, children }: { to: string; children: ReactNode }) {
 }
 
 function CardNote({ children }: { children: ReactNode }) {
-  return <p className="-mt-2 mb-3 text-xs text-muted-foreground">{children}</p>;
+  return <p className="-mt-1.5 mb-2 text-xs text-muted-foreground">{children}</p>;
 }
 
 /** Relative times depend on the wall clock, so server and client may differ by a minute. */
@@ -147,7 +148,7 @@ function AttentionRow({ item }: { item: AdminAttentionItem }) {
     <li>
       <Link
         to={item.href}
-        className="flex items-center gap-3 py-3 transition-colors hover:bg-muted/40"
+        className="flex items-center gap-3 py-2.5 transition-colors hover:bg-muted/40"
       >
         <Badge variant={variant} className="min-w-6 justify-center tabular-nums">
           {item.count}
@@ -164,7 +165,13 @@ function AttentionRow({ item }: { item: AdminAttentionItem }) {
 
 function AttentionCard({ items }: { items: AdminAttentionItem[] }) {
   return (
-    <PanelCard title="Needs your attention" className="h-full">
+    <PanelCard
+      title="Needs your attention"
+      // Set apart from the other cards: a warning-tinted border and header.
+      className="h-full border-[var(--color-warning-500)]"
+      titleClassName="text-[var(--color-warning-700)]"
+      icon={<IconAlertTriangle size={18} aria-hidden />}
+    >
       <CardNote>Items that may need an administrator.</CardNote>
       <ul className="divide-y divide-border">
         {items.map((item) => (
@@ -209,7 +216,7 @@ function HealthCard({ items }: { items: AdminHealthItem[] }) {
           const badge = HEALTH_BADGE[item.status];
           const Icon = item.kind === "cron" ? IconActivity : IconSparkles;
           return (
-            <li key={item.id} className="flex items-center gap-3 py-3">
+            <li key={item.id} className="flex items-center gap-3 py-2.5">
               <Icon size={16} className="shrink-0 text-muted-foreground" aria-hidden />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-foreground">{item.name}</div>
@@ -277,7 +284,7 @@ function RecentActivityCard({ entries }: { entries: AdminDashboardData["recentAc
       ) : (
         <ul className="divide-y divide-border">
           {entries.map((entry) => (
-            <li key={entry.id} className="flex items-start gap-3 py-3">
+            <li key={entry.id} className="flex items-start gap-3 py-2.5">
               <IconFileText
                 size={16}
                 className="mt-0.5 shrink-0 text-muted-foreground"
@@ -308,20 +315,21 @@ function RecentActivityCard({ entries }: { entries: AdminDashboardData["recentAc
 export function AdminDashboard({ data, userId }: { data: AdminDashboardData; userId: string }) {
   const navigate = useNavigate();
   return (
-    <div className="@container/dashboard flex flex-col gap-5 px-4 pb-8 lg:px-6">
-      <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_2fr]">
-        <UsersCard users={data.users} />
-        <CoursesMaterialsCard data={data} />
-      </div>
-      <div className="grid gap-5 @3xl/dashboard:grid-cols-[3fr_2fr]">
+    <div className="@container/dashboard flex flex-col gap-4 px-4 pb-6 lg:px-6">
+      {/* What needs acting on comes first; the headline numbers follow. */}
+      <div className="grid gap-4 @3xl/dashboard:grid-cols-[3fr_2fr]">
         <AttentionCard items={data.attention} />
         <HealthCard items={data.health} />
       </div>
-      <div className="grid gap-5 @3xl/dashboard:grid-cols-[2fr_1fr]">
+      <div className="grid gap-4 @3xl/dashboard:grid-cols-[1fr_2fr]">
+        <UsersCard users={data.users} />
+        <CoursesMaterialsCard data={data} />
+      </div>
+      <div className="grid gap-4 @3xl/dashboard:grid-cols-[2fr_1fr]">
         <UsageCard data={data.weeklyChats} />
         <CoursesCard courses={data.courseList} />
       </div>
-      <div className="grid gap-5 @3xl/dashboard:grid-cols-[3fr_2fr] @3xl/dashboard:items-start">
+      <div className="grid gap-4 @3xl/dashboard:grid-cols-[3fr_2fr] @3xl/dashboard:items-start">
         <RecentActivityCard entries={data.recentActivity} />
         <OnboardingChecklist
           platform="core"

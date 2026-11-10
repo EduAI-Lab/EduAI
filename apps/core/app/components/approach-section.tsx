@@ -49,6 +49,7 @@ export function ApproachSection() {
         <PageHeading
           heading="What makes EduAI different"
           className="mb-12 text-center [&>div]:mx-auto"
+          banded={false}
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={
             <span className="mx-auto block max-w-3xl text-lg">

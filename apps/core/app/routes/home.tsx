@@ -86,6 +86,7 @@ export default function HomePage() {
             <PageHeading
               heading={`What is ${projectInfo.title}?`}
               className="mb-12 text-center [&>div]:mx-auto"
+              banded={false}
               headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
             />
 
