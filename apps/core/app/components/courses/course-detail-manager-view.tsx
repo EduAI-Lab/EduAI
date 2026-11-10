@@ -81,6 +81,7 @@ import {
 } from "~/lib/material-failure-notice";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
+import { CourseDescriptionSettings } from "~/components/courses/course-description-settings";
 import { CourseResponseStyleSettings } from "~/components/courses/course-response-style-settings";
 import { CourseStudentVisibilitySettings } from "~/components/courses/course-student-visibility-settings";
 import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
@@ -264,6 +265,8 @@ interface Props {
   onRemoveInstructor: (enrollmentId: string) => Promise<void>;
   /** Moves `Course.instructorId` only — no enrollment is touched. */
   onSetPrimaryInstructor: (userId: string) => Promise<void>;
+  /** Called after the course description is saved so the page can reload the course. */
+  onCourseUpdated?: () => void;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
   onEnrollStudent: (userId: string) => Promise<void>;
@@ -395,6 +398,7 @@ export function CourseDetailManagerView({
   onAddInstructor,
   onRemoveInstructor,
   onSetPrimaryInstructor,
+  onCourseUpdated,
   onAddTA,
   onRemoveTA,
   onEnrollStudent,
@@ -2097,6 +2101,15 @@ export function CourseDetailManagerView({
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
+            {courseId && (
+              <div className="mb-6">
+                <CourseDescriptionSettings
+                  courseId={courseId}
+                  initialDescription={course.description ?? ""}
+                  onSaved={onCourseUpdated}
+                />
+              </div>
+            )}
             {/* #2002: what students see — files and topics. Same audience as the tab.
                 #2061: mounted only while the tab is open, so it reads the course
                 fresh on each visit and costs nothing on every other tab. */}
