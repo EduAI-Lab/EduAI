@@ -98,7 +98,7 @@ function heroCopy(role: Role, firstName: string | null): HeroCopy {
   switch (role) {
     case "ADMIN":
       return {
-        heading: "Platform overview",
+        heading: "AI Tutor overview",
         subheading: "AI Tutor usage, content and tutor health at a glance.",
       };
     case "UNIT_ADMIN":
