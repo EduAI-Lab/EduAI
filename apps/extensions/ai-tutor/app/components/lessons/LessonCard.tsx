@@ -1,22 +1,13 @@
 /**
- * A single lesson tile inside a module's lesson grid (student + instructor
- * views). Shares the ModuleCard language one level down: a course-accent
- * gradient rail + a faint bottom-right order-number motif; a `CardHeader` with
- * an eyebrow (ringed order chip + "LESSON" kicker on the left; a read-only
- * Published/Unpublished `StatusBadge` and an optional publish kebab on the right)
- * and a bold title; then an optional `CardContent` with the activity count and
- * learner progress. The whole card is one click/keyboard target that navigates
- * — no separate "view" affordance.
- *
- * Publish state and its action are separated: `isPublished` drives the badge;
- * `menuSlot` (a `PublishMenu`) carries the toggle, shown only to publishers.
- *
- * Progress is student-only: the block renders only when a `progress` object is
- * passed, so instructor cards don't show a learner "Not started yet".
+ * A single lesson tile inside the student module view's lesson grid. Shares
+ * the ModuleCard language one level down: a course-accent gradient rail + a
+ * faint order-number motif; a `CardHeader` with an eyebrow (ringed order chip +
+ * "LESSON" kicker, plus an Unpublished badge in staff preview) and a bold
+ * title; then an optional `CardContent` with learner progress. The whole card
+ * is one click/keyboard target that navigates.
  */
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import type { KeyboardEvent } from "react";
 import {
-  Badge,
   Card,
   CardContent,
   CardHeader,
@@ -69,14 +60,8 @@ export interface LessonCardProps {
   onClick?: () => void;
   /** Learner progress; renders a compact bar or a "Not started yet" note. Omit for instructor cards. */
   progress?: Progress;
-  /** Count of activities/questions in the lesson. Omit rather than guessing — never fabricate data. */
-  activityCount?: number;
   /** Drives the read-only Published/Unpublished status badge. */
   isPublished?: boolean;
-  /** Eyebrow-right action slot, e.g. the publish `PublishMenu`. */
-  menuSlot?: ReactNode;
-  /** Eyebrow-left lead slot rendered before the order chip (e.g. a drag handle). */
-  leading?: ReactNode;
   className?: string;
   dataTour?: string;
   dataTourRoute?: string;
@@ -90,10 +75,7 @@ export function LessonCard({
   accentColor,
   onClick,
   progress,
-  activityCount,
   isPublished,
-  menuSlot,
-  leading,
   className,
   dataTour,
   dataTourRoute,
@@ -111,21 +93,14 @@ export function LessonCard({
     }
   };
 
-  const stopStatusPropagation = (event: MouseEvent | KeyboardEvent) => {
-    event.stopPropagation();
-  };
-
   const showProgress = progress !== undefined;
   const preview = content?.trim() ? contentExcerpt(content) : "";
-  const hasMeta = activityCount != null || showProgress || preview.length > 0;
-  const hasStatus = isPublished != null || Boolean(menuSlot);
 
   return (
     <Card
       hoverable={clickable}
       role={clickable ? "button" : undefined}
-      // See ModuleCard: name the card explicitly so it doesn't absorb the
-      // labels of the controls nested inside it (the publish kebab).
+      // Named explicitly so the chip, badge and excerpt don't pad the name.
       aria-label={clickable ? `Lesson: ${titleName(title)}` : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={onClick}
@@ -163,7 +138,6 @@ export function LessonCard({
       <CardHeader className="relative gap-2">
         <div className="flex items-start justify-between gap-2">
           <span className="inline-flex items-center gap-2.5">
-            {leading}
             <span
               className="flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
               style={{
@@ -185,21 +159,13 @@ export function LessonCard({
             </span>
           </span>
 
-          {hasStatus && (
-            <div
-              className="flex shrink-0 items-center gap-1"
-              onClick={stopStatusPropagation}
-              onKeyDown={stopStatusPropagation}
-            >
-              {isPublished != null && (
-                <StatusBadge
-                  active={isPublished}
-                  activeLabel="Published"
-                  inactiveLabel="Unpublished"
-                />
-              )}
-              {menuSlot}
-            </div>
+          {isPublished != null && (
+            <StatusBadge
+              active={isPublished}
+              activeLabel="Published"
+              inactiveLabel="Unpublished"
+              className="shrink-0"
+            />
           )}
         </div>
 
@@ -214,24 +180,16 @@ export function LessonCard({
         )}
       </CardHeader>
 
-      {hasMeta && (
+      {showProgress && (
         <CardContent className="relative flex flex-col gap-3 pt-0">
-          {activityCount != null && (
-            <div>
-              <Badge variant="muted" size="sm">
-                {activityCount} {activityCount === 1 ? "activity" : "activities"}
-              </Badge>
-            </div>
+          {progress && progress.total > 0 ? (
+            <ProgressBarFromData progress={progress} size="sm" showLabel />
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <span className="size-1.5 rounded-full bg-muted-foreground/40" aria-hidden="true" />
+              Not started yet
+            </span>
           )}
-          {showProgress &&
-            (progress && progress.total > 0 ? (
-              <ProgressBarFromData progress={progress} size="sm" showLabel />
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-muted-foreground/40" aria-hidden="true" />
-                Not started yet
-              </span>
-            ))}
         </CardContent>
       )}
     </Card>

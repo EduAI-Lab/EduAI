@@ -13,7 +13,13 @@
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
-import { gotoAiTutor, loginAsAdmin } from "../helpers/at-ui";
+import {
+  contentRow,
+  contentRowLink,
+  contentRowMenu,
+  gotoAiTutor,
+  loginAsAdmin,
+} from "../helpers/at-ui";
 import { seedAtCourse, seedLesson, seedModule } from "../helpers/at-admin-fixtures";
 
 test.describe("AI Tutor ADMIN — modules", () => {
@@ -36,10 +42,11 @@ test.describe("AI Tutor ADMIN — modules", () => {
       await dialog.getByRole("button", { name: /^add module$/i }).click();
 
       await expect(dialog).toBeHidden({ timeout: 20_000 });
-      await expect(page.getByText("Admin-authored module")).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByText("What this module covers.")).toBeVisible();
+      const row = contentRow(page, "Admin-authored module");
+      await expect(row).toBeVisible({ timeout: 20_000 });
+      await expect(row).toContainText("What this module covers.");
       // New content starts hidden from students.
-      await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
+      await expect(row).toContainText("Unpublished");
     } finally {
       await seeded.dispose();
     }
@@ -62,9 +69,9 @@ test.describe("AI Tutor ADMIN — modules", () => {
       await dialog.getByRole("button", { name: /^add module$/i }).click();
 
       await expect(dialog).toBeHidden({ timeout: 20_000 });
-      const card = page.getByRole("button", { name: "Module: Bare module" });
-      await expect(card).toBeVisible({ timeout: 20_000 });
-      await expect(card).toContainText("Bare module");
+      const card = contentRow(page, "Bare module");
+      await expect(contentRowLink(page, "Bare module")).toBeVisible({ timeout: 20_000 });
+      await expect(card).toContainText("Unpublished");
     } finally {
       await seeded.dispose();
     }
@@ -155,7 +162,7 @@ test.describe("AI Tutor ADMIN — lessons", () => {
 
       await expect(page.getByText("Draft lesson one")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText("Draft lesson two")).toBeVisible();
-      await expect(page.getByText(/2 Lessons/i)).toBeVisible();
+      await expect(page.getByText("2 lessons · 0 published")).toBeVisible();
     } finally {
       await seeded.dispose();
     }
@@ -430,12 +437,8 @@ test.describe("AI Tutor ADMIN — publish controls on content cards", () => {
     // Publish, unpublish, edit, delete, and "move to position" all live behind
     // the card kebab, so this is the gateway to every content action.
     //
-    // This was once filed as "the kebab navigates instead of opening" (BUG-3).
-    // It didn't: `getByRole("button", { name: "More options" })` matched the
-    // CARD, whose role is button and whose accessible name was computed from
-    // its contents — the kebab's label included. `.first()` then picked the
-    // card, and clicking a card navigates. The cards now carry an explicit
-    // aria-label, and this test targets the trigger by its own label.
+    // BUG-3 regression: the kebab sits above the row's stretched title link, so
+    // clicking it must open the menu rather than navigate.
     const seeded = await seedAtCourse(playwright, {
       name: "Kebab Course",
       codePrefix: "KEBB",
@@ -446,11 +449,10 @@ test.describe("AI Tutor ADMIN — publish controls on content cards", () => {
 
       await loginAsAdmin(page, "at-admin-kebab");
       await gotoAiTutor(page, `/instructor/courses/${seeded.atCourseId}`);
-      await expect(page.getByText("Kebab module")).toBeVisible({ timeout: 20_000 });
+      await expect(contentRowLink(page, "Kebab module")).toBeVisible({ timeout: 20_000 });
 
-      // The card names itself, so the kebab's label is unambiguous.
-      await expect(page.getByRole("button", { name: "Module: Kebab module" })).toBeVisible();
-      await page.locator('button[aria-label="More options"]').first().click();
+      // The kebab is named for its row, so it is unambiguous.
+      await contentRowMenu(page, "Kebab module").click();
 
       await expect(page.getByRole("menu")).toBeVisible({ timeout: 5_000 });
       await expect(page).toHaveURL(new RegExp(`/instructor/courses/${seeded.atCourseId}$`));
@@ -483,16 +485,14 @@ test.describe("AI Tutor ADMIN — publish controls on content cards", () => {
       await loginAsAdmin(page, "at-admin-publish-state");
       await gotoAiTutor(page, `/instructor/courses/${seeded.atCourseId}`);
 
-      const draftCard = page.locator('[role="button"]').filter({ hasText: "Draft module" }).first();
-      const publishedCard = page
-        .locator('[role="button"]')
-        .filter({ hasText: "Published module" })
-        .first();
+      const draftCard = contentRow(page, "Draft module");
+      const publishedCard = contentRow(page, "Published module");
       await expect(draftCard).toContainText("Unpublished", { timeout: 20_000 });
       await expect(publishedCard).toContainText("Published");
+      await expect(publishedCard).not.toContainText("Unpublished");
 
-      // And the card still navigates into the module it names.
-      await draftCard.click();
+      // And the row's title link navigates into the module it names.
+      await contentRowLink(page, "Draft module").click();
       await expect(page).toHaveURL(new RegExp(`/instructor/module/${draft.id}$`));
     } finally {
       await seeded.dispose();

@@ -2,20 +2,19 @@
  * AI Tutor UNIT_ADMIN — dashboard workflows (browser-driven).
  *
  * `/dashboard` is the shared landing page for every role; the UNIT_ADMIN
- * branch renders `DashboardUnitAdminView`. Everything it shows is scoped
- * server-side to the admin's `authorizedUnits`: the stat tiles and donut come
- * from `GET /api/me/dashboard-stats`, the course panels from a bounded page of
- * `GET /api/courses`.
+ * branch renders `DashboardUnitAdminView` (the shared `TeachingDashboard`).
+ * Everything it shows is scoped server-side to the admin's `authorizedUnits`:
+ * the "At a glance" stats come from `GET /api/me/dashboard-stats`, the course
+ * grid and drafts from a bounded page of `GET /api/courses`.
  *
- * These tests assert the unit-admin *shape* of that page (which tiles, which
- * quick actions, which panel) rather than exact counts — the E2E database is
+ * These tests assert the unit-admin *shape* of that page (which stats, which
+ * sections, which card links) rather than exact counts — the E2E database is
  * shared, so the numbers move between runs.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { courseLink } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 
@@ -41,53 +40,64 @@ test.afterAll(async () => {
 });
 
 test.describe("UNIT_ADMIN dashboard", () => {
-  test("the stat grid reports the unit's course rollup", async ({ page }) => {
+  test("At a glance reports the unit's course rollup", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    // The four tiles defined by DashboardUnitAdminView — "Unit courses" is the
+    // The four stats defined by DashboardUnitAdminView — "Unit courses" is the
     // label no other role's dashboard uses.
+    const glance = page.getByRole("region", { name: "At a glance" });
+    await expect(glance.getByRole("heading", { name: "At a glance" })).toBeVisible();
     for (const label of ["Unit courses", "Published", "Unpublished", "Synced from EduAI"]) {
-      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+      await expect(glance.getByText(label, { exact: true })).toBeVisible();
     }
   });
 
-  test("the publish-status donut is rendered from the same rollup", async ({ page }) => {
+  test("the unit-courses grid links through to a course this admin owns", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await expect(page.getByRole("heading", { name: "Publish status" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Unpublished courses" })).toBeVisible();
-    await expect(page.getByText("Courses", { exact: true }).first()).toBeVisible();
-  });
-
-  test("the unit-courses panel links through to a course this admin owns", async ({ page }) => {
-    await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
-
-    await expect(page.getByRole("heading", { name: "Unit courses" })).toBeVisible();
-    // The fixture course is the newest in the unit, so it heads the panel.
-    const link = courseLink(page, ua.course.atCourseId);
+    const unit = page.getByRole("region", { name: "Unit courses" });
+    const link = unit.getByRole("link", { name: new RegExp(`^${ua.course.code} · `) });
     await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", `/instructor/courses/${ua.course.atCourseId}`);
     await link.click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${ua.course.atCourseId}`);
     await expect(page.getByText(ua.course.code).first()).toBeVisible();
   });
 
-  test("quick actions offer the unit admin's three entry points", async ({ page }) => {
+  test("each course card carries the unit admin's section shortcuts", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await expect(page.getByRole("heading", { name: "Quick actions" })).toBeVisible();
-    await expect(page.getByText("See every course in your authorized units.")).toBeVisible();
-    await expect(page.getByText("Manage your AI providers and accessibility.")).toBeVisible();
-    // "Publish content" points at the first draft course, or the list when
-    // there is none — either way it is a link, never a publish action here.
-    await expect(page.getByText("Publish content")).toBeVisible();
+    const id = ua.course.atCourseId;
+    const sections = page.getByRole("navigation", { name: `${ua.course.code} sections` });
+    await expect(sections.getByRole("link", { name: "Content" })).toHaveAttribute(
+      "href",
+      `/instructor/courses/${id}`,
+    );
+    await expect(sections.getByRole("link", { name: "Analytics" })).toHaveAttribute(
+      "href",
+      `/instructor/courses/${id}?tab=analytics`,
+    );
+    await expect(sections.getByRole("link", { name: "Preview as student" })).toHaveAttribute(
+      "href",
+      `/student/courses/${id}`,
+    );
+
+    // The fixture course is a draft, so its ⋯ menu offers to publish it.
+    await page.getByRole("button", { name: `${ua.course.code} actions` }).click();
+    await expect(page.getByRole("menuitem", { name: "Publish course" })).toBeVisible();
   });
 
-  test("View courses navigates to the unit-scoped course list", async ({ page }) => {
+  test("All drafts navigates to the unit-scoped course list filtered to drafts", async ({
+    page,
+  }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await page.getByRole("link", { name: /View courses/ }).click();
-    await page.waitForURL(`${AI_TUTOR_URL}/instructor`);
+    await page
+      .getByRole("region", { name: "Needs attention" })
+      .getByRole("link", { name: /All drafts/ })
+      .click();
+    await page.waitForURL(`${AI_TUTOR_URL}/instructor?status=draft`);
     await expect(page.getByText("Browse your courses and manage their content.")).toBeVisible();
   });
 
@@ -95,10 +105,9 @@ test.describe("UNIT_ADMIN dashboard", () => {
    * Where the fixture course sits in the panel's window, read from the very
    * call the loader makes.
    *
-   * The panel renders the newest draft as a hero plus at most four more rows,
-   * all drawn from one bounded page of a database shared across runs — so a
-   * busy database, rather than a regression, is what would otherwise fail these
-   * tests. Returns the index among drafts, or -1.
+   * The panel renders at most five draft rows, drawn from one bounded page of a
+   * database shared across runs — so a busy database, rather than a regression,
+   * is what would otherwise fail these tests. Returns the index among drafts, or -1.
    */
   async function draftIndex(page: import("@playwright/test").Page): Promise<number> {
     const coursePage = await (
@@ -113,7 +122,8 @@ test.describe("UNIT_ADMIN dashboard", () => {
   test("Needs attention lists draft courses and offers both publish and open", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/dashboard`);
 
-    await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
+    const attention = page.getByRole("region", { name: "Needs attention" });
+    await expect(attention.getByRole("heading", { name: "Needs attention" })).toBeVisible();
 
     const index = await draftIndex(page);
     expect(index, "fixture course must be among the loaded drafts").toBeGreaterThanOrEqual(0);
@@ -122,11 +132,13 @@ test.describe("UNIT_ADMIN dashboard", () => {
     // Two separate controls per draft, not one card doing double duty: the
     // publish action and the navigation are addressable independently, so a
     // click meant for one can never fire the other.
-    await expect(page.getByRole("button", { name: `Publish ${ua.course.code}` })).toBeVisible();
+    await expect(
+      attention.getByRole("button", { name: `Publish ${ua.course.code}` }),
+    ).toBeVisible();
 
     // Opening the course is still one click away — it just isn't what the
     // publish control does.
-    await page.getByRole("button", { name: new RegExp(`^Open ${ua.course.code}`) }).click();
+    await attention.getByRole("link", { name: new RegExp(`^${ua.course.code}`) }).click();
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${ua.course.atCourseId}`);
   });
 
@@ -176,9 +188,7 @@ test.describe("UNIT_ADMIN dashboard", () => {
     //
     // The expectation is derived from the very call the loader makes
     // (`api.listCourses()` with no params), rather than accepting whichever of
-    // several affordances happens to be on screen: `Browse all` is rendered
-    // unconditionally by DashboardView, so asserting on it would pass whether
-    // or not the disclosure works.
+    // several affordances happens to be on screen.
     const coursePage = await (
       await page.request.get(`${AI_TUTOR_API_URL}${LOADER_COURSE_QUERY}`)
     ).json();
@@ -186,14 +196,17 @@ test.describe("UNIT_ADMIN dashboard", () => {
     const total: number = coursePage.total;
 
     const notice = page.getByTestId("truncated-list-notice");
+    const allCourses = page.getByRole("link", { name: /^All [\d,]+ courses$/ });
     if (total > shown) {
       await expect(notice.first()).toBeVisible();
       await expect(notice.first()).toContainText(
         `Showing ${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} courses`,
       );
+      await expect(allCourses).toHaveAttribute("href", "/instructor");
     } else {
       // Nothing was withheld — the notice must not cry wolf.
       await expect(notice).toHaveCount(0);
+      await expect(allCourses).toHaveCount(0);
     }
   });
 

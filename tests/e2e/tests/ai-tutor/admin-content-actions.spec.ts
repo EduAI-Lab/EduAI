@@ -1,16 +1,16 @@
 /**
- * AI Tutor — ADMIN content actions that are *not* behind the card kebab.
+ * AI Tutor — ADMIN content actions that are *not* behind the row kebab.
  *
  * Activity edit, duplicate, move, and remove are plain icon buttons on the
  * activity card, and reordering has its own drag handle — none of them sit
- * behind the module/lesson card kebab. Those paths work and nothing covered
+ * behind the module/lesson row kebab. Those paths work and nothing covered
  * them, so a regression in any of them would have gone unnoticed.
  *
- * Companion spec: admin-content-authoring (creation paths + the card kebab).
+ * Companion spec: admin-content-authoring (creation paths + the row kebab).
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
-import { gotoAiTutor, loginAsAdmin } from "../helpers/at-ui";
+import { contentRowMenu, gotoAiTutor, loginAsAdmin } from "../helpers/at-ui";
 import {
   seedAtCourse,
   seedCourseWithActivity,
@@ -193,8 +193,8 @@ test.describe("AI Tutor ADMIN — reordering", () => {
       await loginAsAdmin(page, "at-admin-module-reorder");
       await gotoAiTutor(page, `/instructor/courses/${seeded.atCourseId}`);
 
-      const firstCard = () => page.getByRole("button", { name: /^Module:/ }).first();
-      await expect(firstCard()).toHaveAttribute("aria-label", "Module: Alpha module", {
+      const firstCard = () => page.getByRole("list", { name: "Modules" }).getByRole("link").first();
+      await expect(firstCard()).toHaveAccessibleName("Module 01: Alpha module", {
         timeout: 20_000,
       });
 
@@ -209,8 +209,7 @@ test.describe("AI Tutor ADMIN — reordering", () => {
         page.getByRole("button", { name: "Drag to reorder Alpha module", exact: true }),
       ).toBeVisible();
 
-      const alphaCard = page.getByRole("button", { name: "Module: Alpha module" });
-      await alphaCard.getByRole("button", { name: "More options" }).click();
+      await contentRowMenu(page, "Alpha module").click();
       await page.getByRole("menuitem", { name: /Move module/ }).click();
 
       const dialog = page.locator('[role="dialog"]');
@@ -221,7 +220,7 @@ test.describe("AI Tutor ADMIN — reordering", () => {
 
       // The new order is stored, not just painted.
       await page.reload();
-      await expect(firstCard()).toHaveAttribute("aria-label", "Module: Beta module", {
+      await expect(firstCard()).toHaveAccessibleName("Module 01: Beta module", {
         timeout: 20_000,
       });
     } finally {

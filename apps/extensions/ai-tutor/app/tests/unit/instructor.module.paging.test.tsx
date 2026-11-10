@@ -110,6 +110,7 @@ function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
       module: module_,
       lessons,
       lessonsTotal: 60,
+      lessonCounts: { all: 60, publishedOffPage: 0 },
       moduleOrder: 1,
       page: 1,
       pageSize: 25,
@@ -219,5 +220,19 @@ describe("instructor.module — paged lesson list (#1207)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("counts the whole module, published ones included, while a search narrows the list", () => {
+    wrap({
+      lessons: [lessons[0]],
+      lessonsTotal: 1,
+      lessonCounts: { all: 12, publishedOffPage: 4 },
+      search: "graphs",
+    });
+
+    expect(screen.getByText("12 lessons · 5 published")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /lessons/i, level: 2 })).toHaveTextContent(
+      "Lessons(12)",
+    );
   });
 });

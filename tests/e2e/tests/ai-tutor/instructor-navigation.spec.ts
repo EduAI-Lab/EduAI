@@ -118,7 +118,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     // Driven to its destination, not merely listed.
     await palette.getByRole("option", { name: "Settings" }).click();
     await page.waitForURL(`${AI_TUTOR_URL}/settings`);
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   });
 
   test("the command palette switches course", async ({ page }) => {
@@ -149,7 +149,7 @@ test.describe("INSTRUCTOR shell and navigation", () => {
     await (await openRailTray(page, "Account")).getByRole("link", { name: "Settings" }).click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/settings`);
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   });
 
   test("the app launcher offers the other EduAI apps", async ({ page }) => {

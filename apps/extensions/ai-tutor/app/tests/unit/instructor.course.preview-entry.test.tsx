@@ -15,6 +15,10 @@ const mockUser = vi.hoisted(() => ({
 }));
 const mockNavigate = vi.fn();
 
+// The course banner's publish control revalidates through a data router these tests don't mount.
+vi.mock("~/components/courses/useCoursePublishToggle", () => ({
+  useCoursePublishToggle: () => ({ requestToggle: () => {}, dialog: null }),
+}));
 vi.mock("~/lib/api", () => ({
   default: {
     courseById: vi.fn().mockResolvedValue({}),
@@ -86,6 +90,7 @@ function renderPage() {
     course,
     modules: [],
     modulesTotal: 0,
+    moduleCounts: { all: 0, publishedOffPage: 0 },
     page: 1,
     pageSize: 25,
     search: "",

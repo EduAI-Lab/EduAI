@@ -116,7 +116,14 @@ router.get("/courses/:courseId/modules", async (req, res) => {
     const searchFragment = searchWhere(search, ["title", "description"]);
     const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
 
-    const [total, modules] = await prisma.$transaction([
+    // Staff also get course-wide counts, which a search or page never narrows.
+    const staffCounts = hasElevatedAccess
+      ? [
+          prisma.module.count({ where: scope }),
+          prisma.module.count({ where: { ...scope, isPublished: true } }),
+        ]
+      : [];
+    const [total, modules, unfilteredTotal, publishedTotal] = await prisma.$transaction([
       prisma.module.count({ where: whereClause }),
       prisma.module.findMany({
         where: whereClause,
@@ -124,6 +131,7 @@ router.get("/courses/:courseId/modules", async (req, res) => {
         skip: pageParams.skip,
         take: pageParams.take,
       }),
+      ...staffCounts,
     ]);
 
     // For students, add progress to each module
@@ -139,7 +147,11 @@ router.get("/courses/:courseId/modules", async (req, res) => {
       );
       res.json(paginated(modulesWithProgress, total, pageParams));
     } else {
-      res.json(paginated(modules.map(mapModule), total, pageParams));
+      res.json({
+        ...paginated(modules.map(mapModule), total, pageParams),
+        unfilteredTotal,
+        publishedTotal,
+      });
     }
   } catch (e) {
     if (e instanceof PaginationError) {

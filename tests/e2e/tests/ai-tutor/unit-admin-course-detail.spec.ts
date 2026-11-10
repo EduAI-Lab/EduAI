@@ -7,11 +7,8 @@
  * walks each tab, the breadcrumb course switcher, and the two module-list
  * entry points (add and import) that `canManageContent()` unlocks.
  *
- * Course publish state is read-only *here*: this page renders it as a badge and
- * offers no toggle. That is a statement about this screen, not about the app —
- * the dashboard's "Needs attention" panel does publish a course (through Core,
- * which owns the flag), and `PATCH /api/courses/:id/publish` has always
- * admitted this role. See unit-admin-dashboard.spec.ts.
+ * Course publish state shows as a banner badge; the toggle sits behind the
+ * banner's ⋯ menu and, like the dashboard's, confirms before writing to Core.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
@@ -74,17 +71,31 @@ function searchCourses(page: import("@playwright/test").Page) {
   return page.getByRole("searchbox", { name: /Search courses/ });
 }
 
+/** The seeded module's row link in the Modules list. */
+function moduleLink(page: import("@playwright/test").Page) {
+  return page
+    .getByRole("list", { name: "Modules" })
+    .getByRole("link", { name: new RegExp(MODULE_TITLE) });
+}
+
 test.describe("UNIT_ADMIN course detail", () => {
-  test("the hero shows the course identity and its Core-owned publish state", async ({ page }) => {
+  test("the banner shows the course identity and its Core-owned publish state", async ({
+    page,
+  }) => {
     await signInThroughPage(page, ua, coursePath);
 
     await expect(page.getByRole("heading", { name: ua.course.name, level: 1 })).toBeVisible();
     await expect(page.getByText(`${ua.course.code} · 2026-27W1`)).toBeVisible();
-    // Read-only badge. The one course-publish control in the app lives on the
-    // dashboard's drafts panel; this page shows state without an action, so a
-    // toggle appearing here would be a second, unreviewed entry point.
     await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
+    // No bare toggle on the page: publishing goes through the ⋯ menu and a confirm.
     await expect(page.getByRole("button", { name: /^(Publish|Unpublish) course/ })).toHaveCount(0);
+    await page.getByRole("button", { name: `${ua.course.code} course actions` }).click();
+    await page.getByRole("menuitem", { name: "Publish course" }).click();
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText(ua.course.name);
+    // Cancel: the other tests here read the course as a draft.
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirm).toHaveCount(0);
   });
 
   test("all four staff tabs are offered to a unit admin", async ({ page }) => {
@@ -98,7 +109,7 @@ test.describe("UNIT_ADMIN course detail", () => {
   test("the Content tab lists modules and offers the authoring actions", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
 
-    await expect(page.getByRole("heading", { name: "Modules", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Modules\s*\(\d+\)$/ })).toBeVisible();
     // PermissionGate(perms.canManageContent) — a unit admin resolves to the
     // `unit` access level, which canManageContent() admits.
     await expect(page.getByRole("button", { name: "Add module" })).toBeVisible();
@@ -272,7 +283,7 @@ test.describe("UNIT_ADMIN course detail", () => {
 
   test("the module search box narrows the list and records it in the URL", async ({ page }) => {
     await signInThroughPage(page, ua, coursePath);
-    await expect(page.getByRole("button", { name: new RegExp(MODULE_TITLE) })).toBeVisible();
+    await expect(moduleLink(page)).toBeVisible();
 
     // Retry the fill until the *URL* moves, not until the box holds the text.
     // A keystroke landing before the input has hydrated sets the DOM value
@@ -288,7 +299,7 @@ test.describe("UNIT_ADMIN course detail", () => {
       await expect(page).toHaveURL(/[?&]search=Detail/, { timeout: 3_000 });
     }).toPass({ timeout: 30_000 });
 
-    await expect(page.getByRole("button", { name: new RegExp(MODULE_TITLE) })).toBeVisible();
+    await expect(moduleLink(page)).toBeVisible();
 
     // A term that matches nothing empties the list rather than falling back to
     // an unfiltered one — the #1207 failure mode being guarded against.
@@ -297,7 +308,7 @@ test.describe("UNIT_ADMIN course detail", () => {
       await expect(page).toHaveURL(/[?&]search=no-such-module-zzz/, { timeout: 3_000 });
     }).toPass({ timeout: 30_000 });
 
-    await expect(page.getByRole("button", { name: new RegExp(MODULE_TITLE) })).toHaveCount(0);
+    await expect(moduleLink(page)).toHaveCount(0);
     await expect(page.getByText("No modules match your search.")).toBeVisible();
   });
 });

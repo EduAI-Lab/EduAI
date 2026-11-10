@@ -138,6 +138,7 @@ function wrap(activities = [makeActivity()]) {
       lesson,
       activities,
       activitiesTotal: activities.length,
+      activityCount: activities.length,
       orderText: "1.1",
       page: 1,
       pageSize: 25,

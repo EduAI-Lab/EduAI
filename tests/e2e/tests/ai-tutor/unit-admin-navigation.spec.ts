@@ -122,7 +122,7 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     await (await openRailTray(page, "Account")).getByRole("link", { name: "Settings" }).click();
 
     await page.waitForURL(`${AI_TUTOR_URL}/settings`);
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   });
 
   test("the help modal offers the unit tour, and says when it starts elsewhere", async ({
@@ -144,7 +144,7 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
 
     // …and elsewhere the modal says up front that it starts on another page.
     await page.goto(`${AI_TUTOR_URL}/settings`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
     await expect(await openHelpTourEntry(page)).toBeVisible();
     await expect(page.getByTestId("page-help-dialog")).toContainText("starts on another page");
   });
@@ -201,7 +201,7 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     await page.getByRole("button", { name: "Open command palette" }).click();
     await commandPalette(page).getByRole("option", { name: "Settings", exact: true }).click();
     await page.waitForURL(`${AI_TUTOR_URL}/settings`);
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   });
 
   test("the app launcher offers the other EduAI apps and marks AI Tutor as current", async ({

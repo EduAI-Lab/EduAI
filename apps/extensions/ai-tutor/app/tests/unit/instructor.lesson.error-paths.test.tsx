@@ -128,6 +128,7 @@ function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
       lesson,
       activities,
       activitiesTotal: activities.length,
+      activityCount: activities.length,
       orderText: "1.1",
       page: 1,
       pageSize: 25,

@@ -6,33 +6,28 @@
  * Loads: api.listCourses() — the backend already filters to courses this
  *        instructor has been assigned to, so no additional client filter.
  * Owns: the shared `CourseListView` (search + term grouping). The cards here
- *        are read-only entry points into each course; course *creation* lives
- *        only in EduAI Core, and the one course-publish control in the app is
- *        on the dashboard's drafts panel, not here.
+ *        are the same cards as the dashboard (section shortcuts, ⋯ publish
+ *        menu); course *creation* lives only in EduAI Core.
  * Gotchas:
  *   - Courses are created and synced from EduAI Core (source of truth); there
  *     is no in-app import — they appear here automatically.
  * Related: routes/instructor.course.tsx (drilldown)
  */
-import { Link, redirect, useNavigation } from "react-router";
+import { redirect, useNavigation } from "react-router";
 import type { ReactNode } from "react";
 import { IconSchool, IconSearch } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
-  CourseCard,
   CourseListView,
   PageHeading,
   buildStatusFilterGroup,
   buildTermFilterGroup,
 } from "@eduai/ui";
-import {
-  accentForCourse,
-  courseCode,
-  courseName,
-  courseTerm,
-  courseYear,
-} from "../lib/course-display";
+import { courseCode, courseTerm, courseYear } from "../lib/course-display";
+import { CourseGridCard, useStaffCourseLinks } from "~/components/dashboard/TeachingDashboard";
+import { useCoursePublishToggle } from "~/components/courses/useCoursePublishToggle";
+import { useAtPermissions } from "~/hooks/useAtPermissions";
 import api, { COURSE_LIST_PAGE_SIZE } from "../lib/api";
 import type { CourseListParams } from "../lib/api";
 import { getEduAiAppUrl } from "../lib/extension-urls";
@@ -146,6 +141,9 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     useCourseListFilters(selection);
 
   useShellBreadcrumbs([{ label: "Courses" }]);
+  const perms = useAtPermissions();
+  const linksFor = useStaffCourseLinks();
+  const { requestToggle, dialog: publishDialog } = useCoursePublishToggle();
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
@@ -219,18 +217,12 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             )
           }
           renderCard={(c) => (
-            <CourseCard
-              id={String(c.id)}
-              code={courseCode(c)}
-              name={courseName(c)}
-              description={c.description}
-              term={courseTerm(c)}
-              year={courseYear(c)}
-              isPublished={c.isPublished}
-              accentColor={accentForCourse(c)}
-              extraBadges={c.coreOfferingId ? ["EduAI"] : []}
-              href={`/instructor/courses/${c.id}`}
-              LinkComponent={Link}
+            <CourseGridCard
+              course={c}
+              kind="teaching"
+              links={linksFor(c, "teaching")}
+              canPublish={perms.canPublishContent}
+              onTogglePublish={requestToggle}
             />
           )}
         />
@@ -243,6 +235,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
         onPageChange={goToPage}
         disabled={navigation.state === "loading"}
       />
+      {publishDialog}
     </div>
   );
 }
