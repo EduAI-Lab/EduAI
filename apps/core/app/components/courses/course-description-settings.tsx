@@ -61,7 +61,9 @@ export function CourseDescriptionSettings({
           <Button onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save description"}
           </Button>
-          {saveMsg && <span className="text-sm text-muted-foreground">{saveMsg}</span>}
+          <span role="status" className="text-sm text-muted-foreground">
+            {saveMsg}
+          </span>
         </div>
       </CardContent>
     </Card>

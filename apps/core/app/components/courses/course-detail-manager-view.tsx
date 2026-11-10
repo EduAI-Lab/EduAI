@@ -2104,6 +2104,7 @@ export function CourseDetailManagerView({
             {courseId && (
               <div className="mb-6">
                 <CourseDescriptionSettings
+                  key={courseId}
                   courseId={courseId}
                   initialDescription={course.description ?? ""}
                   onSaved={onCourseUpdated}
