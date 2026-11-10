@@ -195,6 +195,12 @@ function renderView(
   return props;
 }
 
+function detailsSection(): HTMLElement {
+  return within(screen.getByRole("region", { name: /overview/i }))
+    .getByRole("heading", { name: "Course details" })
+    .closest("section") as HTMLElement;
+}
+
 let mockFetch: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -248,17 +254,16 @@ describe("CourseDetailManagerView — tabs and overview", () => {
     expect(screen.getAllByTestId("response-style-summary").length).toBeGreaterThan(0);
   });
 
-  it("shows the department and Active/Inactive on the banner and in Course details", () => {
-    renderView({ course: { ...COURSE, isActive: false } });
+  it("shows the department and Published/Unpublished, never Active/Inactive, on the banner and in Course details", () => {
+    renderView({ course: { ...COURSE, isActive: false, isPublished: false } });
     const banner = screen.getByRole("banner");
     expect(banner).toHaveTextContent("COSC 101 · 2025-26W1 · COSC");
-    expect(within(banner).getByText("Inactive")).toBeInTheDocument();
-    expect(within(banner).getByText("Published")).toBeInTheDocument();
-    const details = within(screen.getByRole("region", { name: /overview/i }))
-      .getByRole("heading", { name: "Course details" })
-      .closest("section") as HTMLElement;
+    expect(within(banner).getByText("Unpublished")).toBeInTheDocument();
+    expect(within(banner).queryByText(/^(Active|Inactive)$/)).not.toBeInTheDocument();
+    const details = detailsSection();
     expect(within(details).getByText("COSC")).toBeInTheDocument();
-    expect(within(details).getByText("Inactive")).toBeInTheDocument();
+    expect(within(details).getByText("Unpublished")).toBeInTheDocument();
+    expect(within(details).queryByText(/^(Active|Inactive)$/)).not.toBeInTheDocument();
   });
 
   it("keeps the shell's course menu the only navigation named for the course", () => {
@@ -1115,5 +1120,38 @@ describe("CourseDetailManagerView — a retry the server refuses (#1749)", () =>
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+});
+
+describe("CourseDetailManagerView — overview status and publish (#2136)", () => {
+  it.each([
+    { isPublished: false, button: "Publish course", confirm: "Publish", expected: true },
+    { isPublished: true, button: "Unpublish course", confirm: "Unpublish", expected: false },
+  ])(
+    "toggles publish from Course details (isPublished=$isPublished)",
+    async ({ isPublished, button, confirm, expected }) => {
+      const onPublishChange = vi.fn(async () => {});
+      renderView({ access: "admin", course: { ...COURSE, isPublished }, onPublishChange });
+      fireEvent.click(within(detailsSection()).getByRole("button", { name: button }));
+      fireEvent.click(await screen.findByRole("button", { name: confirm }));
+      await waitFor(() => expect(onPublishChange).toHaveBeenCalledWith(expected));
+    },
+  );
+
+  it("has no publish button in Course details without onPublishChange", () => {
+    renderView({ access: "admin", onPublishChange: undefined });
+    expect(
+      within(detailsSection()).queryByRole("button", { name: /publish course/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("links both Edit links to Settings and keeps Upload material off the banner", () => {
+    renderView({ access: "admin" });
+    for (const name of ["Edit course description", "Edit AI response style"]) {
+      expect(screen.getByRole("link", { name }).getAttribute("href")).toContain("tab=settings");
+    }
+    expect(
+      within(screen.getByRole("banner")).queryByRole("button", { name: /upload material/i }),
+    ).not.toBeInTheDocument();
   });
 });

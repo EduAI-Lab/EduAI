@@ -393,15 +393,11 @@ describe("CourseDetailStudentView", () => {
     expect(chat).toHaveAttribute("href", "/chat?courseId=c1");
   });
 
-  it("shows the department and Active/Inactive on the banner", () => {
-    const { unmount } = wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
+  it("shows the department on the banner, without Active/Inactive", () => {
+    wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
     const banner = screen.getByRole("banner");
     expect(banner).toHaveTextContent("COSC 101 · 2025-26W1 · COSC");
-    expect(within(banner).getByText("Active")).toBeInTheDocument();
-    unmount();
-
-    wrap(<CourseDetailStudentView course={{ ...COURSE, isActive: false }} topics={[]} />);
-    expect(within(screen.getByRole("banner")).getByText("Inactive")).toBeInTheDocument();
+    expect(within(banner).queryByText(/^(Active|Inactive)$/)).not.toBeInTheDocument();
   });
 
   it("lists the course's files only where the course shares them (#2002)", async () => {

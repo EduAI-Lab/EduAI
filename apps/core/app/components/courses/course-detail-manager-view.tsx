@@ -62,12 +62,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@eduai/ui";
-import {
-  ActiveBannerBadge,
-  BANNER_PRIMARY_ACTION_CLASS,
-  BannerBadge,
-  CourseHeader,
-} from "~/components/courses/course-header";
+import { BannerBadge, CourseHeader } from "~/components/courses/course-header";
 import { CourseInstructorOverview } from "~/components/courses/course-instructor-overview";
 import { PageTabs, PageTabsContent } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
@@ -1056,24 +1051,9 @@ export function CourseDetailManagerView({
           name={course.name}
           department={course.department}
           accentColor={resolvePaletteAccent(course.id)}
-          badges={
-            <>
-              <ActiveBannerBadge active={course.isActive} />
-              <BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>
-            </>
-          }
+          badges={<BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>}
           // Topic chips only on Overview, so the other sections keep a slim banner.
           topics={activeTab === "overview" ? topics.map((t) => t.name) : []}
-          actions={
-            // The Materials section carries its own upload button.
-            canManage &&
-            activeTab !== "materials" && (
-              <Button size="sm" className={BANNER_PRIMARY_ACTION_CLASS} onClick={openUploadDialog}>
-                <IconUpload className="size-4" aria-hidden="true" />
-                Upload material
-              </Button>
-            )
-          }
           menu={
             <>
               <DropdownMenu>
@@ -1318,6 +1298,7 @@ export function CourseDetailManagerView({
             instructors={displayInstructors}
             tas={tas}
             canPublish={canPublishCourse}
+            publishControl={publishControl}
           />
         </PageTabsContent>
 

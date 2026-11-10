@@ -12,7 +12,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
-import { ActiveBannerBadge, BannerBadge, CourseHeader } from "~/components/courses/course-header";
+import { BannerBadge, CourseHeader } from "~/components/courses/course-header";
 import { StudentCourseMaterials } from "~/components/courses/student-course-materials";
 import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
 import {
@@ -90,12 +90,7 @@ export function CourseDetailStudentView({ course, topics, tas = [], aiTutorUrl }
         name={displayName}
         department={course.department}
         accentColor={accentColor}
-        badges={
-          <>
-            <BannerBadge>Enrolled</BannerBadge>
-            <ActiveBannerBadge active={course.isActive} />
-          </>
-        }
+        badges={<BannerBadge>Enrolled</BannerBadge>}
         topics={topics.map((t) => t.name)}
         menu={
           <CourseCardCustomizePopover
