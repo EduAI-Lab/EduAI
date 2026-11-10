@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { Spinner } from "@eduai/ui";
+import { CollapsibleSection, Spinner } from "@eduai/ui";
 import { Link, useNavigate } from "react-router";
 import { IconMessageCircle, IconChevronRight, IconBook, IconUser } from "@tabler/icons-react";
 
@@ -460,7 +460,11 @@ export function DashboardView({
       {/* Analytics charts */}
       {analytics && (
         <ScrollReveal index={3} parallax={false}>
-          <div data-tour="dashboard-analytics">{analytics}</div>
+          <div data-tour="dashboard-analytics">
+            <CollapsibleSection title="At a glance" storageKey="eduai.dashboard.analyticsCollapsed">
+              {analytics}
+            </CollapsibleSection>
+          </div>
         </ScrollReveal>
       )}
 
