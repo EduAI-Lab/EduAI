@@ -123,6 +123,9 @@ export function NavShell({
   const hasCourseMenu = Boolean(courseNav && courseNav.items.length > 0);
   const courseMenuShown = breakpoint === "tablet" ? courseDrawerOpen : courseMenuOpen;
 
+  const currentApp = model.launcherApps.find((app) => app.id === model.currentAppId);
+  const platformLabel = currentApp ? (currentApp.shortName ?? currentApp.name) : undefined;
+
   const { onReportBug } = model;
   const openBugReport = onReportBug
     ? () => {
@@ -176,6 +179,14 @@ export function NavShell({
                   >
                     <IconMenu2 size={20} aria-hidden="true" />
                   </button>
+                )}
+                {platformLabel && (
+                  <span className="shrink-0 text-sm text-muted-foreground">
+                    {platformLabel}
+                    <span aria-hidden="true" className="mx-1.5">
+                      ›
+                    </span>
+                  </span>
                 )}
                 {courseNav ? (
                   <>
