@@ -579,6 +579,36 @@ export function CourseDashboard({
           <SidePanel title="At a glance">
             <AtAGlance stats={stats} data={data} />
           </SidePanel>
+          {role === "INSTRUCTOR" && data.stats.materialsByStatus && (
+            <SidePanel title="Material status">
+              <dl className="grid grid-cols-3 gap-x-4 text-sm">
+                <div className="flex flex-col">
+                  <dt className="text-xs text-muted-foreground">Ready</dt>
+                  <dd className="font-semibold text-foreground">
+                    {data.stats.materialsByStatus.ready}
+                  </dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs text-muted-foreground">Processing</dt>
+                  <dd className="font-semibold text-foreground">
+                    {data.stats.materialsByStatus.processing}
+                  </dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs text-muted-foreground">Failed</dt>
+                  <dd
+                    className={
+                      data.stats.materialsByStatus.failed > 0
+                        ? "font-semibold text-destructive"
+                        : "font-semibold text-foreground"
+                    }
+                  >
+                    {data.stats.materialsByStatus.failed}
+                  </dd>
+                </div>
+              </dl>
+            </SidePanel>
+          )}
         </aside>
       </div>
     </div>
