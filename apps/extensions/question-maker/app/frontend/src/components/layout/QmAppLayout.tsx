@@ -399,7 +399,8 @@ function QmAppLayoutInner() {
         </>
       }
     >
-      {pathname === "/dashboard" && user ? (
+      {/* The admin dashboard places its own Getting started card in its grid. */}
+      {pathname === "/dashboard" && user && user.role !== "ADMIN" ? (
         <OnboardingChecklist
           platform="question-maker"
           userId={String(user.id)}
