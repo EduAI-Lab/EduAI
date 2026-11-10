@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
@@ -16,6 +16,11 @@ import {
   Input,
   Label,
   PageHeading,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
   Table,
   TableBody,
   TableCell,
@@ -296,6 +301,110 @@ function RunHistoryDialog({ job, open, onClose, onEditSettings }: RunHistoryDial
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// ── Job detail panel ─────────────────────────────────────────────────────────
+
+function Detail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 wrap-break-word">{children}</dd>
+    </div>
+  );
+}
+
+/** What the job's last run came to, in a sentence: an error shows its reason. */
+function LastRunOutcome({ job }: { job: CronJobEntry }) {
+  const run = job.lastRun;
+  const box = "rounded-xl border border-border/70 bg-background/60 p-4 text-sm";
+  if (!run) {
+    return (
+      <div className={`${box} text-muted-foreground`}>
+        {job.triggerEnabled === false
+          ? "This job runs on an extension server; no run has been reported here yet."
+          : "This job hasn't run yet."}
+      </div>
+    );
+  }
+  if (run.status === "RUNNING") {
+    return <div className={`${box} text-muted-foreground`}>This job is running now.</div>;
+  }
+  if (run.status === "ERROR") {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-medium" style={{ color: "var(--destructive)" }}>
+          The last run failed.
+        </p>
+        <pre
+          aria-label="Failure reason"
+          className={`${box} max-h-[50vh] overflow-y-auto whitespace-pre-wrap wrap-break-word font-mono text-xs`}
+        >
+          {run.message || "No reason was recorded."}
+        </pre>
+      </div>
+    );
+  }
+  return (
+    <div className={box} style={{ color: "var(--color-success-700)" }}>
+      The last run completed successfully.
+    </div>
+  );
+}
+
+interface JobDetailPanelProps {
+  job: CronJobEntry | null;
+  onClose: () => void;
+  onOpenHistory: (job: CronJobEntry) => void;
+}
+
+function JobDetailPanel({ job, onClose, onOpenHistory }: JobDetailPanelProps) {
+  const run = job?.lastRun ?? null;
+  return (
+    <Sheet
+      open={job !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-xl">
+        <SheetHeader className="border-b pr-12">
+          <SheetTitle>{job?.name ?? ""}</SheetTitle>
+          <SheetDescription>{job?.description ?? ""}</SheetDescription>
+        </SheetHeader>
+        {job && (
+          <div className="flex flex-col gap-6 p-4">
+            <LastRunOutcome job={job} />
+            <dl className="flex flex-col gap-3">
+              <Detail label="Status">
+                <CronStatusBadge
+                  status={run?.status ?? null}
+                  external={job.triggerEnabled === false}
+                />
+              </Detail>
+              <Detail label="Schedule">{job.scheduleLabel}</Detail>
+              <Detail label="Last run">{run ? formatDateTime(run.startedAt) : "—"}</Detail>
+              <Detail label="Duration">
+                {run
+                  ? run.status === "RUNNING"
+                    ? "running…"
+                    : formatDuration(run.startedAt, run.finishedAt)
+                  : "—"}
+              </Detail>
+              <Detail label="Script">
+                <span className="font-mono text-xs">{job.script}</span>
+              </Detail>
+            </dl>
+            <div>
+              <Button size="sm" variant="outline" onClick={() => onOpenHistory(job)}>
+                View run history
+              </Button>
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -669,6 +778,9 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const { jobs, refresh: fetchStatuses, setJobs } = useCronJobStatuses(true, initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<CronJobEntry | null>(null);
+  // The panel follows the live list, so a run that finishes updates it in place.
+  const [detailJobName, setDetailJobName] = useState<string | null>(null);
+  const detailJob = jobs.find((job) => job.name === detailJobName) ?? null;
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
   const [editSettingsJob, setEditSettingsJob] = useState<CronJobEntry | null>(null);
   const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
@@ -760,15 +872,29 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                 <TableHead>Last run</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.map((job) => {
                 const isRunning = job.lastRun?.status === "RUNNING";
                 const isTriggeringThis = triggering.has(job.name);
+                const openDetail = () => setDetailJobName(job.name);
                 return (
-                  <TableRow key={job.name}>
+                  <TableRow
+                    key={job.name}
+                    tabIndex={0}
+                    aria-label={`Open job: ${job.name}`}
+                    onClick={openDetail}
+                    onKeyDown={(event) => {
+                      // Only the row itself: Enter on a button inside is that button's.
+                      if (event.key === "Enter" && event.target === event.currentTarget) {
+                        event.preventDefault();
+                        openDetail();
+                      }
+                    }}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
                     <TableCell>
                       <div className="font-medium text-sm">{job.name}</div>
                       <div className="text-xs text-muted-foreground">{job.description}</div>
@@ -777,7 +903,11 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                       {/* The schedule itself opens Edit schedule. */}
                       {job.triggerEnabled !== false ? (
                         <button
-                          onClick={() => setEditScheduleJob(job)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setEditScheduleJob(job);
+                          }}
+                          onKeyDown={(event) => event.stopPropagation()}
                           title="Edit schedule"
                           aria-label={`${job.scheduleLabel} (edit schedule)`}
                           className="text-left text-primary-text underline-offset-2 hover:underline cursor-pointer"
@@ -811,8 +941,11 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         message={job.lastRun?.message}
                       />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <TableCell
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => setHistoryJob(job)}
                           className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
@@ -838,6 +971,15 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
           </Table>
         </CardContent>
       </Card>
+
+      <JobDetailPanel
+        job={detailJob}
+        onClose={() => setDetailJobName(null)}
+        onOpenHistory={(job) => {
+          setDetailJobName(null);
+          setHistoryJob(job);
+        }}
+      />
 
       <RunHistoryDialog
         job={historyJob}

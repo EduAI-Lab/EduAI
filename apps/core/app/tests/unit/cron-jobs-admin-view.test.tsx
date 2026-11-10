@@ -721,3 +721,62 @@ describe("CronJobsAdminView", () => {
     expect(screen.queryByRole("button", { name: /reset to default/i })).not.toBeInTheDocument();
   });
 });
+
+/** A finished run for the detail-panel tests. */
+function lastRun(status: "SUCCESS" | "ERROR", message: string | null) {
+  return {
+    id: "run-1",
+    jobName: "backup-nightly",
+    status,
+    startedAt: "2026-01-01T00:00:00.000Z",
+    finishedAt: "2026-01-01T00:00:01.000Z",
+    message,
+    exitCode: status === "ERROR" ? 1 : 0,
+    triggerSource: "SCHEDULE" as const,
+    triggeredByUserId: null,
+  };
+}
+
+describe("CronJobsAdminView — job detail panel", () => {
+  it("opens from the row and shows a failed run's reason", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job({ lastRun: lastRun("ERROR", "pg_dump: disk full") })]} />);
+
+    fireEvent.click(screen.getByRole("row", { name: "Open job: backup-nightly" }));
+
+    const panel = screen.getByRole("dialog");
+    expect(panel).toHaveTextContent("The last run failed.");
+    expect(within(panel).getByLabelText("Failure reason")).toHaveTextContent("pg_dump: disk full");
+  });
+
+  it("says a successful run completed, and opens from the keyboard", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job({ lastRun: lastRun("SUCCESS", "done") })]} />);
+
+    fireEvent.keyDown(screen.getByRole("row", { name: "Open job: backup-nightly" }), {
+      key: "Enter",
+    });
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("The last run completed successfully.");
+  });
+
+  it("says a job that never ran hasn't run yet", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job()]} />);
+
+    fireEvent.click(screen.getByRole("row", { name: "Open job: backup-nightly" }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("This job hasn't run yet.");
+  });
+
+  it("does not open from the row's own buttons", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
+    render(<CronJobsAdminView jobs={[job()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Run history — backup-nightly");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+});
