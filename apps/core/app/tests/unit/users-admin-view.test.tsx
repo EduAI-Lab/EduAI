@@ -198,6 +198,33 @@ describe("UsersAdminView — your own account", () => {
   });
 });
 
+describe("UsersAdminView — another admin's account", () => {
+  const otherAdmin = { ...user, id: "admin-2", name: "Other Admin", role: "ADMIN" } as PlatformUser;
+
+  it("leaves Deactivate and Delete enabled on another admin's row", () => {
+    renderView({ users: [otherAdmin] });
+
+    openRowMenu();
+    expect(screen.getByRole("menuitem", { name: /deactivate/i })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+    expect(screen.getByRole("menuitem", { name: /delete/i })).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("includes other admins in a bulk delete", async () => {
+    const onDeleteUsers = vi.fn().mockResolvedValue([]);
+    renderView({ users: [user, otherAdmin], onDeleteUsers });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("permanently delete 2 selected users");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(onDeleteUsers).toHaveBeenCalledWith(["u1", "admin-2"]));
+  });
+});
+
 describe("UsersAdminView — create user", () => {
   it("opens the form dialog in create mode from the Add User button", () => {
     renderView();

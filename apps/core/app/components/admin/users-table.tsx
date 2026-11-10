@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type {
   ColumnDef,
@@ -66,6 +66,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@eduai/ui";
 import type { PlatformUser } from "~/hooks/api/types";
 import { DEFAULT_PAGE_SIZE } from "~/hooks/api/pagination";
 import type { UsersQuery, UserSortField } from "~/hooks/api/use-users";
@@ -134,6 +135,37 @@ const statusFilterFn: FilterFn<User> = (row, columnId, filterValue: string[]) =>
   return filterValue.includes(statusString);
 };
 
+/**
+ * Why the row menu won't delete or deactivate this user, or null when it will:
+ * nobody can remove their own account. Other admins can be removed (the server
+ * keeps at least one active admin).
+ */
+function blockedReason(
+  user: User,
+  currentUserId: string,
+  action: "delete" | "deactivate",
+): string | null {
+  if (user.id === currentUserId) return `You can't ${action} your own account`;
+  return null;
+}
+
+/** Explains a disabled menu item on hover; renders the item bare when nothing blocks it. */
+function BlockedActionTooltip({
+  reason,
+  children,
+}: {
+  reason: string | null;
+  children: ReactElement;
+}) {
+  if (!reason) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="left">{reason}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function RowActions({
   row,
   currentUserId,
@@ -153,6 +185,8 @@ function RowActions({
 }) {
   const user = row.original;
   const isCurrentUser = user.id === currentUserId;
+  const deleteBlockedReason = blockedReason(user, currentUserId, "delete");
+  const deactivateBlockedReason = blockedReason(user, currentUserId, "deactivate");
 
   return (
     // modal={false} so Radix does not lock `body { pointer-events: none }` while
@@ -185,27 +219,31 @@ function RowActions({
               </a>
             </DropdownMenuItem>
           )}
-        <DropdownMenuItem
-          // Deactivating asks first (see the table's dialog); activating doesn't.
-          onClick={() => (user.isActive ? onRequestDeactivate(user) : onToggleActive(user))}
-          disabled={isCurrentUser}
-        >
-          {user.isActive ? (
-            <IconUserOff className="mr-2 h-4 w-4" />
-          ) : (
-            <IconUserCheck className="mr-2 h-4 w-4" />
-          )}
-          {user.isActive ? "Deactivate" : "Activate"}
-        </DropdownMenuItem>
+        <BlockedActionTooltip reason={user.isActive ? deactivateBlockedReason : null}>
+          <DropdownMenuItem
+            // Deactivating asks first (see the table's dialog); activating doesn't.
+            onClick={() => (user.isActive ? onRequestDeactivate(user) : onToggleActive(user))}
+            disabled={user.isActive ? deactivateBlockedReason !== null : isCurrentUser}
+          >
+            {user.isActive ? (
+              <IconUserOff className="mr-2 h-4 w-4" />
+            ) : (
+              <IconUserCheck className="mr-2 h-4 w-4" />
+            )}
+            {user.isActive ? "Deactivate" : "Activate"}
+          </DropdownMenuItem>
+        </BlockedActionTooltip>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => onRequestDelete(user)}
-          disabled={isCurrentUser}
-          className="text-destructive focus:text-destructive"
-        >
-          <IconTrash className="mr-2 h-4 w-4" />
-          Delete
-        </DropdownMenuItem>
+        <BlockedActionTooltip reason={deleteBlockedReason}>
+          <DropdownMenuItem
+            onClick={() => onRequestDelete(user)}
+            disabled={deleteBlockedReason !== null}
+            className="text-destructive focus:text-destructive"
+          >
+            <IconTrash className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </BlockedActionTooltip>
       </DropdownMenuContent>
     </DropdownMenu>
   );
