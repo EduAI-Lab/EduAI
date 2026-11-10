@@ -8,6 +8,12 @@ interface CoursePublishControlProps {
   isPublished: boolean;
   /** Rejects when the server refuses; the control reports it inline. */
   onPublishChange: (publish: boolean) => Promise<void>;
+  /**
+   * Controlled confirm dialog with no button of its own, for a trigger that
+   * lives elsewhere such as a ⋯ menu item (#2105).
+   */
+  confirmOpen?: boolean;
+  onConfirmOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -19,8 +25,13 @@ export function CoursePublishControl({
   courseLabel,
   isPublished,
   onPublishChange,
+  confirmOpen: controlledOpen,
+  onConfirmOpenChange,
 }: CoursePublishControlProps) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const confirmOpen = controlled ? controlledOpen : uncontrolledOpen;
+  const setConfirmOpen = controlled ? (onConfirmOpenChange ?? (() => {})) : setUncontrolledOpen;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const publish = !isPublished;
@@ -46,14 +57,16 @@ export function CoursePublishControl({
 
   return (
     <div className="flex flex-col items-start gap-1">
-      <Button
-        variant={publish ? "default" : "outline"}
-        size="sm"
-        disabled={busy}
-        onClick={() => setConfirmOpen(true)}
-      >
-        {publish ? "Publish course" : "Unpublish course"}
-      </Button>
+      {!controlled && (
+        <Button
+          variant={publish ? "default" : "outline"}
+          size="sm"
+          disabled={busy}
+          onClick={() => setConfirmOpen(true)}
+        >
+          {publish ? "Publish course" : "Unpublish course"}
+        </Button>
+      )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

@@ -128,12 +128,12 @@ describe("CourseDetailPage materials by role (#1962)", () => {
     expect(materialsHookCalls.every(([, enabled]) => enabled === false)).toBe(true);
   });
 
-  it("hands the student view only the course, its topics and its TAs", () => {
+  it("hands the student view only the course, its topics, its TAs and its AI Tutor link", () => {
     loaderData.access = "student";
     render(<CourseDetailPage />);
 
     const student = renderedViews.find((r) => r.view === "student");
-    expect(student?.propNames).toEqual(["course", "tas", "topics"]);
+    expect(student?.propNames).toEqual(["aiTutorUrl", "course", "tas", "topics"]);
   });
 
   it.each(["admin", "unit", "instructor", "ta"] as const)(

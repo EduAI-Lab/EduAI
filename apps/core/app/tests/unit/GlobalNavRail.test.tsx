@@ -105,7 +105,10 @@ function railLabels(rail: HTMLElement): string[] {
 describe("GlobalNavRail — entries", () => {
   it("lists the student's entries in Canvas order, with no Administration", () => {
     const { rail } = renderRail("STUDENT");
-    expect(railLabels(rail)).toEqual(["Account", "Dashboard", "Courses", "Help"]);
+    // #2105: Course Chat sits in the learner's rail, extensions after it.
+    // Extension entries depend on which VITE_*_URL vars the env sets.
+    const labels = railLabels(rail).filter((l) => l !== "AI Tutor");
+    expect(labels).toEqual(["Account", "Dashboard", "Courses", "Course Chat", "Help"]);
   });
 
   it("adds Administration and Admin Chatbot for ADMIN, in order", () => {
@@ -130,10 +133,18 @@ describe("GlobalNavRail — entries", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("leaves Course Chat and Course Assistant to the Course Chat app (#1996)", () => {
+  it("puts Course Chat and Course Assistant in an instructor's rail (#2105)", () => {
     renderRail("INSTRUCTOR", { rootData: { canUseCourseAssistant: true } });
+    expect(screen.getByRole("link", { name: "Course Chat" })).toHaveAttribute("href", "/chat");
+    expect(screen.getByRole("link", { name: "Course Assistant" })).toHaveAttribute(
+      "href",
+      "/instructor/chat",
+    );
+  });
+
+  it.each(["ADMIN", "UNIT_ADMIN"])("leaves Course Chat to the Course Chat app for %s", (role) => {
+    renderRail(role);
     expect(screen.queryByRole("link", { name: "Course Chat" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Course Assistant" })).toBeNull();
   });
 
   it("shows the UNIT_ADMIN Invitations entry as a link when unitAdmins.canInvite is on", () => {

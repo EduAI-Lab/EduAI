@@ -1,5 +1,11 @@
 import type { Message } from "@ai-sdk/react";
-import { IconAlertTriangle, IconArrowDown, IconBooksOff, IconRefresh } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconArrowDown,
+  IconBooksOff,
+  IconEye,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle, Button } from "@eduai/ui";
 
 import { ChatDisclaimer } from "~/components/chat/chat-disclaimer";
@@ -143,7 +149,8 @@ export function ChatConversationLayout({
                   messages.length === 0 ? "pt-4 pb-2" : "mb-4",
                 )}
               >
-                <p className="text-center text-xs text-muted-foreground">
+                <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
+                  <IconEye className="size-3.5 shrink-0" aria-hidden="true" />
                   Instructors, teaching assistants, and platform admins can view this course chat
                   history.
                 </p>
