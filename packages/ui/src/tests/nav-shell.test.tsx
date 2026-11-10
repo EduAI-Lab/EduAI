@@ -273,6 +273,33 @@ describe("NavShell — rail", () => {
   });
 });
 
+describe("NavShell — app-name breadcrumb", () => {
+  it("opens a course page's trail with the current app's name", () => {
+    renderShell({ courseNav: COURSE_NAV }, makeModel({ currentAppId: "core" }));
+    const crumbs = screen.getByRole("navigation", { name: "breadcrumb" });
+    const links = within(crumbs).getAllByRole("link");
+    expect(links[0]).toHaveTextContent("Core");
+    expect(links[0]).toHaveAttribute("data-router-link", "/dashboard");
+  });
+
+  it("puts the app's name before a plain title, linking to appHomeHref", () => {
+    renderShell({ title: "History", appHomeHref: "/chat" });
+    const crumbs = screen.getByRole("navigation", { name: "breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "Test App" })).toHaveAttribute(
+      "data-router-link",
+      "/chat",
+    );
+    expect(within(crumbs).getByText("History")).toBeInTheDocument();
+  });
+
+  it("uses appName over the launcher, and skips the crumb when the title is the app", () => {
+    renderShell({ title: "Question Maker", appName: "Question Maker" });
+    const crumbs = screen.getByRole("navigation", { name: "breadcrumb" });
+    expect(within(crumbs).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(crumbs).getByText("Question Maker")).toBeInTheDocument();
+  });
+});
+
 describe("NavShell — course pages", () => {
   it("draws the course menu, its tour anchor, and the course breadcrumb", () => {
     renderShell({ courseNav: COURSE_NAV });

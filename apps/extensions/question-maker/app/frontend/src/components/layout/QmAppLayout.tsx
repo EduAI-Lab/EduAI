@@ -78,6 +78,19 @@ function resolveTitle(pathname: string): string {
   return ROUTE_TITLES.get(pathname) ?? "Question Maker";
 }
 
+/** The trail's first crumb, so it's always clear you're in Question Maker. */
+function QmAppCrumb() {
+  return (
+    <BreadcrumbItem>
+      <BreadcrumbLink asChild>
+        <Link to="/dashboard" className="font-medium">
+          Question Maker
+        </Link>
+      </BreadcrumbLink>
+    </BreadcrumbItem>
+  );
+}
+
 /**
  * The breadcrumb off the course workspace, and on a course page while its
  * course is still loading — once it has loaded, the shell's course menu draws
@@ -88,6 +101,8 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
     return (
       <Breadcrumb>
         <BreadcrumbList>
+          <QmAppCrumb />
+          <BreadcrumbSeparator />
           <BreadcrumbItem>
             <BreadcrumbPage>{resolveTitle(pathname)}</BreadcrumbPage>
           </BreadcrumbItem>
@@ -99,6 +114,8 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   return (
     <Breadcrumb>
       <BreadcrumbList>
+        <QmAppCrumb />
+        <BreadcrumbSeparator />
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
             <Link to="/courses">Courses</Link>
@@ -426,6 +443,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
         model={model}
         LinkComponent={Link}
         locationKey={location.key ?? location.pathname}
+        appName="Question Maker"
         title="Question Maker"
         headerActions={
           <PageHelpButton content={QM_ACCESS_HELP} helpHref={`${getCoreUrl()}/help`} />

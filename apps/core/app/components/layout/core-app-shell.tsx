@@ -157,7 +157,8 @@ export function CoreAppShell({
   // which app the shell presents.
   const coreModel = useCoreNavModel(user, openBugReport);
   const chatModel = useCourseChatNavModel(user, openBugReport, chatApp ?? {});
-  const model = isCourseChatPath(pathname) ? chatModel : coreModel;
+  const inCourseChat = isCourseChatPath(pathname);
+  const model = inCourseChat ? chatModel : coreModel;
   const navigate = useNavigate();
   // Every Administration page keeps its menu beside the page, so moving
   // between them never needs the rail's tray.
@@ -175,6 +176,7 @@ export function CoreAppShell({
         locationKey={location.key}
         title={resolveCoreHeaderTitle(pathname, title)}
         breadcrumbs={breadcrumbs}
+        appHomeHref={inCourseChat ? "/chat" : "/dashboard"}
         courseNav={courseNav}
         sectionNav={adminNav}
         headerActions={

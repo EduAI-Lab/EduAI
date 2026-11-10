@@ -150,7 +150,8 @@ function HeaderBreadcrumbs() {
   // Anchors the lesson tour's "climb back up a level" step.
   return (
     <div data-tour="shell-breadcrumbs" className="min-w-0">
-      <ShellBreadcrumbs items={items} />
+      {/* The trail opens with the app's name, so it's always clear you're in AI Tutor. */}
+      <ShellBreadcrumbs items={[{ label: "AI Tutor", href: "/dashboard" }, ...items]} />
     </div>
   );
 }

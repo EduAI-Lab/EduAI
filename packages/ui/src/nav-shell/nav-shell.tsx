@@ -15,7 +15,7 @@ import { cn } from "../utils";
 import { CourseNavMenu, SectionNavMenu } from "./course-nav-menu";
 import { GlobalNavRail } from "./global-nav-rail";
 import { MobileNav } from "./mobile-nav";
-import { NavAnchor, NavLinkProvider } from "./nav-shared";
+import { currentLauncherApp, launcherShortName, NavAnchor, NavLinkProvider } from "./nav-shared";
 import { RAIL_WIDTH } from "./nav-trays";
 import type {
   CourseNavConfig,
@@ -35,7 +35,7 @@ import {
 /** Width of the course menu column (and of its tablet overlay drawer). */
 const COURSE_MENU_WIDTH = 180;
 /** Width of a section menu, which also fits each link's icon and count badge. */
-const SECTION_MENU_WIDTH = 240;
+const SECTION_MENU_WIDTH = 200;
 /** Height of the top bar (`h-12`), which the course menu sits beneath. */
 const HEADER_HEIGHT = 48;
 
@@ -50,8 +50,19 @@ export interface NavShellProps {
   locationKey: string;
   /** The page title: the header's heading (sr-only beside a breadcrumb) and the mobile header's text. */
   title: string;
-  /** Breadcrumb trail rendered in place of the plain title. */
+  /**
+   * Breadcrumb trail rendered in place of the plain title. It should open with
+   * the app's name, as the course and title-only headers the shell draws
+   * itself do, so it is always clear which app you're in.
+   */
   breadcrumbs?: React.ReactNode;
+  /** Where the app-name crumb links (the app's landing page). Defaults to `/dashboard`. */
+  appHomeHref?: string;
+  /**
+   * The app-name crumb's text. Defaults to the current app's launcher name,
+   * which a user the launcher hides the app from (an access-denied page) lacks.
+   */
+  appName?: string;
   /**
    * The app's pages draw their own `<h1>` (AI Tutor's do), so the header's
    * title must not be a second one: it is left out beside a breadcrumb and
@@ -110,6 +121,8 @@ export function NavShell({
   locationKey,
   title,
   breadcrumbs,
+  appHomeHref = "/dashboard",
+  appName: appNameProp,
   headingInPage = false,
   courseNav,
   sectionNav,
@@ -143,6 +156,7 @@ export function NavShell({
   }, [breakpoint, locationKey]);
 
   const TitleTag = headingInPage ? "p" : "h1";
+  const appName = appNameProp ?? launcherShortName(currentLauncherApp(model));
   const iconOnly = railCollapsed || breakpoint === "tablet";
   const hasSideMenu = hasCourseMenu || Boolean(activeSectionNav);
   const sideMenuName = activeSectionNav ? `${activeSectionNav.title} menu` : "course menu";
@@ -206,7 +220,7 @@ export function NavShell({
                 {courseNav ? (
                   <>
                     {!headingInPage && <h1 className="sr-only">{title}</h1>}
-                    <CourseBreadcrumb config={courseNav} />
+                    <CourseBreadcrumb config={courseNav} appName={appName} appHref={appHomeHref} />
                   </>
                 ) : breadcrumbs ? (
                   <>
@@ -222,9 +236,22 @@ export function NavShell({
                     </div>
                   </>
                 ) : (
-                  <TitleTag className="min-w-0 flex-1 truncate text-sm font-normal text-foreground">
-                    {title}
-                  </TitleTag>
+                  <Breadcrumb className="min-w-0 flex-1">
+                    <BreadcrumbList className="flex-nowrap">
+                      {/* A page titled with the app's own name needs no second crumb. */}
+                      {title !== appName && (
+                        <>
+                          <AppBreadcrumbItem label={appName} href={appHomeHref} />
+                          <BreadcrumbSeparator />
+                        </>
+                      )}
+                      <BreadcrumbItem className="min-w-0">
+                        <TitleTag className="truncate text-sm font-normal text-foreground">
+                          {title}
+                        </TitleTag>
+                      </BreadcrumbItem>
+                    </BreadcrumbList>
+                  </Breadcrumb>
                 )}
                 <div className="ml-auto flex h-full shrink-0 items-center gap-3 overflow-x-auto sm:gap-4">
                   {headerActions}
@@ -252,7 +279,7 @@ export function NavShell({
                       <SectionNavMenu
                         config={activeSectionNav}
                         pathname={model.pathname}
-                        className="w-[240px]"
+                        className="w-[200px]"
                       />
                     )
                   )}
@@ -326,13 +353,39 @@ export function NavShell({
 }
 
 /** `BIOL 116 · 2026-27W1 › Materials` — the course part links to the course's landing section. */
-function CourseBreadcrumb({ config }: { config: CourseNavConfig }) {
+/**
+ * The trail's first crumb: the app's name ("Core", "AI Tutor", …), linking to
+ * its landing page. Apps that pass their own `breadcrumbs` open with the same crumb.
+ */
+function AppBreadcrumbItem({ label, href }: { label: string; href: string }) {
+  return (
+    <BreadcrumbItem className="shrink-0">
+      <BreadcrumbLink asChild>
+        <NavAnchor href={href} className="font-medium">
+          {label}
+        </NavAnchor>
+      </BreadcrumbLink>
+    </BreadcrumbItem>
+  );
+}
+
+function CourseBreadcrumb({
+  config,
+  appName,
+  appHref,
+}: {
+  config: CourseNavConfig;
+  appName: string;
+  appHref: string;
+}) {
   const courseLabel = config.term ? `${config.code} · ${config.term}` : config.code;
   const active = config.items.find((item) => item.key === config.activeKey);
 
   return (
     <Breadcrumb className="min-w-0 flex-1">
       <BreadcrumbList className="flex-nowrap">
+        <AppBreadcrumbItem label={appName} href={appHref} />
+        <BreadcrumbSeparator>›</BreadcrumbSeparator>
         <BreadcrumbItem className="min-w-0">
           {config.courseCrumb ? (
             config.courseCrumb
