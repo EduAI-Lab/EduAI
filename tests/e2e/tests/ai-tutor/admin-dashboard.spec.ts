@@ -17,7 +17,7 @@ test.describe("AI Tutor ADMIN — dashboard overview", () => {
   test("shows the cards in Core's admin layout, about AI Tutor only", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-dash-cards");
 
-    await expect(page.getByText("Platform overview")).toBeVisible();
+    await expect(page.getByText("AI Tutor overview")).toBeVisible();
     for (const name of [
       "Courses",
       "Content & tutoring",
