@@ -1,6 +1,7 @@
 /**
  * QM dashboard container. Wires auth, courses, question/assessment data and
  * derives stats, analytics, and recent activity, then renders the presentational view.
+ * ADMIN users get the Question Maker overview (`QmAdminDashboard`) instead.
  */
 import { useMemo } from "react";
 import { IconBooks, IconLibrary, IconHelpCircle, IconSettings } from "@tabler/icons-react";
@@ -18,6 +19,7 @@ import {
   type QmDashboardQuickAction,
   type QmDashboardAnalytics,
 } from "@/components/dashboard/QmDashboardView";
+import { QmAdminDashboard } from "@/components/dashboard/QmAdminDashboard";
 
 const STAFF_ROLES = new Set(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
 
@@ -34,7 +36,7 @@ const DIFF_COLORS = {
   hard: "var(--diff-hard-solid)",
 };
 
-export default function DashboardPage() {
+function StaffDashboard() {
   const { user } = useAuth();
   const { displayCourses, isLoading: coursesLoading } = useDisplayCourses();
   const { stats: questionStats } = useQuestionStats();
@@ -181,4 +183,11 @@ export default function DashboardPage() {
       analytics={analytics}
     />
   );
+}
+
+/** Admins get the Question Maker overview; everyone else gets their own workspace dashboard. */
+export default function DashboardPage() {
+  const { user } = useAuth();
+  if (user?.role === "ADMIN") return <QmAdminDashboard userId={String(user.id)} />;
+  return <StaffDashboard />;
 }
