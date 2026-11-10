@@ -13,6 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
@@ -235,28 +238,37 @@ function CourseListPanel({
               );
             }
             return (
-              <button
-                type="button"
-                onClick={(e) => {
-                  // Nested inside the row's <Link>; a nested <a> is invalid
-                  // markup and hydration-mismatches, so navigate
-                  // imperatively instead.
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // #1659 review: /instructor/chat keys its selector by
-                  // course id (Course.code isn't globally unique); every
-                  // other chat surface still keys by ?courseCode=.
-                  const param =
-                    rowChatHref === "/instructor/chat"
-                      ? `courseId=${encodeURIComponent(course.id)}`
-                      : `courseCode=${encodeURIComponent(course.code)}`;
-                  navigate(`${rowChatHref}?${param}`);
-                }}
-                className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
-                style={{ background: "var(--primary)" }}
-              >
-                Chat
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      // Nested inside the row's <Link>; a nested <a> is invalid
+                      // markup and hydration-mismatches, so navigate
+                      // imperatively instead.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // #1659 review: /instructor/chat keys its selector by
+                      // course id (Course.code isn't globally unique); every
+                      // other chat surface still keys by ?courseCode=.
+                      const param =
+                        rowChatHref === "/instructor/chat"
+                          ? `courseId=${encodeURIComponent(course.id)}`
+                          : `courseCode=${encodeURIComponent(course.code)}`;
+                      navigate(`${rowChatHref}?${param}`);
+                    }}
+                    className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
+                    style={{ background: "var(--primary)" }}
+                  >
+                    Chat
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {routesToInstructorChat
+                    ? `Open the course assistant for ${course.code}`
+                    : `Chat about ${course.code}`}
+                </TooltipContent>
+              </Tooltip>
             );
           })()}
         </Link>

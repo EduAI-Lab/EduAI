@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "./ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "./utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -180,19 +181,24 @@ export function CourseCard({
               onClick={(e) => e.stopPropagation()}
             >
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label="Course actions"
-                    className={cn(
-                      // min touch target 44 × 44 px per design rules
-                      "flex items-center justify-center w-11 h-11 rounded-[var(--radius-md)]",
-                      "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-                      "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
-                  >
-                    <IconDotsVertical size={16} />
-                  </button>
-                </DropdownMenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="Course actions"
+                        className={cn(
+                          // min touch target 44 × 44 px per design rules
+                          "flex items-center justify-center w-11 h-11 rounded-[var(--radius-md)]",
+                          "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                          "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        )}
+                      >
+                        <IconDotsVertical size={16} />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>Publish, edit or delete</TooltipContent>
+                </Tooltip>
                 <DropdownMenuContent align="end" className="min-w-[180px]">
                   {actions.showPublish && (
                     <DropdownMenuItem

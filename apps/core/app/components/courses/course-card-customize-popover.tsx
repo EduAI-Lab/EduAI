@@ -8,6 +8,9 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   cn,
 } from "@eduai/ui";
 
@@ -70,22 +73,27 @@ export function CourseCardCustomizePopover({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Customize ${courseName}`}
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-md",
-            "transition-colors focus-visible:outline-none focus-visible:ring-2",
-            tone === "banner"
-              ? "text-white/90 hover:text-white hover:bg-white/20 focus-visible:ring-white/70"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring",
-          )}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <IconDotsVertical size={16} />
-        </button>
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Customize ${courseName}`}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-md",
+                "transition-colors focus-visible:outline-none focus-visible:ring-2",
+                tone === "banner"
+                  ? "text-white/90 hover:text-white hover:bg-white/20 focus-visible:ring-white/70"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring",
+              )}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <IconDotsVertical size={16} />
+            </button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Customize colour and name</TooltipContent>
+      </Tooltip>
       <PopoverContent
         align="end"
         className="w-[min(100vw-2rem,340px)] p-0"
