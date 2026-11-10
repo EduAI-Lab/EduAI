@@ -14,8 +14,8 @@ export function PageHeading({
   headingClassName,
 }: PageHeadingProps) {
   return (
-    <div className={className}>
-      <h2 className={headingClassName ?? "text-2xl font-bold"}>{heading}</h2>
+    <div className={className ?? "rounded-xl bg-muted/50 px-5 py-4"}>
+      <h2 className={headingClassName ?? "text-3xl font-bold tracking-tight"}>{heading}</h2>
       <div
         style={{
           width: 40,

@@ -458,7 +458,7 @@ export function DashboardView({
         <ScrollReveal index={4} parallax={false}>
           <div>
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
+              <h2 className="text-lg font-semibold text-foreground">{panelTitle}</h2>
               {!showQuickActions && (
                 <Link
                   to="/courses"
@@ -486,7 +486,7 @@ export function DashboardView({
         <ScrollReveal index={5} parallax={false}>
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
+              <h2 className="text-lg font-semibold text-foreground">Recent conversations</h2>
               <Link
                 to={newChatHref}
                 className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
