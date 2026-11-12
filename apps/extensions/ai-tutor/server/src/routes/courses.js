@@ -732,7 +732,8 @@ router.get(
 /**
  * GET /courses/:courseId — single course details + membership check.
  *
- * Auth: enrolled student, TA, course instructor, unit admin, or admin.
+ * Auth: enrolled student (published course only, #1405), TA, course
+ * instructor, unit admin, or admin.
  *
  * Why: this route's own membership check reads the local `CourseEnrollment`
  * mirror, so a stale mirror isn't just a display bug here — it's an
@@ -846,6 +847,23 @@ router.get("/courses/:courseId", async (req, res) => {
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this course" });
+    }
+
+    // A student may open a course only once it's published, the same rule Core
+    // and Question Maker apply (#1405). TAs keep access so they can preview it.
+    // Core's isPublished is the only source, so a Core outage fails closed.
+    if (isLearner && liveEnrollment?.role === "STUDENT") {
+      if (coreUnavailable) {
+        return res.status(503).json({
+          error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (coreCourse?.isPublished !== true) {
+        return res
+          .status(403)
+          .json({ error: "This course isn't published yet", code: "COURSE_UNPUBLISHED" });
+      }
     }
 
     // The caller's role *on this course* (not their global effective role). The

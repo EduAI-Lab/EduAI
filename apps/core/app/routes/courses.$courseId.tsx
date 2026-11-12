@@ -20,7 +20,8 @@ import type {
   UploadOutcome,
 } from "~/hooks/api/use-course-materials";
 import { useCourseTAs } from "~/hooks/api/use-course-tas";
-import { termLabel } from "@eduai/ui";
+import { termLabel, visibleAppsForRole } from "@eduai/ui";
+import { getLauncherApps } from "~/lib/apps";
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import {
   COURSE_TAB_PARAM,
@@ -641,7 +642,16 @@ export default function CourseDetailPage() {
               }}
             />
           ) : (
-            <CourseDetailStudentView course={course} topics={topics} tas={tas} />
+            <CourseDetailStudentView
+              course={course}
+              topics={topics}
+              tas={tas}
+              aiTutorUrl={
+                visibleAppsForRole(getLauncherApps(course.id), user.role ?? "STUDENT").find(
+                  (app) => app.id === "ai-tutor",
+                )?.url || null
+              }
+            />
           )}
         </div>
       </div>

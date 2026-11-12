@@ -1,11 +1,12 @@
 /**
  * Course Chat as its own app (#1996): it lives in Core's `/chat` routes but is
- * listed in the app switcher beside the other apps, and while open the
- * shell presents it as the current app with its own rail.
+ * listed in the app switcher beside the other apps. For admins it is the
+ * current app on its pages, with its own rail; students, TAs and instructors
+ * keep Core's rail there, which carries Course Chat itself (#2105).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
-import { createInstructor, signInThroughPage } from "../helpers/auth";
+import { createAdmin, createInstructor, signInThroughPage } from "../helpers/auth";
 
 function rail(page: Page) {
   return page.getByRole("navigation", { name: "Global" }).first();
@@ -22,15 +23,15 @@ async function openSwitcher(page: Page) {
   return tray;
 }
 
-// Signed in as a fresh instructor: a fresh student is first sent to the
-// student-ID onboarding page and then shown chat's privacy notice, neither of
-// which this spec is about. The rail is the same for both roles.
+// Learner-side tests sign in as a fresh instructor: a fresh student is first
+// sent to the student-ID onboarding page and then shown chat's privacy notice,
+// neither of which this spec is about. The rail is the same for both roles.
 test.describe("Course Chat as its own app", () => {
-  test("a user switches from Core into Course Chat and back", async ({ page, request }) => {
-    const user = await createInstructor(request, { prefix: "chat-app-switch" });
+  test("an admin switches from Core into Course Chat and back", async ({ page, request }) => {
+    const user = await createAdmin(request, { prefix: "chat-app-switch" });
     await signInThroughPage(page, user, `${CORE_URL}/dashboard`);
 
-    // Core's rail no longer carries Course Chat; the switcher does.
+    // An admin's Core rail doesn't carry Course Chat; the switcher does.
     await expect(rail(page).getByRole("link", { name: "Course Chat" })).toHaveCount(0);
     const tray = await openSwitcher(page);
     // AI Tutor and Question Maker are listed only when Core is built with
@@ -59,6 +60,27 @@ test.describe("Course Chat as its own app", () => {
     ).toBeVisible();
   });
 
+  test("an instructor's Core rail carries Course Chat and keeps it on chat pages", async ({
+    page,
+    request,
+  }) => {
+    const user = await createInstructor(request, { prefix: "chat-app-rail" });
+    await signInThroughPage(page, user, `${CORE_URL}/dashboard`);
+    await page.waitForLoadState("networkidle");
+
+    await rail(page).getByRole("link", { name: "Course Chat" }).click();
+    await page.waitForURL((url) => url.pathname === "/chat");
+    await expect(
+      rail(page).getByRole("button", { name: "Switch app, current app: EduAI Core" }),
+    ).toBeVisible();
+    await expect(rail(page).getByRole("link", { name: "Course Chat" })).toBeVisible();
+    await expect(rail(page).getByRole("button", { name: "History", exact: true })).toBeVisible();
+    await expect(rail(page).getByRole("link", { name: "New chat" })).toHaveCount(0);
+
+    await rail(page).getByRole("link", { name: "Dashboard" }).click();
+    await page.waitForURL((url) => url.pathname === "/dashboard");
+  });
+
   test("the History tray opens from Course Chat's rail", async ({ page, request }) => {
     const user = await createInstructor(request, { prefix: "chat-app-history" });
     await signInThroughPage(page, user, `${CORE_URL}/chat`);
@@ -80,7 +102,7 @@ test.describe("Course Chat as its own app", () => {
   });
 
   test("on a phone the header switcher lists Course Chat too", async ({ page, request }) => {
-    const user = await createInstructor(request, { prefix: "chat-app-mobile" });
+    const user = await createAdmin(request, { prefix: "chat-app-mobile" });
     await page.setViewportSize({ width: 375, height: 760 });
     await signInThroughPage(page, user, `${CORE_URL}/chat`);
     await page.waitForLoadState("networkidle");
@@ -91,5 +113,20 @@ test.describe("Course Chat as its own app", () => {
     await expect(sheet.getByRole("link", { name: /EduAI Core/ })).toBeVisible();
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(375);
+  });
+
+  test("on a phone an instructor's header switcher links to Course Chat", async ({
+    page,
+    request,
+  }) => {
+    const user = await createInstructor(request, { prefix: "chat-app-mobile-instr" });
+    await page.setViewportSize({ width: 375, height: 760 });
+    await signInThroughPage(page, user, `${CORE_URL}/chat`);
+    await page.waitForLoadState("networkidle");
+
+    await page.getByRole("button", { name: "Switch app, current app: EduAI Core" }).click();
+    const sheet = page.getByRole("dialog", { name: "Switch app" });
+    await expect(sheet.getByText("EduAI Core", { exact: true })).toBeVisible();
+    await expect(sheet.getByRole("link", { name: /Course Chat/ })).toBeVisible();
   });
 });

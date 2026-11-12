@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
 import type { CourseDetailManagerCourse } from "~/components/courses/course-detail-manager-view";
@@ -391,6 +391,17 @@ describe("CourseDetailStudentView", () => {
     wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
     const chat = screen.getByRole("link", { name: /chat about this course/i });
     expect(chat).toHaveAttribute("href", "/chat?courseId=c1");
+  });
+
+  it("shows the department and Active/Inactive on the banner", () => {
+    const { unmount } = wrap(<CourseDetailStudentView course={COURSE} topics={[]} />);
+    const banner = screen.getByRole("banner");
+    expect(banner).toHaveTextContent("COSC 101 · 2025-26W1 · COSC");
+    expect(within(banner).getByText("Active")).toBeInTheDocument();
+    unmount();
+
+    wrap(<CourseDetailStudentView course={{ ...COURSE, isActive: false }} topics={[]} />);
+    expect(within(screen.getByRole("banner")).getByText("Inactive")).toBeInTheDocument();
   });
 
   it("lists the course's files only where the course shares them (#2002)", async () => {

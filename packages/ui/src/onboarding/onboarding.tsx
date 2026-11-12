@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import {
   IconChecklist,
   IconCircle,
@@ -19,6 +20,13 @@ import {
   type OnboardingPageId,
 } from "./catalog";
 
+/**
+ * Put an empty element with this attribute in a dashboard's side column and the Getting started
+ * card renders there instead of in its own column. It's a plain attribute, so a dashboard needs no
+ * import: `<div data-onboarding-slot="" />`.
+ */
+export const ONBOARDING_SLOT_ATTRIBUTE = "data-onboarding-slot";
+
 export interface OnboardingTask {
   id: string;
   label: string;
@@ -35,9 +43,9 @@ interface ChecklistProps {
   /** Replaces the catalog's tasks for this role, e.g. the admin dashboard's own list. */
   tasks?: OnboardingTask[];
   /**
-   * "aside" (default) lays the card out as a column beside `children`. "inline" renders
-   * only the card, for a page that places it in its own grid; it can collapse but not
-   * be closed, since closing would leave an empty slot in that layout.
+   * "aside" (default) places the card beside `children` (or in the dashboard's slot).
+   * "inline" renders only the card, for a page that places it in its own grid; it can
+   * collapse but not be closed, since closing would leave an empty slot in that layout.
    */
   layout?: "aside" | "inline";
   /** Replaces the instructions shown above the task list. */
@@ -64,13 +72,37 @@ function storageKeyFor(platform: OnboardingPlatform, userId: string) {
   return `eduai:onboarding:v1:${platform}:${encodeURIComponent(userId)}`;
 }
 
-function readPanel(key: string): PanelState {
+/** The saved choice, or null when the person never chose (so the default can follow progress). */
+function readPanel(key: string): PanelState | null {
   try {
     const stored = window.localStorage.getItem(key);
-    return stored === "collapsed" || stored === "dismissed" ? stored : "open";
+    return stored === "open" || stored === "collapsed" || stored === "dismissed" ? stored : null;
   } catch {
-    return "open";
+    return null;
   }
+}
+
+/** Finds the dashboard's slot, if it has one, and follows it as the dashboard re-renders. */
+function useOnboardingSlot(root: React.RefObject<HTMLDivElement | null>) {
+  const [slot, setSlot] = React.useState<HTMLElement | null>(null);
+  React.useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    let current: HTMLElement | null = null;
+    const find = () => {
+      current = el.querySelector<HTMLElement>(`[${ONBOARDING_SLOT_ATTRIBUTE}]`);
+      setSlot(current);
+    };
+    find();
+    // Dashboards often render their side column only once their data loads. Re-query only
+    // while there is no slot or it has left the page, not on every mutation.
+    const observer = new MutationObserver(() => {
+      if (!current?.isConnected) find();
+    });
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [root]);
+  return slot;
 }
 
 const DEFAULT_INTRO =
@@ -90,6 +122,8 @@ function Checklist({
   const panelKey = `${storageKey}:panel`;
   const tasks = taskOverride ?? onboardingTasks(platform, role);
   const inline = layout === "inline";
+  // A stable key for the task list, so an override passed inline doesn't re-run the effect.
+  const taskIdsKey = tasks.map((task) => task.id).join(",");
   const [progress, setProgress] = React.useState<TaskProgress>({
     completed: [],
     persistent: true,
@@ -98,17 +132,29 @@ function Checklist({
   const [ready, setReady] = React.useState(false);
   const headingId = React.useId();
   const listId = React.useId();
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+  const slot = useOnboardingSlot(bodyRef);
+  const anchorRef = React.useRef<HTMLDivElement>(null);
+  const [host, setHost] = React.useState<HTMLDivElement | null>(null);
+  React.useLayoutEffect(() => {
+    const el = document.createElement("div");
+    setHost(el);
+    return () => el.remove();
+  }, []);
 
   // Layout effect: a client navigation reads the saved state before paint, so a closed card
   // never reserves its column for a frame.
   React.useLayoutEffect(() => {
-    setProgress(readProgress(storageKey));
-    setPanel(readPanel(panelKey));
+    const saved = readProgress(storageKey);
+    setProgress(saved);
+    // Once someone has started, the card waits collapsed unless they chose to keep it open.
+    const started = taskIdsKey.split(",").some((id) => saved.completed.includes(id));
+    setPanel(readPanel(panelKey) ?? (started ? "collapsed" : "open"));
     setReady(true);
     const reopen = () => setPanel("open");
     window.addEventListener(REOPEN_EVENT, reopen);
     return () => window.removeEventListener(REOPEN_EVENT, reopen);
-  }, [storageKey, panelKey]);
+  }, [storageKey, panelKey, taskIdsKey]);
 
   const hidden = !ready || (!inline && panel === "dismissed") || !userId || tasks.length === 0;
   const count = tasks.filter((task) => progress.completed.includes(task.id)).length;
@@ -141,7 +187,7 @@ function Checklist({
       aria-labelledby={headingId}
       className="rounded-xl border bg-card text-card-foreground shadow-2xs"
     >
-      <div className="p-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
         <div className="flex items-baseline gap-2">
           <h2
             id={headingId}
@@ -153,12 +199,12 @@ function Checklist({
             {count} of {tasks.length} done
           </p>
         </div>
-        <div className="mt-2 flex items-center gap-2">
-          <Progress
-            value={(count / tasks.length) * 100}
-            aria-label="Getting started progress"
-            className="h-1.5 flex-1 bg-muted *:bg-primary-text"
-          />
+        <Progress
+          value={(count / tasks.length) * 100}
+          aria-label="Getting started progress"
+          className="h-1.5 max-w-64 min-w-24 flex-1 bg-muted *:bg-primary-text"
+        />
+        <div className="ml-auto flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -205,8 +251,8 @@ function Checklist({
             {tasks.map((task) => {
               const done = progress.completed.includes(task.id);
               return (
-                <li key={task.id} className="py-3">
-                  <label className="flex cursor-pointer items-start gap-3 text-sm">
+                <li key={task.id} className="flex items-start gap-2 py-2.5">
+                  <label className="flex flex-1 cursor-pointer items-start gap-3 text-sm">
                     <input
                       type="checkbox"
                       checked={done}
@@ -229,9 +275,9 @@ function Checklist({
                     </span>
                   </label>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="mt-2 ml-8"
+                    className="-my-1 h-7 shrink-0 px-2 text-primary-text"
                     aria-label={`Open ${task.label}`}
                     onClick={() => navigate(task.href)}
                   >
@@ -254,22 +300,50 @@ function Checklist({
     </section>
   );
 
+  // Where the card goes: the dashboard's own side column when it has one, else one line above
+  // the dashboard when collapsed, else a column beside it (#2070). Only the card's wrapper
+  // changes, so the dashboard itself never remounts.
+  // Inline: the page places the card itself, so the host stays detached.
+  const placement = hidden || inline ? null : slot ? "slot" : collapsed ? "strip" : "column";
+
+  // The card always renders into one host node, moved between places, so it never remounts.
+  React.useLayoutEffect(() => {
+    const target = placement === "slot" ? slot : placement ? anchorRef.current : null;
+    if (!host || host.parentNode === target) return;
+    const active = document.activeElement;
+    const focused = active instanceof HTMLElement && host.contains(active) ? active : null;
+    if (target) target.appendChild(host);
+    else host.remove();
+    // Moving a node drops focus to <body>, so hand it back.
+    if (focused && target && document.activeElement !== focused) focused.focus();
+  });
+
   if (inline) return hidden ? null : card;
 
   return (
     <div className="@container/onboarding">
-      <div className="flex flex-col @2xl/onboarding:flex-row">
-        {!hidden && (
-          // A column beside the dashboard, top-aligned with its heading (#2070). It stacks above
-          // only when the page itself is too narrow for two columns. It is not reserved before the
-          // saved state is read, so a closed card never moves the dashboard; on a full page load
-          // an open card appears after hydration.
-          <div className="shrink-0 px-4 pt-6 lg:px-6 @2xl/onboarding:order-last @2xl/onboarding:w-80 @2xl/onboarding:pl-0">
-            {card}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">{children}</div>
+      <div
+        className={
+          placement === "column" ? "flex flex-col @2xl/onboarding:flex-row" : "flex flex-col"
+        }
+      >
+        {/* Stacks above only when the page itself is too narrow for two columns. Not reserved
+            before the saved state is read, so a closed card never moves the dashboard. */}
+        <div
+          ref={anchorRef}
+          className={
+            placement === "column"
+              ? "shrink-0 px-4 pt-6 lg:px-6 @2xl/onboarding:order-last @2xl/onboarding:w-80 @2xl/onboarding:pl-0"
+              : placement === "strip"
+                ? "px-4 pt-4 lg:px-6"
+                : "hidden"
+          }
+        />
+        <div ref={bodyRef} className="min-w-0 flex-1">
+          {children}
+        </div>
       </div>
+      {host && placement && createPortal(card, host)}
     </div>
   );
 }

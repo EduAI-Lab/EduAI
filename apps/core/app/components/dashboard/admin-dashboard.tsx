@@ -25,7 +25,7 @@ import {
 } from "@eduai/ui";
 
 import { CourseListPanel } from "~/components/dashboard/dashboard-view";
-import { relativeTime } from "~/lib/relative-time";
+import { formatRelativeTime, useFormatScope } from "~/lib/hydration-format";
 import { auditActionLabel } from "~/lib/audit-action-labels";
 import type {
   AdminAttentionItem,
@@ -74,7 +74,8 @@ function CardNote({ children }: { children: ReactNode }) {
 
 /** Relative times depend on the wall clock, so server and client may differ by a minute. */
 function TimeAgo({ iso }: { iso: string }) {
-  return <span suppressHydrationWarning>{relativeTime(iso)}</span>;
+  const formatScope = useFormatScope();
+  return <span suppressHydrationWarning>{formatRelativeTime(iso, formatScope)}</span>;
 }
 
 function Stat({ label, value, sub }: { label: string; value: number; sub: string }) {

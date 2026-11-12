@@ -33,7 +33,7 @@ import {
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
 import { useCronJobStatuses } from "~/hooks/api/use-cron-job-status";
-import { relativeTime } from "~/lib/relative-time";
+import { formatRelativeTime, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -132,9 +132,14 @@ function CronStatusBadge({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatDateTime(iso: string | null) {
+/** `scope` comes from `useFormatScope`, so a server-rendered run time hydrates cleanly (#1941). */
+function formatDateTime(iso: string | null, { locale, timeZone }: FormatScope) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone,
+  });
 }
 
 function formatDuration(startedAt: string, finishedAt: string | null) {
@@ -162,6 +167,7 @@ function RunHistoryDialog({ job, open, onClose, onEditSettings }: RunHistoryDial
   const [runs, setRuns] = useState<CronJobRunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
+  const formatScope = useFormatScope();
 
   useEffect(() => {
     if (!open || !jobName) return;
@@ -242,7 +248,9 @@ function RunHistoryDialog({ job, open, onClose, onEditSettings }: RunHistoryDial
               <TableBody>
                 {runs.map((run) => (
                   <TableRow key={run.id}>
-                    <TableCell className="text-sm">{formatDateTime(run.startedAt)}</TableCell>
+                    <TableCell className="text-sm">
+                      {formatDateTime(run.startedAt, formatScope)}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {run.triggerSource === "ADMIN_UI"
                         ? "Admin panel"
@@ -361,6 +369,7 @@ interface JobDetailPanelProps {
 
 function JobDetailPanel({ job, onClose, onOpenHistory }: JobDetailPanelProps) {
   const run = job?.lastRun ?? null;
+  const formatScope = useFormatScope();
   return (
     <Sheet
       open={job !== null}
@@ -384,7 +393,9 @@ function JobDetailPanel({ job, onClose, onOpenHistory }: JobDetailPanelProps) {
                 />
               </Detail>
               <Detail label="Schedule">{job.scheduleLabel}</Detail>
-              <Detail label="Last run">{run ? formatDateTime(run.startedAt) : "—"}</Detail>
+              <Detail label="Last run">
+                {run ? formatDateTime(run.startedAt, formatScope) : "—"}
+              </Detail>
               <Detail label="Duration">
                 {run
                   ? run.status === "RUNNING"
@@ -781,6 +792,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   // The panel follows the live list, so a run that finishes updates it in place.
   const [detailJobName, setDetailJobName] = useState<string | null>(null);
   const detailJob = jobs.find((job) => job.name === detailJobName) ?? null;
+  const formatScope = useFormatScope();
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
   const [editSettingsJob, setEditSettingsJob] = useState<CronJobEntry | null>(null);
   const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
@@ -920,8 +932,8 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                     </TableCell>
                     <TableCell className="text-sm">
                       {job.lastRun ? (
-                        <span title={formatDateTime(job.lastRun.startedAt)}>
-                          {relativeTime(job.lastRun.startedAt)}
+                        <span title={formatDateTime(job.lastRun.startedAt, formatScope)}>
+                          {formatRelativeTime(job.lastRun.startedAt, formatScope)}
                         </span>
                       ) : (
                         "—"

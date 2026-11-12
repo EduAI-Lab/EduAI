@@ -238,9 +238,34 @@ describe("CourseDetailManagerView — tabs and overview", () => {
     expect(screen.getAllByText("No TAs assigned").length).toBeGreaterThan(0);
   });
 
-  it("shows the AI response style summary when the course has AI config", () => {
+  it("says custom instructions are set when the course has instructions but no style tags", () => {
     renderView();
-    expect(screen.getByTestId("response-style-summary")).toBeInTheDocument();
+    expect(screen.getByText("Custom instructions are set.")).toBeInTheDocument();
+  });
+
+  it("shows the AI response style summary when the course has style tags", () => {
+    renderView({ course: { ...COURSE, responseStyleTags: ["concise"] } });
+    expect(screen.getAllByTestId("response-style-summary").length).toBeGreaterThan(0);
+  });
+
+  it("shows the department and Active/Inactive on the banner and in Course details", () => {
+    renderView({ course: { ...COURSE, isActive: false } });
+    const banner = screen.getByRole("banner");
+    expect(banner).toHaveTextContent("COSC 101 · 2025-26W1 · COSC");
+    expect(within(banner).getByText("Inactive")).toBeInTheDocument();
+    expect(within(banner).getByText("Published")).toBeInTheDocument();
+    const details = within(screen.getByRole("region", { name: /overview/i }))
+      .getByRole("heading", { name: "Course details" })
+      .closest("section") as HTMLElement;
+    expect(within(details).getByText("COSC")).toBeInTheDocument();
+    expect(within(details).getByText("Inactive")).toBeInTheDocument();
+  });
+
+  it("keeps the shell's course menu the only navigation named for the course", () => {
+    renderView();
+    // E2E finds the menu by a substring of its name; a second "Course …" nav made it ambiguous.
+    expect(screen.getAllByRole("navigation", { name: /course/i })).toHaveLength(1);
+    expect(screen.getByRole("navigation", { name: "Quick links" })).toBeInTheDocument();
   });
 
   it("renders the chat history tab content", () => {

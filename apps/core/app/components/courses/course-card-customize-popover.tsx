@@ -22,6 +22,8 @@ interface CourseCardCustomizePopoverProps {
   courseCode?: string;
   preference?: CourseCardPreference;
   onApply: (update: CourseCardPreference | null) => void;
+  /** "plain" draws the trigger for a white surface instead of a colour banner. */
+  tone?: "banner" | "plain";
 }
 
 export function CourseCardCustomizePopover({
@@ -29,6 +31,7 @@ export function CourseCardCustomizePopover({
   courseCode,
   preference,
   onApply,
+  tone = "banner",
 }: CourseCardCustomizePopoverProps) {
   const [open, setOpen] = useState(false);
   const [draftColor, setDraftColor] = useState<string | null>(null);
@@ -73,8 +76,10 @@ export function CourseCardCustomizePopover({
           aria-label={`Customize ${courseName}`}
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-md",
-            "text-white/90 hover:text-white hover:bg-white/20",
-            "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+            "transition-colors focus-visible:outline-none focus-visible:ring-2",
+            tone === "banner"
+              ? "text-white/90 hover:text-white hover:bg-white/20 focus-visible:ring-white/70"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring",
           )}
           onClick={(event) => event.stopPropagation()}
         >

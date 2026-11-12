@@ -8,6 +8,7 @@ import { Checkbox } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { readJsonResponse } from "~/lib/api/client";
 import { formatReEmbedJobMessage, pollReEmbedJobUntilDone } from "~/lib/api/re-embed-job.client";
+import { formatDateTime, useFormatScope } from "~/lib/hydration-format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 
 type ModelOption = { id: string; label: string };
@@ -52,6 +53,7 @@ export function CourseEmbeddingSettings({
   courseId,
   onSettingsSaved,
 }: CourseEmbeddingSettingsProps) {
+  const formatScope = useFormatScope();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -223,7 +225,7 @@ export function CourseEmbeddingSettings({
                 Last processed with: {data.settings.embeddedWithProvider} /{" "}
                 {data.settings.embeddedWithModel}
                 {data.settings.lastEmbeddedAt &&
-                  ` · ${new Date(data.settings.lastEmbeddedAt).toLocaleString()}`}
+                  ` · ${formatDateTime(data.settings.lastEmbeddedAt, formatScope)}`}
               </p>
             )}
           </div>

@@ -11,6 +11,8 @@ import {
   IconListCheck,
   IconMail,
   IconMessageChatbot,
+  IconMessages,
+  IconPuzzle,
   IconReport,
   IconRobot,
   IconSettings,
@@ -25,6 +27,7 @@ import {
   isNavHrefActive,
   termLabel,
   visibleAppsForRole,
+  type LauncherApp,
   type NavShellCourse,
   type NavShellEntry,
   type NavShellLink,
@@ -41,7 +44,7 @@ import type { loader as rootLoader } from "~/root";
 export const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
-  chat: IconRobot,
+  chat: IconMessages,
   "question-maker": IconListCheck,
   "admin-group": IconShieldLock,
   "admin-users": IconUsers,
@@ -203,9 +206,13 @@ export function useCoreNavModel(user: User, onReportBug?: () => void): NavShellM
     }
   }
 
+  // #2105: learners and teaching staff get Course Chat and the extensions as
+  // rail entries (Canvas-style) instead of hunting for them in the app switcher.
+  const flattenApps = !ADMIN_ROLES.has(user.role ?? "");
   for (const item of secondaryItems) {
-    if (COURSE_CHAT_KEYS.has(item.key)) continue;
+    if (COURSE_CHAT_KEYS.has(item.key) && !flattenApps) continue;
     if (item.key === "help") {
+      if (flattenApps) entries.push(...extensionEntries(shared.launcherApps));
       entries.push({ kind: "tray", tray: "help", label: "Help", icon: NAV_ICONS.help });
     } else {
       entries.push({ kind: "link", link: toNavLink(item) });
@@ -263,6 +270,35 @@ function adminLinkBadge(
     return counts.cronStatusColor ? <CronBadgeDot color={counts.cronStatusColor} /> : undefined;
   }
   return undefined;
+}
+
+/** Roles whose rail keeps the app switcher as the only way to other apps. */
+export const ADMIN_ROLES = new Set(["ADMIN", "UNIT_ADMIN"]);
+
+const EXTENSION_ICONS = new Map<string, Icon>([
+  ["ai-tutor", IconMessageChatbot],
+  ["question-maker", IconListCheck],
+]);
+
+/** An extension's rail/card icon; unknown extras get the puzzle piece. */
+export function extensionIcon(appId: string): Icon {
+  return EXTENSION_ICONS.get(appId) ?? IconPuzzle;
+}
+
+/** Rail links for the role-visible extensions (AI Tutor, Question Maker, extras). */
+export function extensionEntries(apps: LauncherApp[]): NavShellEntry[] {
+  return apps
+    .filter((app) => app.id !== CURRENT_APP_ID && app.id !== "course-chat" && app.url)
+    .map((app) => ({
+      kind: "link",
+      link: {
+        key: `app-${app.id}`,
+        label: app.name,
+        href: app.url,
+        icon: extensionIcon(app.id),
+        external: true,
+      },
+    }));
 }
 
 const loadCoreNavCourses = () => loadNavCourses((courseId) => `/courses/${courseId}`);

@@ -1,36 +1,14 @@
 /**
- * @file ModuleCard — the module tile used in both the student and instructor
- * course views (course-detail "content" grid).
+ * @file ModuleCard — the module tile on the student course view.
  *
  * Anatomy: a course-accent gradient rail + a faint order-number motif tucked
  * into the bottom-right corner; a `CardHeader` holding an eyebrow row (ringed
- * order chip + "MODULE" kicker on the left; a read-only Published/Unpublished
- * `StatusBadge` and an optional publish kebab menu on the right), a bold
- * title, and a description; then an optional
- * `CardContent` with a lesson-count/updated meta row or a student progress bar.
- * The whole card is a single click/keyboard target that navigates to the
- * module — no separate "view" affordance, which would be redundant.
- *
- * Publish state and its action are separated: `isPublished` drives the
- * glanceable badge; `actions` (a `PublishMenu`) carries the toggle, shown only
- * to users who can publish.
- *
- * Data honesty: `lessonCount` and `updatedLabel` are optional and simply omit
- * their row when not supplied — the AI Tutor `Module` type doesn't currently
- * carry a lesson count or an updated timestamp, so callers must not fabricate
- * one. When the backend adds these fields, pass them through and the rows
- * appear automatically.
+ * order chip + "MODULE" kicker), a bold title, and a description; then an
+ * optional `CardContent` with the learner's progress bar. The whole card is a
+ * single click/keyboard target that navigates to the module.
  */
-import type { KeyboardEvent, ReactNode } from "react";
-import { IconBooks } from "@tabler/icons-react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  StatusBadge,
-  courseThemeVars,
-  type CourseAccentColor,
-} from "@eduai/ui";
+import type { KeyboardEvent } from "react";
+import { Card, CardContent, CardHeader, courseThemeVars, type CourseAccentColor } from "@eduai/ui";
 import { ProgressBarFromData } from "../ProgressBar";
 import { cn } from "~/lib/utils";
 import { titleName } from "~/lib/course-title";
@@ -44,22 +22,12 @@ export interface ModuleCardProps {
   index: number;
   /** Course accent colour — ties every module card back to its parent course. */
   accentColor: CourseAccentColor;
-  /** Total lesson count. Omitted (no row) when unknown — never fabricated. */
-  lessonCount?: number;
   /**
    * When true, renders the student progress row: a bar when
    * `progress.total > 0`, otherwise a "Not started yet" note.
    */
   showProgress?: boolean;
   progress?: Progress;
-  /** Drives the read-only Published/Unpublished status badge. */
-  isPublished?: boolean;
-  /** Optional trailing meta label, e.g. "Updated 2 days ago". */
-  updatedLabel?: string;
-  /** Eyebrow-right action slot (e.g. the publish `PublishMenu`). Clicks inside are kept from bubbling to the card's navigation handler. */
-  actions?: ReactNode;
-  /** Eyebrow-left lead slot rendered before the order chip (e.g. a drag handle). */
-  leading?: ReactNode;
   onClick: () => void;
   className?: string;
   dataTour?: string;
@@ -71,13 +39,8 @@ export function ModuleCard({
   description,
   index,
   accentColor,
-  lessonCount,
   showProgress = false,
   progress,
-  isPublished,
-  updatedLabel,
-  actions,
-  leading,
   onClick,
   className,
   dataTour,
@@ -90,17 +53,13 @@ export function ModuleCard({
     }
   };
 
-  const hasMeta = lessonCount !== undefined || updatedLabel;
   const orderLabel = String(index + 1).padStart(2, "0");
-  const hasStatus = isPublished !== undefined || Boolean(actions);
 
   return (
     <Card
       hoverable
       role="button"
-      // Without an explicit name, the card's accessible name is computed from
-      // its contents — which include the kebab's "More options" label, so the
-      // card announced (and matched by-role as) the menu it contains.
+      // Named explicitly so the order chip and kicker don't pad the name.
       aria-label={`Module: ${titleName(title)}`}
       tabIndex={0}
       onClick={onClick}
@@ -134,47 +93,27 @@ export function ModuleCard({
       </span>
 
       <CardHeader className="relative gap-2">
-        <div className="flex items-start justify-between gap-2">
-          <span className="inline-flex items-center gap-2.5">
-            {leading}
-            <span
-              className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold tabular-nums"
-              style={{
-                background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
-                color: "var(--course-accent)",
-                boxShadow:
-                  "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
-              }}
-            >
-              {orderLabel}
-            </span>
-            <span
-              className="text-[11px] font-bold uppercase tracking-[0.16em]"
-              style={{
-                color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
-              }}
-            >
-              Module
-            </span>
+        <span className="inline-flex items-center gap-2.5">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold tabular-nums"
+            style={{
+              background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+              color: "var(--course-accent)",
+              boxShadow:
+                "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
+            }}
+          >
+            {orderLabel}
           </span>
-
-          {hasStatus && (
-            <div
-              className="flex shrink-0 items-center gap-1"
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              {isPublished !== undefined && (
-                <StatusBadge
-                  active={isPublished}
-                  activeLabel="Published"
-                  inactiveLabel="Unpublished"
-                />
-              )}
-              {actions}
-            </div>
-          )}
-        </div>
+          <span
+            className="text-[11px] font-bold uppercase tracking-[0.16em]"
+            style={{
+              color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
+            }}
+          >
+            Module
+          </span>
+        </span>
 
         <h3 className="line-clamp-2 text-[17px] font-bold leading-snug text-foreground transition-colors group-hover:text-primary-text">
           {titleName(title)}
@@ -186,29 +125,16 @@ export function ModuleCard({
         ) : null}
       </CardHeader>
 
-      {(hasMeta || showProgress) && (
+      {showProgress && (
         <CardContent className="relative flex flex-col gap-3 pt-0">
-          {hasMeta && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
-              {lessonCount !== undefined && (
-                <span className="inline-flex items-center gap-1.5">
-                  <IconBooks size={14} aria-hidden="true" />
-                  {lessonCount} {lessonCount === 1 ? "lesson" : "lessons"}
-                </span>
-              )}
-              {updatedLabel && <span>{updatedLabel}</span>}
-            </div>
+          {progress && progress.total > 0 ? (
+            <ProgressBarFromData progress={progress} size="sm" showLabel />
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <span className="size-1.5 rounded-full bg-muted-foreground/40" aria-hidden="true" />
+              Not started yet
+            </span>
           )}
-
-          {showProgress &&
-            (progress && progress.total > 0 ? (
-              <ProgressBarFromData progress={progress} size="sm" showLabel />
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-muted-foreground/40" aria-hidden="true" />
-                Not started yet
-              </span>
-            ))}
         </CardContent>
       )}
     </Card>

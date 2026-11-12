@@ -21,6 +21,7 @@ import type { AdminDashboardData } from "~/types/admin-dashboard";
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import type { User } from "~/lib/auth/types";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { useFormatScope } from "~/lib/hydration-format";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -90,7 +91,13 @@ function resolveEffectiveRole(user: User, isTA: boolean): EffectiveRole {
 }
 
 function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: EffectiveRole }) {
-  const hour = new Date().getHours();
+  // #1941: the greeting and date are read in a pinned zone until hydration, so
+  // the UTC server and the user's browser render the same hero.
+  const { timeZone } = useFormatScope();
+  const now = new Date();
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now),
+  );
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const name = (user.name ?? "").split(" ");
   const firstName = name.length == 3 && name[0].endsWith(".") ? name[1] : name[0];
@@ -98,11 +105,12 @@ function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: Eff
     effectiveRole === "ADMIN"
       ? ADMIN_HERO_COPY
       : DASHBOARD_CONFIG[effectiveRole].heroCopy(firstName, greeting);
-  const dateStr = new Date().toLocaleDateString("en-US", {
+  const dateStr = now.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
+    timeZone,
   });
 
   return (
@@ -144,7 +152,9 @@ function DashboardContent({
         <AdminDashboard data={adminDashboard} userId={user.id} />
       ) : (
         effectiveRole !== "ADMIN" &&
-        dashboard && <DashboardBody effectiveRole={effectiveRole} data={dashboard} />
+        dashboard && (
+          <DashboardBody effectiveRole={effectiveRole} data={dashboard} userRole={user.role} />
+        )
       )}
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">

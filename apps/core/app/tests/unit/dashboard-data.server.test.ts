@@ -76,7 +76,7 @@ describe("loadDashboardData query gating", () => {
     const data = await loadDashboardData(userWith("STUDENT"));
 
     expect(mockListCourses).toHaveBeenCalledTimes(1);
-    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), { pageSize: 5 });
+    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), { pageSize: 24 });
     expect(data.courseTotal).toBe(3);
     expect(data.courses).toHaveLength(1);
     expect(data.activeCourseTotal).toBeUndefined();
