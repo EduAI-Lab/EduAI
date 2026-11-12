@@ -10,7 +10,7 @@ body:
         **The title is a plain description of the work.** Do not put a size or a week
         number in it — those go in the fields below, where they can be filtered and
         cannot go stale. See
-        [`docs/ISSUE-CONVENTIONS.md`](https://github.com/EduAI-Lab/EduAI/blob/main/docs/ISSUE-CONVENTIONS.md).
+        [`docs/core/developer/reference/issue-conventions.md`](https://github.com/EduAI-Lab/EduAI/blob/main/docs/core/developer/reference/issue-conventions.md).
 
         Size guide:
         - `S` = 0 to 4 hours

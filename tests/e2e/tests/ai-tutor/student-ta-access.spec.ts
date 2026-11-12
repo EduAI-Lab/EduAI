@@ -9,7 +9,7 @@
  * (`enrollmentSync.js` `MIRRORED_ROLES`), so a TA must see the enrolled course
  * and open its lesson exactly as a student does.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { gotoAiTutor } from "../helpers/at-ui";

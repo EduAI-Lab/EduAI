@@ -7,7 +7,7 @@
  * (`/student/module/:id`), the breadcrumb course switcher, the empty states at
  * each level, and the in-shell 404 for a bad/unenrolled id.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";

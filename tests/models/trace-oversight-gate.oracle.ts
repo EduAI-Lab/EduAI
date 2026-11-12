@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/trace-oversight-gate.pict (census docs/PICT_CENSUS.md § S8).
+ * Oracle for tests/models/trace-oversight-gate.pict (census docs/core/developer/reference/pict-census.md § S8).
  *
  * Derived from the spec for `GET /admin/ai-traces`
  * (apps/extensions/ai-tutor/server/src/routes/admin.js), not from the

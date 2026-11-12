@@ -7,7 +7,7 @@
  * canManageTopics, chat delete/switch/rename, bug-report UI submission,
  * /help role filtering, /settings account actions, and course chat with a
  * deterministic (mocked) reply — plus a fresh enumeration on top. Findings
- * are written up in docs/end-to-end-user-workflows/eduai-core-workflows.md,
+ * are written up in docs/core/developer/reference/end-to-end-user-workflows/core-workflows.md,
  * not here. Kept as a separate file from round 1 rather than growing that
  * file past ~500 lines.
  */

@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/parse-validate-canvas-url.pict (census docs/PICT_CENSUS.md § S5).
+ * Oracle for tests/models/parse-validate-canvas-url.pict (census docs/core/developer/reference/pict-census.md § S5).
  *
  * Parse-time Canvas base URL validation contract (issue #1184). Originally a
  * Core-vs-QM drift model; QM's `validateCanvasUrl` (canvasUrlGuard.js) was

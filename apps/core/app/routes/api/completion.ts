@@ -69,7 +69,7 @@ const STREAM_USAGE_LOG_GRACE_MS = 30_000;
  * access grant is active (#2039): campus models only, within the grant's daily
  * limits and a shared concurrency cap. Every API key request is logged.
  *
- * See docs/implementations/lightweight-completion-endpoint.md
+ * See docs/core/developer/specs/lightweight-completion-endpoint.md
  */
 export async function action({ request }: ActionFunctionArgs) {
   // Set once the caller is known to be using an API key; the row is written

@@ -41,7 +41,7 @@ Unpublished parents hide children. Topics scoped per CourseOffering.
 
 ## Roles (summary)
 
-STUDENT, TA (instructor shell read-only; student surfaces where allowed), INSTRUCTOR, UNIT_ADMIN, ADMIN — see [docs/implementations/rbac-matrix.md](../../../docs/implementations/rbac-matrix.md) and [app/lib/rbac/permissions.ts](app/lib/rbac/permissions.ts)
+STUDENT, TA (instructor shell read-only; student surfaces where allowed), INSTRUCTOR, UNIT_ADMIN, ADMIN — see [rbac-matrix.md](../../../docs/core/developer/specs/rbac-matrix.md) and [app/lib/rbac/permissions.ts](app/lib/rbac/permissions.ts)
 
 ## Environment
 
@@ -55,5 +55,5 @@ Prefer root/turbo. Package-local: `npm run dev` (FE 3001), `test`; server `npm r
 
 ## Related
 
-- [Root README](../../../README.md), [ARCHITECTURE.md §8–9](../../../docs/ARCHITECTURE.md)
-- [Two-agent supervisor system](docs/two-agent-supervisor-system.md)
+- [Root README](../../../README.md), [overview.md §8–9](../../../docs/core/developer/architecture/overview.md)
+- [Two-agent supervisor system](../../../docs/ai-tutor/developer/architecture/two-agent-supervisor-system.md)

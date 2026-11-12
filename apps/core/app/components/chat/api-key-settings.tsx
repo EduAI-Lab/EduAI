@@ -351,8 +351,8 @@ export function ApiKeySettings({
                 <code className="font-mono">vllm:</code> models in chat when configured.
               </p>
               <p className="text-xs text-muted-foreground">
-                Docs: <code className="font-mono">docs/rag-ai/VLLM.md</code>,{" "}
-                <code className="font-mono">docs/rag-ai/HOW_TO_USE_DEV_SERVER.md</code>
+                Docs: <code className="font-mono">docs/core/developer/architecture/rag-ai/vllm.md</code>,{" "}
+                <code className="font-mono">docs/core/developer/architecture/rag-ai/shared-dev-server.md</code>
               </p>
             </div>
 

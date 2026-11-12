@@ -15,7 +15,7 @@
  * POST — add a user to the course (#305). ADMIN / UNIT_ADMIN(D) may add any
  * role including INSTRUCTOR; INSTRUCTOR(C) may add STUDENT or TA only.
  *
- * See docs/implementations/api-wiring.md for the GET contract.
+ * See docs/core/developer/reference/history/api-wiring.md for the GET contract.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 

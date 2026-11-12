@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/ssrf-ipv6-classify.pict (census docs/PICT_CENSUS.md § S5).
+ * Oracle for tests/models/ssrf-ipv6-classify.pict (census docs/core/developer/reference/pict-census.md § S5).
  *
  * Spec-derived IPv6 private/reserved classification for QM `isPrivateIPv6`
  * (canvasUrlGuard.js:65). Core has a parallel `isBlockedIPv6` in

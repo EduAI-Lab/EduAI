@@ -1,4 +1,4 @@
-# S9 — ai-judge-scoring (QM), census docs/PICT_CENSUS.md § S9.
+# S9 — ai-judge-scoring (QM), census docs/core/developer/reference/pict-census.md § S9.
 # See tests/models/ai-judge-scoring.oracle.ts for the oracle spec.
 #
 # The deterministic scoring pipeline in `reviewVariantExamWithAi`

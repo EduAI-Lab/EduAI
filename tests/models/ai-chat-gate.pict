@@ -1,4 +1,4 @@
-# S8 — ai-chat-gate (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# S8 — ai-chat-gate (ai-tutor), census docs/core/developer/reference/pict-census.md § S8.
 # See tests/models/ai-chat-gate.oracle.ts for the oracle spec.
 #
 # `POST /activities/:activityId/{teach,guide,custom}` (handleAiInteraction,

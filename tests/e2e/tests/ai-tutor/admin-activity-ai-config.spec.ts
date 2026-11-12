@@ -13,7 +13,7 @@
  * An admin holds `canManageContent` on every course, so all of it is reachable
  * on a course taught by someone else — which is how these specs seed it.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect, type Page } from "@playwright/test";
 import { gotoAiTutor, loginAsAdmin } from "../helpers/at-ui";

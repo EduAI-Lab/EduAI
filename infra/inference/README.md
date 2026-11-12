@@ -24,11 +24,11 @@ files. Never place it in documentation, browser URLs, client bundles, or command
 output.
 
 For server-related escalation, use the contacts in the canonical
-[`deployment guide`](../../docs/DEPLOYMENT.md#operational-contacts). Do not
+[`deployment guide`](../../docs/core/developer/how-to/deployment.md#operational-contacts). Do not
 duplicate contact details in individual host runbooks.
 
 The implementation procedure for the nginx/LiteLLM/vLLM stack is currently
-[`../cmps01/README.md`](../cmps01/README.md). It is written for CMPS01's
+[`README.md`](../cmps01/README.md). It is written for CMPS01's
 repository-managed deployment and should be reused for other hosts only after
 reviewing their GPU, model, port, and proxy differences.
 

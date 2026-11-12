@@ -2,7 +2,7 @@
  * Fixtures for the AI Tutor STUDENT workflow specs.
  *
  * The student workflows are walked through the real browser (methodology step
- * 2 in `docs/end-to-end-user-workflows/README.md`); this module builds the
+ * 2 in `docs/core/developer/reference/end-to-end-user-workflows/README.md`); this module builds the
  * enrolled-and-published state those walks need.
  *
  * A student only ever *sees* a course when three things line up: the course is

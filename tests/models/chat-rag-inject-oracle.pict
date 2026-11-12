@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S3 — chat-rag-inject-oracle
+# docs/core/developer/reference/pict-census.md § S3 — chat-rag-inject-oracle
 # Information-exposure gate: whether retrieved course material may enter the chat
 # system prompt (course-rag-policy.ts shouldInjectCourseRag). Material visibility
 # at retrieval is covered by #1180 — this model covers inject-on-top only.

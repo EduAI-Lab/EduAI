@@ -133,7 +133,7 @@ install, enable, and restart actions for its environment, systemd unit, and
 Apache vhost; it does not provide a general Question Maker shell or a combined
 database-provisioning action.
 
-- [ ] Follow [`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
+- [ ] Follow [`README.md`](../../docs/question-maker/developer/how-to/deployment/README.md).
 - [ ] Generate the Question Maker Prisma client and confirm the backend database
       migration is complete.
 - [ ] Confirm the backend process and its database configuration.

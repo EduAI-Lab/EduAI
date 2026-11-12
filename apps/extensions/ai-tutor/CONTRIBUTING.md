@@ -67,7 +67,7 @@ If you modify `app/routes.ts`, run `npm run typecheck` to regenerate React Route
 - Preserve cookie-session semantics (`credentials: "include"`) in all API calls.
 - Use `requireClientUser(role)` in `clientLoader` functions for route protection.
 - Prefer `useOptimistic` (React 19) for instant UI feedback on mutations.
-- Use shared primitives from `@eduai/ui` for consistent UI — this app keeps no local fork of them; see [`app/README.md`](app/README.md) and [`docs/ui-audit.md`](docs/ui-audit.md).
+- Use shared primitives from `@eduai/ui` for consistent UI — this app keeps no local fork of them; see [`README.md`](app/README.md) and [`ui-component-inventory.md`](../../../docs/ai-tutor/developer/reference/ui-component-inventory.md).
 
 ### Backend Patterns
 

@@ -46,7 +46,7 @@ node_modules
 apps/core/logs/
 *.log
 
-# Local cron backup dry-run artifacts (see docs/implementations/server-backup-cron-local-testing.md)
+# Local cron backup dry-run artifacts (see docs/core/developer/how-to/server-backup-cron-local-testing.md)
 .local-backup-test/
 infra/cron/cron.env.local
 npm-debug.log*

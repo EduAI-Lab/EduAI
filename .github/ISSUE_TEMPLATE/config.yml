@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: EduAI issue conventions
-    url: https://github.com/EduAI-Lab/EduAI/blob/main/docs/ISSUE-CONVENTIONS.md
+    url: https://github.com/EduAI-Lab/EduAI/blob/main/docs/core/developer/reference/issue-conventions.md
     about: How issues are sized, prioritised, scheduled and routed to an epic.

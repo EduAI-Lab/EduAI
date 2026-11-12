@@ -24,7 +24,7 @@ All three share a single auth layer, course database, and AI backbone.
 | Nav user (role badges) | `app/components/nav-user.tsx` |
 | Chat interface | `app/components/chat/` |
 | Assistive Mode CSS | `app/styles/assistive-reading.css` |
-| Component audit doc | `docs/implementations/shared-component-library-audit.md` |
+| Component audit doc | `docs/core/developer/reference/history/shared-component-library-audit.md` |
 
 The GitHub repository contains the authoritative implementation. Explore it to cross-reference any design decisions here.
 

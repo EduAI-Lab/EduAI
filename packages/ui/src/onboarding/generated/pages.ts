@@ -1,4 +1,4 @@
-// Generated from docs/ONBOARDING.md by scripts/generate-onboarding.mjs.
+// Generated from docs/core/user/onboarding.md by scripts/generate-onboarding.mjs.
 // Do not edit; run npm run onboarding:generate.
 export const ONBOARDING_PAGES = {
   "core.courses": {

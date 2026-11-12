@@ -1,5 +1,5 @@
 /**
- * PICT adapter (#1185, census docs/PICT_CENSUS.md § S6): per generated row
+ * PICT adapter (#1185, census docs/core/developer/reference/pict-census.md § S6): per generated row
  * from tests/models/auth-precedence.cases.json, drives either
  * `enforceAdminIfApiKey` directly (Site=guard) or the composed `GET /api/me`
  * loader (Site=api-me) against tests/models/auth-precedence.oracle.ts.

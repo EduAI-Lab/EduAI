@@ -10,7 +10,7 @@
  * This file is exploratory, not a guarded regression suite — several tests
  * intentionally probe for IDOR/permission gaps and are expected to assert
  * a "should be blocked" outcome. Findings get written up in
- * docs/end-to-end-user-workflows/eduai-core-workflows.md, not here.
+ * docs/core/developer/reference/end-to-end-user-workflows/core-workflows.md, not here.
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";

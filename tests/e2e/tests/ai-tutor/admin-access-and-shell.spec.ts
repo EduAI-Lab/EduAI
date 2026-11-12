@@ -8,7 +8,7 @@
  *
  * Companion specs: admin-dashboard, admin-console, admin-course-oversight,
  * admin-content-authoring. Path inventory and findings live in
- * `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (Admin section).
+ * `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (Admin section).
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";

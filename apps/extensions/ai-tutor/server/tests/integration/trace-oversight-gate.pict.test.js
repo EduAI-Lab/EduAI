@@ -1,4 +1,4 @@
-// PICT model (#1187, census docs/PICT_CENSUS.md § S8): GET /admin/ai-traces
+// PICT model (#1187, census docs/core/developer/reference/pict-census.md § S8): GET /admin/ai-traces
 // (../../src/routes/admin.js) scopes AI-trace oversight by department for
 // UNIT_ADMIN, resolved live through the Core course catalog. This model
 // asserts the asymmetric fail-soft the census calls out deliberately: on a

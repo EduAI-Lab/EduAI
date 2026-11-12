@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT adapter (#1184, census docs/PICT_CENSUS.md § S5): parse-validate-canvas-url
+// PICT adapter (#1184, census docs/core/developer/reference/pict-census.md § S5): parse-validate-canvas-url
 // Core half of the Core ∪ QM drift contract — asserts parseAndValidateCanvasUrl
 // against the shared oracle + committed cases.
 

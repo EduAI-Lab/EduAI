@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S3 — auto-router-model-selection
+# docs/core/developer/reference/pict-census.md § S3 — auto-router-model-selection
 # Router mode resolution + pick-source gates (router.ts resolveRoutedModel / resolveRoutedModelLlm).
 RouterMode:        rules, knn, hybrid, llm
 ModeOverride:      none, rules, knn, hybrid, llm

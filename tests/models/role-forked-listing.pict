@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S6 — role-forked-listing (#1185)
+# docs/core/developer/reference/pict-census.md § S6 — role-forked-listing (#1185)
 # Core buildCourseListFilter (lib/auth/course-access.server.ts:118) vs ai-tutor GET /courses
 # (routes/courses.js:164): does course C show up in the caller's course list? Core keys the
 # non-admin branches on ENROLLMENT role, never platform role — TA is not a platform role

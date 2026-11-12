@@ -1,5 +1,5 @@
 /**
- * PICT model (#1188, census docs/PICT_CENSUS.md § S9): `extractQuestionsWithEduAI`
+ * PICT model (#1188, census docs/core/developer/reference/pict-census.md § S9): `extractQuestionsWithEduAI`
  * (../../src/services/aiService.js:292), reached via the exported
  * `extractQuestionsFromText`. Chunking (`chunkByQuestionBlocks`) is mocked
  * for deterministic chunk count; deduplication

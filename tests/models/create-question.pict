@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S7 — createQuestion (#1186)
+# docs/core/developer/reference/pict-census.md § S7 — createQuestion (#1186)
 # lib/questions/server.ts:45 — six-outcome error taxonomy (5 errors + success), precedence:
 # schema validation -> course existence -> primary topic existence/non-deleted -> exact
 # self-duplicate -> secondary topic existence/non-deleted (folded) -> success.

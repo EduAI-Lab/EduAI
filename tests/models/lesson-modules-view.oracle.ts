@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/lesson-modules-view.pict (census docs/PICT_CENSUS.md § S8).
+ * Oracle for tests/models/lesson-modules-view.pict (census docs/core/developer/reference/pict-census.md § S8).
  *
  * Derived from the spec, not from either handler:
  *   - No session at all -> 401, before anything else is resolved.

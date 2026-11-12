@@ -1,5 +1,5 @@
 /**
- * PICT adapter (#1185, census docs/PICT_CENSUS.md § S6): ai-tutor half of the
+ * PICT adapter (#1185, census docs/core/developer/reference/pict-census.md § S6): ai-tutor half of the
  * role-forked-listing drift contract. Per row from
  * tests/models/role-forked-listing.cases.json where Site="ai-tutor", drives
  * GET /courses against a real local DB (Core catalog mocked at the

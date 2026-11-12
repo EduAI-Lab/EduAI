@@ -1,4 +1,4 @@
-# S9 — generate-questions (QM), census docs/PICT_CENSUS.md § S9.
+# S9 — generate-questions (QM), census docs/core/developer/reference/pict-census.md § S9.
 # See tests/models/generate-questions.oracle.ts for the oracle spec.
 #
 # POST /api/eduai/generate-questions

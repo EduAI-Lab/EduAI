@@ -68,7 +68,7 @@ jobs:
             question_maker=true
             shared=true
           # `docs/` holds executable JavaScript as well as prose (for example
-          # docs/ux/chat-progress-1171/capture.mjs), so it is skippable only for
+          # docs/core/developer/reference/qa/chat-progress-1171/capture.mjs), so it is skippable only for
           # known documentation and asset extensions. Anything else under it —
           # including code — counts as a code change and runs the gates.
           elif grep -qvE '\.(md|txt)$|^docs/.*\.(md|txt|png|jpe?g|gif|svg|webp|pdf|csv)$|^LICENSE$' "$changed"; then

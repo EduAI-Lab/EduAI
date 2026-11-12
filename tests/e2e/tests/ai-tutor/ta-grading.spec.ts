@@ -14,7 +14,7 @@
  * offered a Grade button whose Save always failed. Fixed in
  * `server/src/routes/activities.js` by passing `"TA"` as the expected role.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { gotoAiTutor, openTab } from "../helpers/at-ui";

@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT adapter (#1189, census docs/PICT_CENSUS.md § S10): cross-ext-push — Core
+// PICT adapter (#1189, census docs/core/developer/reference/pict-census.md § S10): cross-ext-push — Core
 // half. Runs the real POST /api/questions action against the shared oracle.
 // Draft skip and Core-unreachable cells are QM-client concerns and are skipped
 // here; QM still covers those via cross-ext-push.pict.test.js.

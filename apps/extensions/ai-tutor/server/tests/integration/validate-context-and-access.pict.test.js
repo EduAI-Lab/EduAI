@@ -1,4 +1,4 @@
-// PICT model (#1188, census docs/PICT_CENSUS.md § S9): `validateContextAndAccess`
+// PICT model (#1188, census docs/core/developer/reference/pict-census.md § S9): `validateContextAndAccess`
 // (../../src/services/bugReports.js), reached via the exported
 // `createBugReport`. Checks hierarchy existence, then internal consistency,
 // then role, then content-aware authorization, in that order.

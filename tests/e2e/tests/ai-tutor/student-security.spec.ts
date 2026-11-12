@@ -8,7 +8,7 @@
  *
  * Companion API specs: `rbac.spec.ts` (mutation/admin/unauth gates),
  * `content-lifecycle.spec.ts` (publish visibility), `dashboard-submissions.spec.ts`.
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, CORE_URL } from "../../playwright.config";

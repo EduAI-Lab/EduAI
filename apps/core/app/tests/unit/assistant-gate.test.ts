@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * #1817: the assistant gate — the full scope truth table from §3 of
- * docs/implementations/ai-help-assistant-brief.md, the staff bypass, the "no
+ * docs/core/developer/specs/ai-help-assistant-brief.md, the staff bypass, the "no
  * enabled provider" row, and the Penny switch binding admins too.
  */
 import { describe, expect, it } from "vitest";

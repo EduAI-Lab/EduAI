@@ -9,7 +9,7 @@
  * tabs. A TA can only reach a course they actually assist: a course they have no
  * TA enrolment on is a 404 in the shell and a 403 at the API.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";

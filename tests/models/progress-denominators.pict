@@ -1,4 +1,4 @@
-# S8 — progress-denominators (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# S8 — progress-denominators (ai-tutor), census docs/core/developer/reference/pict-census.md § S8.
 # See tests/models/progress-denominators.oracle.ts for the oracle spec.
 #
 # Drift contract across three independent implementations:
@@ -13,7 +13,7 @@
 # (apps/extensions/ai-tutor/server/tests/integration/progress-denominators.pict.test.js),
 # which cross-products Scope itself. (Static read estimated 4 dims including
 # Scope as a factor; re-tiered to 3 real PICT dims once the oracle made clear
-# Scope belongs in the world-builder cross-product instead — docs/PICT_CENSUS.md § S8.)
+# Scope belongs in the world-builder cross-product instead — docs/core/developer/reference/pict-census.md § S8.)
 LessonPublished:  yes, no
 ModulePublished:  yes, no
 AttemptPattern:   not_attempted, correct_only, incorrect_only, correct_then_incorrect, incorrect_then_correct

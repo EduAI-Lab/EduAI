@@ -1,6 +1,6 @@
 /**
  * Session validation and RBAC middleware.
- * Copied verbatim from docs/EXTENSION_ONBOARDING.md §4-6.
+ * Copied verbatim from docs/core/developer/how-to/extension-onboarding.md §4-6.
  *
  * Every extension implements this same pattern — no OAuth, no local passwords.
  * Core is the single identity provider.

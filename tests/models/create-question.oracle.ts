@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/create-question.pict (census docs/PICT_CENSUS.md § S7, #1186).
+ * Oracle for tests/models/create-question.pict (census docs/core/developer/reference/pict-census.md § S7, #1186).
  *
  * Derived from the documented precedence in `createQuestion` (lib/questions/server.ts:45),
  * not from copying its branches: schema validation runs first (a malformed

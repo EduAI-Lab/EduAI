@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/cross-ext-push.pict (census docs/PICT_CENSUS.md § S10).
+ * Oracle for tests/models/cross-ext-push.pict (census docs/core/developer/reference/pict-census.md § S10).
  *
  * Spec-derived QM→Core question push contract (issue #1189):
  *   - Drafts must not sync (caller must not POST).

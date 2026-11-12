@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT adapter (#1184, census docs/PICT_CENSUS.md § S5): one committed row table
+// PICT adapter (#1184, census docs/core/developer/reference/pict-census.md § S5): one committed row table
 // (tests/models/canvas-file-download.cases.json) and one spec-derived oracle assert
 // downloadCanvasFile transport, auth-header, redirect credential survival, redirect
 // limit, and SSRF redirect blocking via mocked fetch (no live DB). Reuses canvas-pict

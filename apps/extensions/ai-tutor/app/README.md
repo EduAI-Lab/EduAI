@@ -172,9 +172,9 @@ Central HTTP client for all backend communication:
 - Every request uses `credentials: "include"` for cookie auth.
 - A 401 redirects to Core's login; a 403 is thrown as `ApiHttpError`; a request that never reached the server throws `ApiNetworkError`; a bounded call (e.g. `/api/me`, AI chat) that times out throws `ApiTimeoutError`.
 - Every response is decoded through a matching Zod schema in `lib/api-schemas.ts` before the caller sees it — a shape that no longer matches the schema fails there, not several components later as a silent `undefined`.
-- Response shapes are aligned by hand with `server/src/utils/mappers.js` — see [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md#frontendbackend-coupling-seams).
+- Response shapes are aligned by hand with `server/src/utils/mappers.js` — see [`overview.md`](../../../../docs/ai-tutor/developer/architecture/overview.md#frontendbackend-coupling-seams).
 
-See [`../docs/api-reference.md`](../docs/api-reference.md) for the full endpoint inventory.
+See [`api-reference.md`](../../../../docs/ai-tutor/developer/reference/api-reference.md) for the full endpoint inventory.
 
 ## Design system
 
@@ -199,7 +199,7 @@ Three tours, run by the shared `@eduai/ui` tour engine that Core and Question Ma
 2. **`student-lesson-help`** — contextual help within a lesson page.
 3. **`unit-admin-orientation`** — staff-voiced walkthrough of the unit-admin dashboard and course list, scoped to exactly the two routes it visits.
 
-Tours use `data-tour` attributes for targeting and `data-tour-route` for cross-page navigation — see [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md#tour-system-contract) for the full contract and the failure mode when an attribute is removed.
+Tours use `data-tour` attributes for targeting and `data-tour-route` for cross-page navigation — see [`overview.md`](../../../../docs/ai-tutor/developer/architecture/overview.md#tour-system-contract) for the full contract and the failure mode when an attribute is removed.
 
 ## Testing
 

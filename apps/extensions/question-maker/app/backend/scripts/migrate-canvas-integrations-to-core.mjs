@@ -2,7 +2,7 @@
 /**
  * One-shot migration: copy QM Canvas integrations into Core when Core has no row
  * for that userId. Decrypts with the QM ENCRYPTION_KEY and re-encrypts with Core's
- * ENCRYPTION_KEY (documented as separate keys in docs/ENVIRONMENT.md).
+ * ENCRYPTION_KEY (documented as separate keys in docs/core/developer/reference/environment.md).
  *
  * Required when QM still has credential rows:
  *   QUESTION_MAKER_DATABASE_URL — QM Postgres (or DATABASE_URL from QM .env)
@@ -13,7 +13,7 @@
  * Optional:
  *   --dry-run — print planned actions without writing to Core
  *
- * Deploy: run BEFORE QM `prisma migrate deploy` (see docs/DEPLOYMENT.md and
+ * Deploy: run BEFORE QM `prisma migrate deploy` (see docs/core/developer/how-to/deployment.md and
  * infra/s378/go-live-build.sh). The QM migration renames the source table to a
  * backup instead of dropping it immediately so a missed copy does not destroy tokens.
  *

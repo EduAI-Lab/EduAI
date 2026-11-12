@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/admin-write-confirmation.pict (census docs/PICT_CENSUS.md § S7,
+ * Oracle for tests/models/admin-write-confirmation.pict (census docs/core/developer/reference/pict-census.md § S7,
  * #1186).
  *
  * Derived from `runConfirmedAdminWriteTool`'s documented contract

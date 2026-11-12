@@ -14,7 +14,7 @@
  * Companion API specs cover the shared gates: `rbac.spec.ts` (mutation/admin/
  * unauth), `content-lifecycle.spec.ts` (publish visibility).
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { AI_TUTOR_API_URL, CORE_URL } from "../../playwright.config";

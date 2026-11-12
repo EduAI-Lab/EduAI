@@ -1,4 +1,4 @@
-# S9 — validateContextAndAccess (ai-tutor), census docs/PICT_CENSUS.md § S9.
+# S9 — validateContextAndAccess (ai-tutor), census docs/core/developer/reference/pict-census.md § S9.
 # See tests/models/validate-context-and-access.oracle.ts for the oracle spec.
 #
 # `validateContextAndAccess` (apps/extensions/ai-tutor/server/src/services/bugReports.js:145),

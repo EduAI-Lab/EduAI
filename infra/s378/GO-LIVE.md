@@ -289,8 +289,8 @@ authenticated model lists. CMPS02 intentionally lacks the standard 9B model and
 serves `qwen3.8-27b-instruct` for Assist Auto. The former CMPS03
 `no_db_connection` response was an authentication mismatch: on this DB-less
 LiteLLM edge, the proxy's `master_key` must match Core's `VLLM_API_KEY`. See
-[`infra/inference/README.md`](../inference/README.md) for the current fleet
-contract and [`infra/cmps01/README.md`](../cmps01/README.md) for the proxy model.
+[`README.md`](../inference/README.md) for the current fleet
+contract and [`README.md`](../cmps01/README.md) for the proxy model.
 
 ## Service operations
 

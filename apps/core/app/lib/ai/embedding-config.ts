@@ -1,4 +1,4 @@
-/** Shared embedding options for per-course settings (see docs/rag-ai/EMBEDDINGS.md). */
+/** Shared embedding options for per-course settings (see docs/core/developer/architecture/rag-ai/embeddings.md). */
 
 import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonValue } from "~/lib/json-value";

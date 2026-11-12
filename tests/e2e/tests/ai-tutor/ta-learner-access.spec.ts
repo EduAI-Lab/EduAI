@@ -13,7 +13,7 @@
  * the way a student uses it, and pins the fail-closed course-role gate that
  * keeps those controls off screen (mixed-role, delayed, and failed-breadcrumb).
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { gotoAiTutor } from "../helpers/at-ui";

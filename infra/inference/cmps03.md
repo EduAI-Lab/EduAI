@@ -7,7 +7,7 @@ authenticated port-8001 edge. It is available for the same interactive fleet
 role as CMPS01.
 
 The shared implementation procedure is
-[`../cmps01/README.md`](../cmps01/README.md); adapt it to CMPS03's GPU, model,
+[`README.md`](../cmps01/README.md); adapt it to CMPS03's GPU, model,
 and port assignments before making host changes.
 
 ## Host-specific inventory

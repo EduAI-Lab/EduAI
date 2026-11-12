@@ -8,7 +8,7 @@
 #   bash infra/cron/dry-run-local.sh offsite
 #   bash infra/cron/dry-run-local.sh rotate
 #
-# See docs/implementations/server-backup-cron-local-testing.md
+# See docs/core/developer/how-to/server-backup-cron-local-testing.md
 
 set -euo pipefail
 

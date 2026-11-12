@@ -22,7 +22,7 @@ describe("resolveVllmApiKey (#1115)", () => {
   });
 
   it("never falls back to vllm-local once VLLM_BASE_URL points at a non-loopback host, even outside production", () => {
-    // s378 intentionally runs NODE_ENV=development (docs/DEPLOYMENT.md) but
+    // s378 intentionally runs NODE_ENV=development (docs/core/developer/how-to/deployment.md) but
     // points VLLM_BASE_URL at cmps01 — this is the guard that has to fire there.
     expect(
       resolveVllmApiKey({

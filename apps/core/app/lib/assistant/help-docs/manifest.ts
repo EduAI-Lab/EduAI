@@ -14,9 +14,9 @@ import type { HelpSlice } from "~/lib/help/role-slices";
 
 /** The guides indexed into the corpus. Keys are what `sources.server.ts` loads. */
 export const HELP_DOC_SOURCES = {
-  "user-guide": { file: "docs/USER_GUIDE.md", label: "User guide" },
+  "user-guide": { file: "docs/core/user/user-guide.md", label: "User guide" },
   "instructor-onboarding": {
-    file: "docs/INSTRUCTOR_ONBOARDING.md",
+    file: "docs/core/user/admin/instructor-onboarding.md",
     label: "Instructor onboarding",
   },
 } as const;

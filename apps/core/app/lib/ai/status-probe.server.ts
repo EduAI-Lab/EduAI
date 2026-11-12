@@ -1,7 +1,7 @@
 /**
  * The `ai-status-probe` CORE cron handler (#764 follow-on).
  *
- * Runs ONLY in `eduai-cron-worker` — see docs/CRON_JOBS.md. Two HTTP GETs per
+ * Runs ONLY in `eduai-cron-worker` — see docs/core/developer/how-to/cron-jobs.md. Two HTTP GETs per
  * host (/v1/models and /metrics): no inference, no admission slot, no tokens.
  *
  * Stored `state` is reachability only. DEGRADED is never written; it is derived

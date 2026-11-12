@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/import-reconcile.pict (census docs/PICT_CENSUS.md § S4).
+ * Oracle for tests/models/import-reconcile.pict (census docs/core/developer/reference/pict-census.md § S4).
  *
  * Spec-derived verdict for Canvas → Core material import reconciliation
  * (issue #1183). Models the product rules for `importSingleCanvasFile`, not a

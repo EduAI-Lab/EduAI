@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/cross-ext-read.pict (census docs/PICT_CENSUS.md § S10).
+ * Oracle for tests/models/cross-ext-read.pict (census docs/core/developer/reference/pict-census.md § S10).
  *
  * Spec-derived extension→Core read contract (issue #1189), not a mirror of any
  * single handler if-chain:

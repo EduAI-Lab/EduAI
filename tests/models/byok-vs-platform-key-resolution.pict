@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S3 — byok-vs-platform-key-resolution
+# docs/core/developer/reference/pict-census.md § S3 — byok-vs-platform-key-resolution
 # Local-inference baseUrl precedence (mergeLocalInferenceFromEnv) and vLLM apiKey
 # resolution (createAIProviderRegistry): fleet > user > env for vLLM baseUrl;
 # user > env > default for vLLM apiKey. Ollama has no fleet override.

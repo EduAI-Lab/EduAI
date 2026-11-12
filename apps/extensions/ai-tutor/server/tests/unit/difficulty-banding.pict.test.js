@@ -1,4 +1,4 @@
-// PICT model (#1187, census docs/PICT_CENSUS.md § S8): `calculateDifficulty`
+// PICT model (#1187, census docs/core/developer/reference/pict-census.md § S8): `calculateDifficulty`
 // (../../src/services/activityAnalytics.js) is a documented, hand-tuned
 // policy heuristic. This locks the documented formula (coefficients 15/45/25,
 // 35/65 label thresholds, and the null-rating/perfect-rating equivalence) in

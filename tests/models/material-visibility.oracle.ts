@@ -1,11 +1,11 @@
 /**
- * Oracle for tests/models/material-visibility.pict (census docs/PICT_CENSUS.md § S1).
+ * Oracle for tests/models/material-visibility.pict (census docs/core/developer/reference/pict-census.md § S1).
  *
  * Derived from the visibility spec (issue #1180), not from any single handler:
  *   - An anonymous caller is turned away before any material-level check runs.
  *   - A caller with no course access at all (not staff, not enrolled) is turned
  *     away the same way, before any material-level check runs — this is the
- *     course-level RBAC gate (docs/implementations/rbac-matrix.md §3), which is
+ *     course-level RBAC gate (docs/core/developer/specs/rbac-matrix.md §3), which is
  *     shared infrastructure, not something specific to material visibility.
  *   - Deleted material is invisible to everyone who clears that gate, on every
  *     path — soft-deleted is absent, not merely hidden.

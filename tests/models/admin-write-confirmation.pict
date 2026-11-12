@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S7 — admin-write-confirmation (#1186)
+# docs/core/developer/reference/pict-census.md § S7 — admin-write-confirmation (#1186)
 # runConfirmedAdminWriteTool (lib/agent-tools/admin-mutations.server.ts:188), built on the
 # preview map in admin-write-confirmation.server.ts:50 — register-then-confirm two-step with a
 # same-turn anti-replay guard, keyed on (actorId, toolName, payloadHash).

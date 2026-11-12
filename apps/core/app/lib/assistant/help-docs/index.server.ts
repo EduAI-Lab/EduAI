@@ -5,7 +5,7 @@
  * in its own `help_doc_chunks` table, so a docs question can never be answered
  * out of a course upload and vice versa.
  *
- * Retrieval is FAIL-CLOSED, matching `docs/rag-ai/README.md`: an embedding
+ * Retrieval is FAIL-CLOSED, matching `docs/core/developer/architecture/rag-ai/README.md`: an embedding
  * provider or database failure throws {@link HelpDocsUnavailableError}; it is
  * never returned as an empty result, because "no relevant pages" is a claim about
  * our documentation and an outage must not make it.

@@ -1,4 +1,4 @@
-# S8 — lesson-modules-view (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# S8 — lesson-modules-view (ai-tutor), census docs/core/developer/reference/pict-census.md § S8.
 # See tests/models/lesson-modules-view.oracle.ts for the oracle spec.
 #
 # Drift contract: `hasElevatedAccess = isAdmin || isInstructor || isTa || isUnitAdmin`

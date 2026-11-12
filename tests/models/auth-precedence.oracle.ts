@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/auth-precedence.pict (census docs/PICT_CENSUS.md § S6, #1185).
+ * Oracle for tests/models/auth-precedence.pict (census docs/core/developer/reference/pict-census.md § S6, #1185).
  *
  * Derived from the documented precedence rule (guards.server.ts:48's docstring
  * and the S6 census note), not from copying `enforceAdminIfApiKey`'s branches:

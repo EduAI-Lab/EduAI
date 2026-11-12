@@ -139,7 +139,7 @@ health.
 
 Question Maker is intentionally limited to the three template-install actions
 and its enable/restart actions. Its database and build procedure remain in
-[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md);
+[`README.md`](../../docs/question-maker/developer/how-to/deployment/README.md);
 the helper does not expose a general shell or a `provision-qm` command.
 
 ## Review requirements

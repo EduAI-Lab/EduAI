@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/role-forked-listing.pict (census docs/PICT_CENSUS.md § S6, #1185).
+ * Oracle for tests/models/role-forked-listing.pict (census docs/core/developer/reference/pict-census.md § S6, #1185).
  *
  * Derived from the documented listing contract on each side, not from
  * copying either implementation's branches:

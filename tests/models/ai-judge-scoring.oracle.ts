@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/ai-judge-scoring.pict (census docs/PICT_CENSUS.md § S9).
+ * Oracle for tests/models/ai-judge-scoring.pict (census docs/core/developer/reference/pict-census.md § S9).
  *
  * Direct transcription of the documented scoring pipeline in
  * `reviewVariantExamWithAi` (apps/extensions/question-maker/app/backend/src/services/assessmentVariantService.js:1117-1226),

@@ -63,7 +63,7 @@ activation, Apache reload, and the cron worker. It does not provide a general
 Question Maker provisioning shell or a `provision-qm` action. Question Maker's
 application deployment documentation remains authoritative for its database and
 build procedure:
-[`apps/extensions/question-maker/docs/deployment/README.md`](../../apps/extensions/question-maker/docs/deployment/README.md).
+[`README.md`](../../docs/question-maker/developer/how-to/deployment/README.md).
 
 The old PM2-oriented application scripts are not the production runbook. Do not
 use `apps/core/deploy.sh` or `apps/extensions/ai-tutor/deploy.sh` against the
@@ -266,7 +266,7 @@ CMPS02 intentionally does not expose the standard 9B model; its 27B model is a
 separate Assist Auto capability. CMPS03 has the standard small/large pair and
 may be used in production after the authenticated edge check succeeds on the
 production host. See
-[`../cmps01/README.md`](../cmps01/README.md) for the CMPS contract and current
+[`README.md`](../cmps01/README.md) for the CMPS contract and current
 dated inventory.
 
 ### Fleet config
@@ -290,7 +290,7 @@ After the first save from the Servers tab the file is recreated as `0640`, owned
 by Core's service user, so don't rely on the initial `0660`.
 
 Then edit it to match the edge check (step 0); the current per-host model list
-is in [`../cmps01/README.md`](../cmps01/README.md#fleet-inventory). Routing reads
+is in [`README.md`](../cmps01/README.md#fleet-inventory). Routing reads
 each server's live `/v1/models` first and falls back to the file's `models` only
 when that probe fails; the AI status probe also takes its host list from this
 file.
@@ -331,6 +331,6 @@ attempting a schema rollback.
   shell history, logs, and browser bundles.
 - Preserve release directories until the rollback/retention policy allows removal.
 - Use [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md) for the exact privilege boundary.
-- Use [`infra/cron/README.md`](../cron/README.md) for backup scripts and the
+- Use [`README.md`](../cron/README.md) for backup scripts and the
   s378 cron-worker installation; do not invent a production system crontab from
   the standalone scripts.

@@ -14,7 +14,7 @@
  * provider has a real API key configured, so every test here mocks
  * /api/chat at the network boundary — same technique as the existing
  * chat-code-block.spec.ts and round 2's mocked course-chat tests. Findings
- * go in docs/end-to-end-user-workflows/eduai-core-workflows.md, not here.
+ * go in docs/core/developer/reference/end-to-end-user-workflows/core-workflows.md, not here.
  */
 import { test, expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";

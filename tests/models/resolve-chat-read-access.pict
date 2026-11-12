@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S7 — resolveChatReadAccess (#1186)
+# docs/core/developer/reference/pict-census.md § S7 — resolveChatReadAccess (#1186)
 # lib/chat-history/server.ts:129 — single-chat read gate shared by GET /api/chats/:id and
 # /api/chats/:id/messages. Dims per the S7 oracle note: owner x admin x courseId x
 # access-level x policy-flag x owner-active-student.

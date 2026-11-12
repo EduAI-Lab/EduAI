@@ -1,5 +1,5 @@
 /**
- * PICT model (#1188, census docs/PICT_CENSUS.md § S9): PUT
+ * PICT model (#1188, census docs/core/developer/reference/pict-census.md § S9): PUT
  * /api/questions/variants/:variantId (../../src/routes/variants.js) forks on
  * course-access rank, current draft state, variant ownership, the requested
  * isDraft value, and which fields the request touches (the nine-field

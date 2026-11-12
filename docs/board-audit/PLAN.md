@@ -287,7 +287,7 @@ The original "61 → ~15" target was only reachable by destroying history; the r
 
 # P11 — Survive the handoff
 
-Write `docs/ISSUE-CONVENTIONS.md`: the two boards' roles, what each field means, where each fact
+Write `docs/core/developer/reference/issue-conventions.md`: the two boards' roles, what each field means, where each fact
 lives, the term/iteration model, the epic→owner table, and the rule that titles carry no metadata.
 Link it from the issue form and README. Delete or redirect `eduai-summer-2026/CONVENTIONS.md`.
 

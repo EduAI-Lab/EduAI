@@ -1,5 +1,5 @@
 # S2 flagship — cross-app per-course RBAC drift contract (#1181).
-# See docs/PICT_CENSUS.md § S2. Oracle: shared_course_rbac ∩ app_role_floor.
+# See docs/core/developer/reference/pict-census.md § S2. Oracle: shared_course_rbac ∩ app_role_floor.
 # App is NOT a model dimension — each adapter replays every row with its own
 # app parameter so Core, QM, and AI Tutor receive identical shared inputs.
 # CourseState omits "present" (redundant with published).

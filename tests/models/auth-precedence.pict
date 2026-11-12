@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S6 — auth-precedence (#1185)
+# docs/core/developer/reference/pict-census.md § S6 — auth-precedence (#1185)
 # enforceAdminIfApiKey (lib/auth/guards.server.ts:48) and its composition with the cookie
 # fallback at the call site (routes/api/me.ts:57) are two implementations of one precedence
 # rule: invalid key + cookie defers to the cookie; invalid key with no cookie is 401. Site

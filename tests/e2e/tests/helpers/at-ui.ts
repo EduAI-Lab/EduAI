@@ -3,7 +3,7 @@
  *
  * The rest of `tests/helpers/` talks to the APIs directly. These helpers exist
  * for the workflow specs that must click through the real UI the way a user
- * does (see `docs/end-to-end-user-workflows/README.md`, methodology step 2).
+ * does (see `docs/core/developer/reference/end-to-end-user-workflows/README.md`, methodology step 2).
  *
  * Session model: AI Tutor has no login page of its own — it reads a Core
  * session cookie and its Express server revalidates it against Core on every

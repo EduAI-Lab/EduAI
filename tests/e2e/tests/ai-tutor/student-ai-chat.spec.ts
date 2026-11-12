@@ -15,7 +15,7 @@
  * entry the Settings → Providers tab and the in-chat dialog write, so
  * `hasApiKey` flips true exactly as it would for a real student who saved a key.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { gotoAiTutor } from "../helpers/at-ui";

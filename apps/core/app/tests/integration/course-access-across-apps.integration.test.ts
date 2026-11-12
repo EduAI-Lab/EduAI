@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT flagship drift contract (#1181, census docs/PICT_CENSUS.md § S2):
+// PICT flagship drift contract (#1181, census docs/core/developer/reference/pict-census.md § S2):
 // shared_course_rbac ∩ app_role_floor, Core adapter. One oracle
 // (tests/models/course-access-across-apps.oracle.ts), committed rows from
 // `npm run test:pict:gen`, world-builder here via helpers/rbac.ts.

@@ -1,5 +1,5 @@
 /**
- * PICT adapter (#1186, census docs/PICT_CENSUS.md § S7): per generated row from
+ * PICT adapter (#1186, census docs/core/developer/reference/pict-census.md § S7): per generated row from
  * tests/models/resolve-chat-read-access.cases.json, seeds a real chat +
  * course/enrollment state and calls the real `resolveChatReadAccess` against
  * a real Postgres DB, asserting against

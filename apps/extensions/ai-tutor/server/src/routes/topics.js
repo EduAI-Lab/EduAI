@@ -236,7 +236,7 @@ export default router;
  * Deprecated (#1031): the UI no longer calls this — GET .../topics now
  * auto-syncs imported courses on every read. Kept unreachable-from-UI for API
  * compatibility, same treatment as the old `POST /courses/import-external`
- * (see docs/ARCHITECTURE.md §8).
+ * (see docs/core/developer/architecture/overview.md §8).
  *
  * Auth: course admin (LEAD instructor / unit-admin / admin); course must be
  *   EduAI-imported.

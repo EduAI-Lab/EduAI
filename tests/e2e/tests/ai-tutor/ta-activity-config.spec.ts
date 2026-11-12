@@ -13,7 +13,7 @@
  *     read-only "Question details" card, not dead controls. (The server backstop
  *     — `PATCH /activities/:id` 403 for a TA — is pinned in `ta-security.spec.ts`.)
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { gotoAiTutor } from "../helpers/at-ui";

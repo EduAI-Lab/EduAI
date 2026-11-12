@@ -16,7 +16,7 @@
  *     on its `status` field to map validation/auth failures cleanly.
  *   - Anonymous mode hides identity only in downstream admin mapping; the raw
  *     row still belongs to the submitting user so authorization/audit remain intact.
- * Related: `docs/ARCHITECTURE.md`, `server/src/routes/bugReports.js`,
+ * Related: `docs/core/developer/architecture/overview.md`, `server/src/routes/bugReports.js`,
  *   `server/src/utils/bugReportMappers.js`.
  */
 

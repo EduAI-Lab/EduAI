@@ -7,7 +7,7 @@
  * the course list (search / status / term / pager), the four course-detail
  * tabs, and grading a student submission.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";

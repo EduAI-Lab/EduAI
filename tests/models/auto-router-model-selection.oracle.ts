@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/auto-router-model-selection.pict (census docs/PICT_CENSUS.md § S3).
+ * Oracle for tests/models/auto-router-model-selection.pict (census docs/core/developer/reference/pict-census.md § S3).
  *
  * Spec-derived verdict for Auto mode router selection (issue #1182). Models the product
  * rules for `resolveRoutedModel` and its mode-specific resolvers, not a line-by-line copy

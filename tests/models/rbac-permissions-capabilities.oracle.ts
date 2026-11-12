@@ -1,7 +1,7 @@
 /**
  * Oracle for tests/models/rbac-permissions-capabilities.pict (census § S10).
  *
- * Spec-derived from docs/implementations/rbac-matrix.md — not from
+ * Spec-derived from docs/core/developer/specs/rbac-matrix.md — not from
  * permissions.ts. If the implementation disagrees with this oracle, that is
  * the bug (or a documented product overlay that must be cited here).
  *

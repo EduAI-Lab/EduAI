@@ -83,7 +83,7 @@ export async function setup() {
     throw new Error("DATABASE_URL is required in .env.test for integration tests");
   }
 
-  // Windows Hyper-V can break `localhost` while 127.0.0.1 works (see docs/implementations/windows-dev-database.md).
+  // Windows Hyper-V can break `localhost` while 127.0.0.1 works (see docs/core/developer/how-to/windows-dev-database.md).
   if (isWindows) {
     databaseUrl = databaseUrl.replace("@localhost:", "@127.0.0.1:");
   }

@@ -2,7 +2,7 @@
 
 RAG-powered chat platform and the **central API / auth layer** for the EduAI monorepo. Extensions (AI Tutor, Question Maker) validate sessions against Core and call Core APIs with the shared service key (`EDUAI_API_KEY`).
 
-For platform layout, ports, Docker databases, and `npm run dev`, start at the **[monorepo root README](../../README.md)**. For architecture, RAG/chat flows, schema, and RBAC, see [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
+For platform layout, ports, Docker databases, and `npm run dev`, start at the **[monorepo root README](../../README.md)**. For architecture, RAG/chat flows, schema, and RBAC, see [`overview.md`](../../docs/core/developer/architecture/overview.md).
 
 ## Develop from the monorepo root
 
@@ -21,19 +21,19 @@ Core listens at **http://localhost:3000**. Do not treat this package as a standa
 - Better Auth sessions and OAuth/OIDC for the platform
 - Course / enrollment / materials APIs, gated by the RBAC permission layer (`app/lib/rbac/`)
 - Canvas LMS integration (`app/lib/canvas/`, 18 modules): roster sync, module/quiz/material sync, instructor token storage (AES-256-GCM), term normalization, student-number linking
-- Chat + RAG (`POST /api/chat`), embeddings (pgvector, `ivfflat` ANN index on `material_embeddings` tunable via `RAG_IVFFLAT_PROBES` — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search)), AI provider catalog
+- Chat + RAG (`POST /api/chat`), embeddings (pgvector, `ivfflat` ANN index on `material_embeddings` tunable via `RAG_IVFFLAT_PROBES` — see [`embeddings.md`](../../docs/core/developer/architecture/rag-ai/embeddings.md#pure-vector-and-hybrid-search)), AI provider catalog
 - Agentic chat tools (`app/lib/agent-tools/`): distinct tool sets for learning, instructor, and admin chat modes (Canvas reads/writes, invitations, platform mutations, write-confirmation flow)
 - Background job queue (`app/lib/queue/`, BullMQ-based): chat-turn processing, concurrency/availability/ETA tracking, worker stats
 - Question banks (`app/lib/question-banks/`) and topic data model backing Question Maker
 - Disciplines/departments (`app/lib/disciplines/`) and user invitations (`app/lib/invitations/`, token-hash based, same pattern as the admin bootstrap flow below)
 - Outbound-request hardening (`app/lib/net/`): SSRF guard, bounded response bodies, pinned dispatcher for calls to AI providers/Canvas
-- API-key lifecycle (`app/lib/api-keys/`): access checks and the 1-year expiration cap enforced by the migration preflight (see [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md))
+- API-key lifecycle (`app/lib/api-keys/`): access checks and the 1-year expiration cap enforced by the migration preflight (see [`deployment-safety.md`](../../docs/core/developer/how-to/deployment-safety.md))
 - Policy registry (`GET /api/policies`) and admin tooling
 - Administrator-managed automatic routing: AI Management controls separate `Auto` (LLM-classified) and `Auto (rules)` (fixed-rule) modes. Both select only active tiered models on active providers, while explicit model selections remain unchanged.
 - ADHD Assist mode: toggling regenerates response **content**, not just styling — the policy (`app/lib/ai/adhd-assist.ts`) enforces a Top summary / Step ladder / Next? structure, and `app/lib/ai/adhd-oversight.ts` audits and rewrites (or forces deterministic fallback) any reply that doesn't comply
 - Course-scope guardrail: an always-on system-prompt policy (Layer A) plus an optional second-pass classifier (Layer B, each course's `courseScopeGuardrailEnabled` setting + the `chat.courseScopeGuardrailEnabled` policy in Admin → Settings) that keeps browser learning chat on-topic for the enrolled course, failing open on classifier errors/timeouts and bypassed by admin preview and service-key calls.
-- File/topic matching (#1965) assigns processed materials to existing accepted topics, using Canvas module/heading matches before a model fallback. Instructor-assigned links are preserved, with at most three topics per file. New topics are proposed only through the course Topics tab’s **Suggest topics** action (#1966); instructors approve or dismiss them. Core’s learner audience omits suggested topics and `Uncategorized`. See [the instructor guide](../../docs/INSTRUCTOR_ONBOARDING.md#topics-on-your-files).
-- Service-key and session APIs consumed by extensions (`POST /api/sessions/validate`, `EDUAI_API_KEY`-gated — see [`docs/chat-history.md`](./docs/chat-history.md#authentication))
+- File/topic matching (#1965) assigns processed materials to existing accepted topics, using Canvas module/heading matches before a model fallback. Instructor-assigned links are preserved, with at most three topics per file. New topics are proposed only through the course Topics tab’s **Suggest topics** action (#1966); instructors approve or dismiss them. Core’s learner audience omits suggested topics and `Uncategorized`. See [the instructor guide](../../docs/core/user/admin/instructor-onboarding.md#topics-on-your-files).
+- Service-key and session APIs consumed by extensions (`POST /api/sessions/validate`, `EDUAI_API_KEY`-gated — see [`chat-history.md`](../../docs/core/developer/architecture/chat-history.md#authentication))
 
 ## Essential environment
 
@@ -47,11 +47,11 @@ Copy from `.env.example` (root `npm install` also auto-copies if missing). Criti
 | `ENCRYPTION_KEY` | Required for Canvas token storage (AES-256-GCM) |
 | `EDUAI_API_KEY` | Same value as AI Tutor server + Question Maker |
 | `REDIS_URL` | Shared queue transport and cross-instance `/api/chat` + `/api/completion` rate-limit state |
-| `CHAT_RATE_LIMIT` / `CHAT_RATE_LIMIT_WINDOW_MS` | Completion sliding-window limit (defaults `100` requests / `60000` ms); full semantics in [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) |
-| `EMBEDDING_PROVIDER` / `VLLM_EMBEDDING_BASE_URL` / `VLLM_EMBEDDING_MODEL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
-| `RAG_IVFFLAT_PROBES` | ANN index recall/latency tuning for `material_embeddings` (default `10`, clamped `[1, 100]`) — see [`docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search`](../../docs/rag-ai/EMBEDDINGS.md#pure-vector-and-hybrid-search) |
+| `CHAT_RATE_LIMIT` / `CHAT_RATE_LIMIT_WINDOW_MS` | Completion sliding-window limit (defaults `100` requests / `60000` ms); full semantics in [`environment.md`](../../docs/core/developer/reference/environment.md) |
+| `EMBEDDING_PROVIDER` / `VLLM_EMBEDDING_BASE_URL` / `VLLM_EMBEDDING_MODEL` | Embeddings path — see [`embeddings.md`](../../docs/core/developer/architecture/rag-ai/embeddings.md) |
+| `RAG_IVFFLAT_PROBES` | ANN index recall/latency tuning for `material_embeddings` (default `10`, clamped `[1, 100]`) — see [`embeddings.md#pure-vector-and-hybrid-search`](../../docs/core/developer/architecture/rag-ai/embeddings.md#pure-vector-and-hybrid-search) |
 
-Full inventory: [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) and `apps/core/.env.example`.
+Full inventory: [`environment.md`](../../docs/core/developer/reference/environment.md) and `apps/core/.env.example`.
 
 ## Useful scripts (from `apps/core`)
 
@@ -66,7 +66,7 @@ npm run db:seed
 
 Prefer root scripts for multi-app work: `npm run test:eduai`, etc. Inventory: [`TESTS.md`](../../TESTS.md).
 
-Browser-level load testing (k6 + Grafana, up to 500 concurrent users): `npm run loadtest:setup`, `npm run loadtest:stress`. See [`loadtest/README.md`](./loadtest/README.md).
+Browser-level load testing (k6 + Grafana, up to 500 concurrent users): `npm run loadtest:setup`, `npm run loadtest:stress`. See [`README.md`](./loadtest/README.md).
 
 ## API discovery
 
@@ -81,8 +81,8 @@ Sustainability-aware tier routing lives under `app/lib/ai/routing/`. Administrat
 | Doc | Purpose |
 |-----|---------|
 | [Monorepo root README](../../README.md) | Platform onboarding, ports, Docker DBs, `npm run dev` |
-| [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) | System design, RAG/chat flows, schema, RBAC |
-| [`docs/EXTENSION_ONBOARDING.md`](../../docs/EXTENSION_ONBOARDING.md) | Extension app integration and auth |
-| [`docs/CANVAS.md`](../../docs/CANVAS.md) | Canvas sync and instructor token setup |
-| [`docs/LOGGING.md`](../../docs/LOGGING.md) | Audit logs, system logs, admin viewer |
-| [`loadtest/README.md`](./loadtest/README.md) | Browser-level UI stress harness (k6 + Grafana), EPIC #63 |
+| [`overview.md`](../../docs/core/developer/architecture/overview.md) | System design, RAG/chat flows, schema, RBAC |
+| [`extension-onboarding.md`](../../docs/core/developer/how-to/extension-onboarding.md) | Extension app integration and auth |
+| [`local-canvas-setup.md`](../../docs/core/developer/how-to/local-canvas-setup.md) | Canvas sync and instructor token setup |
+| [`logging.md`](../../docs/core/developer/reference/logging.md) | Audit logs, system logs, admin viewer |
+| [`README.md`](./loadtest/README.md) | Browser-level UI stress harness (k6 + Grafana), EPIC #63 |

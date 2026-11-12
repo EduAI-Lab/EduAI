@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/variant-lifecycle-put.pict (census docs/PICT_CENSUS.md § S9).
+ * Oracle for tests/models/variant-lifecycle-put.pict (census docs/core/developer/reference/pict-census.md § S9).
  *
  * Derived from the spec for `PUT /api/questions/variants/:variantId`
  * (apps/extensions/question-maker/app/backend/src/routes/variants.js:137),

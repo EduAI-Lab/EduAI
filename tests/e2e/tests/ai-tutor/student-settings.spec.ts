@@ -6,7 +6,7 @@
  * badge and sign-out card), Accessibility, and Providers (the browser-local
  * BYOK keys that also back the in-chat "Add API key" dialog).
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { gotoAiTutor, loginAsStudent, openTab } from "../helpers/at-ui";

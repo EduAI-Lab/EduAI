@@ -10,7 +10,7 @@
  * Companion specs: student-dashboard, student-course-list,
  * student-course-navigation, student-lesson-player, student-ai-chat,
  * student-settings, student-security. Path inventory and findings live in
- * `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (Student section).
+ * `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (Student section).
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";

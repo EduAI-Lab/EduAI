@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // PICT drift-contract adapter for Canvas → Core material import reconciliation
-// (census docs/PICT_CENSUS.md § S4, issue #1183). One oracle
+// (census docs/core/developer/reference/pict-census.md § S4, issue #1183). One oracle
 // (tests/models/import-reconcile.oracle.ts), one committed row table
 // (tests/models/import-reconcile.cases.json), and a per-row world-builder that
 // seeds real Postgres state then calls `importSingleCanvasFile` directly.

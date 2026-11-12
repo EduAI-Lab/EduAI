@@ -587,8 +587,8 @@ export function SettingsView({
                     <code className="text-xs">vllm:</code> models in chat when configured.
                   </p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    See repo docs: <code className="text-xs">docs/rag-ai/VLLM.md</code>,{" "}
-                    <code className="text-xs">docs/rag-ai/HOW_TO_USE_DEV_SERVER.md</code>
+                    See repo docs: <code className="text-xs">docs/core/developer/architecture/rag-ai/vllm.md</code>,{" "}
+                    <code className="text-xs">docs/core/developer/architecture/rag-ai/shared-dev-server.md</code>
                   </p>
                 </div>
               </CardContent>

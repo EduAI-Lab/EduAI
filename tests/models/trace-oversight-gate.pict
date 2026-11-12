@@ -1,4 +1,4 @@
-# S8 — trace-oversight-gate (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# S8 — trace-oversight-gate (ai-tutor), census docs/core/developer/reference/pict-census.md § S8.
 # See tests/models/trace-oversight-gate.oracle.ts for the oracle spec.
 #
 # GET /admin/ai-traces (apps/extensions/ai-tutor/server/src/routes/admin.js).

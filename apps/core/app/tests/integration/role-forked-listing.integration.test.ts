@@ -1,5 +1,5 @@
 /**
- * PICT adapter (#1185, census docs/PICT_CENSUS.md § S6): Core half of the
+ * PICT adapter (#1185, census docs/core/developer/reference/pict-census.md § S6): Core half of the
  * role-forked-listing drift contract. Per row from
  * tests/models/role-forked-listing.cases.json where Site="core", applies the
  * real `buildCourseListFilter` against a real Postgres DB and checks whether

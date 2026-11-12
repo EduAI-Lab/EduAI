@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT drift-contract pilot (#1180, census docs/PICT_CENSUS.md § S1): the same
+// PICT drift-contract pilot (#1180, census docs/core/developer/reference/pict-census.md § S1): the same
 // student-visibility rule is enforced independently in three places — the REST
 // material read gate (routes/api/courses.materials.$.ts) and both RAG
 // retrieval branches in lib/ai/embedding.ts (hybrid BM25 and pure vector). One

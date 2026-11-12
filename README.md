@@ -4,7 +4,7 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 
 ## Repository structure
 
-Quick map of the monorepo. For the full layout, Core internals, routes, schema, and RBAC, see [`docs/ARCHITECTURE.md` §7](docs/ARCHITECTURE.md#7-codebase-walkthrough-where-to-look).
+Quick map of the monorepo. For the full layout, Core internals, routes, schema, and RBAC, see [`overview.md` §7](docs/core/developer/architecture/overview.md#7-codebase-walkthrough-where-to-look).
 
 ```text
 EduAI/
@@ -36,18 +36,19 @@ EduAI/
 │   └── models/                      # PICT combinatorial models (.pict) + committed .cases.json
 ├── docker/                          # Dockerfiles for the containerized test suites and the pinned PICT image
 ├── scripts/                         # Repo-level setup, perf, PICT, and audit utilities
-├── docs/                            # System-wide architecture and planning docs
-│   ├── rag-ai/                      # EduAI chat, RAG, embeddings, model/fleet routing, and performance
-│   ├── implementations/             # schema-design, planned-core-tests, …
-│   ├── operations/                  # Dev-server Discord bot, production deployment plan, course-staff runbooks
-│   ├── perf/                        # Pinned before/after API, page-vitals, and code-quality baselines
-│   └── use-cases/                   # Per-role actor scenarios for each app
+├── docs/                            # Module/audience navigation: docs/README.md
+│   ├── core/                        # Platform contracts, shared help, developer and user docs
+│   ├── ai-tutor/                    # Agent, developer and user navigation
+│   ├── question-maker/              # Agent, developer and staff/student navigation
+│   ├── rag-ai/                      # Retained ingestion fixtures and dated latency evidence
+│   ├── perf/                        # Retained performance evidence
+│   └── board-audit/                 # Retained dated board audit
 ├── turbo.json                       # Turborepo task pipeline configuration
 ├── lefthook.yml                     # Git hooks (oxfmt + oxlint on staged files)
 ├── docker-compose.dev.yml           # Dev-only Postgres + Redis containers (apps run on the host)
 ├── docker-compose.test.yml          # Containerized unit/integration suites
 ├── docker-compose.e2e.yml           # Containerized end-to-end stack
-├── docs/deprecated/CHANGELOG.md     # Historical changelog (archived)
+├── docs/core/developer/reference/history/changelog.md     # Historical changelog (archived)
 ├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
 ```
@@ -60,7 +61,7 @@ RAG-powered chat platform and the central API layer for the EduAI ecosystem. Han
 
 Core and its extensions use the shared EduAI graduation-cap mark for in-app branding and browser-tab favicons. The canonical SVG assets live in each app's `public/` directory so they remain available to static hosting and deployments.
 
-Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`extension-onboarding.md`](docs/core/developer/how-to/extension-onboarding.md) for the full contract and the consumer-migration checklist.
 
 To discover which AI models are usable rather than to administer them, use `GET /api/models` instead of `/api/ai-models`. It needs no pagination, accepts the same credentials as `POST /api/completion` (admin `x-api-key`, an ordinary session, or the `Bearer` service key), and returns `{ models: [{ id, provider, name, supportsTools, supportsImages, maxTokens }] }` where `id` is the `provider:modelId` string to pass as `model`.
 
@@ -73,9 +74,9 @@ Async AI jobs expose `GET /api/ai-jobs/:jobId` for owner-scoped status polling. 
 
 Course enrollment pickers use the paginated `/api/users` contract with a managed `courseId`, `role=STUDENT`, `isActive=true`, and `exclude=enrolled` or `exclude=ta`. This narrowly scoped mode is available to course managers only, filters candidates on the server, and does not expose the general user directory.
 
-**Adding and removing instructors:** `Enrollment` carries any number of active `INSTRUCTOR` rows per course and `resolveCourseAccess` resolves access from those rows, not from `Course.instructorId` — that column names only the course *head*. Adding an instructor (`POST /api/courses/:id/enrollments` with `role: "INSTRUCTOR"`, rank >= 3) never deactivates another, and removing one is refused with `409 INSTRUCTOR_FLOOR_VIOLATION` if it would leave the course with none. Removing the head hands that column to the longest-standing remaining instructor. The instructor picker searches the whole staff set — an ADMIN or UNIT_ADMIN account can hold a course `INSTRUCTOR` enrollment — via `/api/users?courseId=&exclude=instructor`, which is pinned to `role=ADMIN,UNIT_ADMIN,INSTRUCTOR&isActive=true` and gated at rank >= 3 so it cannot become a platform user directory. Creating a course uses the same staff set: the create-course instructor select, `createCourse` validation and the admin chat `create_course` tool all read `INSTRUCTOR_CANDIDATE_ROLES` (`apps/core/app/lib/rbac/instructor-candidates.ts`), so an ADMIN or UNIT_ADMIN can be made a new course's instructor directly. See [`docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) for the operational procedure, including what an enrollment does *not* grant an ADMIN account.
+**Adding and removing instructors:** `Enrollment` carries any number of active `INSTRUCTOR` rows per course and `resolveCourseAccess` resolves access from those rows, not from `Course.instructorId` — that column names only the course *head*. Adding an instructor (`POST /api/courses/:id/enrollments` with `role: "INSTRUCTOR"`, rank >= 3) never deactivates another, and removing one is refused with `409 INSTRUCTOR_FLOOR_VIOLATION` if it would leave the course with none. Removing the head hands that column to the longest-standing remaining instructor. The instructor picker searches the whole staff set — an ADMIN or UNIT_ADMIN account can hold a course `INSTRUCTOR` enrollment — via `/api/users?courseId=&exclude=instructor`, which is pinned to `role=ADMIN,UNIT_ADMIN,INSTRUCTOR&isActive=true` and gated at rank >= 3 so it cannot become a platform user directory. Creating a course uses the same staff set: the create-course instructor select, `createCourse` validation and the admin chat `create_course` tool all read `INSTRUCTOR_CANDIDATE_ROLES` (`apps/core/app/lib/rbac/instructor-candidates.ts`), so an ADMIN or UNIT_ADMIN can be made a new course's instructor directly. See [`multi-instructor-enrollment.md`](docs/core/developer/how-to/multi-instructor-enrollment.md) for the operational procedure, including what an enrollment does *not* grant an ADMIN account.
 
-**Help assistant ("Penny", #1816):** one floating assistant, mounted once in `CoreAppShell`, answers two kinds of question in one thread: platform how-to questions from the role-scoped user guide (`docs/USER_GUIDE.md`, `docs/INSTRUCTOR_ONBOARDING.md`), and, on a course page, questions about that course's materials. It answers only from that material; with nothing to ground in it returns a fixed sentence and never calls the model. Retrieval is fail-closed: a search outage answers `503 retrieval_unavailable`, never "not documented". The docs corpus lives in its own `help_doc_chunks` pgvector table, indexed section by section through the manifest in `apps/core/app/lib/assistant/help-docs/manifest.ts`; every citation links to `/help/guide/:pageId`, and a guide section added without a manifest entry fails `help-docs.manifest.test.ts`. The `help-docs-reindex` cron job (and the first question after a deploy) rebuilds the index when a guide or the embedding model changes. Endpoints: `POST /api/assistant/ask` (10/min); `GET`/`POST`/`DELETE /api/assistant/settings`, `POST /api/assistant/settings/reset` and `POST /api/assistant/settings/models` for the user's own provider, model and write-only key; and `GET`/`PATCH /api/admin/assistant-settings` (ADMIN only). The assistant ships **off**: turn it on under Admin → Settings ("Help assistant"), and tune it under Admin → AI Models. The `ai.platformEnabled` policy flag is a kill switch that stops it for every role, administrators included. Instructors can opt a course out from the course's search-tuning settings. Key resolution is pasted → saved → platform (`OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` / configured vLLM or Ollama), and the assistant never accepts a pasted key. Retrieval drops guide chunks below a cosine similarity of `HELP_DOCS_SIMILARITY_THRESHOLD` (default `0.35`). The guide index is embedded with the platform embedding provider, so with `EMBEDDING_PROVIDER=local` Ollama must be running with `mxbai-embed-large` before Penny can answer. See [`docs/implementations/ai-help-assistant-brief.md`](docs/implementations/ai-help-assistant-brief.md) for the full contract.
+**Help assistant ("Penny", #1816):** one floating assistant, mounted once in `CoreAppShell`, answers two kinds of question in one thread: platform how-to questions from the role-scoped user guide (`docs/core/user/user-guide.md`, `docs/core/user/admin/instructor-onboarding.md`), and, on a course page, questions about that course's materials. It answers only from that material; with nothing to ground in it returns a fixed sentence and never calls the model. Retrieval is fail-closed: a search outage answers `503 retrieval_unavailable`, never "not documented". The docs corpus lives in its own `help_doc_chunks` pgvector table, indexed section by section through the manifest in `apps/core/app/lib/assistant/help-docs/manifest.ts`; every citation links to `/help/guide/:pageId`, and a guide section added without a manifest entry fails `help-docs.manifest.test.ts`. The `help-docs-reindex` cron job (and the first question after a deploy) rebuilds the index when a guide or the embedding model changes. Endpoints: `POST /api/assistant/ask` (10/min); `GET`/`POST`/`DELETE /api/assistant/settings`, `POST /api/assistant/settings/reset` and `POST /api/assistant/settings/models` for the user's own provider, model and write-only key; and `GET`/`PATCH /api/admin/assistant-settings` (ADMIN only). The assistant ships **off**: turn it on under Admin → Settings ("Help assistant"), and tune it under Admin → AI Models. The `ai.platformEnabled` policy flag is a kill switch that stops it for every role, administrators included. Instructors can opt a course out from the course's search-tuning settings. Key resolution is pasted → saved → platform (`OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` / configured vLLM or Ollama), and the assistant never accepts a pasted key. Retrieval drops guide chunks below a cosine similarity of `HELP_DOCS_SIMILARITY_THRESHOLD` (default `0.35`). The guide index is embedded with the platform embedding provider, so with `EMBEDDING_PROVIDER=local` Ollama must be running with `mxbai-embed-large` before Penny can answer. See [`ai-help-assistant-brief.md`](docs/core/developer/specs/ai-help-assistant-brief.md) for the full contract.
 
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
@@ -97,47 +98,47 @@ Core disables Qwen3.5 thinking-mode output for vLLM chat requests by default. Se
 
 ## Docs
 
-System-wide architecture and planning documents live in [`docs/`](docs/). App-specific docs live alongside each app under their own `docs/` directory.
+Start at the [documentation index](docs/README.md), organized by Core, AI Tutor and Question Maker, then agents, developers and users (staff or students). Existing documents and colocated package, infrastructure and evidence references are linked there.
 
 | Document | Description |
 |----------|-------------|
-| [`USER_GUIDE.md`](docs/USER_GUIDE.md) | User-facing guide to navigation, roles, and common workflows across Core, AI Tutor, and Question Maker |
-| [`STUDENT_API_GUIDE.md`](docs/STUDENT_API_GUIDE.md) | For students and researchers given API access (#2039): creating and protecting a key, request examples, the campus models' context windows, limits and token charging, errors and retries, and running batches |
-| [`PROVIDER_API_KEY_GUIDE.md`](docs/PROVIDER_API_KEY_GUIDE.md) | Half-page guide for anyone adding their own OpenAI, Gemini or OpenCode Go key (#2063): when you need one, making the provider account first, where to paste it in Core and the AI Tutor, and keeping it safe |
-| [`DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Developer entry point covering the stack, trust boundaries, conventions, testing, and documentation map |
-| [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
-| [`ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every `.env.example` in the monorepo, which mechanism loads it, and what each variable does |
-| [`LOGGING.md`](docs/LOGGING.md) | Audit / security / system log streams — what is recorded, personal data, who can read it, retention |
-| [`rag-ai/README.md`](docs/rag-ai/README.md) | Current source-of-truth index for EduAI chat, RAG, embeddings, model/fleet routing, testing, performance, and dev operations |
-| [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
-| [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
-| [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
-| [`AGENT_READINESS.md`](docs/AGENT_READINESS.md) | Agent-ready REST endpoints and admin / instructor / learning chat tool coverage ([#167](https://github.com/EduAI-Lab/EduAI/issues/167), [#672](https://github.com/EduAI-Lab/EduAI/issues/672)) |
-| [`PICT_CENSUS.md`](docs/PICT_CENSUS.md) | Which platform surfaces are worth PICT combinatorial coverage, and which are deliberately not |
-| [`perf/README.md`](docs/perf/README.md) | Pinned before/after baselines — endpoint response times, per-page browser vitals, code-quality reports |
-| [`operations/PRODUCTION_DEPLOYMENT_PLAN.md`](docs/operations/PRODUCTION_DEPLOYMENT_PLAN.md) | Production scope, host inventory, phased rollout, and the running deployment change log |
-| [`operations/DISCORD_DEV_BOT.md`](docs/operations/DISCORD_DEV_BOT.md) | `/dev-status` and `/dev-branch` bot for the shared dev server — setup, allowlisting, safety behaviour |
-| [`operations/MULTI_INSTRUCTOR_ENROLLMENT.md`](docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md) | Adding a second or third instructor to an existing course without demoting the current one — the **Add instructor** control, the console fallback, and what an `INSTRUCTOR` enrollment does *not* buy an ADMIN account |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
-| [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
-| [`ONBOARDING.md`](docs/ONBOARDING.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
-| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, app-switcher registration, and local dev verification checklist |
-| [`implementations/extension-platform-design.md`](docs/implementations/extension-platform-design.md) | Proposed design for adding honours projects as extensions (#2000) — what Core owns vs the extension, scoped extension keys, the starter template, porting options and delivery order; decisions in [`extension-platform-review.md`](docs/implementations/extension-platform-review.md) |
-| [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
-| [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
-| [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deployment source-of-truth index for local development, s378, production, inference, backups, health checks, and rollback |
-| [`infra/production/README.md`](infra/production/README.md) | Production release, health, rollback, and service-boundary runbook |
-| [`infra/s378/GO-LIVE.md`](infra/s378/GO-LIVE.md) | Shared s378 go-live build, systemd, and health-check runbook |
-| [`infra/inference/README.md`](infra/inference/README.md) | Current inference-fleet contract and host-state snapshots |
-| [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
-| [`rag-ai/MODEL_ROUTING.md`](docs/rag-ai/MODEL_ROUTING.md) | Current Auto model-selection and vLLM fleet-routing contract |
-| [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
-| [`implementations/ai-help-assistant-brief.md`](docs/implementations/ai-help-assistant-brief.md) | Help assistant (Penny, #1816) — the grounding, scope, key and status-code contract the implementation follows |
-| [`end-to-end-user-workflows/README.md`](docs/end-to-end-user-workflows/README.md) | Epic #1429 pre-pilot testing — methodology and per-role/per-extension workflow tracking (Core, Question Maker, AI Tutor) |
+| [`user-guide.md`](docs/core/user/user-guide.md) | User-facing guide to navigation, roles, and common workflows across Core, AI Tutor, and Question Maker |
+| [`student-api-guide.md`](docs/core/user/student/student-api-guide.md) | For students and researchers given API access (#2039): creating and protecting a key, request examples, the campus models' context windows, limits and token charging, errors and retries, and running batches |
+| [`provider-api-key-guide.md`](docs/core/user/how-to/provider-api-key-guide.md) | Half-page guide for anyone adding their own OpenAI, Gemini or OpenCode Go key (#2063): when you need one, making the provider account first, where to paste it in Core and the AI Tutor, and keeping it safe |
+| [`onboarding.md`](docs/core/developer/onboarding.md) | Developer entry point covering the stack, trust boundaries, conventions, testing, and documentation map |
+| [`auth-pipeline-centralization-plan.md`](docs/core/developer/specs/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
+| [`environment.md`](docs/core/developer/reference/environment.md) | Every `.env.example` in the monorepo, which mechanism loads it, and what each variable does |
+| [`logging.md`](docs/core/developer/reference/logging.md) | Audit / security / system log streams — what is recorded, personal data, who can read it, retention |
+| [`README.md`](docs/core/developer/architecture/rag-ai/README.md) | Current source-of-truth index for EduAI chat, RAG, embeddings, model/fleet routing, testing, performance, and dev operations |
+| [`shared-dev-server.md`](docs/core/developer/architecture/rag-ai/shared-dev-server.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
+| [`embeddings.md`](docs/core/developer/architecture/rag-ai/embeddings.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
+| [`chat-rag-pipeline.md`](docs/core/developer/architecture/rag-ai/chat-rag-pipeline.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
+| [`agent-readiness.md`](docs/core/developer/reference/agent-readiness.md) | Agent-ready REST endpoints and admin / instructor / learning chat tool coverage ([#167](https://github.com/EduAI-Lab/EduAI/issues/167), [#672](https://github.com/EduAI-Lab/EduAI/issues/672)) |
+| [`pict-census.md`](docs/core/developer/reference/pict-census.md) | Which platform surfaces are worth PICT combinatorial coverage, and which are deliberately not |
+| [`README.md`](docs/perf/README.md) | Pinned before/after baselines — endpoint response times, per-page browser vitals, code-quality reports |
+| [`production-deployment-plan.md`](docs/core/developer/specs/production-deployment-plan.md) | Production scope, host inventory, phased rollout, and the running deployment change log |
+| [`discord-dev-bot.md`](docs/core/developer/how-to/discord-dev-bot.md) | `/dev-status` and `/dev-branch` bot for the shared dev server — setup, allowlisting, safety behaviour |
+| [`multi-instructor-enrollment.md`](docs/core/developer/how-to/multi-instructor-enrollment.md) | Adding a second or third instructor to an existing course without demoting the current one — the **Add instructor** control, the console fallback, and what an `INSTRUCTOR` enrollment does *not* buy an ADMIN account |
+| [`overview.md`](docs/core/developer/architecture/overview.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`instructor-onboarding.md`](docs/core/user/admin/instructor-onboarding.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
+| [`onboarding.md`](docs/core/user/onboarding.md) | Source of the in-app Getting started checklist and ▶ page-tour copy — run `npm run onboarding:generate` after editing (`onboarding:check` runs in CI). After editing the user guide or instructor guide, run `npm run help-docs:generate -w edu-ai` so Penny uses the same text |
+| [`extension-onboarding.md`](docs/core/developer/how-to/extension-onboarding.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, app-switcher registration, and local dev verification checklist |
+| [`design.md`](docs/core/developer/specs/2000-extension-platform/design.md) | Proposed design for adding honours projects as extensions (#2000) — what Core owns vs the extension, scoped extension keys, the starter template, porting options and delivery order; decisions in [`review.md`](docs/core/developer/specs/2000-extension-platform/review.md) |
+| [`schema-design.md`](docs/core/developer/specs/schema-design.md) | Unified schema design across apps |
+| [`cron-jobs.md`](docs/core/developer/how-to/cron-jobs.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
+| [`deployment.md`](docs/core/developer/how-to/deployment.md) | Deployment source-of-truth index for local development, s378, production, inference, backups, health checks, and rollback |
+| [`README.md`](infra/production/README.md) | Production release, health, rollback, and service-boundary runbook |
+| [`GO-LIVE.md`](infra/s378/GO-LIVE.md) | Shared s378 go-live build, systemd, and health-check runbook |
+| [`README.md`](infra/inference/README.md) | Current inference-fleet contract and host-state snapshots |
+| [`local-canvas-setup.md`](docs/core/developer/how-to/local-canvas-setup.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
+| [`model-routing.md`](docs/core/developer/architecture/rag-ai/model-routing.md) | Current Auto model-selection and vLLM fleet-routing contract |
+| [`README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
+| [`ai-help-assistant-brief.md`](docs/core/developer/specs/ai-help-assistant-brief.md) | Help assistant (Penny, #1816) — the grounding, scope, key and status-code contract the implementation follows |
+| [`README.md`](docs/core/developer/reference/end-to-end-user-workflows/README.md) | Epic #1429 pre-pilot testing — methodology and per-role/per-extension workflow tracking (Core, Question Maker, AI Tutor) |
 
 ## Changelog
 
-Current changes are recorded in linked issues and pull requests. The [historical changelog](docs/deprecated/CHANGELOG.md) is archived.
+Current changes are recorded in linked issues and pull requests. The [historical changelog](docs/core/developer/reference/history/changelog.md) is archived.
 
 ## Chat latency benchmarking (EduAI Core)
 
@@ -159,7 +160,7 @@ CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
 CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
 ```
 
-For authenticated RAG fleet testing, use [`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts), following the safety guidance in [`docs/rag-ai/PERFORMANCE.md`](docs/rag-ai/PERFORMANCE.md).
+For authenticated RAG fleet testing, use [`fleet-rag-stress.mjs`](apps/core/scripts/fleet-rag-stress.mjs) with the fixture helper [`fleet-rag-fixture.ts`](apps/core/scripts/fleet-rag-fixture.ts), following the safety guidance in [`performance.md`](docs/core/developer/architecture/rag-ai/performance.md).
 Fixture creation requires `FLEET_STRESS_FIXTURE_ALLOW_MUTATION=1`, a reserved `FLEET-ROUTER-STRESS-*` course code, and an approved non-production/test database; it refuses to overwrite an existing fixture. The setup command prints a `courseId`; remove the fixture and its stress chats afterward by rerunning the helper with that ID and `--cleanup`.
 The harness signs in, verifies a two-turn RAG conversation, records chat continuity/citations and `X-Fleet-Server`, then runs the controlled 16/32/64/128/256/512/768/1000 concurrent-request ladder using one authenticated session.
 The repository intentionally does not treat old dated benchmark reports as current baseline evidence; record the commit, model, deployment, fleet configuration, warm/cold state, and rate limits with every new run.
@@ -237,17 +238,17 @@ Keep this value local and use the same shell/environment for local tools that si
 | STUDENT | `student4@eduai.local` | Devon Singh |
 | STUDENT | `student5@eduai.local` | Erin Walsh |
 
-The two `ta.*` accounts are seeded with platform role **`STUDENT`** and an `Enrollment` row carrying `EnrollmentRole.TA` on their course. `TA` is not a platform `UserRole` — the enum is `ADMIN | UNIT_ADMIN | INSTRUCTOR | STUDENT` — so course-level TA powers come from the enrollment, not the account. See [`docs/ARCHITECTURE.md` §7.2](docs/ARCHITECTURE.md#72-rbac-role-model--permissions).
+The two `ta.*` accounts are seeded with platform role **`STUDENT`** and an `Enrollment` row carrying `EnrollmentRole.TA` on their course. `TA` is not a platform `UserRole` — the enum is `ADMIN | UNIT_ADMIN | INSTRUCTOR | STUDENT` — so course-level TA powers come from the enrollment, not the account. See [`overview.md` §7.2](docs/core/developer/architecture/overview.md#72-rbac-role-model--permissions).
 
 **Account password policy** — sign-up and invitation-acceptance forms show the requirements live. Use either a passphrase of at least 16 characters, or at least 8 characters containing uppercase and lowercase letters, a number, and a symbol.
 
-After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required, or [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for a consolidated reference of every variable across the monorepo.
+After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required, or [`environment.md`](docs/core/developer/reference/environment.md) for a consolidated reference of every variable across the monorepo.
 
 **Service API key (`EDUAI_API_KEY`)**
 
 AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and AI-assist LLM calls (Question Maker question generation and AI Tutor tutor/supervisor loops proxied to Core's stateless `/api/completion`; the interactive course chat UI continues to use `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
 
-Core applies the same Redis-backed sliding-window limit to `/api/chat` and `/api/completion`; see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for configuration, identity, response, and Redis-fallback semantics.
+Core applies the same Redis-backed sliding-window limit to `/api/chat` and `/api/completion`; see [`environment.md`](docs/core/developer/reference/environment.md) for configuration, identity, response, and Redis-fallback semantics.
 
 You must set the **same value** in all three services:
 
@@ -349,7 +350,7 @@ npm run fleet:extensions:smoke   # exercise AI Tutor and Question Maker routing
 ```
 
 These commands require `EDUAI_API_KEY` plus a fleet registry. The preferred form is `apps/core/fleet.config.json` (copy [`fleet.config.example.json`](apps/core/fleet.config.example.json); the real file is gitignored because it is host-specific); `VLLM_FLEET_CHAT_URLS` / `VLLM_FLEET_HEAVY_URL` are the legacy fallback used only when no config file is found.
-`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat pool when it is not configured. Every host that may receive a request must also be listed in `VLLM_TRUSTED_BASE_URLS`, the SSRF allowlist. See [`docs/rag-ai/MODEL_ROUTING.md`](docs/rag-ai/MODEL_ROUTING.md) for routing details.
+`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat pool when it is not configured. Every host that may receive a request must also be listed in `VLLM_TRUSTED_BASE_URLS`, the SSRF allowlist. See [`model-routing.md`](docs/core/developer/architecture/rag-ai/model-routing.md) for routing details.
 
 To run tasks for a single app, use Turborepo's filter flag directly:
 
@@ -371,7 +372,7 @@ Default host ports (override via root `.env` — copy from [`.env.example`](.env
 | Question Maker | `eduai-question-maker-db` | `55432` | `question-maker` | `postgres` / `password` |
 | Core Redis | `eduai-redis` | `63790` | Shared `/api/chat` + `/api/completion` rate limits (live); async AI-job queue (dormant) | none |
 
-Redis is **not** optional: it backs the sliding-window rate limits on `/api/chat` and `/api/completion`. The BullMQ AI-job queue that also uses it is hard-disabled pre-MVP — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#async-ai-job-worker--currently-disabled).
+Redis is **not** optional: it backs the sliding-window rate limits on `/api/chat` and `/api/completion`. The BullMQ AI-job queue that also uses it is hard-disabled pre-MVP — see [`deployment.md`](docs/core/developer/how-to/deployment.md#async-ai-job-worker--currently-disabled).
 
 Individual database commands:
 

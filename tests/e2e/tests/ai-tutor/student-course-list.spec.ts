@@ -7,7 +7,7 @@
  * no-results state, filter facets, pagination, and the enrolment/publish gate
  * (only published courses the student is enrolled in appear).
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { gotoAiTutor, loginAsStudent } from "../helpers/at-ui";

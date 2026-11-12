@@ -13,8 +13,8 @@ const repoRoot = path.resolve(coreRoot, "../..");
 const outFile = path.join(coreRoot, "app/lib/assistant/help-docs/generated/guides.ts");
 
 const SOURCES = {
-  "user-guide": "docs/USER_GUIDE.md",
-  "instructor-onboarding": "docs/INSTRUCTOR_ONBOARDING.md",
+  "user-guide": "docs/core/user/user-guide.md",
+  "instructor-onboarding": "docs/core/user/admin/instructor-onboarding.md",
 };
 
 const entries = Object.entries(SOURCES).map(([id, file]) => {

@@ -249,7 +249,7 @@ model CourseReEmbedJob {
 /// Source of truth for async AI-job status/result. Redis/BullMQ is transport;
 /// this row survives a Redis flush and drives the client status/ETA endpoints.
 /// Producer (#914) writes PENDING; the dispatch worker (#168) owns terminal state.
-/// Mirrors CourseReEmbedJob. Contract: docs/implementations/async-ai-job-queue-contract.md §5.
+/// Mirrors CourseReEmbedJob. Contract: docs/core/developer/specs/async-ai-job-queue-contract.md §5.
 model AiJob {
   id           String      @id @default(cuid())
   kind         String // JobKind (contract §3); string for forward-compat
@@ -1283,7 +1283,7 @@ enum ReEmbedJobStatus {
 }
 
 // Reused from the fleet — describes how long the user can wait, maps to pool + priority.
-// Contract: docs/implementations/async-ai-job-queue-contract.md §2.
+// Contract: docs/core/developer/specs/async-ai-job-queue-contract.md §2.
 enum AiJobType {
   interactive
   background

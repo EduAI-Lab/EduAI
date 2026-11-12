@@ -3,7 +3,7 @@
 Last verified: 2026-08-31
 
 Fleet topology and the host-specific CMPS02/CMPS03 state are summarized in
-[`../inference/README.md`](../inference/README.md). This file remains the
+[`README.md`](../inference/README.md). This file remains the
 implementation runbook for the CMPS01 Docker/LiteLLM/nginx deployment.
 
 **Goal:** Run one vLLM container per assigned GPU while exposing one authenticated
@@ -409,5 +409,5 @@ Chat model id: **`vllm:<served-model-name>`**. Register the exact stable served 
 
 ## Related docs
 
-- [`docs/rag-ai/VLLM.md`](../../docs/rag-ai/VLLM.md) — EduAI vLLM provider, stress tests, energy
-- [`docs/rag-ai/HOW_TO_USE_DEV_SERVER.md`](../../docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) — s378 ops
+- [`vllm.md`](../../docs/core/developer/architecture/rag-ai/vllm.md) — EduAI vLLM provider, stress tests, energy
+- [`shared-dev-server.md`](../../docs/core/developer/architecture/rag-ai/shared-dev-server.md) — s378 ops

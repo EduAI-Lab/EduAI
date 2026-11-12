@@ -1,4 +1,4 @@
 *.sh text eol=lf
 *.seed.tsv text eol=lf
-CHANGELOG.md merge=union
+docs/core/developer/reference/history/changelog.md merge=union
 TESTS.md merge=union

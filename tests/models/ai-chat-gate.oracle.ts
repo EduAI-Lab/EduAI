@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/ai-chat-gate.pict (census docs/PICT_CENSUS.md § S8).
+ * Oracle for tests/models/ai-chat-gate.pict (census docs/core/developer/reference/pict-census.md § S8).
  *
  * Derived from the spec for `POST /activities/:activityId/{teach,guide,custom}`
  * (handleAiInteraction, apps/extensions/ai-tutor/server/src/routes/activities.js),

@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S5 — parse-validate-canvas-url (Core ∪ QM drift)
+# docs/core/developer/reference/pict-census.md § S5 — parse-validate-canvas-url (Core ∪ QM drift)
 # Core parseAndValidateCanvasUrl vs QM validateCanvasUrl at connect/parse time.
 UrlForm:     https-host, http-host, with-userinfo, relative, opaque
 HostClass:    public-dns, localhost, ipv4-private, ipv4-public, ipv6-literal

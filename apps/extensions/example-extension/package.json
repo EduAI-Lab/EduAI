@@ -1,7 +1,7 @@
 {
   "name": "@eduai/example-extension",
   "version": "0.1.0",
-  "description": "Minimal EduAI extension — proves the Core auth integration pattern from docs/EXTENSION_ONBOARDING.md",
+  "description": "Minimal EduAI extension — proves the Core auth integration pattern from docs/core/developer/how-to/extension-onboarding.md",
   "main": "src/server.js",
   "type": "module",
   "scripts": {

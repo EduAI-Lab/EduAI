@@ -86,12 +86,12 @@ PDF/image/TXT files larger than 20 MiB before reading or starting OCR.
 | `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
 | `USER_ROW_CACHE_TTL_MS`, `USER_ROW_CACHE_MAX` | No | How long (ms, default `900000`) `requireAuth` remembers that a user's local FK row exists for side-effect-free reads, and the max ids held per process (default `5000`). Mutating requests and course/question mirror reads always re-run the upsert before dependent writes; set either to `0` to disable read caching (#1388) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
-| `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
+| `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [onboarding.md](../../../docs/question-maker/developer/onboarding.md)) |
 | `VITE_API_URL` | No | API origin; defaults to same-origin `/api` paths when unset |
 | `VITE_CANVAS_DEFAULT_URL` | No | Optional reachable HTTPS Canvas host used to prefill development/test-mode connections; leave empty when testers use account-specific hosts |
 | `TEST_DATABASE_URL` | Integration tests | Optional |
 
-**Production Compose** requires `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). Automated server deploys use a read-only SSH deploy key or OS credential helper configured outside the application `.env`; see [docs/deployment/cron.md](docs/deployment/cron.md).
+**Production Compose** requires `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). Automated server deploys use a read-only SSH deploy key or OS credential helper configured outside the application `.env`; see [cron.md](../../../docs/question-maker/developer/how-to/deployment/cron.md).
 
 ## Campus vLLM defaults
 
@@ -144,24 +144,24 @@ Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLL
 
 - Backend: `cd app/backend && npm test` / `npm run test:integration`
 - Frontend: `cd app/frontend && npm test`
-- Inventory: [`TESTS.md`](../../../TESTS.md), [docs/TEST_PLAN.md](docs/TEST_PLAN.md)
+- Inventory: [`TESTS.md`](../../../TESTS.md), [test-plan.md](../../../docs/question-maker/developer/reference/test-plan.md)
 
 ## Documentation
 
 | Topic                               | Where                                                                                                                                                                 |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Testing (integration DB, commands)  | [docs/TEST_PLAN.md](docs/TEST_PLAN.md)                                                                                                                                |
-| Architecture and workflows          | [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)                                                                                                                    |
-| Troubleshooting                     | [docs/troubleshooting/](docs/troubleshooting/) — [MONITORING_SETUP.md](docs/troubleshooting/MONITORING_SETUP.md), [PRODUCTION.md](docs/troubleshooting/PRODUCTION.md) |
-| Deployment and CI/CD                | [docs/deployment/README.md](docs/deployment/README.md)                                                                                                                |
-| Cron / scheduled pull on the server | [docs/deployment/cron.md](docs/deployment/cron.md)                                                                                                                    |
-| CI/CD feature notes                 | [docs/features/CI-CD.md](docs/features/CI-CD.md)                                                                                                                      |
+| Testing (integration DB, commands)  | [test-plan.md](../../../docs/question-maker/developer/reference/test-plan.md)                                                                                                                                |
+| Architecture and workflows          | [onboarding.md](../../../docs/question-maker/developer/onboarding.md)                                                                                                                    |
+| Troubleshooting                     | [docs/troubleshooting/](../../../docs/question-maker/developer/README.md) — [monitoring-setup.md](../../../docs/question-maker/developer/how-to/monitoring-setup.md), [production-stability-fixes.md](../../../docs/question-maker/developer/reference/history/production-stability-fixes.md) |
+| Deployment and CI/CD                | [README.md](../../../docs/question-maker/developer/how-to/deployment/README.md)                                                                                                                |
+| Cron / scheduled pull on the server | [cron.md](../../../docs/question-maker/developer/how-to/deployment/cron.md)                                                                                                                    |
+| CI/CD feature notes                 | [ci-cd.md](../../../docs/question-maker/developer/reference/history/ci-cd.md)                                                                                                                      |
 
-The cron-based server job may be disabled or misconfigured. If releases do not appear, see [docs/deployment/cron.md](docs/deployment/cron.md) and [docs/troubleshooting/PRODUCTION.md](docs/troubleshooting/PRODUCTION.md), or deploy manually per [docs/deployment/README.md](docs/deployment/README.md).
+The cron-based server job may be disabled or misconfigured. If releases do not appear, see [cron.md](../../../docs/question-maker/developer/how-to/deployment/cron.md) and [production-stability-fixes.md](../../../docs/question-maker/developer/reference/history/production-stability-fixes.md), or deploy manually per [README.md](../../../docs/question-maker/developer/how-to/deployment/README.md).
 
 **In-app guide:** open `/help` after signing in.
 
-**GitHub HTTPS:** for CI/CD or production `git pull`, use a Personal Access Token — align names with [.github/workflows/](.github/workflows/) and store secrets as in [docs/deployment/README.md](docs/deployment/README.md).
+**GitHub HTTPS:** for CI/CD or production `git pull`, use a Personal Access Token — align names with [.github/workflows/](.github/workflows/) and store secrets as in [README.md](../../../docs/question-maker/developer/how-to/deployment/README.md).
 
 ## License
 

@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/chat-rag-inject-oracle.pict (census docs/PICT_CENSUS.md § S3).
+ * Oracle for tests/models/chat-rag-inject-oracle.pict (census docs/core/developer/reference/pict-census.md § S3).
  *
  * Information-exposure policy for course-material excerpts in the chat system
  * prompt (issue #1182). This is a restatement of the *policy*, not a mirror of

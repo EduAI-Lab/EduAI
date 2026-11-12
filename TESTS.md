@@ -155,7 +155,7 @@ Each section should use this format:
 
 **Path:** `tests/models/`
 
-PICT (Microsoft's [Pairwise Independent Combinatorial Tool](https://github.com/microsoft/pict)) generates a minimal table of input combinations covering every pair of parameter values, for surfaces where 3+ independent inputs decide a forked outcome. See [`docs/PICT_CENSUS.md`](docs/PICT_CENSUS.md) for which surfaces qualify and why.
+PICT (Microsoft's [Pairwise Independent Combinatorial Tool](https://github.com/microsoft/pict)) generates a minimal table of input combinations covering every pair of parameter values, for surfaces where 3+ independent inputs decide a forked outcome. See [`pict-census.md`](docs/core/developer/reference/pict-census.md) for which surfaces qualify and why.
 
 A model is four pieces:
 
@@ -169,9 +169,9 @@ A model is four pieces:
 The oracle is deliberately app-agnostic (no imports from any app) so a model that spans several codebases — like the S2 flagship RBAC model — can single-source it; only the world-builder differs per app, since it needs that app's auth mocks, factories, and route handlers. The world-builder test file imports the oracle and the generated cases by relative path from `tests/models/`.
 
 The oracle must be derived from the spec, never read off the handler under test — copying the handler's branch logic makes the test tautological (it asserts the code does what the code does).
-This escape hatch is narrow and easy to abuse: it is legitimate for an adapter to defer to a documented platform-wide convention only when that convention is written down *and citable by line* in a spec doc (e.g. a specific line in `docs/implementations/rbac-matrix.md` §3), and the oracle's comment must link that line, not the implementation symbol that happens to agree with it.
+This escape hatch is narrow and easy to abuse: it is legitimate for an adapter to defer to a documented platform-wide convention only when that convention is written down *and citable by line* in a spec doc (e.g. a specific line in `docs/core/developer/specs/rbac-matrix.md` §3), and the oracle's comment must link that line, not the implementation symbol that happens to agree with it.
 "The handler already does X" is never itself a citation — if the only source for a value is the handler under test, the oracle is tautological regardless of how the deferral is worded. Where a real disagreement between the spec and a handler surfaces this way, prefer fixing the handler (or updating the spec, if the handler is actually correct) over encoding the handler's behavior into the oracle.
-Where the spec is genuinely silent on a presentational detail (e.g. which of several "denied" HTTP status codes a REST adapter returns), it's legitimate for the adapter to defer to a documented platform-wide convention (e.g. the 404-vs-403 split in `docs/implementations/rbac-matrix.md` §3) — that's a shared contract, not the handler under test.
+Where the spec is genuinely silent on a presentational detail (e.g. which of several "denied" HTTP status codes a REST adapter returns), it's legitimate for the adapter to defer to a documented platform-wide convention (e.g. the 404-vs-403 split in `docs/core/developer/specs/rbac-matrix.md` §3) — that's a shared contract, not the handler under test.
 
 ### Generation runs in Docker, not a host install
 
@@ -254,7 +254,7 @@ Assert-only: [`ext-ext-isolation.test.ts`](apps/core/app/tests/unit/ext-ext-isol
 
 **Path:** `tests/e2e/tests/`
 
-> Most E2E coverage is API-only. Browser UI tests are added selectively for high-risk regressions (see `core/chat-code-block.spec.ts`) and for the role-by-role workflow walkthroughs in [`docs/end-to-end-user-workflows/`](docs/end-to-end-user-workflows/README.md) (the `ai-tutor/admin-*.spec.ts`, `ai-tutor/student-*.spec.ts`, and `ai-tutor/ta-*.spec.ts` sets below).
+> Most E2E coverage is API-only. Browser UI tests are added selectively for high-risk regressions (see `core/chat-code-block.spec.ts`) and for the role-by-role workflow walkthroughs in [`docs/end-to-end-user-workflows/`](docs/core/developer/reference/end-to-end-user-workflows/README.md) (the `ai-tutor/admin-*.spec.ts`, `ai-tutor/student-*.spec.ts`, and `ai-tutor/ta-*.spec.ts` sets below).
 
 | Test file | What it tests |
 |-----------|---------------|

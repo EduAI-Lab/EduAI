@@ -5,7 +5,7 @@ import { loadTestEnv } from "./helpers/testEnv.js";
 
 loadTestEnv();
 
-// Integration tests: prefer a real Postgres (see TEST_PLAN.md).
+// Integration tests: prefer a real Postgres (see docs/question-maker/developer/reference/test-plan.md).
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 } else if (!process.env.DATABASE_URL) {

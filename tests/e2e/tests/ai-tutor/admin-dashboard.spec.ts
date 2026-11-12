@@ -5,7 +5,7 @@
  * for ADMIN it renders `DashboardAdminView`: a platform-wide stat row, two
  * rollup donuts, the all-courses panel, quick actions, and bug-report triage.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { loginAsAdmin, openBugReport } from "../helpers/at-ui";

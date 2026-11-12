@@ -1,5 +1,5 @@
 /**
- * PICT model (#1188, census docs/PICT_CENSUS.md § S9): POST
+ * PICT model (#1188, census docs/core/developer/reference/pict-census.md § S9): POST
  * /api/eduai/generate-questions (../../src/routes/eduai.js) forks on the
  * authenticated platform-role coverage, required-field validation (prompt; courseId OR
  * courseCode), numQuestions vs config.maxQuestions, and content-aware course

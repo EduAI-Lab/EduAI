@@ -147,7 +147,7 @@ Core has no row for that user (Core wins on conflict). It needs, in the QM conta
 | `CORE_ENCRYPTION_KEY` | Core's AES key, used to re-encrypt each token |
 | `QM_ENCRYPTION_KEY` | QM's AES key (falls back to QM's own `ENCRYPTION_KEY`) |
 
-Core and QM are documented as holding **separate** keys ([`docs/ENVIRONMENT.md`](../../../../../docs/ENVIRONMENT.md)),
+Core and QM are documented as holding **separate** keys ([`environment.md`](../../../../../docs/core/developer/reference/environment.md)),
 so `CORE_ENCRYPTION_KEY` is required whenever legacy rows exist — the copier cannot decrypt Core-bound
 ciphertext with QM's key. On a database with no `canvas_integrations` rows the copier is a no-op and the
 Core variables may be omitted. If rows *do* exist and `CORE_DATABASE_URL` is unset the copier exits
@@ -230,7 +230,7 @@ npm run lint
 
 - `Dockerfile` — production image; baselines (if needed), copies any QM-only Canvas credentials into Core,
   then runs `prisma migrate deploy` before starting the server — see "Adopting an existing deployment"
-  above and [`docs/DEPLOYMENT.md`](../../../../../docs/DEPLOYMENT.md)
+  above and [`deployment.md`](../../../../../docs/core/developer/how-to/deployment.md)
 - `Dockerfile.dev` — development image; runs `npm run dev` (migrate + seed:if-empty + nodemon)
 - Environment-based configuration (see Environment Variables above)
 - Rate limiting, Helmet, and CORS are enabled by default

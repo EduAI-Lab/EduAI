@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S5 — ssrf-ipv6-classify (QM canvasUrlGuard.js isPrivateIPv6)
+# docs/core/developer/reference/pict-census.md § S5 — ssrf-ipv6-classify (QM canvasUrlGuard.js isPrivateIPv6)
 AddressForm:     loopback, link-local, unique-local, global, ipv4-mapped, unspecified
 ZoneId:          none, present
 Bracketed:       yes, no

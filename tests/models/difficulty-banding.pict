@@ -1,4 +1,4 @@
-# S8 — difficulty-banding (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# S8 — difficulty-banding (ai-tutor), census docs/core/developer/reference/pict-census.md § S8.
 # See tests/models/difficulty-banding.oracle.ts for the oracle spec.
 #
 # `calculateDifficulty` (apps/extensions/ai-tutor/server/src/services/activityAnalytics.js:34)

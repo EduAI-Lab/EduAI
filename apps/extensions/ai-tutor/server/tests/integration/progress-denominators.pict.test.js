@@ -1,4 +1,4 @@
-// PICT drift-contract (#1187, census docs/PICT_CENSUS.md § S8): the same
+// PICT drift-contract (#1187, census docs/core/developer/reference/pict-census.md § S8): the same
 // "is this activity counted, and is it complete" rule is computed
 // independently by calculateCourseProgress, calculateModuleProgress, and
 // calculateLessonProgress (../../src/services/progressCalculation.js). One

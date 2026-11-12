@@ -7,7 +7,7 @@
  * The AI study buddy itself is covered in `student-ai-chat.spec.ts` — in the
  * e2e stack it has no model provider, so its answer path is out of scope here.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL } from "../../playwright.config";

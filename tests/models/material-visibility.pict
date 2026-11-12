@@ -1,5 +1,5 @@
 # S1 pilot — material read gate: REST route + lib/ai/embedding.ts (hybrid + SQL RAG branches).
-# See docs/PICT_CENSUS.md § S1 for the oracle spec (tests/models/material-visibility.oracle.ts).
+# See docs/core/developer/reference/pict-census.md § S1 for the oracle spec (tests/models/material-visibility.oracle.ts).
 #
 # `Path` (rest / rag-hybrid / rag-sql) is deliberately NOT a dimension here: as a PICT factor it
 # would route each row to exactly one implementation, so no row would ever compare two paths on

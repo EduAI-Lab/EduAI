@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/validate-context-and-access.pict (census docs/PICT_CENSUS.md § S9).
+ * Oracle for tests/models/validate-context-and-access.pict (census docs/core/developer/reference/pict-census.md § S9).
  *
  * Derived from the spec for `validateContextAndAccess`
  * (apps/extensions/ai-tutor/server/src/services/bugReports.js:145), not from

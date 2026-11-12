@@ -1,6 +1,6 @@
 [Unit]
 Description=EduAI Discord dev server branch bot
-Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/docs/operations/DISCORD_DEV_BOT.md
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/docs/core/developer/how-to/discord-dev-bot.md
 After=network-online.target
 Wants=network-online.target
 

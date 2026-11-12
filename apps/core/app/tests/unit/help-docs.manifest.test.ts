@@ -67,7 +67,7 @@ describe("help docs manifest guardrail", () => {
   it("bundles the same guide text that is on disk", () => {
     const pages = resolvedHelpPages();
     const page = pages.get("find-a-course");
-    expect(readSource("docs/USER_GUIDE.md")).toContain(page?.content.split("\n")[0] ?? "∅");
+    expect(readSource("docs/core/user/user-guide.md")).toContain(page?.content.split("\n")[0] ?? "∅");
   });
 
   it("has unique, URL-safe ids and every page has a real in-app URL", () => {

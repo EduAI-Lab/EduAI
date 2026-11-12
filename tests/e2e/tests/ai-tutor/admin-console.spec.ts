@@ -7,7 +7,7 @@
  *   • AI oversight — recent AI tutoring traces
  *
  * These are the admin's AI-facing paths, which the epic prioritises first.
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { createAdmin } from "../helpers/auth";

@@ -7,7 +7,7 @@
  *   2. Login redirect for browser routes
  *   3. User-scoped and service-level calls to Core APIs
  *
- * See docs/EXTENSION_ONBOARDING.md for the full guide.
+ * See docs/core/developer/how-to/extension-onboarding.md for the full guide.
  * Run: cp .env.example .env && npm install && npm run dev
  */
 import "dotenv/config";

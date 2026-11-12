@@ -3,7 +3,7 @@ import prisma from "../prisma.server";
 
 /**
  * Resolved course access level per the shared RBAC contract
- * (docs/implementations/rbac-matrix.md §3). AI Tutor and Question Maker
+ * (docs/core/developer/specs/rbac-matrix.md §3). AI Tutor and Question Maker
  * implement the same shape in their own stacks.
  */
 export type AccessLevel = {

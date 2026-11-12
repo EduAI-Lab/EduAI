@@ -1,4 +1,4 @@
-// PICT drift-contract (#1187, census docs/PICT_CENSUS.md § S8): the same
+// PICT drift-contract (#1187, census docs/core/developer/reference/pict-census.md § S8): the same
 // `hasElevatedAccess = isAdmin || isInstructor || isTa || isUnitAdmin`
 // formula is written independently in routes/activities.js
 // (GET /lessons/:lessonId/activities) and routes/modules.js

@@ -117,7 +117,7 @@ run, if you want concurrent load *and* realistic data volume at once.
 ## Results so far
 
 Two full 500-VU HTTP runs plus a real-Chromium run are recorded in
-[`results/FINDINGS.md`](./results/FINDINGS.md). HTTP headline: chat success
+[`FINDINGS.md`](./results/FINDINGS.md). HTTP headline: chat success
 ~0.8%, dominated by `401 MISSING_SERVICE_KEY`; DB pool size is ruled out;
 cookie-jar / redirect artifacts are not yet ruled out. Browser headline
 (`npm run loadtest:browser:smoke`, 2 VUs): login **and** assistant-reply

@@ -1,4 +1,4 @@
-# S9 — variant-lifecycle-put (QM), census docs/PICT_CENSUS.md § S9.
+# S9 — variant-lifecycle-put (QM), census docs/core/developer/reference/pict-census.md § S9.
 # See tests/models/variant-lifecycle-put.oracle.ts for the oracle spec.
 #
 # PUT /api/questions/variants/:variantId

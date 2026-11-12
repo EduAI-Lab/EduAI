@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/extract-questions-with-eduai.pict (census docs/PICT_CENSUS.md § S9).
+ * Oracle for tests/models/extract-questions-with-eduai.pict (census docs/core/developer/reference/pict-census.md § S9).
  *
  * Derived from the spec for `extractQuestionsWithEduAI`
  * (apps/extensions/question-maker/app/backend/src/services/aiService.js:292),

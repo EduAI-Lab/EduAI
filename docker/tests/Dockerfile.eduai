@@ -54,7 +54,8 @@ COPY apps/core/package.json      ./apps/core/
 # script's own DELETE statement rather than a reimplementation of it.
 COPY infra/cron                  ./infra/cron/
 # help-docs.manifest.test.ts checks these against the generated guides module (#1819).
-COPY docs/USER_GUIDE.md docs/INSTRUCTOR_ONBOARDING.md ./docs/
+COPY docs/core/user/user-guide.md ./docs/core/user/user-guide.md
+COPY docs/core/user/admin/instructor-onboarding.md ./docs/core/user/admin/instructor-onboarding.md
 COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
 
 ENV PATH="/app/node_modules/.bin:${PATH}"

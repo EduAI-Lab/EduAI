@@ -7,7 +7,7 @@
  * variant fed by the `{ role: "TA", yourCourses, publishedCourses,
  * submissionsToReview }` branch in `server/src/routes/courses.js`.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { gotoAiTutor } from "../helpers/at-ui";

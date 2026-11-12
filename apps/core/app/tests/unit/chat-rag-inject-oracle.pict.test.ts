@@ -1,4 +1,4 @@
-// PICT drift-contract adapter (#1182, census docs/PICT_CENSUS.md § S3): one committed
+// PICT drift-contract adapter (#1182, census docs/core/developer/reference/pict-census.md § S3): one committed
 // row table (tests/models/chat-rag-inject-oracle.cases.json) and one spec-derived
 // oracle assert `shouldInjectCourseRag` — information-exposure gate for whether
 // retrieved course excerpts may enter the system prompt (quality bands, intent

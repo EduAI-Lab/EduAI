@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT drift-contract adapter (#1182, census docs/PICT_CENSUS.md § S3): one committed
+// PICT drift-contract adapter (#1182, census docs/core/developer/reference/pict-census.md § S3): one committed
 // row table (tests/models/chat-entry-admission.cases.json) and one spec-derived oracle
 // assert POST /api/chat admission gates — auth, proxyUser, admin chatMode, publish/
 // enrollment, course-id source (404 vs 403), chatbotType mismatch / not-found (410),

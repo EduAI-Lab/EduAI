@@ -7,7 +7,7 @@ retention, invitation cleanup, API-key expiry notification, and Core cron-run
 auditing. It is not a system crontab. The scripts can be called by the Core
 in-process scheduler or invoked directly by an approved operator.
 
-For the s378 installation, use [`../s378/GO-LIVE.md`](../s378/GO-LIVE.md). The
+For the s378 installation, use [`GO-LIVE.md`](../s378/GO-LIVE.md). The
 s378 installer places the scripts under `/opt/eduai/cron` and configures the
 dedicated `eduai-cron-worker` service. Do not separately create competing user
 units or a system crontab for the same jobs.
@@ -32,7 +32,7 @@ worker.
 
 Disk-usage alerts (#1869) are not a script here: `disk-usage-check` is a Core-handler
 job that emails the admins through Core's mailer when a disk passes 85% or 95%. See
-[`docs/CRON_JOBS.md`](../../docs/CRON_JOBS.md#disk-usage-alerts-1869).
+[`cron-jobs.md`](../../docs/core/developer/how-to/cron-jobs.md#disk-usage-alerts-1869).
 
 Every production script records a lifecycle row in Core's `cron_job_runs` table.
 Standalone invocation creates and owns a finite lease; the Core scheduler passes

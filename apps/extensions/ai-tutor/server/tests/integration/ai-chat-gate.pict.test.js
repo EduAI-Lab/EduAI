@@ -1,4 +1,4 @@
-// PICT model (#1187, census docs/PICT_CENSUS.md § S8): the AI chat admission
+// PICT model (#1187, census docs/core/developer/reference/pict-census.md § S8): the AI chat admission
 // gate for POST /activities/:activityId/{teach,guide,custom}
 // (handleAiInteraction, ../../src/routes/activities.js) forks on role,
 // enrollment, and a three-way publish AND (course/module/lesson) — the exact

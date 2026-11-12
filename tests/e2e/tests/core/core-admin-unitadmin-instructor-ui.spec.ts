@@ -11,7 +11,7 @@
  * (apiSignIn), inject the session cookie into the browser context
  * (injectSession), then navigate/click as a real page. Exploratory, not a
  * guarded regression suite for pixel-level UI — findings are written up in
- * docs/end-to-end-user-workflows/eduai-core-workflows.md.
+ * docs/core/developer/reference/end-to-end-user-workflows/core-workflows.md.
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";

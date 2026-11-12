@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/difficulty-banding.pict (census docs/PICT_CENSUS.md § S8).
+ * Oracle for tests/models/difficulty-banding.pict (census docs/core/developer/reference/pict-census.md § S8).
  *
  * `calculateDifficulty` is a documented, hand-tuned policy heuristic — its
  * own doc comment (apps/extensions/ai-tutor/server/src/services/activityAnalytics.js:34)

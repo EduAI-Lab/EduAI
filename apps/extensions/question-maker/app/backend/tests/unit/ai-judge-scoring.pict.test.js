@@ -1,5 +1,5 @@
 /**
- * PICT model (#1188, census docs/PICT_CENSUS.md § S9): the deterministic
+ * PICT model (#1188, census docs/core/developer/reference/pict-census.md § S9): the deterministic
  * scoring pipeline inside `reviewVariantExamWithAi`
  * (../../src/services/assessmentVariantService.js:1117-1226) — composite
  * rubric weighting, distinctness factor, and the usability multiplier's two

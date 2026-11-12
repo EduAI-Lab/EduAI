@@ -8,7 +8,7 @@
  * bit is the account role label — `getRoleViewLabel("TA")` is "Teaching
  * assistant".
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA).
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { AI_TUTOR_API_URL } from "../../playwright.config";

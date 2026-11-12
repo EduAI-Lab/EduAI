@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT adapter (#1189, census docs/PICT_CENSUS.md § S10): rbac-permissions-capabilities
+// PICT adapter (#1189, census docs/core/developer/reference/pict-census.md § S10): rbac-permissions-capabilities
 // Asserts permissions.ts pure helpers against the shared oracle.
 
 import { describe, expect, it } from "vitest";

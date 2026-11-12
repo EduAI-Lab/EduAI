@@ -1,12 +1,12 @@
 /**
- * Oracle for tests/models/course-access-across-apps.pict (census docs/PICT_CENSUS.md § S2).
+ * Oracle for tests/models/course-access-across-apps.pict (census docs/core/developer/reference/pict-census.md § S2).
  *
  * Contract:
  *   effective_access(user, app, course) =
  *     shared_course_rbac(role, enrollment, deleted, dept/units, isActive)
  *     ∩ app_role_floor(app)
  *
- * Derived from docs/implementations/rbac-matrix.md §3 / §19 and issue #1181 —
+ * Derived from docs/core/developer/specs/rbac-matrix.md §3 / §19 and issue #1181 —
  * not from any single handler. The only declared per-app branch is the floor;
  * everything else must compute identically across Core, QM, and AI Tutor.
  *

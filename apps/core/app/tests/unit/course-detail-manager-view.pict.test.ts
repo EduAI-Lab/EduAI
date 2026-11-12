@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT adapter (#1189, census docs/PICT_CENSUS.md § S10): course-detail-manager-view
+// PICT adapter (#1189, census docs/core/developer/reference/pict-census.md § S10): course-detail-manager-view
 // One oracle against client predicate mirrors and backend permission gates.
 // The adapter compares the client and backend capability gates against one
 // shared oracle.

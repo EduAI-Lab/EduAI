@@ -1,5 +1,5 @@
 /**
- * PICT adapter (#1185, census docs/PICT_CENSUS.md § S6): per generated row
+ * PICT adapter (#1185, census docs/core/developer/reference/pict-census.md § S6): per generated row
  * from tests/models/password-set-reuse-gate.cases.json, drives the real
  * `auth` instance (no mocking, real Postgres) so the #339 before-hook in
  * `~/lib/auth/server.ts` actually runs, and asserts the observed outcome

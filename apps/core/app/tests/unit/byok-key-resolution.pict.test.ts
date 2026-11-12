@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PICT drift-contract adapter (#1182, census docs/PICT_CENSUS.md § S3): one committed
+// PICT drift-contract adapter (#1182, census docs/core/developer/reference/pict-census.md § S3): one committed
 // row table (tests/models/byok-vs-platform-key-resolution.cases.json) and one
 // spec-derived oracle assert local-inference baseUrl precedence (fleet > user > env
 // for vLLM; user > env for Ollama) and vLLM apiKey source tags (user > platform >

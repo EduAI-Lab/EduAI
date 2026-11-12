@@ -16,7 +16,7 @@
  *     event, so the aggregate row is always derived from canonical source data.
  *   - `studentCount` is floored to 1 for scoring math so a brand-new activity
  *     with help requests cannot divide by zero.
- * Related: `docs/ARCHITECTURE.md`, `server/src/routes/activities.js`,
+ * Related: `docs/core/developer/architecture/overview.md`, `server/src/routes/activities.js`,
  *   `server/prisma/schema.prisma`.
  */
 

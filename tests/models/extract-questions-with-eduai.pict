@@ -1,4 +1,4 @@
-# S9 — extractQuestionsWithEduAI (QM), census docs/PICT_CENSUS.md § S9.
+# S9 — extractQuestionsWithEduAI (QM), census docs/core/developer/reference/pict-census.md § S9.
 # See tests/models/extract-questions-with-eduai.oracle.ts for the oracle spec.
 #
 # `extractQuestionsWithEduAI` (apps/extensions/question-maker/app/backend/src/services/aiService.js:292),

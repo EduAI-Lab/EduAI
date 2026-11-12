@@ -1,4 +1,4 @@
-// PICT drift-contract adapter (#1182, census docs/PICT_CENSUS.md § S3): one committed
+// PICT drift-contract adapter (#1182, census docs/core/developer/reference/pict-census.md § S3): one committed
 // row table (tests/models/auto-router-model-selection.cases.json) and one spec-derived
 // oracle (tests/models/auto-router-model-selection.oracle.ts) assert observable router
 // telemetry from resolveRoutedModel — mode override, image pool-filtering, hybrid kNN

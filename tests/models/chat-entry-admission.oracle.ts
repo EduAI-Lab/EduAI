@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/chat-entry-admission.pict (census docs/PICT_CENSUS.md § S3).
+ * Oracle for tests/models/chat-entry-admission.pict (census docs/core/developer/reference/pict-census.md § S3).
  *
  * Spec-derived verdict for POST /api/chat admission gates (issue #1182), modeled
  * from routes/api/chat.ts admission order — not downstream RAG or provider routing:

@@ -1,6 +1,6 @@
 [Unit]
 Description=EduAI Core cron scheduler worker (dev)
-Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/docs/CRON_JOBS.md
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/docs/core/developer/how-to/cron-jobs.md
 After=network-online.target
 Wants=network-online.target
 PartOf=eduai-dev.target

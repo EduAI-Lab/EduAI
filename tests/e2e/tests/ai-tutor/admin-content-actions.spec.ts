@@ -7,7 +7,7 @@
  * them, so a regression in any of them would have gone unnoticed.
  *
  * Companion spec: admin-content-authoring (creation paths + the card kebab).
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { gotoAiTutor, loginAsAdmin } from "../helpers/at-ui";

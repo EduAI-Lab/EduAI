@@ -79,7 +79,7 @@ ENTRYPOINT ["dumb-init", "--"]
 # Canvas credentials into Core, apply pending migrations, then start the
 # application. The copier must run BEFORE `prisma migrate deploy` renames
 # canvas_integrations away — see scripts/migrate-canvas-integrations-to-core.mjs
-# and docs/DEPLOYMENT.md.
+# and docs/core/developer/how-to/deployment.md.
 # Compose passes the database password separately so reserved URL characters do
 # not corrupt DATABASE_URL. Node's URL serializer percent-encodes it without
 # writing the resulting credential to logs.

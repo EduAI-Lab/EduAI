@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/resolve-chat-read-access.pict (census docs/PICT_CENSUS.md § S7,
+ * Oracle for tests/models/resolve-chat-read-access.pict (census docs/core/developer/reference/pict-census.md § S7,
  * #1186).
  *
  * Derived from the §5c oversight contract documented on `resolveChatReadAccess`

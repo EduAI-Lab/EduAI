@@ -113,7 +113,7 @@ The middleware chain in `app.js` processes requests in this order:
 
 ### Roles
 
-`STUDENT`, `INSTRUCTOR`, `TA`, `ADMIN`, `UNIT_ADMIN`. See [SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md) for full permissions.
+`STUDENT`, `INSTRUCTOR`, `TA`, `ADMIN`, `UNIT_ADMIN`. See [system-overview.md](../../../../docs/ai-tutor/user/system-overview.md) for full permissions.
 
 ### Middleware
 
@@ -150,7 +150,7 @@ narrower additional block on top of the ordinary role checks: `/api/admin/settin
 
 ## API Surface
 
-All routes are mounted under `/api`. See [docs/api-reference.md](../docs/api-reference.md) for the complete endpoint reference with request/response shapes.
+All routes are mounted under `/api`. See [api-reference.md](../../../../docs/ai-tutor/developer/reference/api-reference.md) for the complete endpoint reference with request/response shapes.
 
 ### Quick Reference
 
@@ -171,7 +171,7 @@ All routes are mounted under `/api`. See [docs/api-reference.md](../docs/api-ref
 | Bug Reports       | 4 endpoints   | Any authenticated (create), ADMIN (manage)                                      |
 | Internal          | 1 endpoint    | Service key only — not reachable by browser clients                             |
 
-See [`../docs/rbac-endpoints-ai-tutor.md`](../docs/rbac-endpoints-ai-tutor.md) for the complete per-endpoint auth-gate table.
+See [`rbac-endpoints.md`](../../../../docs/ai-tutor/developer/reference/rbac-endpoints.md) for the complete per-endpoint auth-gate table.
 
 ## AI Tutoring System
 
@@ -185,7 +185,7 @@ See [`../docs/rbac-endpoints-ai-tutor.md`](../docs/rbac-endpoints-ai-tutor.md) f
 
 ### Dual-Loop Supervisor
 
-Configurable via admin AI model policy. See [SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md) for the conceptual explanation.
+Configurable via admin AI model policy. See [system-overview.md](../../../../docs/ai-tutor/user/system-overview.md) for the conceptual explanation.
 
 Implementation specifics:
 
@@ -201,7 +201,7 @@ Every AI interaction is recorded in `AiInteractionTrace` with:
 - Final outcome: `approved`, `single_pass`, `safe_fallback`, or `error`
 - Iteration count and full trace (all tutor drafts + supervisor verdicts)
 
-See [docs/two-agent-supervisor-system.md](../docs/two-agent-supervisor-system.md) for the full design.
+See [two-agent-supervisor-system.md](../../../../docs/ai-tutor/developer/architecture/two-agent-supervisor-system.md) for the full design.
 
 ## Environment Variables
 

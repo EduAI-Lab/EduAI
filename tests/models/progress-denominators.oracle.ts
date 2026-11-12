@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/progress-denominators.pict (census docs/PICT_CENSUS.md § S8).
+ * Oracle for tests/models/progress-denominators.pict (census docs/core/developer/reference/pict-census.md § S8).
  *
  * Derived from the #1187 decision, not from any single function:
  *   - An activity is only ever counted (denominator) when its lesson AND its

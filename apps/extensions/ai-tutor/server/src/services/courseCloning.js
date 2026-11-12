@@ -21,7 +21,7 @@
  *     activity with a broken foreign key.
  *   - Source reads deliberately happen outside the transaction so the write
  *     transaction holds its row locks for as short a window as possible.
- * Related: `docs/ARCHITECTURE.md`, `server/src/routes/courses.js`,
+ * Related: `docs/core/developer/architecture/overview.md`, `server/src/routes/courses.js`,
  *   `server/src/routes/modules.js`.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/canvas-file-download.pict (census docs/PICT_CENSUS.md § S5).
+ * Oracle for tests/models/canvas-file-download.pict (census docs/core/developer/reference/pict-census.md § S5).
  *
  * Spec-derived verdict for Canvas file download in `fetchCanvasFileBytes` /
  * `downloadCanvasFile` (issue #1184), modeled from client.server.ts (~496–603)

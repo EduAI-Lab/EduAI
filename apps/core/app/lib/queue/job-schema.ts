@@ -4,7 +4,7 @@ import { z } from "zod";
  * Async AI-job payload schema — Zod is the source of truth (matches the
  * convention in `app/lib/ai/schemas.ts`); the TS type is derived via `z.infer`.
  *
- * Frozen contract: docs/implementations/async-ai-job-queue-contract.md §3.
+ * Frozen contract: docs/core/developer/specs/async-ai-job-queue-contract.md §3.
  * `input` is a discriminated union on `kind` so each work-kind carries exactly
  * its own fields.
  */

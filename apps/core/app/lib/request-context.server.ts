@@ -27,7 +27,7 @@ function buildRequestId() {
 
 // Derive the client IP from the LAST `x-forwarded-for` entry.
 //
-// Deployment invariant (see docs/DEPLOYMENT.md): every app sits behind exactly one trusted reverse
+// Deployment invariant (see docs/core/developer/how-to/deployment.md): every app sits behind exactly one trusted reverse
 // proxy — Apache `ProxyPass` to Node on localhost, with no Cloudflare or second proxy in front and
 // Node not directly reachable. Apache's mod_proxy appends the real socket-peer address as the last
 // XFF entry, so the rightmost token is written by our own infrastructure and a client cannot forge

@@ -6,7 +6,7 @@
  * course-status donut + lessons-completed meter, "Your courses", the
  * "Continue learning" resume panel, and three quick actions.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL } from "../../playwright.config";

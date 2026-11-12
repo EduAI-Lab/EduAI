@@ -11,7 +11,7 @@
  * These are the paths a human pass cannot walk, so they need a test more than
  * the clickable ones do.
  *
- * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
+ * Path inventory: `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, CORE_URL } from "../../playwright.config";

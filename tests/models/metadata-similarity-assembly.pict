@@ -1,4 +1,4 @@
-# S9 — metadata-similarity-assembly (QM), census docs/PICT_CENSUS.md § S9.
+# S9 — metadata-similarity-assembly (QM), census docs/core/developer/reference/pict-census.md § S9.
 # See tests/models/metadata-similarity-assembly.oracle.ts for the oracle spec.
 #
 # `findBestBankMetadataForSlot` (assessmentVariantService.js:404) picks the

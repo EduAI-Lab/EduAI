@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/password-set-reuse-gate.pict (census docs/PICT_CENSUS.md § S6, #1185).
+ * Oracle for tests/models/password-set-reuse-gate.pict (census docs/core/developer/reference/pict-census.md § S6, #1185).
  *
  * Derived from the #339 before-hook contract (lib/auth/server.ts:92), not from
  * copying its branches:

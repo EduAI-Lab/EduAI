@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S3 — chat-entry-admission
+# docs/core/developer/reference/pict-census.md § S3 — chat-entry-admission
 # POST /api/chat entry gates: auth, proxyUser, admin chatMode, publish/enrollment,
 # course-id source (body / persisted / missing → 404), persisted-chat type mismatch
 # or not-found (410), course-pin conflict (409).

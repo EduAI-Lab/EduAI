@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from "@eduai/ui";
 
 /** Half-page guide on getting a provider key (#2063). Core's notice links the same page. */
 export const PROVIDER_KEY_GUIDE_URL =
-  "https://github.com/EduAI-Lab/EduAI/blob/development/docs/PROVIDER_API_KEY_GUIDE.md";
+  "https://github.com/EduAI-Lab/EduAI/blob/development/docs/core/user/how-to/provider-api-key-guide.md";
 
 /** Link to the provider key guide, opened in a new tab. */
 export function ProviderKeyGuideLink({ className }: { className?: string }) {

@@ -18,7 +18,7 @@ function pointsAtNonLoopbackHost(rawBaseUrl: string | undefined): boolean {
  * deployment has explicitly pointed at a real, non-loopback vLLM host:
  * `NODE_ENV=production`, or `VLLM_BASE_URL` set to something other than
  * localhost. NODE_ENV alone doesn't cover s378, which intentionally runs
- * `NODE_ENV=development` (see docs/DEPLOYMENT.md) so `import.meta.env.DEV`
+ * `NODE_ENV=development` (see docs/core/developer/how-to/deployment.md) so `import.meta.env.DEV`
  * stays true there, but still sets `VLLM_BASE_URL` to point at cmps01 — the
  * one place this guard has to fire outside a true production build. A
  * loopback `VLLM_BASE_URL` (or nothing configured) still gets the

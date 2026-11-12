@@ -6,7 +6,7 @@
  * rather than a local database. It performs NO writes: adding an instructor
  * needs a real ADMIN browser session (the POST half of that route has no
  * service-key path, and `enableSessionForAPIKeys` is false), which is why the
- * enrollment steps in docs/operations/MULTI_INSTRUCTOR_ENROLLMENT.md are run
+ * enrollment steps in docs/core/developer/how-to/multi-instructor-enrollment.md are run
  * from the browser console and only the verification is scriptable.
  *
  * Run from apps/core:

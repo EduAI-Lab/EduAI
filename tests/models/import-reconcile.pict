@@ -1,4 +1,4 @@
-# docs/PICT_CENSUS.md § S4 — import-reconcile
+# docs/core/developer/reference/pict-census.md § S4 — import-reconcile
 # Canvas file import into Core course materials (importSingleCanvasFile).
 Excluded:          yes, no
 CanvasPublished:   yes, no

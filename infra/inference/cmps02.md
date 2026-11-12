@@ -5,7 +5,7 @@ Last verified: 2026-09-02
 CMPS02 is a heterogeneous inference host. Its current large-model backend is
 Qwen 3.8 27B for the Assist Auto capability, not the standard Qwen 3.5 9B tier.
 This file is a host snapshot and role boundary; the shared implementation
-procedure is [`../cmps01/README.md`](../cmps01/README.md).
+procedure is [`README.md`](../cmps01/README.md).
 
 ## Host-specific inventory
 
@@ -40,7 +40,7 @@ Before changing CMPS02:
 
 1. Confirm the intended model role and consuming application configuration.
 2. Capture `docker inspect` output, GPU assignment, image tag, and model IDs.
-3. Review the shared fleet contract in [`./README.md`](./README.md).
+3. Review the shared fleet contract in [`README.md`](./README.md).
 4. Adapt the CMPS01 implementation procedure to this host and have the change
    reviewed before stopping a live backend.
 5. Verify the authenticated edge and the exact model IDs after the change.

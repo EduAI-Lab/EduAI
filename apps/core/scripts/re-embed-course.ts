@@ -4,7 +4,7 @@
  *   npm run re-embed:course -- --list
  *   npm run re-embed:course -- <courseId-or-code>
  *
- * See docs/rag-ai/EMBEDDINGS.md
+ * See docs/core/developer/architecture/rag-ai/embeddings.md
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";

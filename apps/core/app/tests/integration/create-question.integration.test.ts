@@ -1,5 +1,5 @@
 /**
- * PICT adapter (#1186, census docs/PICT_CENSUS.md § S7): per generated row
+ * PICT adapter (#1186, census docs/core/developer/reference/pict-census.md § S7): per generated row
  * from tests/models/create-question.cases.json, seeds a real course/topic
  * state and calls the real `createQuestion` against a real Postgres DB,
  * asserting against tests/models/create-question.oracle.ts.

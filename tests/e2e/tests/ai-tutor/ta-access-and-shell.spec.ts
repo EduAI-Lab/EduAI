@@ -11,7 +11,7 @@
  *
  * Companion specs: ta-dashboard, ta-course-oversight, ta-grading,
  * ta-learner-access, ta-settings, ta-security. Path inventory and findings live
- * in `docs/end-to-end-user-workflows/ai-tutor-workflows.md` (TA section).
+ * in `docs/ai-tutor/developer/reference/end-to-end-user-workflows.md` (TA section).
  */
 import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";

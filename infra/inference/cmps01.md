@@ -3,7 +3,7 @@
 Last verified: 2026-08-31
 
 CMPS01 is the repository-managed reference inference host. Its implementation
-runbook and deployment scripts remain in [`../cmps01/README.md`](../cmps01/README.md).
+runbook and deployment scripts remain in [`README.md`](../cmps01/README.md).
 This file records the host-specific fleet role and the latest verified inventory.
 
 ## Host-specific inventory
@@ -40,8 +40,8 @@ during the 2026-08-31 audit. The edge advertised the two Qwen IDs and
 
 For model replacement, proxy changes, key validation, or firewall changes:
 
-1. Read the shared fleet contract in [`./README.md`](./README.md).
-2. Read the implementation runbook in [`../cmps01/README.md`](../cmps01/README.md).
+1. Read the shared fleet contract in [`README.md`](./README.md).
+2. Read the implementation runbook in [`README.md`](../cmps01/README.md).
 3. Capture `docker inspect` and current model IDs before stopping anything.
 4. Apply the reviewed change through `deploy-edge-proxy.sh` or `migrate.sh`.
 5. Verify direct backends, authenticated port-8001, and the consuming EduAI

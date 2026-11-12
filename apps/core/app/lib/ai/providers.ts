@@ -168,7 +168,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     }
   }
 
-  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md). Eligibility is shared
+  // vLLM (OpenAI-compatible /v1 — see docs/core/developer/architecture/rag-ai/vllm.md). Eligibility is shared
   // with listEnabledRegistryProviders via resolveVllmRegistration so preflight
   // and the registry never disagree (#1568 review).
   const vllmRegistration = resolveVllmRegistration(userSettings);

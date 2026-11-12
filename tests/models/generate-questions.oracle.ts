@@ -1,5 +1,5 @@
 /**
- * Oracle for tests/models/generate-questions.pict (census docs/PICT_CENSUS.md § S9).
+ * Oracle for tests/models/generate-questions.pict (census docs/core/developer/reference/pict-census.md § S9).
  *
  * Derived from the spec for `POST /api/eduai/generate-questions`
  * (apps/extensions/question-maker/app/backend/src/routes/eduai.js), not

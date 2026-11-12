@@ -1,5 +1,5 @@
 /**
- * PICT model (#1188, census docs/PICT_CENSUS.md § S9): `loadBankMetadataWithVariants`
+ * PICT model (#1188, census docs/core/developer/reference/pict-census.md § S9): `loadBankMetadataWithVariants`
  * + `selectBestBankMetadata` + `scoreMetadataMatch` (../../src/services/assessmentVariantService.js,
  * ../../src/services/assessmentVariantMetadataScoring.js) picks the
  * best-scoring bank question for a baseline exam slot, against a 75-point
