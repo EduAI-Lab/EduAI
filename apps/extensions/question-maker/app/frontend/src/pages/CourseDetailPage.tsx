@@ -903,16 +903,12 @@ export const CourseDetailPage = () => {
   const handleCreateAssessment = useCallback(
     async (params: AssessmentGenerationParams) => {
       if (!courseId) return;
-      try {
-        const created = await assessmentService.createAssessment({ ...params, courseId });
-        setAssessments((prev) => [created, ...prev]);
-        navigate(`/courses/${courseId}/assessments/${created.id}`);
-      } catch (error) {
-        console.error("Failed to create assessment", error);
-        toast.error("Error", { description: "Failed to create assessment." });
-      }
+      // Errors propagate so the modal stays open and shows them inline (#1974).
+      const created = await assessmentService.createAssessment({ ...params, courseId });
+      setAssessments((prev) => [created, ...prev]);
+      navigate(`/courses/${courseId}/assessments/${created.id}`);
     },
-    [courseId, navigate, toast],
+    [courseId, navigate],
   );
 
   const handleDeleteAssessment = useCallback((assessmentId: number, assessmentName: string) => {

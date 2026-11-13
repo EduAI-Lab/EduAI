@@ -10,6 +10,9 @@ import type { Question, Assessment } from "@/types/question";
 
 afterEach(cleanup);
 
+// Read only at click time, after hoisting, so a plain `let` is safe here.
+let addAssessmentResult: Promise<unknown> | undefined;
+
 // `vi.mock` factories are hoisted above every other top-level statement in this
 // file (including imports), so anything a factory references must itself be
 // created inside `vi.hoisted` — a plain `const` here throws a TDZ
@@ -199,7 +202,14 @@ vi.mock("@/components/assessments/AssessmentSection", () => ({
       <span data-testid="as-loading">{String(props.isLoading)}</span>
       <span data-testid="as-error">{props.loadError}</span>
       <span data-testid="as-create-open">{String(props.createModalOpen)}</span>
-      <button onClick={() => props.onAddAssessment({ name: "New A" })}>add-assessment</button>
+      <button
+        onClick={() => {
+          addAssessmentResult = props.onAddAssessment({ name: "New A" });
+          addAssessmentResult?.catch(() => {});
+        }}
+      >
+        add-assessment
+      </button>
       <button onClick={props.onImportFromCanvas}>import-canvas</button>
       {props.assessments.map((a: Assessment) => (
         <div key={a.id}>
@@ -781,13 +791,14 @@ describe("CourseDetailPage assessments tab", () => {
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
   });
 
-  it("reports an assessment-creation failure", async () => {
+  it("rethrows an assessment-creation failure so the modal can show it inline", async () => {
     assessmentService.createAssessment.mockRejectedValue(new Error("fail"));
     setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
     await screen.findByTestId("assessment-section");
     fireEvent.click(screen.getByText("add-assessment"));
-    await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
+    await expect(addAssessmentResult).rejects.toThrow("fail");
+    expect(toastFn.error).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
