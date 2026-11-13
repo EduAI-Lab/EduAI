@@ -184,4 +184,23 @@ describe("ConfirmDialog", () => {
 
     expect(screen.getByRole("button", { name: "Keep editing" })).toBeInTheDocument();
   });
+
+  it("renders children between the description and the buttons", () => {
+    render(
+      <ConfirmDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        title="Publish module?"
+        description="Students will see it."
+        confirmLabel="Publish"
+        onConfirm={vi.fn()}
+      >
+        <label>
+          <input type="checkbox" /> Also publish its lessons
+        </label>
+      </ConfirmDialog>,
+    );
+
+    expect(screen.getByRole("checkbox", { name: /also publish its lessons/i })).toBeInTheDocument();
+  });
 });

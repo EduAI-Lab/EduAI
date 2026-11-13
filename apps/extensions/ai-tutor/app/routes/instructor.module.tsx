@@ -27,7 +27,6 @@ import {
   Button,
   Card,
   CardContent,
-  ConfirmDialog,
   DetailPageScaffold,
   Dialog,
   DialogContent,
@@ -57,6 +56,8 @@ import {
   CourseHeader,
 } from "../components/layout/CourseHeader";
 import { PublishMenu } from "../components/PublishMenu";
+import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { lessonPublishBlockedReason } from "~/lib/publish-cascade";
 import { accentForCourse, courseCode } from "../lib/course-display";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
 import type { Course, Lesson, Module, ModuleDetail } from "../lib/types";
@@ -917,17 +918,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         >
           <ContentList label="Lessons">
             {oLessons.map((lesson, idx) => {
-              const canPublish = course?.isPublished && module?.isPublished;
-              const blocked = !lesson.isPublished && !canPublish;
-              const parentName = !course?.isPublished
-                ? course?.title || "the parent course"
-                : !module?.isPublished
-                  ? module?.title || "the parent module"
-                  : null;
-              const tooltipMessage =
-                blocked && parentName
-                  ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
-                  : null;
+              const tooltipMessage = lessonPublishBlockedReason(lesson, course, module);
+              const blocked = tooltipMessage !== null;
               const busy = publishingId === lesson.id;
               const canReorder = perms.canManageContent && lessonsTotal > 1 && !searching;
               // Absolute 1-based ordinal, so numbering and the "3.2" order text
@@ -1032,27 +1024,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           if (movingLesson) return moveLesson(movingLesson.id, position);
         }}
       />
-      <ConfirmDialog
-        open={pendingPublish !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingPublish(null);
-        }}
-        title={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? `Unpublish "${pendingPublish.title}"?`
-              : `Publish "${pendingPublish.title}"?`
-            : ""
-        }
-        description={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? "Students will lose access to this content."
-              : "Students will be able to see this content."
-            : ""
-        }
-        confirmLabel={pendingPublish?.isPublished ? "Unpublish" : "Publish"}
-        variant={pendingPublish?.isPublished ? "destructive" : "default"}
+      <PublishConfirmDialog
+        target={pendingPublish}
+        onCancel={() => setPendingPublish(null)}
         onConfirm={() => {
           if (!pendingPublish) return;
           void togglePublish(pendingPublish.id, pendingPublish.isPublished);
