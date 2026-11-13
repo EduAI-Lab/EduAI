@@ -89,6 +89,8 @@ export { HeroShell, HERO_GLASS_STYLE } from "./hero-shell";
 export type { HeroShellProps } from "./hero-shell";
 export { CourseCard } from "./course-card";
 export type { CourseCardProps, CourseCardAction } from "./course-card";
+export { CourseTile, CourseTileLinkButton } from "./course-tile";
+export type { CourseTileLink, CourseTileLinkComponent, CourseTileProps } from "./course-tile";
 export {
   CourseListView,
   buildStatusFilterGroup,

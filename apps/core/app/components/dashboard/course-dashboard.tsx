@@ -18,7 +18,6 @@ import {
   IconTrash,
   IconWorldOff,
   IconWorldUpload,
-  type Icon,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -29,13 +28,13 @@ import {
   StatusBadge,
   ToggleGroup,
   ToggleGroupItem,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
+  CourseTile,
+  CourseTileLinkButton,
   cn,
   courseThemeVars,
   termLabel,
   visibleAppsForRole,
+  type CourseTileLink,
 } from "@eduai/ui";
 
 import type { DashboardStatDef, DashboardCourse } from "~/components/dashboard/dashboard-view";
@@ -112,15 +111,7 @@ export function courseExtensions(courseId: string, launcherRole: string) {
   );
 }
 
-type CourseLink = {
-  key: string;
-  label: string;
-  icon: Icon;
-  href?: string;
-  external?: boolean;
-  /** Shown instead of a link when the destination can't open yet. */
-  disabledReason?: string;
-};
+type CourseLink = CourseTileLink;
 
 /**
  * What a card offers. Learners: their course chat, then the extensions. Staff:
@@ -178,50 +169,8 @@ export function courseLinks(
   return links;
 }
 
-/** Cards show icon buttons (Canvas-style) named by a tooltip; list rows also show the label. */
 function CourseLinkButton({ link, iconOnly }: { link: CourseLink; iconOnly?: boolean }) {
-  const className = cn(
-    "relative z-10 inline-flex items-center gap-1.5 rounded-md text-xs font-medium transition-colors",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-    iconOnly ? "size-9 justify-center" : "px-2 py-1.5",
-  );
-  const content = (
-    <>
-      <link.icon className={iconOnly ? "size-5" : "size-4 shrink-0"} aria-hidden="true" />
-      <span className={cn(iconOnly && "sr-only")}>{link.label}</span>
-    </>
-  );
-  const tip = link.href ? link.label : `${link.label}: ${link.disabledReason}`;
-  let control: ReactNode;
-  if (!link.href) {
-    control = (
-      <span
-        aria-disabled="true"
-        tabIndex={0}
-        className={cn(className, "cursor-not-allowed text-muted-foreground/60")}
-      >
-        {content}
-      </span>
-    );
-  } else {
-    const linkClass = cn(className, "text-[var(--course-accent)] hover:bg-[var(--course-muted)]");
-    control = link.external ? (
-      <a href={link.href} className={linkClass}>
-        {content}
-      </a>
-    ) : (
-      <Link to={link.href} className={linkClass}>
-        {content}
-      </Link>
-    );
-  }
-  if (!iconOnly && link.href) return control;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{control}</TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
-  );
+  return <CourseTileLinkButton link={link} iconOnly={iconOnly} LinkComponent={Link} />;
 }
 
 function TeachingMenu({
@@ -406,52 +355,22 @@ export function CourseGridCard({
   extraBadges,
 }: CardProps) {
   const look = useCardLook(course);
-  const term = termLabel(course.term, course.year);
   return (
-    <article
-      className="group/card relative flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-shadow hover:shadow-md"
-      style={courseThemeVars(look.accent)}
-    >
-      <div className="relative h-24 shrink-0" style={{ background: look.accent }}>
-        <div className="absolute right-2 top-2 z-10">
-          <CardMenu course={course} kind={kind} canPublish={canPublish} menuActions={menuActions} />
-        </div>
-      </div>
-      <Link
-        to={`/courses/${encodeURIComponent(course.id)}`}
-        className="absolute inset-0 z-0"
-        aria-label={`${course.code} ${look.title}`}
-      />
-      <div className="pointer-events-none flex flex-1 flex-col gap-1 px-4 pt-3 pb-2">
-        <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--course-accent)]">
-          {course.code} · {look.title}
-        </h3>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{term}</span>
-          {kind === "teaching" && (
-            <StatusBadge
-              active={course.isPublished}
-              activeLabel="Published"
-              inactiveLabel="Unpublished"
-            />
-          )}
-          {extraBadges?.map((badge) => (
-            // Same pill the Courses page's old card used for these.
-            <span
-              key={badge}
-              className="inline-flex items-center rounded-full border border-[var(--course-border)] bg-[var(--course-muted)] px-2 py-0.5 text-[11px] font-medium leading-none text-foreground/80"
-            >
-              {badge}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center gap-1 border-t border-border px-2 py-1">
-        {links.map((link) => (
-          <CourseLinkButton key={link.key} link={link} iconOnly />
-        ))}
-      </div>
-    </article>
+    <CourseTile
+      code={course.code}
+      title={look.title}
+      term={course.term}
+      year={course.year}
+      accent={look.accent}
+      href={`/courses/${encodeURIComponent(course.id)}`}
+      LinkComponent={Link}
+      links={links}
+      publishState={kind === "teaching" ? course.isPublished : undefined}
+      extraBadges={extraBadges}
+      menu={
+        <CardMenu course={course} kind={kind} canPublish={canPublish} menuActions={menuActions} />
+      }
+    />
   );
 }
 

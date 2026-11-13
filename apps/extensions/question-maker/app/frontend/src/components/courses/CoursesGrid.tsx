@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 import {
   CourseCard,
+  CourseTile,
+  paletteColorAtIndex,
+  type CourseTileLink,
   CourseListView,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
@@ -8,10 +12,53 @@ import {
   type CourseFilterGroup,
   EmptyState,
 } from "@eduai/ui";
-import { IconBooks, IconSearch } from "@tabler/icons-react";
+import {
+  IconBooks,
+  IconClipboardList,
+  IconFolders,
+  IconLayoutDashboard,
+  IconSearch,
+  IconStack2,
+  type Icon,
+} from "@tabler/icons-react";
 import { Course } from "@/types/question";
 import { getDepartmentLabel } from "@/lib/units";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
+import { QM_COURSE_SECTIONS } from "@/components/layout/qmCourseNav";
+import type { ActiveTab } from "@/pages/course-detail/courseTabs";
+
+/** Icons for the course sections, matching the command palette's. */
+const SECTION_ICONS = {
+  overview: IconLayoutDashboard,
+  questions: IconStack2,
+  banks: IconFolders,
+  assessments: IconClipboardList,
+} satisfies Partial<Record<ActiveTab, Icon>>;
+
+type CardSection = keyof typeof SECTION_ICONS;
+
+function isCardSection(key: ActiveTab): key is CardSection {
+  return key in SECTION_ICONS;
+}
+
+/**
+ * A card's links: the course sections. Canvas is left out because whether a
+ * course is linked to Canvas is only known once its page loads.
+ */
+function sectionLinks(courseId: number): CourseTileLink[] {
+  return QM_COURSE_SECTIONS.flatMap((section) =>
+    isCardSection(section.key)
+      ? [
+          {
+            key: section.key,
+            label: section.label,
+            icon: SECTION_ICONS[section.key],
+            href: `/courses/${courseId}?tab=${section.key}`,
+          },
+        ]
+      : [],
+  );
+}
 
 /** Short "last synced" label from a course's Core metadata timestamp. */
 function syncedLabel(updatedAt?: string): string | undefined {
@@ -36,6 +83,8 @@ export type CoursesGridProps = {
   filters?: ReactNode;
   /** Optional role-specific predicate applied before the search box. */
   matchesFilter?: (course: Course) => boolean;
+  /** Draws the dashboard's course card (Core #2105) instead of the older one. */
+  courseTiles?: boolean;
 };
 
 /**
@@ -51,6 +100,7 @@ export function CoursesGrid({
   showDepartment = false,
   filters,
   matchesFilter,
+  courseTiles = false,
 }: CoursesGridProps) {
   const filterGroups: CourseFilterGroup<Course>[] = [
     buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
@@ -73,6 +123,31 @@ export function CoursesGrid({
     const extraBadges = [course.coreCourseId ? "EduAI Core" : "Local", synced].filter(
       (b): b is string => Boolean(b),
     );
+
+    if (courseTiles) {
+      const href = `/courses/${course.id}?tab=overview`;
+      return (
+        // Every card is a tour target (#1754); see the older card below.
+        <div
+          data-tour="course-select"
+          data-tour-route={`/courses/${course.id}`}
+          data-course-id={course.id}
+        >
+          <CourseTile
+            code={course.code ?? ""}
+            title={course.name}
+            term={course.term || ""}
+            year={course.year ?? null}
+            accent={paletteColorAtIndex(colorIndex)}
+            href={href}
+            LinkComponent={Link}
+            links={sectionLinks(course.id)}
+            publishState={course.isPublished ?? undefined}
+            extraBadges={extraBadges}
+          />
+        </div>
+      );
+    }
 
     return (
       <div
