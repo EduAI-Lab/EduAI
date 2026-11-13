@@ -17,7 +17,7 @@ export const USAGE_WEEKS = 26;
 const RECENT_DAYS = 7;
 
 /** A reply the tutor could not give normally (see `aiGuidance.js` outcomes). */
-export const FAILED_REPLY_OUTCOMES = ["error", "error_timeout", "safe_fallback"];
+export const FAILED_REPLY_OUTCOMES = ["error", "safe_fallback"];
 
 /** Activities rated below this average (with at least one rating) need a look. */
 export const LOW_RATING_THRESHOLD = 2.5;
@@ -122,11 +122,13 @@ export async function loadAdminDashboard(now = new Date()) {
     prisma.activity.count(),
     prisma.aiChatSession.count(),
     prisma.aiChatSession.count({ where: { createdAt: { gte: weekAgo } } }),
-    prisma.aiChatSession.findMany({
-      where: { updatedAt: { gte: weekAgo } },
-      select: { userId: true },
-      distinct: ["userId"],
-    }),
+    // Counted in the database, and on the same column as sessionsThisWeek so
+    // the card can't read "0 sessions this week · 3 learners".
+    prisma.$queryRaw`
+      SELECT COUNT(DISTINCT "userId")::int AS "count"
+      FROM "AiChatSession"
+      WHERE "createdAt" >= ${weekAgo}
+    `,
     prisma.submission.count(),
     prisma.submission.count({ where: { isCorrect: null } }),
     prisma.activityFeedback.aggregate({ _avg: { rating: true }, _count: { _all: true } }),
@@ -155,7 +157,7 @@ export async function loadAdminDashboard(now = new Date()) {
     tutoring: {
       sessions: sessionTotal,
       sessionsThisWeek,
-      learnersThisWeek: learnersThisWeek.length,
+      learnersThisWeek: learnersThisWeek[0]?.count ?? 0,
     },
     submissions: { total: submissionTotal, toReview: submissionsToReview },
     ratings: {

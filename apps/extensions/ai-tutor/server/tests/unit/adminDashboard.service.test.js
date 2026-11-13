@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prisma = {
   activity: { count: vi.fn() },
-  aiChatSession: { count: vi.fn(), findMany: vi.fn() },
+  aiChatSession: { count: vi.fn() },
   submission: { count: vi.fn() },
   activityFeedback: { aggregate: vi.fn() },
   aiInteractionTrace: { count: vi.fn() },
@@ -104,7 +104,6 @@ describe("loadAdminDashboard", () => {
     vi.clearAllMocks();
     prisma.activity.count.mockResolvedValue(40);
     prisma.aiChatSession.count.mockResolvedValueOnce(120).mockResolvedValueOnce(9);
-    prisma.aiChatSession.findMany.mockResolvedValue([{ userId: "a" }, { userId: "b" }]);
     prisma.submission.count.mockResolvedValueOnce(300).mockResolvedValueOnce(12);
     prisma.activityFeedback.aggregate.mockResolvedValue({
       _avg: { rating: 3.876 },
@@ -113,7 +112,10 @@ describe("loadAdminDashboard", () => {
     prisma.aiInteractionTrace.count.mockResolvedValue(2);
     prisma.activityAnalytics.count.mockResolvedValueOnce(3).mockResolvedValueOnce(0);
     prisma.courseOffering.count.mockResolvedValue(1);
-    prisma.$queryRaw.mockResolvedValue([]);
+    // Two raw queries: the distinct-learner count and the weekly buckets.
+    prisma.$queryRaw.mockImplementation(async (strings) =>
+      strings.join("?").includes("COUNT(DISTINCT") ? [{ count: 2 }] : [],
+    );
     getEduAiApiKeyStatus.mockResolvedValue({ configured: true, source: "ADMIN" });
     getAiModelPolicyState.mockResolvedValue(POLICY_STATE);
   });
@@ -125,6 +127,24 @@ describe("loadAdminDashboard", () => {
     expect(data.submissions).toEqual({ total: 300, toReview: 12 });
     expect(data.ratings).toEqual({ average: 3.9, count: 25 });
     expect(data.weeklySessions).toHaveLength(USAGE_WEEKS);
+  });
+
+  it("counts this week's learners in the database, on the same column as its sessions", async () => {
+    const now = new Date("2026-11-04T12:00:00Z");
+    await loadAdminDashboard(now);
+    const weekAgo = new Date("2026-10-28T12:00:00Z");
+    expect(prisma.aiChatSession.count).toHaveBeenCalledWith({
+      where: { createdAt: { gte: weekAgo } },
+    });
+    const learners = prisma.$queryRaw.mock.calls.find(([strings]) =>
+      strings.join("?").includes("COUNT(DISTINCT"),
+    );
+    expect(learners[0].join("?")).toMatch(/COUNT\(DISTINCT "userId"\).*"createdAt" >= \?/s);
+    expect(learners[1]).toEqual(weekAgo);
+  });
+
+  it("only treats outcomes the tutor writes as failed replies", () => {
+    expect(FAILED_REPLY_OUTCOMES).toEqual(["error", "safe_fallback"]);
   });
 
   it("counts failed replies over the last 7 days and words each attention row", async () => {
