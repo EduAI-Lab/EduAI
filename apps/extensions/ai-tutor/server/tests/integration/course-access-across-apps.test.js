@@ -5,10 +5,8 @@
  * App is an adapter parameter — every generated row is replayed here (and in
  * Core / QM) so shared inputs are identical across apps.
  *
- * Known drift vs rbac-matrix §3/§19 (#1405, not fixed here):
- *   Detail membership does not apply the student publish gate. For those rows
- *   we assert the buggy allow (HTTP 200) rather than a broad it.fails that
- *   would also swallow 500s / unexpected statuses.
+ * The student publish gate (#1405) answers 403 with code COURSE_UNPUBLISHED,
+ * which maps to the oracle's `unpublished-student` verdict.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
@@ -76,12 +74,11 @@ const rows = allCases;
 const DEPARTMENT = "COSC";
 const OTHER_DEPARTMENT = "MATH";
 
-/** Rows where AT detail membership diverges from the shared contract (#1405). */
-function isUnpublishedStudentDrift(expected) {
-  return expected.outcome === "denied" && expected.reason === "unpublished-student";
-}
-
-function actualFromStatus(status, levelWhenAllowed) {
+function actualFromResponse(res, levelWhenAllowed) {
+  const { status } = res;
+  if (status === 403 && res.body?.code === "COURSE_UNPUBLISHED") {
+    return { outcome: "denied", reason: "unpublished-student" };
+  }
   if (status === 404) return { outcome: "denied", reason: "no-course" };
   if (status === 403 || status === 401) return { outcome: "denied", reason: "no-access" };
   if (status === 200) return { outcome: "allowed", level: levelWhenAllowed };
@@ -177,22 +174,9 @@ describe.each(rows.map((row, index) => [index, row]))(
   (index, row) => {
     const expected = courseAccessOracle(row, APP);
 
-    if (isUnpublishedStudentDrift(expected)) {
-      // #1405 — GET /courses/:id skips the student publish gate (rbac-matrix §19).
-      // Pin the known buggy allow; anything else (403, 500, …) fails the suite.
-      it(`${row.Role}/${row.Enrollment}/${row.CourseState}/${row.UnitMatch} known AT drift #1405 (allows unpublished student)`, async () => {
-        const { res } = await runRow(row);
-        expect(
-          res.status,
-          `${formatCourseAccessRow(row, APP)} — expected buggy allow (200) for unpublished-student denial; see #1405`,
-        ).toBe(200);
-      });
-      return;
-    }
-
     it(`${row.Role}/${row.Enrollment}/${row.CourseState}/${row.UnitMatch} matches oracle`, async () => {
       const { res, levelWhenAllowed } = await runRow(row);
-      const actual = actualFromStatus(res.status, levelWhenAllowed);
+      const actual = actualFromResponse(res, levelWhenAllowed);
       expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
     });
   },

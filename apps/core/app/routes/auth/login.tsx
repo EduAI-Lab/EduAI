@@ -10,7 +10,7 @@ import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth, authBaseURL } from "~/lib/auth/server";
-import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
+import { resolveAuthCookieDomain, resolveAuthCookiePrefix } from "~/lib/auth/cookie-domain";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { messageFromCause } from "~/lib/form-errors";
@@ -63,9 +63,8 @@ function appendLegacySessionCookieDeletions(headers: Headers): void {
   const configuredDomain = resolveAuthCookieDomain();
   if (!configuredDomain) return;
 
-  const cookieName = authBaseURL.startsWith("https://")
-    ? "__Secure-better-auth.session_token"
-    : "better-auth.session_token";
+  const baseName = `${resolveAuthCookiePrefix()}.session_token`;
+  const cookieName = authBaseURL.startsWith("https://") ? `__Secure-${baseName}` : baseName;
   const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
   const attributes = `Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`;
 
