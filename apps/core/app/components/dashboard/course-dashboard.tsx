@@ -554,12 +554,22 @@ export function CourseDashboard({
                 onValueChange={(v) => (v === "card" || v === "list") && setView(v)}
                 aria-label="Course layout"
               >
-                <ToggleGroupItem value="card" aria-label="Card view">
-                  <IconLayoutGrid className="size-4" />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="list" aria-label="List view">
-                  <IconList className="size-4" />
-                </ToggleGroupItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="card" aria-label="Card view">
+                      <IconLayoutGrid className="size-4" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>Card view</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="list" aria-label="List view">
+                      <IconList className="size-4" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>List view</TooltipContent>
+                </Tooltip>
               </ToggleGroup>
             </div>
           </div>

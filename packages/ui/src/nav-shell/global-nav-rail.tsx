@@ -207,19 +207,21 @@ export function GlobalNavRail({
           })}
         </ul>
 
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(!collapsed)}
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-          className="mx-auto mb-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground hover:bg-[var(--color-sidebar-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring max-lg:hidden"
-        >
-          {collapsed ? (
-            <IconChevronsRight size={20} aria-hidden="true" />
-          ) : (
-            <IconChevronsLeft size={20} aria-hidden="true" />
-          )}
-        </button>
+        <RailTooltip label={collapsed ? "Expand navigation" : "Collapse navigation"} enabled>
+          <button
+            type="button"
+            onClick={() => onCollapsedChange(!collapsed)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            className="mx-auto mb-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground hover:bg-[var(--color-sidebar-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring max-lg:hidden"
+          >
+            {collapsed ? (
+              <IconChevronsRight size={20} aria-hidden="true" />
+            ) : (
+              <IconChevronsLeft size={20} aria-hidden="true" />
+            )}
+          </button>
+        </RailTooltip>
       </nav>
     </TooltipProvider>
   );

@@ -58,6 +58,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuWithTooltip,
 } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
@@ -154,6 +155,16 @@ function blockedReason(
 }
 
 /** Explains a disabled menu item on hover; renders the item bare when nothing blocks it. */
+/** Names an icon-only control on hover. */
+function IconTip({ label, children }: { label: string; children: ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function BlockedActionTooltip({
   reason,
   children,
@@ -196,12 +207,15 @@ function RowActions({
     // modal={false} so Radix does not lock `body { pointer-events: none }` while
     // the menu is open. Without it, opening the table-level AlertDialog as this
     // menu closes leaves the body pointer-events lock stuck → page unclickable.
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
+    <DropdownMenuWithTooltip
+      modal={false}
+      tooltip="User actions"
+      trigger={
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Open menu">
           <IconDots className="h-4 w-4" />
         </Button>
-      </DropdownMenuTrigger>
+      }
+    >
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => onEdit(user)}>
           <IconEdit className="mr-2 h-4 w-4" />
@@ -249,7 +263,7 @@ function RowActions({
           </DropdownMenuItem>
         </BlockedActionTooltip>
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenuWithTooltip>
   );
 }
 
@@ -584,18 +598,20 @@ export function UsersTable({
               <IconSearch size={16} aria-hidden="true" />
             </div>
             {Boolean(table.getColumn("name")?.getFilterValue()) && (
-              <button
-                className="text-muted-foreground/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 absolute inset-y-0 end-0 flex h-full w-9 items-center justify-center rounded-e-md transition-[color,box-shadow] outline-none focus:z-10 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="Clear filter"
-                onClick={() => {
-                  table.getColumn("name")?.setFilterValue("");
-                  if (inputRef.current) {
-                    inputRef.current.focus();
-                  }
-                }}
-              >
-                <IconX size={16} aria-hidden="true" />
-              </button>
+              <IconTip label="Clear filter">
+                <button
+                  className="text-muted-foreground/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 absolute inset-y-0 end-0 flex h-full w-9 items-center justify-center rounded-e-md transition-[color,box-shadow] outline-none focus:z-10 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Clear filter"
+                  onClick={() => {
+                    table.getColumn("name")?.setFilterValue("");
+                    if (inputRef.current) {
+                      inputRef.current.focus();
+                    }
+                  }}
+                >
+                  <IconX size={16} aria-hidden="true" />
+                </button>
+              </IconTip>
             )}
           </div>
 
@@ -884,55 +900,63 @@ export function UsersTable({
             <PaginationContent>
               {/* First page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.firstPage()}
-                  disabled={!table.getCanPreviousPage()}
-                  aria-label="Go to first page"
-                >
-                  <IconChevronsLeft size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="First page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.firstPage()}
+                    disabled={!table.getCanPreviousPage()}
+                    aria-label="Go to first page"
+                  >
+                    <IconChevronsLeft size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
               {/* Previous page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.previousPage()}
-                  disabled={!table.getCanPreviousPage()}
-                  aria-label="Go to previous page"
-                >
-                  <IconChevronLeft size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="Previous page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                    aria-label="Go to previous page"
+                  >
+                    <IconChevronLeft size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
               {/* Next page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.nextPage()}
-                  disabled={!table.getCanNextPage()}
-                  aria-label="Go to next page"
-                >
-                  <IconChevronRight size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="Next page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                    aria-label="Go to next page"
+                  >
+                    <IconChevronRight size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
               {/* Last page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.lastPage()}
-                  disabled={!table.getCanNextPage()}
-                  aria-label="Go to last page"
-                >
-                  <IconChevronsRight size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="Last page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.lastPage()}
+                    disabled={!table.getCanNextPage()}
+                    aria-label="Go to last page"
+                  >
+                    <IconChevronsRight size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
             </PaginationContent>
           </Pagination>

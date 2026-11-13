@@ -23,14 +23,16 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import {
-  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuWithTooltip,
   StatusBadge,
   ToggleGroup,
   ToggleGroupItem,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   CourseTile,
   CourseTileLinkButton,
   cn,
@@ -154,8 +156,9 @@ function CourseMenu({
     : null;
   if (!canPublish && !coreHref) return null;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <DropdownMenuWithTooltip
+      tooltip="Course actions"
+      trigger={
         <button
           type="button"
           aria-label={`${courseCode(course)} actions`}
@@ -168,7 +171,8 @@ function CourseMenu({
         >
           <IconDotsVertical className="size-4" aria-hidden="true" />
         </button>
-      </DropdownMenuTrigger>
+      }
+    >
       <DropdownMenuContent align="end" className="min-w-[200px]">
         {canPublish && (
           <DropdownMenuItem className="gap-2" onSelect={() => onTogglePublish(course)}>
@@ -190,7 +194,7 @@ function CourseMenu({
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenuWithTooltip>
   );
 }
 
@@ -449,12 +453,22 @@ export function TeachingDashboard({
               onValueChange={(v) => (v === "card" || v === "list") && setView(v)}
               aria-label="Course layout"
             >
-              <ToggleGroupItem value="card" aria-label="Card view">
-                <IconLayoutGrid className="size-4" aria-hidden="true" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label="List view">
-                <IconList className="size-4" aria-hidden="true" />
-              </ToggleGroupItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="card" aria-label="Card view">
+                    <IconLayoutGrid className="size-4" aria-hidden="true" />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Card view</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="list" aria-label="List view">
+                    <IconList className="size-4" aria-hidden="true" />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>List view</TooltipContent>
+              </Tooltip>
             </ToggleGroup>
           </div>
         </div>

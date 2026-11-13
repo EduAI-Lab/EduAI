@@ -9,15 +9,14 @@ import { IconDots } from "@tabler/icons-react";
 
 import { Button } from "../ui/button";
 import {
-  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { DropdownMenuWithTooltip } from "../dropdown-menu-with-tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { SortHeader, StatusSelect } from "./bug-reports-table";
 import type { AdminBugReportRow, BugReportStatus } from "./types";
@@ -162,8 +161,10 @@ export function BugReportsCompactTable({
                     onClick={(event) => event.stopPropagation()}
                     onKeyDown={(event) => event.stopPropagation()}
                   >
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger asChild>
+                    <DropdownMenuWithTooltip
+                      modal={false}
+                      tooltip="Report actions"
+                      trigger={
                         <Button
                           type="button"
                           size="sm"
@@ -173,7 +174,8 @@ export function BugReportsCompactTable({
                         >
                           <IconDots className="h-4 w-4" aria-hidden="true" />
                         </Button>
-                      </DropdownMenuTrigger>
+                      }
+                    >
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Status</DropdownMenuLabel>
                         <DropdownMenuRadioGroup
@@ -197,7 +199,7 @@ export function BugReportsCompactTable({
                           {copiedReportId === report.id ? "Copied!" : "Copy"}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
-                    </DropdownMenu>
+                    </DropdownMenuWithTooltip>
                   </TableCell>
                 </TableRow>
               );

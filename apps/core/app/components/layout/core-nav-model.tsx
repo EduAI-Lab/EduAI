@@ -32,6 +32,9 @@ import {
   type NavShellEntry,
   type NavShellLink,
   type NavShellModel,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
@@ -100,14 +103,28 @@ const BADGE_COLORS = {
   red: "var(--color-badge-red)",
 } satisfies Record<CronStatusColor, string>;
 
+const CRON_STATUS_TIPS = {
+  green: "All cron jobs' last runs succeeded",
+  orange: "A cron job is running",
+  red: "A cron job's last run failed",
+} satisfies Record<CronStatusColor, string>;
+
 export function CronBadgeDot({ color }: { color: CronStatusColor }) {
   return (
-    <span
-      aria-label={`Cron status: ${color}`}
-      role="img"
-      className={cn("ml-auto size-2 shrink-0 rounded-full", color === "orange" && "animate-pulse")}
-      style={{ background: BADGE_COLORS[color] }}
-    />
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={`Cron status: ${color}`}
+          role="img"
+          className={cn(
+            "ml-auto size-2 shrink-0 rounded-full",
+            color === "orange" && "animate-pulse",
+          )}
+          style={{ background: BADGE_COLORS[color] }}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="right">{CRON_STATUS_TIPS[color]}</TooltipContent>
+    </Tooltip>
   );
 }
 

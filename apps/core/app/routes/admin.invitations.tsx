@@ -55,6 +55,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -315,13 +318,18 @@ export default function InvitationsPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span>{notice.message}</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => setNotice(null)}
-                      aria-label="Dismiss"
-                    >
-                      ✕
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setNotice(null)}
+                          aria-label="Dismiss"
+                        >
+                          ✕
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Dismiss</TooltipContent>
+                    </Tooltip>
                   </div>
                   {notice.link && (
                     <div className="mt-2 flex items-center gap-2">

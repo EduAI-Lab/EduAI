@@ -34,10 +34,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuWithTooltip,
   Select,
   SelectContent,
   SelectItem,
@@ -56,6 +55,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -330,13 +332,18 @@ export default function UnitAdminInvitationsPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span>{notice.message}</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => setNotice(null)}
-                      aria-label="Dismiss"
-                    >
-                      ✕
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setNotice(null)}
+                          aria-label="Dismiss"
+                        >
+                          ✕
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Dismiss</TooltipContent>
+                    </Tooltip>
                   </div>
                   {notice.link && (
                     <div className="mt-2 flex items-center gap-2">
@@ -416,8 +423,9 @@ export default function UnitAdminInvitationsPage() {
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {invite.status === "PENDING" && (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
+                                    <DropdownMenuWithTooltip
+                                      tooltip="Invitation actions"
+                                      trigger={
                                         <Button
                                           size="sm"
                                           variant="ghost"
@@ -426,7 +434,8 @@ export default function UnitAdminInvitationsPage() {
                                         >
                                           <IconDots className="h-4 w-4" />
                                         </Button>
-                                      </DropdownMenuTrigger>
+                                      }
+                                    >
                                       <DropdownMenuContent align="end">
                                         <DropdownMenuItem
                                           onClick={() => handleResend(invite)}
@@ -443,7 +452,7 @@ export default function UnitAdminInvitationsPage() {
                                           Cancel invitation
                                         </DropdownMenuItem>
                                       </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    </DropdownMenuWithTooltip>
                                   )}
                                 </TableCell>
                               </TableRow>

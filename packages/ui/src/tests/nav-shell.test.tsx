@@ -326,6 +326,19 @@ describe("NavShell — course pages", () => {
     expect(within(crumbs).getByText("Question bank")).toHaveAttribute("aria-current", "page");
   });
 
+  it("names the hamburger and the rail's collapse button with tooltips", async () => {
+    renderShell({ courseNav: COURSE_NAV });
+    fireEvent.focus(screen.getByRole("button", { name: "Hide course menu" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hide course menu");
+
+    fireEvent.focus(screen.getByRole("button", { name: "Collapse navigation" }));
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("tooltip").some((t) => t.textContent === "Collapse navigation"),
+      ).toBe(true),
+    );
+  });
+
   it("toggles the course menu from the hamburger", () => {
     renderShell({ courseNav: COURSE_NAV });
     const toggle = screen.getByRole("button", { name: "Hide course menu" });

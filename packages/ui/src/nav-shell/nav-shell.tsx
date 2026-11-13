@@ -10,7 +10,7 @@ import {
   BreadcrumbSeparator,
 } from "../ui/breadcrumb";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "../ui/sheet";
-import { TooltipProvider } from "../ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../utils";
 import { CourseNavMenu, SectionNavMenu } from "./course-nav-menu";
 import { GlobalNavRail } from "./global-nav-rail";
@@ -205,17 +205,26 @@ export function NavShell({
             <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center border-b bg-background max-md:top-14">
               <div className="flex h-full w-full min-w-0 items-center gap-2 px-4 lg:px-6">
                 {hasSideMenu && (
-                  <button
-                    ref={hamburgerRef}
-                    type="button"
-                    onClick={toggleCourseMenu}
-                    aria-expanded={courseMenuShown}
-                    aria-controls={breakpoint === "tablet" ? "course-menu-drawer" : "course-menu"}
-                    aria-label={`${courseMenuShown ? "Hide" : "Show"} ${sideMenuName}`}
-                    className="-ml-2 hidden size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex"
-                  >
-                    <IconMenu2 size={20} aria-hidden="true" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        ref={hamburgerRef}
+                        type="button"
+                        onClick={toggleCourseMenu}
+                        aria-expanded={courseMenuShown}
+                        aria-controls={
+                          breakpoint === "tablet" ? "course-menu-drawer" : "course-menu"
+                        }
+                        aria-label={`${courseMenuShown ? "Hide" : "Show"} ${sideMenuName}`}
+                        className="-ml-2 hidden size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex"
+                      >
+                        <IconMenu2 size={20} aria-hidden="true" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {`${courseMenuShown ? "Hide" : "Show"} ${sideMenuName}`}
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {courseNav ? (
                   <>

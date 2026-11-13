@@ -14,6 +14,7 @@ import {
   AlertDialogTrigger,
 } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@eduai/ui";
 
 type AIProvider = {
   id: string;
@@ -224,20 +225,30 @@ export function AIModelsTable({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Edit ${model.name}`}
-                    onClick={() => onEdit(model)}
-                  >
-                    <IconEdit className="h-4 w-4" />
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" aria-label={`Delete ${model.name}`}>
-                        <IconTrash className="h-4 w-4" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Edit ${model.name}`}
+                        onClick={() => onEdit(model)}
+                      >
+                        <IconEdit className="h-4 w-4" />
                       </Button>
-                    </AlertDialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Edit model</TooltipContent>
+                  </Tooltip>
+                  <AlertDialog>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" size="sm" aria-label={`Delete ${model.name}`}>
+                            <IconTrash className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>Delete model</TooltipContent>
+                    </Tooltip>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete Model</AlertDialogTitle>
