@@ -27,6 +27,7 @@ It prints setting names, never values, so the output is safe to share.
 | Cron scheduling | `CRON_WEB_SCHEDULER=false`: only `eduai-cron-worker` schedules jobs (#1873) | unset: the web server schedules too |
 | Host mail | `msmtp` relays alerts through the UBC relay (#1874) | none |
 | Extra dev-only settings | — | research, benchmark and demo keys (`CHAT_BENCH_*`, `RESEARCH_RUN_*`, `EDUAI_ENABLE_LOCAL_DEMO`, …) |
+| Session cookie | `COOKIE_DOMAIN=.eduai.ok.ubc.ca`, default name `__Secure-better-auth.session_token` | Same domain, `COOKIE_PREFIX=eduai-dev` (`__Secure-eduai-dev.session_token`), so the two sign-ins don't overwrite each other (#2129) |
 | Public URLs | `my.` / `aitutor.` / `questionmaker.eduai.ok.ubc.ca` | `dev.` / `dev.aitutor.` / `dev.questionmaker.eduai.ok.ubc.ca` |
 
 ## Known drift (2026-10-30)

@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { courseMenuLink, openTab } from "../helpers/at-ui";
+import { courseMenuLink, openMenuItem, openTab } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 let coursePath: string;
@@ -89,8 +89,12 @@ test.describe("UNIT_ADMIN course detail", () => {
     await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
     // No bare toggle on the page: publishing goes through the ⋯ menu and a confirm.
     await expect(page.getByRole("button", { name: /^(Publish|Unpublish) course/ })).toHaveCount(0);
-    await page.getByRole("button", { name: `${ua.course.code} course actions` }).click();
-    await page.getByRole("menuitem", { name: "Publish course" }).click();
+    const publishItem = page.getByRole("menuitem", { name: "Publish course" });
+    await openMenuItem(
+      page.getByRole("button", { name: `${ua.course.code} course actions` }),
+      publishItem,
+    );
+    await publishItem.click();
     const confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText(ua.course.name);
     // Cancel: the other tests here read the course as a draft.

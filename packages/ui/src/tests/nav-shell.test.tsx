@@ -472,3 +472,28 @@ describe("NavShell — pages that draw their own heading", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
   });
 });
+
+describe("NavShell — platform crumb", () => {
+  it("prefixes the current app's name in every header mode", () => {
+    const model = makeModel({ currentAppId: "core" });
+    const header = (c: HTMLElement) => c.querySelector("header")!;
+
+    const plain = renderShell({}, model);
+    expect(header(plain.container).textContent).toMatch(/^Core›Dashboard/);
+    plain.unmount();
+
+    const course = renderShell({ courseNav: COURSE_NAV }, model);
+    expect(header(course.container).textContent).toMatch(/^Core›.*BIOL 116/);
+    course.unmount();
+
+    const crumbs = renderShell({ breadcrumbs: <span>Settings crumb</span> }, model);
+    expect(header(crumbs.container).textContent).toMatch(/^Core›.*Settings crumb/);
+  });
+
+  it("links to the app home and is hidden below the md breakpoint", () => {
+    renderShell({}, makeModel({ currentAppId: "core" }));
+    const crumb = screen.getByRole("link", { name: "Core" });
+    expect(crumb).toHaveAttribute("href", "/");
+    expect(crumb.parentElement).toHaveClass("hidden", "md:inline");
+  });
+});

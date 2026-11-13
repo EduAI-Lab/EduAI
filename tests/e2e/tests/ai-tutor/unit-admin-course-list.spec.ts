@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { courseLink, courseMenuLink } from "../helpers/at-ui";
+import { courseLink, courseMenuLink, openMenuItem } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 
@@ -181,7 +181,9 @@ test.describe("UNIT_ADMIN course list", () => {
     await expect(card.getByText("Unpublished", { exact: true })).toBeVisible();
 
     // Every course a unit admin can see arrived from Core; the ⋯ menu links back.
-    await card.getByRole("button", { name: `${ua.course.code} actions` }).click();
-    await expect(page.getByRole("menuitem", { name: "Open in EduAI" })).toBeVisible();
+    await openMenuItem(
+      card.getByRole("button", { name: `${ua.course.code} actions` }),
+      page.getByRole("menuitem", { name: "Open in EduAI" }),
+    );
   });
 });

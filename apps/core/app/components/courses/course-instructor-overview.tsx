@@ -55,12 +55,21 @@ function QuickLink({
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="border-b border-border pb-1.5 text-sm font-semibold text-foreground">
-        {title}
-      </h2>
+      <div className="flex items-center justify-between border-b border-border pb-1.5">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -132,6 +141,7 @@ export function CourseInstructorOverview({
   instructors,
   tas,
   canPublish,
+  publishControl,
 }: {
   course: CourseDetail;
   materials: { status: string }[];
@@ -141,10 +151,21 @@ export function CourseInstructorOverview({
   instructors: Instructor[];
   tas: CourseTA[];
   canPublish: boolean;
+  publishControl?: ReactNode;
 }) {
   const ready = materials.filter((m) => m.status === "READY").length;
   const styleTags = course.responseStyleTags ?? [];
   const hasAiStyle = courseHasAiConfig(styleTags, course.aiInstructions);
+  const editLink = (label: string) =>
+    canManageSettings ? (
+      <Link
+        to={courseNavSearch("settings")}
+        className="text-xs font-medium text-primary-text hover:underline"
+        aria-label={label}
+      >
+        Edit
+      </Link>
+    ) : undefined;
 
   return (
     <div style={courseThemeVars(resolvePaletteAccent(course.id))}>
@@ -187,16 +208,18 @@ export function CourseInstructorOverview({
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="flex min-w-0 flex-col gap-6">
-          <Section title="About this course">
+          <Section title="About this course" action={editLink("Edit course description")}>
             <p className="text-sm leading-relaxed text-foreground">
               {course.description || (
                 <span className="text-muted-foreground">No description yet.</span>
               )}
             </p>
           </Section>
-          {hasAiStyle && (
-            <Section title="AI response style">
-              {styleTags.length > 0 ? (
+          {(hasAiStyle || canManageSettings) && (
+            <Section title="AI response style" action={editLink("Edit AI response style")}>
+              {!hasAiStyle ? (
+                <p className="text-sm text-muted-foreground">Not set yet.</p>
+              ) : styleTags.length > 0 ? (
                 <CourseResponseStyleSummary tagIds={styleTags} />
               ) : (
                 <p className="text-sm text-foreground">Custom instructions are set.</p>
@@ -215,8 +238,13 @@ export function CourseInstructorOverview({
                 </>
               )}
               <dt className="text-muted-foreground">Status</dt>
-              <dd>
-                <StatusBadge active={course.isActive} />
+              <dd className="flex flex-wrap items-center gap-2">
+                <StatusBadge
+                  active={course.isPublished}
+                  activeLabel="Published"
+                  inactiveLabel="Unpublished"
+                />
+                {publishControl}
               </dd>
             </dl>
           </Section>

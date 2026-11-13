@@ -20,6 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "./ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { useMenuTooltip } from "./use-menu-tooltip";
 import { cn } from "./utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -97,6 +99,19 @@ function AccentPill({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** "Publish, edit or delete", listing only the actions the menu actually offers. */
+function actionsTooltip(actions: CourseCardAction | undefined): string {
+  const names = [
+    actions?.showPublish && "publish",
+    actions?.showEdit && "edit",
+    actions?.showDelete && "delete",
+  ].filter((name): name is string => Boolean(name));
+  if (names.length === 0) return "Course actions";
+  const text =
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function CourseCard({
@@ -123,6 +138,9 @@ export function CourseCard({
   const resolvedAccent: CourseAccentColor =
     accentColor ?? heroColor ?? paletteColorAtIndex(colorIndex);
   const hasMenu = actions && (actions.showPublish || actions.showEdit || actions.showDelete);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuTip = useMenuTooltip(menuOpen);
+  const menuTipText = actionsTooltip(actions);
 
   const hasBadges = departmentLabel || department || extraBadges.length > 0;
 
@@ -179,20 +197,26 @@ export function CourseCard({
               className="relative z-10 shrink-0 -mt-0.5 -mr-1 pointer-events-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label="Course actions"
-                    className={cn(
-                      // min touch target 44 × 44 px per design rules
-                      "flex items-center justify-center w-11 h-11 rounded-[var(--radius-md)]",
-                      "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-                      "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
-                  >
-                    <IconDotsVertical size={16} />
-                  </button>
-                </DropdownMenuTrigger>
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <Tooltip {...menuTip.tooltipProps}>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        {...menuTip.triggerProps}
+                        aria-label="Course actions"
+                        className={cn(
+                          // min touch target 44 × 44 px per design rules
+                          "flex items-center justify-center w-11 h-11 rounded-[var(--radius-md)]",
+                          "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                          "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        )}
+                      >
+                        <IconDotsVertical size={16} />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>{menuTipText}</TooltipContent>
+                </Tooltip>
                 <DropdownMenuContent align="end" className="min-w-[180px]">
                   {actions.showPublish && (
                     <DropdownMenuItem
