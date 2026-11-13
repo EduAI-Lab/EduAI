@@ -153,6 +153,7 @@ export const CourseDetailPage = () => {
   const { startTour } = useTour();
 
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
+  const [isCreateAssessmentOpen, setIsCreateAssessmentOpen] = useState(false);
   const openCanvasImport = useCallback(() => setIsCanvasImportOpen(true), []);
   const { canUseCanvas, canUseLinkedCanvas, canvasLinkStatus, handleImportFromCanvas } =
     useCanvasAccess(courseId, canManageCanvas, hasCourseAccess, openCanvasImport);
@@ -905,12 +906,13 @@ export const CourseDetailPage = () => {
       try {
         const created = await assessmentService.createAssessment({ ...params, courseId });
         setAssessments((prev) => [created, ...prev]);
+        navigate(`/courses/${courseId}/assessments/${created.id}`);
       } catch (error) {
         console.error("Failed to create assessment", error);
         toast.error("Error", { description: "Failed to create assessment." });
       }
     },
-    [courseId, toast],
+    [courseId, navigate, toast],
   );
 
   const handleDeleteAssessment = useCallback((assessmentId: number, assessmentName: string) => {
@@ -1090,7 +1092,10 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             canManageAssessment={canManageAssessmentForCourse}
             onAddQuestion={handleAddQuestion}
-            onNewAssessment={() => setActiveTab("assessments")}
+            onNewAssessment={() => {
+              setActiveTab("assessments");
+              setIsCreateAssessmentOpen(true);
+            }}
             // Canvas import is scoped to the linked Canvas course, so the action
             // is withheld — not just the tab — when there is no link (#1652
             // review). `null` means "not resolved yet", which keeps the action
@@ -1208,6 +1213,8 @@ export const CourseDetailPage = () => {
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
             onImportFromCanvas={handleImportFromCanvas}
+            createModalOpen={isCreateAssessmentOpen}
+            onCreateModalOpenChange={setIsCreateAssessmentOpen}
           />
           <ListPaginationBar
             total={assessmentsTotal}

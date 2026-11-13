@@ -19,7 +19,14 @@ test("INSTRUCTOR creates an assessment blueprint through the Question Maker UI",
     const assessmentsPanel = page.getByTestId("assessments-panel");
     await assessmentsPanel.getByRole("button", { name: "New assessment" }).click();
     await page.getByRole("textbox", { name: "Assessment name *" }).fill("E2E Assessment Blueprint");
-    await page.getByRole("button", { name: "Create Blueprint" }).click();
+    await page.getByRole("button", { name: "Create assessment" }).click();
+
+    // Creating opens the builder directly (#2161).
+    await expect(page).toHaveURL(new RegExp(`/courses/${qmCourseId}/assessments/\\d+$`));
+    await expect(
+      page.getByRole("heading", { level: 1, name: "E2E Assessment Blueprint" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Back to assessments" }).click();
 
     await expect(
       assessmentsPanel.getByText("E2E Assessment Blueprint", { exact: true }),

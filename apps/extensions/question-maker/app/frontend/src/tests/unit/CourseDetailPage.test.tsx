@@ -198,6 +198,7 @@ vi.mock("@/components/assessments/AssessmentSection", () => ({
     <div data-testid="assessment-section">
       <span data-testid="as-loading">{String(props.isLoading)}</span>
       <span data-testid="as-error">{props.loadError}</span>
+      <span data-testid="as-create-open">{String(props.createModalOpen)}</span>
       <button onClick={() => props.onAddAssessment({ name: "New A" })}>add-assessment</button>
       <button onClick={props.onImportFromCanvas}>import-canvas</button>
       {props.assessments.map((a: Assessment) => (
@@ -774,6 +775,7 @@ describe("CourseDetailPage assessments tab", () => {
     assessmentService.createAssessment.mockResolvedValue({ ...assessment, id: 200, name: "New A" });
     fireEvent.click(screen.getByText("add-assessment"));
     await waitFor(() => expect(assessmentService.createAssessment).toHaveBeenCalled());
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/courses/5/assessments/200"));
 
     fireEvent.click(screen.getByText("next-assessments"));
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
@@ -786,6 +788,7 @@ describe("CourseDetailPage assessments tab", () => {
     await screen.findByTestId("assessment-section");
     fireEvent.click(screen.getByText("add-assessment"));
     await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("handles an assessments-loading failure", async () => {
@@ -899,6 +902,20 @@ describe("CourseDetailPage overview tab actions", () => {
 
     fireEvent.click(screen.getByText("overview-import-canvas"));
     expect(await screen.findByTestId("canvas-import-dialog")).toBeInTheDocument();
+  });
+
+  it("opens the create-assessment modal directly from the overview quick action", async () => {
+    setSearchParamsMock.mockImplementationOnce(
+      (update: (prev: URLSearchParams) => URLSearchParams) => {
+        searchParamsBox.current = update(searchParamsBox.current);
+      },
+    );
+    render(<CourseDetailPage />);
+    await screen.findByTestId("overview-tab");
+    fireEvent.click(screen.getByText("overview-new-assessment"));
+
+    expect(searchParamsBox.current.get("tab")).toBe("assessments");
+    expect(await screen.findByTestId("as-create-open")).toHaveTextContent("true");
   });
 
   it("changes topics via the hero topics action", async () => {
