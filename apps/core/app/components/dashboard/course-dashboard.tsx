@@ -19,6 +19,7 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import {
+  CollapsibleSection,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -33,6 +34,7 @@ import {
   cn,
   courseThemeVars,
   termLabel,
+  useMenuTooltip,
   visibleAppsForRole,
 } from "@eduai/ui";
 
@@ -214,24 +216,32 @@ function TeachingMenu({
 }) {
   const revalidator = useRevalidator();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuTip = useMenuTooltip(menuOpen);
   const id = encodeURIComponent(course.id);
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={`${course.code} actions`}
-            className={cn(
-              "flex size-8 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2",
-              onBanner
-                ? "text-white/90 hover:bg-white/20 focus-visible:ring-white"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring",
-            )}
-          >
-            <IconDotsVertical className="size-4" />
-          </button>
-        </DropdownMenuTrigger>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <Tooltip {...menuTip.tooltipProps}>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                {...menuTip.triggerProps}
+                type="button"
+                aria-label={`${course.code} actions`}
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2",
+                  onBanner
+                    ? "text-white/90 hover:bg-white/20 focus-visible:ring-white"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring",
+                )}
+              >
+                <IconDotsVertical className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Course actions</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent align="end" className="min-w-[190px]">
           {canPublish && (
             <>
@@ -404,7 +414,7 @@ function SidePanel({
   return (
     <section>
       <div className="mb-2 flex items-center justify-between border-b border-border pb-1.5">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
         {action}
       </div>
       {children}
@@ -524,7 +534,7 @@ export function CourseDashboard({
           {sections.map(({ kind, courses }) => (
             <section key={kind} aria-label={SECTION_TITLES[kind]} className="flex flex-col gap-3">
               {!singleSection && (
-                <h3 className="text-sm font-semibold text-muted-foreground">
+                <h3 className="text-base font-semibold text-muted-foreground">
                   {SECTION_TITLES[kind]}
                   <span className="ml-1.5 font-normal">({courses.length})</span>
                 </h3>
@@ -576,9 +586,13 @@ export function CourseDashboard({
               <RecentChatsPanel chats={data.recentChats.slice(0, 4)} loading={false} />
             </div>
           </SidePanel>
-          <SidePanel title="At a glance">
+          <CollapsibleSection
+            title="At a glance"
+            storageKey="eduai.dashboard.analyticsCollapsed"
+            headerClassName="border-b border-border pb-1.5"
+          >
             <AtAGlance stats={stats} data={data} />
-          </SidePanel>
+          </CollapsibleSection>
         </aside>
       </div>
     </div>

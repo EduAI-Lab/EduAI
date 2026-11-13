@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { Spinner } from "@eduai/ui";
+import { CollapsibleSection, Spinner } from "@eduai/ui";
 import { Link, useNavigate } from "react-router";
 import { IconMessageCircle, IconChevronRight, IconBook, IconUser } from "@tabler/icons-react";
 
@@ -13,6 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
@@ -235,28 +238,37 @@ function CourseListPanel({
               );
             }
             return (
-              <button
-                type="button"
-                onClick={(e) => {
-                  // Nested inside the row's <Link>; a nested <a> is invalid
-                  // markup and hydration-mismatches, so navigate
-                  // imperatively instead.
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // #1659 review: /instructor/chat keys its selector by
-                  // course id (Course.code isn't globally unique); every
-                  // other chat surface still keys by ?courseCode=.
-                  const param =
-                    rowChatHref === "/instructor/chat"
-                      ? `courseId=${encodeURIComponent(course.id)}`
-                      : `courseCode=${encodeURIComponent(course.code)}`;
-                  navigate(`${rowChatHref}?${param}`);
-                }}
-                className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
-                style={{ background: "var(--primary)" }}
-              >
-                Chat
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      // Nested inside the row's <Link>; a nested <a> is invalid
+                      // markup and hydration-mismatches, so navigate
+                      // imperatively instead.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // #1659 review: /instructor/chat keys its selector by
+                      // course id (Course.code isn't globally unique); every
+                      // other chat surface still keys by ?courseCode=.
+                      const param =
+                        rowChatHref === "/instructor/chat"
+                          ? `courseId=${encodeURIComponent(course.id)}`
+                          : `courseCode=${encodeURIComponent(course.code)}`;
+                      navigate(`${rowChatHref}?${param}`);
+                    }}
+                    className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
+                    style={{ background: "var(--primary)" }}
+                  >
+                    Chat
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {routesToInstructorChat
+                    ? `Open the course assistant for ${course.code}`
+                    : `Chat about ${course.code}`}
+                </TooltipContent>
+              </Tooltip>
             );
           })()}
         </Link>
@@ -448,7 +460,10 @@ export function DashboardView({
       {/* Analytics charts */}
       {analytics && (
         <ScrollReveal index={3} parallax={false}>
-          <div data-tour="dashboard-analytics">{analytics}</div>
+          <CollapsibleSection title="At a glance" storageKey="eduai.dashboard.analyticsCollapsed">
+            {/* On the charts, not the header: collapsed, the tour step has no target and is skipped. */}
+            <div data-tour="dashboard-analytics">{analytics}</div>
+          </CollapsibleSection>
         </ScrollReveal>
       )}
 
@@ -458,7 +473,7 @@ export function DashboardView({
         <ScrollReveal index={4} parallax={false}>
           <div>
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
+              <h2 className="text-lg font-semibold text-foreground">{panelTitle}</h2>
               {!showQuickActions && (
                 <Link
                   to="/courses"
@@ -486,7 +501,7 @@ export function DashboardView({
         <ScrollReveal index={5} parallax={false}>
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
+              <h2 className="text-lg font-semibold text-foreground">Recent conversations</h2>
               <Link
                 to={newChatHref}
                 className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
