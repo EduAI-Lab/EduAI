@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
 import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
+import { useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 export type LogsTab = "audit" | "security" | "system" | "servers";
 
@@ -164,14 +165,14 @@ export function buildLogsTabLinks(query: LogsQueryState) {
 /**
  * Formats timestamps consistently across all log tabs.
  */
-function formatTimestamp(value: JsonValue | undefined) {
+function formatTimestamp(value: JsonValue | undefined, { locale, timeZone }: FormatScope) {
   const text = asText(value);
   if (text === null) {
     return "-";
   }
 
   const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? text : parsed.toLocaleString();
+  return Number.isNaN(parsed.getTime()) ? text : parsed.toLocaleString(locale, { timeZone });
 }
 
 /**
@@ -310,8 +311,10 @@ function levelVariant(level: string): "default" | "secondary" | "destructive" | 
   return "secondary";
 }
 
+// A fixed locale, not the runtime default: these render on the server too, and
+// Node's default locale need not match the browser's (#1941).
 function formatCount(value: number) {
-  return value.toLocaleString();
+  return value.toLocaleString("en-US");
 }
 
 function formatCostUsd(value: number) {
@@ -320,7 +323,7 @@ function formatCostUsd(value: number) {
 
 function formatDurationMs(totalDurationMs: number, count: number) {
   if (count === 0) return "-";
-  return `${Math.round(totalDurationMs / count).toLocaleString()} ms avg`;
+  return `${Math.round(totalDurationMs / count).toLocaleString("en-US")} ms avg`;
 }
 
 function formatEnergy(joules: number) {
@@ -713,6 +716,7 @@ export function LogsAdminView({
   peakUsageHours,
 }: LogsAdminViewProps) {
   const [selectedRow, setSelectedRow] = useState<JsonObject | null>(null);
+  const formatScope = useFormatScope();
 
   // Hoisted above ServerRoutingPanel (rather than read inside it) so the
   // pending state also covers navigating *into* the Servers tab from
@@ -1066,7 +1070,7 @@ export function LogsAdminView({
                       {rows.map((row) => (
                         <TableRow key={getRowValue(row, "id")}>
                           <TableCell className="whitespace-nowrap">
-                            {formatTimestamp(row.createdAt)}
+                            {formatTimestamp(row.createdAt, formatScope)}
                           </TableCell>
 
                           {tab === "audit" && (

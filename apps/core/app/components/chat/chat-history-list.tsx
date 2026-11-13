@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 import { apiFetch } from "~/hooks/api/config";
 import type { ChatHistoryItem } from "~/hooks/api/use-chat-history";
 import { chatHistoryRowLabel, relativeChatTime } from "~/components/chat/chat-history-utils";
+import { useFormatScope } from "~/lib/hydration-format";
 
 export interface ChatHistoryListProps {
   chats: ChatHistoryItem[];
@@ -30,6 +31,7 @@ export function ChatHistoryList({
 }: ChatHistoryListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const formatScope = useFormatScope();
 
   const handleDelete = async () => {
     const chatId = pendingDeleteId;
@@ -125,7 +127,7 @@ export function ChatHistoryList({
                   </span>
                 )}
                 <span className="text-[11px] text-muted-foreground">
-                  {relativeChatTime(chat.updatedAt)}
+                  {relativeChatTime(chat.updatedAt, formatScope)}
                 </span>
                 <span className="text-[11px] text-muted-foreground">
                   · {chat.messageCount} msg{chat.messageCount === 1 ? "" : "s"}

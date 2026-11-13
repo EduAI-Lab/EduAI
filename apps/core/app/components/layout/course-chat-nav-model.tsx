@@ -25,6 +25,27 @@ export type CourseChatNavOptions = {
   onNewChat?: () => void;
 };
 
+/** The rail's History tray over the chat page's history list. */
+export function chatHistoryEntry(
+  history: NonNullable<CourseChatNavOptions["history"]>,
+): NavShellEntry {
+  return {
+    kind: "panel",
+    key: "history",
+    label: "History",
+    icon: IconHistory,
+    render: (close) => (
+      <ChatHistoryList
+        {...history}
+        onSelect={(chatId) => {
+          close();
+          history.onSelect(chatId);
+        }}
+      />
+    ),
+  };
+}
+
 const loadChatNavCourses = () =>
   loadNavCourses((courseId) => `/chat?courseId=${encodeURIComponent(courseId)}`);
 
@@ -58,23 +79,7 @@ export function useCourseChatNavModel(
       },
     },
   ];
-  if (history) {
-    entries.push({
-      kind: "panel",
-      key: "history",
-      label: "History",
-      icon: IconHistory,
-      render: (close) => (
-        <ChatHistoryList
-          {...history}
-          onSelect={(chatId) => {
-            close();
-            history.onSelect(chatId);
-          }}
-        />
-      ),
-    });
-  }
+  if (history) entries.push(chatHistoryEntry(history));
   entries.push({ kind: "tray", tray: "courses", label: "Courses", icon: IconBooks });
   if (rootData?.canUseCourseAssistant) {
     entries.push({

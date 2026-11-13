@@ -342,7 +342,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   // usable when it is UBC-hosted (server key covers it) OR the student holds a
   // key for its BYOK provider. Only a BYOK model with no key blocks the
   // composer and shows the "connect a provider" empty state.
-  const selectedModelRequiresKey = providerRequiresByokKey(currentProvider);
+  // #1899: a model Core serves with the deployment's own key needs none either.
+  const selectedModelCoreKeyed =
+    pickerModels.find((model) => model.modelId === selectedModelId)?.platformKeyAvailable === true;
+  const selectedModelRequiresKey =
+    providerRequiresByokKey(currentProvider) && !selectedModelCoreKeyed;
   const modelUsable = !selectedModelRequiresKey || hasApiKey;
 
   const clearActiveTabChat = useCallback(() => {
@@ -516,12 +520,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       if (!message) return;
 
       // #1645: a BYOK key is required only when the selected model is served by
-      // a BYOK provider. UBC-hosted models (vllm/ollama) are covered by the
-      // server key, so they send with no personal key. A missing knowledge
+      // a BYOK provider. UBC-hosted models (vllm/ollama) and models Core holds a
+      // deployment key for (#1899) are covered by the server key, so they send
+      // with no personal key. A missing knowledge
       // level is filled with a sensible default rather than blocking.
       const provider = getProviderFromModelId(selectedModelId);
       const apiKey = getKey(provider);
-      if (providerRequiresByokKey(provider) && !apiKey) {
+      if (selectedModelRequiresKey && !apiKey) {
         setActiveTab(tab);
         return;
       }
@@ -657,6 +662,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       knowledgeLevel,
       onSelectKnowledgeLevel,
       selectedModelId,
+      selectedModelRequiresKey,
       studentAnswer,
       studyBuddyWithheld,
       // #1667 review (Whiteknight07): sendChat reads isPreview in the 403
@@ -674,16 +680,15 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       sendGuidePrompt: () => {
         if (!activity || !activity.enableGuideMode) return;
         setActiveTab("guide");
-        const provider = getProviderFromModelId(selectedModelId);
-        // Only a BYOK model with no key blocks here; UBC-hosted models send
-        // with the server key. When it does block, the "add a key" notice is
-        // already visible in the Guide view (#1645).
-        if (providerRequiresByokKey(provider) && !getKey(provider)) return;
+        // Only a BYOK model with no key blocks here; UBC-hosted and Core-keyed
+        // models send with the server key. When it does block, the "add a key"
+        // notice is already visible in the Guide view (#1645, #1899).
+        if (!modelUsable) return;
         const fallback = guideInput.trim() || "I would like guidance on this question.";
         void sendChat("guide", fallback);
       },
     }),
-    [activity, getKey, guideInput, selectedModelId, sendChat],
+    [activity, guideInput, modelUsable, sendChat],
   );
 
   const chatDisabled = !activity || !modelUsable || !isUserReady || studyBuddyWithheld;

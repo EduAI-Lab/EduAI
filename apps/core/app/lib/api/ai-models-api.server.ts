@@ -13,6 +13,15 @@ import {
 } from "~/lib/pagination.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { withNoStore } from "~/lib/api/cache-control.server";
+import { PROVIDER_CONFIGS, type SupportedProvider } from "~/lib/ai/provider-types";
+import { completionPlatformKey } from "~/lib/assistant/user-ai-keys.server";
+
+// Keyed providers only: local inference needs no key, and Bedrock never serves a pick.
+function hasPlatformKey(providerName: string): boolean {
+  if (!Object.prototype.hasOwnProperty.call(PROVIDER_CONFIGS, providerName)) return false;
+  // SAFETY: the own-property check above proves `providerName` is a PROVIDER_CONFIGS key.
+  return completionPlatformKey(providerName as SupportedProvider) !== null;
+}
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -82,10 +91,16 @@ export async function handleAiModelsApiRequest(request: Request) {
           take: pagination.take,
         }),
       ]);
+      // #1899: extensions (AI Tutor) read this flag to know Core can serve the
+      // model with the deployment's own key, so a student needs no key of their own.
+      const withPlatformKey = models.map((model) => ({
+        ...model,
+        platformKeyAvailable: hasPlatformKey(model.provider.name),
+      }));
       // #1453: ADMIN-only, and the browser cache key is method + URL with no
       // session or role component, so a stored body would be served to the next
       // caller on the same profile before the role check above ever runs.
-      return withNoStore(paginatedResponse(models, total, pagination));
+      return withNoStore(paginatedResponse(withPlatformKey, total, pagination));
     }
 
     case "POST": {

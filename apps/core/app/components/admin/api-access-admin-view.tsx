@@ -35,6 +35,7 @@ import type {
   CreateApiAccessGrantInput,
 } from "~/hooks/api/use-api-access";
 import { formatUsage, usagePercent } from "~/lib/api-keys/api-access";
+import { formatDate, useFormatScope } from "~/lib/hydration-format";
 
 type ApiAccessAdminViewProps = {
   grants: ApiAccessGrantRow[];
@@ -48,8 +49,6 @@ type ApiAccessAdminViewProps = {
   /** Opens the grant dialog for this person on arrival (from the users table). */
   initialPerson?: GrantPerson | null;
 };
-
-const dateFormat = new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" });
 
 function GrantStatus({ grant }: { grant: ApiAccessGrantRow }) {
   if (grant.active) return <Badge>Active</Badge>;
@@ -78,6 +77,7 @@ export function ApiAccessAdminView({
   onRevokeGrant,
   initialPerson = null,
 }: ApiAccessAdminViewProps) {
+  const formatScope = useFormatScope();
   const [dialogOpen, setDialogOpen] = useState(initialPerson !== null);
   const [dialogPerson, setDialogPerson] = useState<GrantPerson | null>(initialPerson);
   const [revoking, setRevoking] = useState<ApiAccessGrantRow | null>(null);
@@ -169,7 +169,11 @@ export function ApiAccessAdminView({
                         {grant.purpose}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-sm">
-                        {dateFormat.format(new Date(grant.expiresAt))}
+                        {formatDate(
+                          grant.expiresAt,
+                          { ...formatScope, locale: "en-CA" },
+                          { dateStyle: "medium" },
+                        )}
                       </TableCell>
                       <TableCell>
                         <UsageCell

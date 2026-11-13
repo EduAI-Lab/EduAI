@@ -267,4 +267,20 @@ describe("CourseCard", () => {
     const card = container.firstElementChild as HTMLElement;
     expect(card.style.getPropertyValue("--course-accent")).toBe("oklch(0.56 0.20 255)");
   });
+
+  it("names only the actions the menu offers in its tooltip", async () => {
+    render(
+      <CourseCard
+        id="1"
+        code="CPSC 110"
+        name="Computation"
+        term="Winter"
+        isPublished={true}
+        href="/courses/1"
+        actions={{ showPublish: true, onPublishToggle: vi.fn(), showEdit: true, onEdit: vi.fn() }}
+      />,
+    );
+    fireEvent.focus(screen.getByLabelText("Course actions"));
+    expect((await screen.findAllByText("Publish or edit")).length).toBeGreaterThan(0);
+  });
 });

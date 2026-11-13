@@ -719,3 +719,11 @@ export function paginatedSchema<Row extends z.ZodTypeAny>(row: Row) {
     })
     .passthrough();
 }
+
+/** Staff tree lists also carry counts that a search or page never narrows. */
+export function treePageSchema<Row extends z.ZodTypeAny>(row: Row) {
+  return paginatedSchema(row).extend({
+    unfilteredTotal: z.number().optional(),
+    publishedTotal: z.number().optional(),
+  });
+}

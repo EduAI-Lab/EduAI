@@ -20,6 +20,13 @@ vi.mock("~/lib/api", () => {
   return { default: api, api, COURSE_LIST_PAGE_SIZE: 200 };
 });
 
+// The cards read the viewer for their section shortcuts.
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({
+    user: { id: "u1", name: "Instructor", role: "INSTRUCTOR", authorizedUnits: [] },
+  }),
+}));
+
 vi.mock("~/lib/client-auth", () => ({
   requireClientUser: vi.fn().mockResolvedValue({ id: "u1", name: "Prof", role: "INSTRUCTOR" }),
 }));
@@ -226,7 +233,7 @@ describe("InstructorHome — controlled list", () => {
       },
     });
 
-    expect(screen.getByText("Linear Algebra")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Linear Algebra/ })).toBeInTheDocument();
   });
 
   it("pushes a typed search into the URL and resets the page", async () => {

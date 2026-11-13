@@ -124,6 +124,7 @@ function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
       lesson,
       activities: [activity(99)],
       activitiesTotal: 60,
+      activityCount: 60,
       orderText: "1.1",
       page: 1,
       pageSize: 25,
@@ -197,5 +198,14 @@ describe("instructor.lesson — duplicate activity placement (#1207)", () => {
     const params = resultingParams();
     expect(params.get("search")).toBeNull();
     expect(params.get("page")).toBe("3");
+  });
+
+  it("counts the whole lesson while a search narrows the list", () => {
+    wrap({ search: "traversal", activitiesTotal: 2, activityCount: 12 });
+
+    expect(screen.getByText("12 activities")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /activities/i, level: 2 })).toHaveTextContent(
+      "Activities(12)",
+    );
   });
 });

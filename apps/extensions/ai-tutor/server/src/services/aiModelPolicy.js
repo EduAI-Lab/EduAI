@@ -181,6 +181,8 @@ function mapCatalogModel(model) {
     modelId,
     modelName: model.name,
     provider: model.provider.name,
+    // #1899: Core can serve this model with the deployment's own key.
+    platformKeyAvailable: model.platformKeyAvailable === true,
     costTier,
     summary: inferSummary(modelId, model.name),
     roleHint:
@@ -201,6 +203,35 @@ export async function loadAiModelCatalog() {
     .filter((model) => model.isActive)
     .map(mapCatalogModel)
     .toSorted((a, b) => a.modelName.localeCompare(b.modelName));
+}
+
+const CORE_KEYED_PROVIDERS_TTL_MS = 60_000;
+let coreKeyedProvidersCache = null;
+
+export function resetCoreKeyedProvidersCacheForTests() {
+  coreKeyedProvidersCache = null;
+}
+
+/**
+ * Providers Core can serve with the deployment's own key (#1899), so a student
+ * needs no key of their own for them. Cached briefly since it sits on every
+ * keyless turn; null when the catalog is unreachable (never cached).
+ */
+export async function loadProvidersWithCoreKey() {
+  if (coreKeyedProvidersCache && coreKeyedProvidersCache.expiresAt > Date.now()) {
+    return coreKeyedProvidersCache.providers;
+  }
+  try {
+    const models = await loadAiModelCatalog();
+    const providers = new Set(
+      models.filter((model) => model.platformKeyAvailable).map((model) => model.provider),
+    );
+    coreKeyedProvidersCache = { providers, expiresAt: Date.now() + CORE_KEYED_PROVIDERS_TTL_MS };
+    return providers;
+  } catch (error) {
+    logSafeError("Failed to load AI model catalog", error);
+    return null;
+  }
 }
 
 /**

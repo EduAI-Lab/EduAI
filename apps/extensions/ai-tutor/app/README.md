@@ -62,16 +62,18 @@ app/
       PaginationControls.tsx, RouteErrorState.tsx, TruncatedListNotice.tsx
     courses/
       CourseAnalyticsPanel.tsx, CourseFeedbackPanel.tsx, CourseSubmissionsPanel.tsx,
-      CourseTopicsHeroAction.tsx, ModuleCard.tsx, SubmissionCard.tsx
+      CourseTopicsHeroAction.tsx, ModuleCard.tsx, SubmissionCard.tsx,
+      ContentListRow.tsx, CourseNextSteps.tsx, CourseBannerMenu.tsx, useCoursePublishToggle.tsx
     dashboard/
-      DashboardView.tsx              #   Shared presentational shell
+      DashboardView.tsx              #   Student/admin shell
+      TeachingDashboard.tsx          #   Staff course grid (instructor, unit admin, TA)
       Dashboard{Student,Ta,Instructor,UnitAdmin,Admin}View.tsx  # Per-role content
-      ContinueLearningPanel.tsx, NeedsAttentionPanel.tsx, BugReportTriagePanel.tsx
+      ContinueLearningPanel.tsx, BugReportTriagePanel.tsx
       dashboard-helpers.ts
     help/
       HelpView.tsx
     layout/
-      CourseSwitcher.tsx, ShellBreadcrumbContext.tsx, ShellBreadcrumbs.tsx
+      CourseHeader.tsx, CourseSwitcher.tsx, ShellBreadcrumbContext.tsx, ShellBreadcrumbs.tsx
     lessons/
       LessonActivityView.tsx         #   Question + answer card, extracted so student.lesson.tsx stays a coordinator
       LessonCard.tsx, ModuleHero.tsx

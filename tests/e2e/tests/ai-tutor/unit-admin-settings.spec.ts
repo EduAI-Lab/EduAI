@@ -84,7 +84,7 @@ test.describe("UNIT_ADMIN settings", () => {
   test("the Account tab shows the signed-in unit admin's profile", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/settings`);
 
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
     await expect(page.getByText("Your account details for this AI Tutor session.")).toBeVisible();
     await expect(page.getByText(ua.email).first()).toBeVisible();
     // The role badge is rendered from the session, so it is a second read of

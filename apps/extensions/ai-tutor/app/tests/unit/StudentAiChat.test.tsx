@@ -348,6 +348,30 @@ describe("StudentAiChat — BYOK as fallback (#1645)", () => {
     expect(sendGuideMessage).not.toHaveBeenCalled();
   });
 
+  it("sends with no key for a BYOK model Core holds a deployment key for (#1899)", async () => {
+    mockKeysRef.current = {};
+    mockGetKey.mockReturnValue("");
+    listAiModels.mockResolvedValue([
+      {
+        id: "m1",
+        modelId: "google:gemini-2.5-flash",
+        modelName: "Gemini 2.5 Flash",
+        platformKeyAvailable: true,
+      },
+    ]);
+    sendGuideMessage.mockResolvedValue({ message: "Here is a hint.", chatId: null });
+    renderChat();
+
+    await waitFor(() => expect(screen.getByLabelText("Model")).not.toBeDisabled());
+    expect(screen.queryByText("Connect an AI provider to start")).not.toBeInTheDocument();
+
+    await typeAndSend("I need a hint");
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    const params = sendGuideMessage.mock.calls[0][1];
+    expect(params).toMatchObject({ modelId: "google:gemini-2.5-flash" });
+    expect(params.apiKey).toBeUndefined();
+  });
+
   it("does not populate the picker from a held key when the catalogue is empty (allow-list is absolute)", async () => {
     // Admin catalogue is empty, but the student holds an OpenAI key. The key is
     // a fallback for reaching an *allowed* model, never a way to conjure one the
