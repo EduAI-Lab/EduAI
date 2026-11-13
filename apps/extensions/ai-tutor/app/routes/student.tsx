@@ -35,6 +35,7 @@ import {
 import { loadCourseFacets } from "~/lib/course-facets";
 import { redirectToContextualCourse } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { MissingCourseNotice } from "~/components/courses/MissingCourseNotice";
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // #1660 review: the "Courses" breadcrumb/CourseSwitcher link on every
@@ -48,7 +49,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // but a filtered result set would still have truncated silently at 200.
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
-  await redirectToContextualCourse(request, "student", api.listCourses);
+  const missingCoreCourseId = await redirectToContextualCourse(request, "student", api.listCourses);
 
   const [page, facets] = await Promise.all([
     api.listCourses({
@@ -78,6 +79,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
     pageSize: page.pageSize,
     selection,
     facets,
+    missingCoreCourseId,
   };
 }
 
@@ -165,7 +167,7 @@ function EmptyCourseCard({
 export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
-  const { total, page, pageSize, selection, facets } = loaderData;
+  const { total, page, pageSize, selection, facets, missingCoreCourseId } = loaderData;
   const navigation = useNavigation();
   const { searchDraft, setSearchDraft, setFilter, clearAll, goToPage } =
     useCourseListFilters(selection);
@@ -184,6 +186,10 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
       <div data-tour="student-dashboard-header">
         <PageHeading heading={heading} subheading={subheading} />
       </div>
+
+      {missingCoreCourseId && (
+        <MissingCourseNotice coreCourseId={missingCoreCourseId} audience="student" />
+      )}
 
       <CourseListView<Course>
         courses={courseList}

@@ -152,6 +152,17 @@ describe("instructor clientLoader — filter threading", () => {
     expect(thrown.headers.get("Location")).toBe("/instructor/courses/321?coreCourseId=core-321");
   });
 
+  it("flags a Core id with no AI Tutor course instead of redirecting (#2158)", async () => {
+    listCourses
+      .mockResolvedValueOnce({ data: [], total: 0, page: 1, pageSize: 1 })
+      .mockResolvedValueOnce({ data: [course()], total: 1, page: 1, pageSize: 200 });
+
+    const data = await runLoader("http://x/instructor?coreCourseId=core-404");
+
+    expect(data.missingCoreCourseId).toBe("core-404");
+    expect(data.courses).toHaveLength(1);
+  });
+
   it("returns the server total so the pager reflects the filtered set", async () => {
     listCourses.mockResolvedValue({ data: [course()], total: 42, page: 1, pageSize: 200 });
 
@@ -255,5 +266,21 @@ describe("InstructorHome — controlled list", () => {
     });
 
     expect(screen.getByText(/137 courses found/)).toBeInTheDocument();
+  });
+
+  it("explains a missing course to staff with a link back to Core (#2158)", () => {
+    renderPage({ missingCoreCourseId: "core-404" });
+
+    expect(screen.getByText("This course isn't set up in AI Tutor yet.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to course in Core" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/\/courses\/core-404$/),
+    );
+  });
+
+  it("shows no notice without a missing Core id", () => {
+    renderPage();
+
+    expect(screen.queryByTestId("missing-course-notice")).not.toBeInTheDocument();
   });
 });

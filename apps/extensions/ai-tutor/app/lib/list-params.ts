@@ -79,13 +79,15 @@ export function redirectPastEnd(
 type ContextualCourseLookup = (
   params: Pick<CourseListParams, "page" | "pageSize" | "coreOfferingId">,
 ) => Promise<{ data: Array<Pick<Course, "id">> }>;
+
+/** Redirects to the course matching `?coreCourseId=`; returns that id when nothing matches. */
 export async function redirectToContextualCourse(
   request: Request,
   role: "student" | "instructor",
   listCourses: ContextualCourseLookup,
-): Promise<void> {
+): Promise<string | null> {
   const coreCourseId = new URL(request.url).searchParams.get("coreCourseId")?.trim();
-  if (!coreCourseId) return;
+  if (!coreCourseId) return null;
 
   const contextualCourse = (
     await listCourses({ page: 1, pageSize: 1, coreOfferingId: coreCourseId })
@@ -95,6 +97,7 @@ export async function redirectToContextualCourse(
       `/${role}/courses/${contextualCourse.id}?coreCourseId=${encodeURIComponent(coreCourseId)}`,
     );
   }
+  return coreCourseId;
 }
 
 /**

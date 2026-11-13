@@ -3,13 +3,14 @@
  * (#1207). These decide what a bookmarked or hand-edited URL renders, and what
  * ordinal a drag on page 3 actually persists.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_SEARCH_LENGTH,
   absoluteOrdinal,
   movedRowIndex,
   parseListUrlParams,
   redirectPastEnd,
+  redirectToContextualCourse,
 } from "~/lib/list-params";
 
 const req = (url: string) => new Request(url);
@@ -147,5 +148,43 @@ describe("movedRowIndex", () => {
 
   it("returns -1 when nothing moved", () => {
     expect(movedRowIndex([10, 11, 12], [10, 11, 12])).toBe(-1);
+  });
+});
+
+describe("redirectToContextualCourse (#2158)", () => {
+  it("returns null without a lookup when there is no coreCourseId", async () => {
+    const lookup = vi.fn();
+    await expect(
+      redirectToContextualCourse(req("http://x/student"), "student", lookup),
+    ).resolves.toBeNull();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the matching course", async () => {
+    const lookup = vi.fn().mockResolvedValue({ data: [{ id: 7 }] });
+    let thrown: unknown;
+    try {
+      await redirectToContextualCourse(
+        req("http://x/instructor?coreCourseId=core%207"),
+        "instructor",
+        lookup,
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    if (!(thrown instanceof Response)) throw new Error("Expected a redirect Response");
+    expect(thrown.headers.get("Location")).toBe("/instructor/courses/7?coreCourseId=core%207");
+  });
+
+  it("returns the Core id when no course matches", async () => {
+    const lookup = vi.fn().mockResolvedValue({ data: [] });
+    await expect(
+      redirectToContextualCourse(
+        req("http://x/student?coreCourseId=%20core-9%20"),
+        "student",
+        lookup,
+      ),
+    ).resolves.toBe("core-9");
+    expect(lookup).toHaveBeenCalledWith({ page: 1, pageSize: 1, coreOfferingId: "core-9" });
   });
 });
