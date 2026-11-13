@@ -489,4 +489,11 @@ describe("NavShell — platform crumb", () => {
     const crumbs = renderShell({ breadcrumbs: <span>Settings crumb</span> }, model);
     expect(header(crumbs.container).textContent).toMatch(/^Core›.*Settings crumb/);
   });
+
+  it("links to the app home and is hidden below the md breakpoint", () => {
+    renderShell({}, makeModel({ currentAppId: "core" }));
+    const crumb = screen.getByRole("link", { name: "Core" });
+    expect(crumb).toHaveAttribute("href", "/");
+    expect(crumb.parentElement).toHaveClass("hidden", "md:inline");
+  });
 });

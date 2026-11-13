@@ -12,6 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
   cn,
+  useMenuTooltip,
 } from "@eduai/ui";
 
 import {
@@ -37,6 +38,7 @@ export function CourseCardCustomizePopover({
   tone = "banner",
 }: CourseCardCustomizePopoverProps) {
   const [open, setOpen] = useState(false);
+  const menuTip = useMenuTooltip(open);
   const [draftColor, setDraftColor] = useState<string | null>(null);
   const [draftNickname, setDraftNickname] = useState("");
   const [hexInput, setHexInput] = useState("");
@@ -73,10 +75,11 @@ export function CourseCardCustomizePopover({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
+      <Tooltip {...menuTip.tooltipProps}>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <button
+              {...menuTip.triggerProps}
               type="button"
               aria-label={`Customize ${courseName}`}
               className={cn(

@@ -37,4 +37,13 @@ describe("CollapsibleSection", () => {
       "false",
     );
   });
+
+  it("only points aria-controls at the body while the body is mounted", () => {
+    renderSection();
+    const button = screen.getByRole("button", { name: "Collapse" });
+    expect(button).toHaveAttribute("aria-controls", screen.getByText("Charts").parentElement!.id);
+
+    fireEvent.click(button);
+    expect(screen.getByRole("button", { name: "Expand" })).not.toHaveAttribute("aria-controls");
+  });
 });

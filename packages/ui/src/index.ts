@@ -73,6 +73,7 @@ export { Avatar } from "./avatar";
 export type { AvatarProps } from "./avatar";
 export { PageHeading } from "./page-heading";
 export type { PageHeadingProps } from "./page-heading";
+export { useMenuTooltip } from "./use-menu-tooltip";
 export { CollapsibleSection } from "./collapsible-section";
 export type { CollapsibleSectionProps } from "./collapsible-section";
 export { Spinner } from "./spinner";

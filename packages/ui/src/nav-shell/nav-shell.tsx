@@ -181,8 +181,11 @@ export function NavShell({
                   </button>
                 )}
                 {platformLabel && (
-                  <span className="shrink-0 text-sm text-muted-foreground">
-                    {platformLabel}
+                  // Hidden on phones, where the header already holds the course crumb and actions.
+                  <span className="hidden shrink-0 text-sm text-muted-foreground md:inline">
+                    <NavAnchor href="/" className="hover:text-foreground hover:underline">
+                      {platformLabel}
+                    </NavAnchor>
                     <span aria-hidden="true" className="mx-1.5">
                       ›
                     </span>

@@ -460,11 +460,10 @@ export function DashboardView({
       {/* Analytics charts */}
       {analytics && (
         <ScrollReveal index={3} parallax={false}>
-          <div data-tour="dashboard-analytics">
-            <CollapsibleSection title="At a glance" storageKey="eduai.dashboard.analyticsCollapsed">
-              {analytics}
-            </CollapsibleSection>
-          </div>
+          <CollapsibleSection title="At a glance" storageKey="eduai.dashboard.analyticsCollapsed">
+            {/* On the charts, not the header: collapsed, the tour step has no target and is skipped. */}
+            <div data-tour="dashboard-analytics">{analytics}</div>
+          </CollapsibleSection>
         </ScrollReveal>
       )}
 

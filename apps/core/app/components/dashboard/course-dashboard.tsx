@@ -34,6 +34,7 @@ import {
   cn,
   courseThemeVars,
   termLabel,
+  useMenuTooltip,
   visibleAppsForRole,
 } from "@eduai/ui";
 
@@ -215,14 +216,17 @@ function TeachingMenu({
 }) {
   const revalidator = useRevalidator();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuTip = useMenuTooltip(menuOpen);
   const id = encodeURIComponent(course.id);
   return (
     <>
-      <DropdownMenu>
-        <Tooltip>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <Tooltip {...menuTip.tooltipProps}>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
+                {...menuTip.triggerProps}
                 type="button"
                 aria-label={`${course.code} actions`}
                 className={cn(
@@ -582,7 +586,11 @@ export function CourseDashboard({
               <RecentChatsPanel chats={data.recentChats.slice(0, 4)} loading={false} />
             </div>
           </SidePanel>
-          <CollapsibleSection title="At a glance" storageKey="eduai.dashboard.analyticsCollapsed">
+          <CollapsibleSection
+            title="At a glance"
+            storageKey="eduai.dashboard.analyticsCollapsed"
+            headerClassName="border-b border-border pb-1.5"
+          >
             <AtAGlance stats={stats} data={data} />
           </CollapsibleSection>
         </aside>
