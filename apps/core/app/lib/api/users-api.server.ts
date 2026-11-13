@@ -54,6 +54,18 @@ const activeStudentEnrollmentWhere = {
   isActive: true,
 } satisfies Prisma.EnrollmentWhereInput;
 
+type ReconcileError = Extract<
+  Awaited<ReturnType<typeof reconcileUserTACourses>>,
+  { error: string }
+>["error"];
+
+/** Thrown inside a transaction to undo its writes; the caller maps `code` to a response. */
+class TransactionRollback extends Error {
+  constructor(readonly code: ReconcileError) {
+    super(code);
+  }
+}
+
 export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
   const requestContext = getRequestContext(request);
@@ -459,52 +471,59 @@ export async function handleUsersApiRequest(request: Request) {
         let activeTACourseIds: string[];
         let updatedWithCount;
         if (shouldReconcileTACourses) {
-          const transactionResult = await prisma.$transaction(async (tx) => {
-            if (removesAdminStatus) {
-              const violation = await adminFloorViolation(tx, userId);
-              if (violation) return violation;
-            }
-            const previousTAEnrollments = await tx.enrollment.findMany({
-              where: { userId, role: "TA", isActive: true },
-              select: { courseId: true, course: { select: { deletedAt: true } } },
-            });
-            let convertedCourseIds: readonly string[] = [];
-            if (convertsInstructorEnrollments) {
-              const conversion = await convertInstructorEnrollmentsToTA(tx, userId);
-              if (conversion.error) {
-                return {
-                  error: conversion.error,
-                  blockedCourseIds: conversion.blockedCourseIds,
-                } as const;
+          const transactionResult = await prisma
+            .$transaction(async (tx) => {
+              if (removesAdminStatus) {
+                const violation = await adminFloorViolation(tx, userId);
+                if (violation) return violation;
               }
-              convertedCourseIds = conversion.convertedCourseIds;
-            }
-            // Without taCourseIds a STUDENT keeps their current TA courses; any other role clears them.
-            const desiredTACourseIds = [
-              ...(taCourseIds ??
-                (convertsInstructorEnrollments
-                  ? // a soft-deleted course would fail the live-course lookup in reconcile
-                    previousTAEnrollments
-                      .filter((enrollment) => enrollment.course.deletedAt === null)
-                      .map((enrollment) => enrollment.courseId)
-                  : [])),
-              ...convertedCourseIds,
-            ];
-            const reconciliation = await reconcileUserTACourses(
-              tx,
-              userId,
-              effectiveRole!,
-              desiredTACourseIds,
-            );
-            if (reconciliation.error) {
-              return { error: reconciliation.error } as const;
-            }
-            return {
-              updated: await updateUser(tx),
-              activeTACourseIds: reconciliation.activeTACourseIds,
-              previousTACourseIds: previousTAEnrollments.map((enrollment) => enrollment.courseId),
-            } as const;
-          });
+              const previousTAEnrollments = await tx.enrollment.findMany({
+                where: { userId, role: "TA", isActive: true },
+                select: { courseId: true, course: { select: { deletedAt: true } } },
+              });
+              let convertedCourseIds: readonly string[] = [];
+              if (convertsInstructorEnrollments) {
+                const conversion = await convertInstructorEnrollmentsToTA(tx, userId);
+                if (conversion.error) {
+                  return {
+                    error: conversion.error,
+                    blockedCourseIds: conversion.blockedCourseIds,
+                  } as const;
+                }
+                convertedCourseIds = conversion.convertedCourseIds;
+              }
+              // Without taCourseIds a STUDENT keeps their current TA courses; any other role clears them.
+              const desiredTACourseIds = [
+                ...(taCourseIds ??
+                  (convertsInstructorEnrollments
+                    ? // a soft-deleted course would fail the live-course lookup in reconcile
+                      previousTAEnrollments
+                        .filter((enrollment) => enrollment.course.deletedAt === null)
+                        .map((enrollment) => enrollment.courseId)
+                    : [])),
+                ...convertedCourseIds,
+              ];
+              const reconciliation = await reconcileUserTACourses(
+                tx,
+                userId,
+                effectiveRole!,
+                desiredTACourseIds,
+              );
+              if (reconciliation.error) {
+                // Throw, not return: a returned value commits, which would keep the
+                // INSTRUCTOR -> TA conversion above while the role save never ran.
+                throw new TransactionRollback(reconciliation.error);
+              }
+              return {
+                updated: await updateUser(tx),
+                activeTACourseIds: reconciliation.activeTACourseIds,
+                previousTACourseIds: previousTAEnrollments.map((enrollment) => enrollment.courseId),
+              } as const;
+            })
+            .catch((error) => {
+              if (error instanceof TransactionRollback) return { error: error.code } as const;
+              throw error;
+            });
 
           if (transactionResult.error) {
             if ("blockedCourseIds" in transactionResult) {

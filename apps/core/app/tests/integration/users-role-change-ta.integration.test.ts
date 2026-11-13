@@ -183,6 +183,26 @@ describe("PATCH /api/users/:id — instructor enrollments on a change to STUDENT
     expect(await enrollmentRole(courseA, targetId)).toBe("TA");
   });
 
+  it("rolls the conversion back when the TA save fails, e.g. a picked course was deleted", async () => {
+    const { targetId, otherId, courseA, courseB } = await setup("INSTRUCTOR");
+    const deletedCourse = await createCourse(otherId);
+    await prisma.course.update({ where: { id: deletedCourse }, data: { deletedAt: new Date() } });
+
+    const res = await patchUser(targetId, { role: "STUDENT", taCourseIds: [deletedCourse] });
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe("TA_COURSE_NOT_FOUND");
+    const user = await prisma.user.findUnique({ where: { id: targetId }, select: { role: true } });
+    expect(user?.role).toBe("INSTRUCTOR");
+    expect(await enrollmentRole(courseA, targetId)).toBe("INSTRUCTOR");
+    expect(await enrollmentRole(courseB, targetId)).toBe("INSTRUCTOR");
+    const course = await prisma.course.findUnique({
+      where: { id: courseA },
+      select: { instructorId: true },
+    });
+    expect(course?.instructorId).toBe(targetId);
+  });
+
   it("converts enrollments when taCourseIds is omitted", async () => {
     const { targetId, courseA, courseB } = await setup("INSTRUCTOR");
 

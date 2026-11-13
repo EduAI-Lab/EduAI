@@ -205,7 +205,7 @@ export async function convertInstructorEnrollmentsToTA(
   userId: string,
 ) {
   const rows = await tx.enrollment.findMany({
-    // shortcut: deleted courses are skipped, a restored course keeps the stale INSTRUCTOR row, handle on restore if that matters
+    // Deleted courses are skipped, so a course restored later keeps its stale INSTRUCTOR row; nothing repairs it on restore.
     where: { userId, role: "INSTRUCTOR", isActive: true, course: { deletedAt: null } },
     select: { id: true, courseId: true, role: true, isActive: true },
     orderBy: { courseId: "asc" }, // fixed lock order avoids deadlocks
