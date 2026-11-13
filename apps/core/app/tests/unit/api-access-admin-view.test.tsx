@@ -46,6 +46,7 @@ function renderView(overrides: Partial<React.ComponentProps<typeof ApiAccessAdmi
     error: null,
     onCreateGrant: vi.fn().mockResolvedValue(undefined),
     onRevokeGrant: vi.fn().mockResolvedValue(undefined),
+    onUpdateGrant: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
   render(<ApiAccessAdminView {...props} />);
@@ -82,6 +83,33 @@ describe("ApiAccessAdminView", () => {
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(props.onRevokeGrant).toHaveBeenCalledWith("g1"));
+  });
+
+  // #2095
+  it("edits an active grant's limits, sending only what changed", async () => {
+    const props = renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Edit limits for Sam Student" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Edit API access")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Purpose")).toHaveAttribute("readonly");
+
+    const save = within(dialog).getByRole("button", { name: "Save changes" });
+    expect(save).toBeDisabled();
+    const tokens = within(dialog).getByLabelText("Tokens / day");
+    expect(tokens).toHaveValue(200_000);
+    fireEvent.change(tokens, { target: { value: "1000000" } });
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(props.onUpdateGrant).toHaveBeenCalledWith("g1", { dailyTokenLimit: 1_000_000 }),
+    );
+    expect(props.onCreateGrant).not.toHaveBeenCalled();
+  });
+
+  it("has no edit button for a revoked grant", () => {
+    renderView({ grants: [revokedGrant] });
+    expect(screen.queryByRole("button", { name: /edit limits/i })).not.toBeInTheDocument();
   });
 
   it("toggles revoked and ended grants", () => {
