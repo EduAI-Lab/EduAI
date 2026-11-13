@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
-import { resolveAuthCookieDomain } from "~/lib/auth/cookie-domain";
+import { resolveAuthCookieDomain, resolveAuthCookiePrefix } from "~/lib/auth/cookie-domain";
 
 describe("resolveAuthCookieDomain", () => {
   it("returns a real public suffix unchanged", () => {
@@ -25,4 +25,24 @@ describe("resolveAuthCookieDomain", () => {
     expect(resolveAuthCookieDomain("")).toBeUndefined();
     expect(resolveAuthCookieDomain("   ")).toBeUndefined();
   });
+});
+
+describe("resolveAuthCookiePrefix (#2129)", () => {
+  it("keeps Better Auth's default when unset, so prod's cookie name doesn't change", () => {
+    expect(resolveAuthCookiePrefix(undefined)).toBe("better-auth");
+    expect(resolveAuthCookiePrefix("")).toBe("better-auth");
+    expect(resolveAuthCookiePrefix("   ")).toBe("better-auth");
+  });
+
+  it("returns dev's own prefix, trimmed", () => {
+    expect(resolveAuthCookiePrefix("eduai-dev")).toBe("eduai-dev");
+    expect(resolveAuthCookiePrefix("  eduai_dev  ")).toBe("eduai_dev");
+  });
+
+  it.each(["eduai dev", "eduai.dev", "eduai;dev", "eduai=dev"])(
+    "throws on %s instead of falling back to the shared name",
+    (prefix) => {
+      expect(() => resolveAuthCookiePrefix(prefix)).toThrow(/COOKIE_PREFIX/);
+    },
+  );
 });
