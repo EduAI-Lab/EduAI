@@ -34,9 +34,16 @@ vi.mock("@/components/dashboard/QmDashboardView", () => ({
   },
 }));
 
+vi.mock("@/components/dashboard/QmAdminDashboard", () => ({
+  QmAdminDashboard: ({ userId }: { userId: string }) => <div>admin-dashboard {userId}</div>,
+}));
+
 import DashboardPage from "@/pages/DashboardPage";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  lastProps = undefined;
+});
 
 function setup(
   overrides: {
@@ -81,8 +88,15 @@ describe("DashboardPage", () => {
     expect(lastProps.quickActions.some((a: any) => a.label === "Settings")).toBe(false);
   });
 
+  it("shows admins the Question Maker overview instead of the workspace dashboard", () => {
+    setup({ user: { id: "admin-1", name: "Jane", role: "ADMIN" } });
+    const { getByText } = render(<DashboardPage />);
+    expect(getByText("admin-dashboard admin-1")).toBeInTheDocument();
+    expect(lastProps).toBeUndefined();
+  });
+
   it("includes Settings quick action for staff roles", () => {
-    setup({ user: { name: "Jane", role: "ADMIN" } });
+    setup({ user: { name: "Jane", role: "INSTRUCTOR" } });
     render(<DashboardPage />);
     expect(lastProps.quickActions.some((a: any) => a.label === "Settings")).toBe(true);
   });

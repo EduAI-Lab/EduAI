@@ -37,6 +37,10 @@ export default defineConfig({
         frontendDir,
         "../../../../../packages/ui/src/assistant/shared.ts",
       ),
+      "@eduai/ui/weekly-usage-chart": path.resolve(
+        frontendDir,
+        "../../../../../packages/ui/src/charts/weekly-usage-chart.tsx",
+      ),
       "@eduai/ui/assistant": path.resolve(
         frontendDir,
         "../../../../../packages/ui/src/assistant/index.ts",

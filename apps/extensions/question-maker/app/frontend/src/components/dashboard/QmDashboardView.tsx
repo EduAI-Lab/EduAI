@@ -59,7 +59,7 @@ export type QmDashboardViewProps = {
   analytics?: QmDashboardAnalytics;
 };
 
-function relativeTime(iso: string): string {
+export function relativeTime(iso: string): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diffMs = now - then;
