@@ -1,12 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { IconFiles, IconRobot } from "@tabler/icons-react";
 import { describe, expect, it } from "vitest";
 
 import { CourseTile, type CourseTileLinkComponent } from "../course-tile";
 
 /** Stands in for a router link: renders `to` as the href, marked so tests can tell. */
-const RouterLink: CourseTileLinkComponent = ({ to, className, children }) => (
-  <a href={to} className={className} data-router-link="">
+const RouterLink: CourseTileLinkComponent = ({ to, children, ...rest }) => (
+  // Spreads the rest like React Router's Link, so a tooltip's ref and handlers land.
+  <a href={to} {...rest} data-router-link="">
     {children}
   </a>
 );
@@ -90,4 +91,22 @@ describe("CourseTile", () => {
     render(<CourseTile {...BASE} links={[]} />);
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
   });
+
+  it.each([
+    ["a router link", RouterLink],
+    ["a plain anchor", undefined],
+  ] as const)(
+    "names each icon link with a tooltip on hover or focus (%s)",
+    async (_, LinkComponent) => {
+      render(
+        <CourseTile
+          {...BASE}
+          LinkComponent={LinkComponent}
+          links={[{ key: "materials", label: "Materials", icon: IconFiles, href: "/m" }]}
+        />,
+      );
+      act(() => screen.getByRole("link", { name: "Materials" }).focus());
+      expect(await screen.findByRole("tooltip")).toHaveTextContent("Materials");
+    },
+  );
 });

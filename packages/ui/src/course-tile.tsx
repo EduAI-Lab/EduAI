@@ -26,42 +26,33 @@ export type CourseTileLink = {
 
 /**
  * A router link such as React Router's `Link` (rendered with `to`); without
- * one the card falls back to plain anchors.
+ * one the card falls back to plain anchors. It must pass the other props and
+ * `ref` on to its anchor, as `Link` does, or the icon tooltips never open.
  */
-export type CourseTileLinkComponent = React.ElementType<{
-  to: string;
-  className?: string;
-  children?: React.ReactNode;
-}>;
+export type CourseTileLinkComponent = React.ElementType<
+  Omit<React.ComponentPropsWithRef<"a">, "href"> & { to: string }
+>;
 
 /** Accent text blended toward the foreground so it keeps contrast in both themes. */
 const ACCENT_TEXT = "text-[color-mix(in_oklch,var(--course-accent)_72%,var(--foreground))]";
 
+/**
+ * Passes every other prop and `ref` through, because a Tooltip trigger
+ * (`asChild`) attaches its hover and focus handlers here; dropping them is
+ * why the icon tooltips once never opened.
+ */
 function TileLink({
   href,
   external,
   LinkComponent,
-  className,
-  children,
-}: {
+  ...anchorProps
+}: Omit<React.ComponentPropsWithRef<"a">, "href"> & {
   href: string;
   external?: boolean;
   LinkComponent?: CourseTileLinkComponent;
-  className: string;
-  children: React.ReactNode;
 }) {
-  if (external || !LinkComponent) {
-    return (
-      <a href={href} className={className}>
-        {children}
-      </a>
-    );
-  }
-  return (
-    <LinkComponent to={href} className={className}>
-      {children}
-    </LinkComponent>
-  );
+  if (external || !LinkComponent) return <a href={href} {...anchorProps} />;
+  return <LinkComponent to={href} {...anchorProps} />;
 }
 
 /** Cards show icon buttons (Canvas-style) named by a tooltip; list rows also show the label. */
