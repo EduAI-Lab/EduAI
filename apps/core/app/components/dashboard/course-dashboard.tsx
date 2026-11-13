@@ -162,16 +162,32 @@ export function courseLinks(
   } else {
     links.push({ key: "chat", label: "Chat", icon: IconMessages, href: `/chat?courseId=${id}` });
   }
-  for (const app of extensions) {
-    links.push({
-      key: app.id,
-      label: app.name,
-      icon: extensionIcon(app.id),
-      href: app.url,
-      external: true,
-    });
-  }
+  links.push(...extensionLinks(extensions));
   return links;
+}
+
+function extensionLinks(extensions: { id: string; name: string; url: string }[]): CourseLink[] {
+  return extensions.map((app) => ({
+    key: app.id,
+    label: app.name,
+    icon: extensionIcon(app.id),
+    href: app.url,
+    external: true,
+  }));
+}
+
+/**
+ * Admins and unit admins manage courses they don't teach: materials, the
+ * course chat (`/instructor/chat` lists only courses the viewer teaches), and
+ * the extensions.
+ */
+export function managedCourseLinks(courseId: string, launcherRole: string): CourseLink[] {
+  const id = encodeURIComponent(courseId);
+  return [
+    { key: "materials", label: "Materials", icon: IconFiles, href: `/courses/${id}?tab=materials` },
+    { key: "chat", label: "Chat", icon: IconMessages, href: `/chat?courseId=${id}` },
+    ...extensionLinks(courseExtensions(courseId, launcherRole)),
+  ];
 }
 
 function CourseLinkButton({ link, iconOnly }: { link: CourseLink; iconOnly?: boolean }) {

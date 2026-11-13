@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import {
-  CourseCard,
   CourseTile,
   paletteColorAtIndex,
   type CourseTileLink,
@@ -76,31 +75,26 @@ function syncedLabel(updatedAt?: string): string | undefined {
 export type CoursesGridProps = {
   courses: Course[];
   isLoading: boolean;
-  onSelectCourse: (course: Course) => void;
   emptyHint?: string;
   showDepartment?: boolean;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
   filters?: ReactNode;
   /** Optional role-specific predicate applied before the search box. */
   matchesFilter?: (course: Course) => boolean;
-  /** Draws the dashboard's course card (Core #2105) instead of the older one. */
-  courseTiles?: boolean;
 };
 
 /**
  * QM's course list. Thin wrapper over the shared `CourseListView` so search,
  * term grouping, and layout read identically to Core and AI Tutor; QM only
- * supplies its click-to-select card and any role-specific filter.
+ * supplies the course sections on each card and any role-specific filter.
  */
 export function CoursesGrid({
   courses,
   isLoading,
-  onSelectCourse,
   emptyHint,
   showDepartment = false,
   filters,
   matchesFilter,
-  courseTiles = false,
 }: CoursesGridProps) {
   const filterGroups: CourseFilterGroup<Course>[] = [
     buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
@@ -120,72 +114,32 @@ export function CoursesGrid({
     // for legacy unlinked rows.
     const colorIndex = defaultColorIndexForCourse(course.coreCourseId ?? String(course.id));
     const synced = syncedLabel(course.updatedAt);
-    const extraBadges = [course.coreCourseId ? "EduAI Core" : "Local", synced].filter(
-      (b): b is string => Boolean(b),
-    );
-
-    if (courseTiles) {
-      const href = `/courses/${course.id}?tab=overview`;
-      return (
-        // Every card is a tour target (#1754); see the older card below.
-        <div
-          data-tour="course-select"
-          data-tour-route={`/courses/${course.id}`}
-          data-course-id={course.id}
-        >
-          <CourseTile
-            code={course.code ?? ""}
-            title={course.name}
-            term={course.term || ""}
-            year={course.year ?? null}
-            accent={paletteColorAtIndex(colorIndex)}
-            href={href}
-            LinkComponent={Link}
-            links={sectionLinks(course.id)}
-            publishState={course.isPublished ?? undefined}
-            extraBadges={extraBadges}
-          />
-        </div>
-      );
-    }
+    const extraBadges = [
+      showDepartment && course.department ? getDepartmentLabel(course.department) : undefined,
+      course.coreCourseId ? "EduAI Core" : "Local",
+      synced,
+    ].filter((b): b is string => Boolean(b));
 
     return (
+      // Every card is a tour target: the guided tour (#1754) spotlights the
+      // first one on screen and follows it into its workspace, so it matches
+      // CourseListView's ordering (current term first) and any active filter.
       <div
-        onClick={(e) => {
-          e.preventDefault();
-          onSelectCourse(course);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onSelectCourse(course);
-          }
-        }}
-        role="button"
-        tabIndex={0}
-        // Every card is a tour target: the guided tour (#1754) spotlights the
-        // first one on screen and follows it into its workspace, so it matches
-        // CourseListView's ordering (current term first) and any active filter.
         data-tour="course-select"
         data-tour-route={`/courses/${course.id}`}
         data-course-id={course.id}
-        className="cursor-pointer rounded-[var(--radius-xl)] focus:outline-none focus:ring-2 focus:ring-primary"
       >
-        <CourseCard
-          id={String(course.id)}
-          code={course.code || course.name}
-          name={course.code ? course.name : ""}
-          description={course.description ?? undefined}
+        <CourseTile
+          code={course.code ?? ""}
+          title={course.name}
           term={course.term || ""}
-          year={course.year}
-          isPublished={course.isPublished ?? false}
-          department={showDepartment ? course.department : undefined}
-          departmentLabel={
-            showDepartment && course.department ? getDepartmentLabel(course.department) : undefined
-          }
+          year={course.year ?? null}
+          accent={paletteColorAtIndex(colorIndex)}
+          href={`/courses/${course.id}?tab=overview`}
+          LinkComponent={Link}
+          links={sectionLinks(course.id)}
+          publishState={course.isPublished ?? undefined}
           extraBadges={extraBadges}
-          colorIndex={colorIndex}
-          href="#"
         />
       </div>
     );

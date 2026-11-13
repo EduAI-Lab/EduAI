@@ -151,9 +151,9 @@ beforeAll(() => {
   }
 });
 
-/** Opens the "Course actions" dropdown for a card (Radix DropdownMenu — opens on pointerdown). */
+/** Opens a card's "{code} actions" dropdown (Radix DropdownMenu — opens on pointerdown). */
 function openCourseActions(
-  button: HTMLElement = screen.getByRole("button", { name: /course actions/i }),
+  button: HTMLElement = screen.getByRole("button", { name: / actions$/ }),
 ) {
   fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
 }
@@ -209,8 +209,8 @@ describe("CoursesAdminView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    expect(screen.getByText("COSC 101")).toBeInTheDocument();
-    expect(screen.getByText("COSC 201")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 101 · / })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 201 · / })).toBeInTheDocument();
   });
 
   it("shows a course actions menu button per course", () => {
@@ -223,8 +223,7 @@ describe("CoursesAdminView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    // Each card has a "Course actions" 3-dot dropdown button
-    expect(screen.getByRole("button", { name: /course actions/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "COSC 101 actions" })).toBeInTheDocument();
   });
 });
 
@@ -578,8 +577,8 @@ describe("CoursesUnitAdminView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    expect(screen.getByText("COSC 101")).toBeInTheDocument();
-    expect(screen.queryByText("MATH 101")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 101 · / })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^MATH 101 · / })).not.toBeInTheDocument();
   });
 
   it("shows a course actions menu button per course", () => {
@@ -593,8 +592,7 @@ describe("CoursesUnitAdminView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    // Each card has a "Course actions" 3-dot dropdown button
-    expect(screen.getByRole("button", { name: /course actions/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "COSC 101 actions" })).toBeInTheDocument();
   });
 
   it("disables Create Course when no authorized units match departments", () => {
@@ -1340,7 +1338,7 @@ describe("CoursesView — controlled list wiring", () => {
     fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: "data" } });
     expect(onSearchChange).toHaveBeenCalledWith("data");
     // Controlled mode must not drop the row the server returned.
-    expect(screen.getByText("COSC 101")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 101 · / })).toBeInTheDocument();
   });
 
   it("reports the server total instead of the page length", () => {

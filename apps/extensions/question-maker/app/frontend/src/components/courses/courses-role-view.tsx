@@ -10,8 +10,6 @@ type RoleConfig = {
   subheading: string;
   emptyHint: string;
   showDepartment?: boolean;
-  /** Draws the dashboard's course card (Core #2105) instead of the older one. */
-  courseTiles?: boolean;
 };
 
 const ROLE_CONFIG = {
@@ -21,8 +19,6 @@ const ROLE_CONFIG = {
       "Every course you have access to appears here. Open a course to manage its question bank.",
     emptyHint: "No courses linked yet. Add a course to start authoring.",
     showDepartment: true,
-    // Admins keep the older card, as on Core's admin Courses page.
-    courseTiles: false,
   },
   instructor: {
     heading: "Courses",
@@ -32,7 +28,6 @@ const ROLE_CONFIG = {
     // Spelled out rather than left absent: both arms answer the same questions,
     // so a reader does not have to know which keys each one happens to carry.
     showDepartment: false,
-    courseTiles: true,
   },
 } satisfies Record<"admin" | "instructor", RoleConfig>;
 
@@ -47,12 +42,7 @@ export function CoursesRoleView({ role, ...props }: CoursesRoleViewProps) {
   return (
     <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
       <PageHeading heading={config.heading} subheading={config.subheading} />
-      <CoursesGrid
-        {...props}
-        showDepartment={config.showDepartment}
-        emptyHint={config.emptyHint}
-        courseTiles={config.courseTiles}
-      />
+      <CoursesGrid {...props} showDepartment={config.showDepartment} emptyHint={config.emptyHint} />
     </div>
   );
 }
