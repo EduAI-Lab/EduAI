@@ -33,6 +33,7 @@ import type {
   ApiAccessDefaults,
   ApiAccessGrantRow,
   CreateApiAccessGrantInput,
+  UpdateApiAccessGrantInput,
 } from "~/hooks/api/use-api-access";
 import { formatUsage, usagePercent } from "~/lib/api-keys/api-access";
 import { formatDate, useFormatScope } from "~/lib/hydration-format";
@@ -46,6 +47,8 @@ type ApiAccessAdminViewProps = {
   error: string | null;
   onCreateGrant: (input: CreateApiAccessGrantInput) => Promise<void>;
   onRevokeGrant: (grantId: string) => Promise<void>;
+  /** Change an active grant's end date or limits without revoking it (#2095). */
+  onUpdateGrant: (grantId: string, input: Partial<UpdateApiAccessGrantInput>) => Promise<void>;
   /** Opens the grant dialog for this person on arrival (from the users table). */
   initialPerson?: GrantPerson | null;
 };
@@ -75,16 +78,24 @@ export function ApiAccessAdminView({
   error,
   onCreateGrant,
   onRevokeGrant,
+  onUpdateGrant,
   initialPerson = null,
 }: ApiAccessAdminViewProps) {
   const formatScope = useFormatScope();
   const [dialogOpen, setDialogOpen] = useState(initialPerson !== null);
   const [dialogPerson, setDialogPerson] = useState<GrantPerson | null>(initialPerson);
+  const [editing, setEditing] = useState<ApiAccessGrantRow | null>(null);
   const [revoking, setRevoking] = useState<ApiAccessGrantRow | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const openDialog = () => {
+    setEditing(null);
     setDialogPerson(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (grant: ApiAccessGrantRow) => {
+    setEditing(grant);
     setDialogOpen(true);
   };
 
@@ -191,14 +202,24 @@ export function ApiAccessAdminView({
                       </TableCell>
                       <TableCell className="text-right">
                         {grant.active && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setRevoking(grant)}
-                          >
-                            Revoke
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              aria-label={`Edit limits for ${grant.user.name}`}
+                              onClick={() => openEdit(grant)}
+                            >
+                              Edit limits
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => setRevoking(grant)}
+                            >
+                              Revoke
+                            </Button>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -216,6 +237,8 @@ export function ApiAccessAdminView({
         defaults={defaults}
         initialPerson={dialogPerson}
         onSubmit={onCreateGrant}
+        editing={editing}
+        onUpdate={onUpdateGrant}
       />
 
       <AlertDialog

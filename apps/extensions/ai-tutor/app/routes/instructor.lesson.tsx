@@ -54,11 +54,15 @@ import {
   IconSchool,
   IconRoute,
   IconWand,
+  IconWorldOff,
+  IconWorldUpload,
 } from "@tabler/icons-react";
 import AddActivityPanel from "../components/AddActivityPanel";
 import ActivityDetailsCard from "../components/ActivityDetailsCard";
 import EditActivityPanel from "../components/EditActivityPanel";
 import { LessonReading } from "../components/lessons/LessonReading";
+import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { lessonPublishBlockedReason } from "~/lib/publish-cascade";
 import {
   BANNER_PRIMARY_ACTION_CLASS,
   BANNER_SECONDARY_ACTION_CLASS,
@@ -307,6 +311,39 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         modeSavingTimeoutRef.current = null;
       }
       setShowModeSaving(false);
+    }
+  };
+
+  // #2157: publish from the lesson page, same confirm as the module's lesson row.
+  const [lessonPublished, setLessonPublished] = useState(lesson.isPublished);
+  const [prevLesson, setPrevLesson] = useState(lesson);
+  if (lesson !== prevLesson) {
+    setPrevLesson(lesson);
+    setLessonPublished(lesson.isPublished);
+  }
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
+  const [publishingLesson, setPublishingLesson] = useState(false);
+
+  const toggleLessonPublish = async () => {
+    const wasPublished = lessonPublished;
+    setLessonPublished(!wasPublished);
+    setPublishingLesson(true);
+    try {
+      const updated = wasPublished
+        ? await api.unpublishLesson(lesson.id)
+        : await api.publishLesson(lesson.id);
+      setLessonPublished(updated?.isPublished ?? !wasPublished);
+      toast.success(
+        wasPublished
+          ? `"${lesson.title}" is now hidden from students.`
+          : `"${lesson.title}" is now visible to students.`,
+      );
+    } catch (error) {
+      console.error("Failed to toggle lesson publish status", error);
+      setLessonPublished(wasPublished);
+      toast.error(`Could not update "${lesson.title}". Try again.`);
+    } finally {
+      setPublishingLesson(false);
     }
   };
 
@@ -894,6 +931,33 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
   useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
+  // Ancestry unknown (still loading or failed) leaves the gate to the server.
+  const publishBlockedReason =
+    course && module
+      ? lessonPublishBlockedReason(
+          { title: lesson.title, isPublished: lessonPublished },
+          course,
+          module,
+        )
+      : null;
+  const publishButton = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={BANNER_SECONDARY_ACTION_CLASS}
+      disabled={!crumbsReady || publishingLesson || publishBlockedReason !== null}
+      onClick={() => setConfirmingPublish(true)}
+    >
+      {lessonPublished ? (
+        <IconWorldOff className="size-4" aria-hidden="true" />
+      ) : (
+        <IconWorldUpload className="size-4" aria-hidden="true" />
+      )}
+      {publishingLesson ? "Saving…" : lessonPublished ? "Unpublish lesson" : "Publish lesson"}
+    </Button>
+  );
+
   return (
     <CourseTopicsProvider value={courseTopics}>
       <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
@@ -908,33 +972,48 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           accentColor={accentColor ?? "var(--primary)"}
           badges={
             lesson ? (
-              <BannerBadge>{lesson.isPublished ? "Published" : "Unpublished"}</BannerBadge>
+              <BannerBadge>{lessonPublished ? "Published" : "Unpublished"}</BannerBadge>
             ) : undefined
           }
           meta={`${activityCount} ${activityCount === 1 ? "activity" : "activities"}`}
           actions={
-            <PermissionGate allow={perms.canManageContent}>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className={BANNER_SECONDARY_ACTION_CLASS}
-                onClick={openImportDialog}
-              >
-                <IconFileImport className="size-4" aria-hidden="true" />
-                Import
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className={BANNER_PRIMARY_ACTION_CLASS}
-                aria-expanded={showAddPanel}
-                onClick={() => setShowAddPanel((open) => !open)}
-              >
-                <IconPlus className="size-4" aria-hidden="true" />
-                {showAddPanel ? "Hide" : "Add activity"}
-              </Button>
-            </PermissionGate>
+            <>
+              <PermissionGate allow={perms.canPublishContent}>
+                {publishBlockedReason ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* A disabled button gets no pointer events; the span carries the hint. */}
+                      <span tabIndex={0}>{publishButton}</span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-64">{publishBlockedReason}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  publishButton
+                )}
+              </PermissionGate>
+              <PermissionGate allow={perms.canManageContent}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={BANNER_SECONDARY_ACTION_CLASS}
+                  onClick={openImportDialog}
+                >
+                  <IconFileImport className="size-4" aria-hidden="true" />
+                  Import
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className={BANNER_PRIMARY_ACTION_CLASS}
+                  aria-expanded={showAddPanel}
+                  onClick={() => setShowAddPanel((open) => !open)}
+                >
+                  <IconPlus className="size-4" aria-hidden="true" />
+                  {showAddPanel ? "Hide" : "Add activity"}
+                </Button>
+              </PermissionGate>
+            </>
           }
         />
 
@@ -1599,6 +1678,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PublishConfirmDialog
+        target={confirmingPublish ? { title: lesson.title, isPublished: lessonPublished } : null}
+        onCancel={() => setConfirmingPublish(false)}
+        onConfirm={() => {
+          setConfirmingPublish(false);
+          void toggleLessonPublish();
+        }}
+      />
       <ConfirmDialog
         open={pendingDeleteId !== null}
         onOpenChange={(open) => {

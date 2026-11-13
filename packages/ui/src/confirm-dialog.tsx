@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +31,8 @@ export type ConfirmDialogProps = {
    */
   closeOnConfirm?: boolean;
   onConfirm: () => void;
+  /** Extra controls between the description and the buttons, e.g. an option checkbox. */
+  children?: ReactNode;
 };
 
 export function ConfirmDialog({
@@ -44,6 +46,7 @@ export function ConfirmDialog({
   isLoading = false,
   closeOnConfirm = true,
   onConfirm,
+  children,
 }: ConfirmDialogProps) {
   const lastOpenContentRef = useRef({
     title,
@@ -70,6 +73,7 @@ export function ConfirmDialog({
           <AlertDialogTitle>{displayTitle}</AlertDialogTitle>
           <AlertDialogDescription>{displayDescription}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isLoading}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction

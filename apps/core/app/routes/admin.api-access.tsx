@@ -89,6 +89,7 @@ export default function AdminApiAccessRoute() {
           error={access.error}
           onCreateGrant={access.createGrant}
           onRevokeGrant={access.revokeGrant}
+          onUpdateGrant={access.updateGrant}
           initialPerson={initialPerson}
         />
       )}

@@ -36,6 +36,12 @@ export type CreateApiAccessGrantInput = {
   dailyTokenLimit: number;
 };
 
+/** `PATCH /api/admin/api-access/:id` (#2095): an active grant's new limits and end date. */
+export type UpdateApiAccessGrantInput = Pick<
+  CreateApiAccessGrantInput,
+  "expiresAt" | "dailyRequestLimit" | "dailyTokenLimit"
+>;
+
 type GrantsResponse = { grants: ApiAccessGrantRow[]; defaults: ApiAccessDefaults };
 
 /** People an admin can grant API access to: active non-admins. */
@@ -81,6 +87,17 @@ export function useApiAccessGrants() {
     [refresh],
   );
 
+  const updateGrant = useCallback(
+    async (grantId: string, input: Partial<UpdateApiAccessGrantInput>) => {
+      await apiFetch(`/api/admin/api-access/${encodeURIComponent(grantId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const revokeGrant = useCallback(
     async (grantId: string) => {
       await apiFetch(`/api/admin/api-access/${encodeURIComponent(grantId)}`, {
@@ -100,6 +117,7 @@ export function useApiAccessGrants() {
     error,
     refresh,
     createGrant,
+    updateGrant,
     revokeGrant,
   };
 }

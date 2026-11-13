@@ -10,6 +10,9 @@ import type { Question, Assessment } from "@/types/question";
 
 afterEach(cleanup);
 
+// Read only at click time, after hoisting, so a plain `let` is safe here.
+let addAssessmentResult: Promise<unknown> | undefined;
+
 // `vi.mock` factories are hoisted above every other top-level statement in this
 // file (including imports), so anything a factory references must itself be
 // created inside `vi.hoisted` — a plain `const` here throws a TDZ
@@ -198,7 +201,15 @@ vi.mock("@/components/assessments/AssessmentSection", () => ({
     <div data-testid="assessment-section">
       <span data-testid="as-loading">{String(props.isLoading)}</span>
       <span data-testid="as-error">{props.loadError}</span>
-      <button onClick={() => props.onAddAssessment({ name: "New A" })}>add-assessment</button>
+      <span data-testid="as-create-open">{String(props.createModalOpen)}</span>
+      <button
+        onClick={() => {
+          addAssessmentResult = props.onAddAssessment({ name: "New A" });
+          addAssessmentResult?.catch(() => {});
+        }}
+      >
+        add-assessment
+      </button>
       <button onClick={props.onImportFromCanvas}>import-canvas</button>
       {props.assessments.map((a: Assessment) => (
         <div key={a.id}>
@@ -266,13 +277,26 @@ vi.mock("@/pages/course-detail/CourseCanvasTab", () => ({
 vi.mock("@/components/question-bank/QuestionUploadDialog", () => ({
   QuestionUploadDialog: (props: any) =>
     props.open ? (
-      <div data-testid="upload-dialog">
+      <div
+        data-testid="upload-dialog"
+        data-save-target={props.saveTarget}
+        data-allow-assessment={String(Boolean(props.allowAssessmentOption))}
+      >
         <button onClick={props.onClose}>close-upload</button>
         <button onClick={() => props.onQuestionsSaved([])}>save-empty</button>
         <button
           onClick={() => props.onQuestionsSaved([{ id: 99, courseId: 5, createdAt: "2024-01-01" }])}
         >
           save-questions
+        </button>
+        <button
+          onClick={() =>
+            props.onQuestionsSaved([{ id: 98, courseId: 5, createdAt: "2024-01-02" }], {
+              assessmentId: 300,
+            })
+          }
+        >
+          save-with-assessment
         </button>
         <button
           onClick={() =>
@@ -578,6 +602,56 @@ describe("CourseDetailPage main content", () => {
     await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
   });
 
+  it("opens the upload dialog in bank mode without the assessment option for non-managers", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    const dialog = await screen.findByTestId("upload-dialog");
+    expect(dialog).toHaveAttribute("data-save-target", "bank");
+    expect(dialog).toHaveAttribute("data-allow-assessment", "false");
+  });
+
+  it("offers the assessment option to assessment managers", async () => {
+    setDefaultMocks({ tab: "questions" });
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: true,
+      canManageCanvas: true,
+      canManageAssessment: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    expect(await screen.findByTestId("upload-dialog")).toHaveAttribute(
+      "data-allow-assessment",
+      "true",
+    );
+  });
+
+  it("does not refetch assessments after a bank-only upload", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("save-questions"));
+    await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
+    expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches assessments when the upload also created an assessment", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("save-with-assessment"));
+    await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
+  });
+
   it("closes the upload dialog when zero questions are saved", async () => {
     setDefaultMocks({ tab: "questions" });
     render(<CourseDetailPage />);
@@ -774,18 +848,21 @@ describe("CourseDetailPage assessments tab", () => {
     assessmentService.createAssessment.mockResolvedValue({ ...assessment, id: 200, name: "New A" });
     fireEvent.click(screen.getByText("add-assessment"));
     await waitFor(() => expect(assessmentService.createAssessment).toHaveBeenCalled());
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/courses/5/assessments/200"));
 
     fireEvent.click(screen.getByText("next-assessments"));
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
   });
 
-  it("reports an assessment-creation failure", async () => {
+  it("rethrows an assessment-creation failure so the modal can show it inline", async () => {
     assessmentService.createAssessment.mockRejectedValue(new Error("fail"));
     setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
     await screen.findByTestId("assessment-section");
     fireEvent.click(screen.getByText("add-assessment"));
-    await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
+    await expect(addAssessmentResult).rejects.toThrow("fail");
+    expect(toastFn.error).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("handles an assessments-loading failure", async () => {
@@ -899,6 +976,20 @@ describe("CourseDetailPage overview tab actions", () => {
 
     fireEvent.click(screen.getByText("overview-import-canvas"));
     expect(await screen.findByTestId("canvas-import-dialog")).toBeInTheDocument();
+  });
+
+  it("opens the create-assessment modal directly from the overview quick action", async () => {
+    setSearchParamsMock.mockImplementationOnce(
+      (update: (prev: URLSearchParams) => URLSearchParams) => {
+        searchParamsBox.current = update(searchParamsBox.current);
+      },
+    );
+    render(<CourseDetailPage />);
+    await screen.findByTestId("overview-tab");
+    fireEvent.click(screen.getByText("overview-new-assessment"));
+
+    expect(searchParamsBox.current.get("tab")).toBe("assessments");
+    expect(await screen.findByTestId("as-create-open")).toHaveTextContent("true");
   });
 
   it("changes topics via the hero topics action", async () => {

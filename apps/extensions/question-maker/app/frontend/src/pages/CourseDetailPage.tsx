@@ -153,6 +153,7 @@ export const CourseDetailPage = () => {
   const { startTour } = useTour();
 
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
+  const [isCreateAssessmentOpen, setIsCreateAssessmentOpen] = useState(false);
   const openCanvasImport = useCallback(() => setIsCanvasImportOpen(true), []);
   const { canUseCanvas, canUseLinkedCanvas, canvasLinkStatus, handleImportFromCanvas } =
     useCanvasAccess(courseId, canManageCanvas, hasCourseAccess, openCanvasImport);
@@ -807,7 +808,8 @@ export const CourseDetailPage = () => {
   }, [variantToDelete, questions, toast]);
 
   const handleQuestionsUploaded = useCallback(
-    async (createdQuestions: Question[]) => {
+    async (createdQuestions: Question[], meta?: { assessmentId: number | null }) => {
+      if (meta?.assessmentId) void fetchAssessments();
       if (createdQuestions.length === 0) {
         setIsUploadOpen(false);
         return;
@@ -827,7 +829,7 @@ export const CourseDetailPage = () => {
       setSelectedVariant(null);
       setIsUploadOpen(false);
     },
-    [loadTopicsForCourse],
+    [fetchAssessments, loadTopicsForCourse],
   );
 
   const handleExtractInBackground = useCallback(
@@ -902,15 +904,12 @@ export const CourseDetailPage = () => {
   const handleCreateAssessment = useCallback(
     async (params: AssessmentGenerationParams) => {
       if (!courseId) return;
-      try {
-        const created = await assessmentService.createAssessment({ ...params, courseId });
-        setAssessments((prev) => [created, ...prev]);
-      } catch (error) {
-        console.error("Failed to create assessment", error);
-        toast.error("Error", { description: "Failed to create assessment." });
-      }
+      // Errors propagate so the modal stays open and shows them inline (#1974).
+      const created = await assessmentService.createAssessment({ ...params, courseId });
+      setAssessments((prev) => [created, ...prev]);
+      navigate(`/courses/${courseId}/assessments/${created.id}`);
     },
-    [courseId, toast],
+    [courseId, navigate],
   );
 
   const handleDeleteAssessment = useCallback((assessmentId: number, assessmentName: string) => {
@@ -1090,7 +1089,10 @@ export const CourseDetailPage = () => {
             canWrite={!writesDisabled}
             canManageAssessment={canManageAssessmentForCourse}
             onAddQuestion={handleAddQuestion}
-            onNewAssessment={() => setActiveTab("assessments")}
+            onNewAssessment={() => {
+              setActiveTab("assessments");
+              setIsCreateAssessmentOpen(true);
+            }}
             // Canvas import is scoped to the linked Canvas course, so the action
             // is withheld — not just the tab — when there is no link (#1652
             // review). `null` means "not resolved yet", which keeps the action
@@ -1208,6 +1210,8 @@ export const CourseDetailPage = () => {
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
             onImportFromCanvas={handleImportFromCanvas}
+            createModalOpen={isCreateAssessmentOpen}
+            onCreateModalOpenChange={setIsCreateAssessmentOpen}
           />
           <ListPaginationBar
             total={assessmentsTotal}
@@ -1265,6 +1269,8 @@ export const CourseDetailPage = () => {
             topics={topicsByCourse[courseId] ?? []}
             onEnsureTopics={loadTopicsForCourse}
             onQuestionsSaved={handleQuestionsUploaded}
+            saveTarget="bank"
+            allowAssessmentOption={canManageAssessmentForCourse}
             onExtractInBackground={handleExtractInBackground}
             initialDraftQuestions={
               pendingExtractionReview?.courseId === courseId ? pendingExtractionReview.drafts : null
