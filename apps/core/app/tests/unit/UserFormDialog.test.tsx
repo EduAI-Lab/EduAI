@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
 import type { User } from "~/components/admin/users-table";
+import { ApiError } from "~/hooks/api/config";
 
 const baseUser: User = {
   id: "u1",
@@ -264,6 +265,26 @@ describe("UserFormDialog — form actions", () => {
     expect(screen.getByPlaceholderText("Enter email address")).toHaveValue("alice@example.com");
     expect(await screen.findByText("Unable to save user")).toBeVisible();
     expect(screen.getByRole("button", { name: /update user/i })).toBeEnabled();
+  });
+
+  it("names the courses behind an instructor-floor 409 instead of showing the raw code (#2112)", async () => {
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(409, "INSTRUCTOR_FLOOR_VIOLATION", { courses: "COSC 111, MATH 100" }),
+      );
+    render(
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={onSubmit} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /update user/i }));
+
+    expect(
+      await screen.findByText(
+        "This user is the only instructor of COSC 111, MATH 100. Add another instructor before changing their role.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("INSTRUCTOR_FLOOR_VIOLATION")).not.toBeInTheDocument();
   });
 
   it("disables submission, prevents duplicates, and leaves closing to the parent", async () => {
