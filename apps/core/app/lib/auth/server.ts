@@ -25,6 +25,7 @@ import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asJsonObject, asText } from "~/lib/json-value";
 import { fireAndForget } from "~/lib/logging.server";
+import { lastSignInSessionHooks } from "./last-sign-in.server";
 import { recordAuthEvent } from "./auth-events.server";
 import { redeemPendingSelfEnrollments } from "~/lib/courses/pending-self-enrollment.server";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
@@ -579,18 +580,8 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
-    // Feeds the admin dashboard's "Accounts that never signed in". Every
-    // sign-in path (email, invitation acceptance, dev quick login) creates a
-    // session through better-auth, so this one hook covers them all.
-    session: {
-      create: {
-        after: async (session) => {
-          await prisma.user
-            .update({ where: { id: session.userId }, data: { lastSignInAt: new Date() } })
-            .catch(() => {});
-        },
-      },
-    },
+    // Feeds the admin dashboard's "Accounts that never signed in".
+    session: lastSignInSessionHooks,
     account: {
       create: {
         // #339: stamp passwordChangedAt on the same write as the password so
