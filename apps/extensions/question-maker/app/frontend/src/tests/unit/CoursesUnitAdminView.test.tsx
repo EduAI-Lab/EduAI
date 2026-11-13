@@ -60,4 +60,16 @@ describe("CoursesUnitAdminView", () => {
     render(<CoursesUnitAdminView courses={[course]} isLoading={false} />);
     expect(screen.getByRole("heading", { name: /^CPSC 101 · / })).toBeInTheDocument();
   });
+
+  it("gives the empty state a way to Core instead of the old profile hint", () => {
+    userValue = { id: "1", role: "unit-admin", authorizedUnits: ["CPSC"] };
+    render(<CoursesUnitAdminView courses={[]} isLoading={false} />);
+    expect(
+      screen.getByText(/Open one in EduAI Core and choose Question Maker/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Go to my courses in Core/ })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/\/courses$/),
+    );
+  });
 });

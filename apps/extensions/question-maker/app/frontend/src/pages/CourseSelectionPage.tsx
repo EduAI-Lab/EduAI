@@ -1,7 +1,4 @@
-/**
- * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
- * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
- */
+/** Course list: picks the admin, unit-admin, or instructor view by role. */
 import { useAuth } from "@/contexts/AuthContext";
 import { CoursesRoleView } from "@/components/courses/courses-role-view";
 import { CoursesUnitAdminView } from "@/components/courses/courses-unit-admin-view";

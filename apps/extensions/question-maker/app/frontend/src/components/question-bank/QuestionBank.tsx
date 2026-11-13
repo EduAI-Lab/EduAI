@@ -56,7 +56,7 @@ interface QuestionBankProps {
   emptyMessage?: string;
   disableAdd?: boolean;
   disableUpload?: boolean;
-  onOpenProfile?: () => void;
+  onStartTour?: () => void;
   /** Render cards in compact (dense) mode — used by the standalone Question Bank page. */
   compact?: boolean;
 }
@@ -86,7 +86,7 @@ export const QuestionBank = ({
   emptyMessage,
   disableAdd = false,
   disableUpload = false,
-  onOpenProfile,
+  onStartTour,
   compact = false,
 }: QuestionBankProps) => {
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -213,14 +213,14 @@ export const QuestionBank = ({
       {isLoading ? (
         <CardGridSkeleton count={6} columns={view === "grid" ? 3 : 1} />
       ) : variants.length === 0 && !hasFilters ? (
-        !courseName && onOpenProfile ? (
+        !courseName && onStartTour ? (
           <EmptyState
             icon={<IconInfoCircle className="size-6" />}
             title={emptyMessage || "No courses available"}
             description="Take a quick guided tour to see how Question Maker works."
             bare={false}
             action={
-              <Button onClick={onOpenProfile}>
+              <Button onClick={onStartTour}>
                 <IconCompass className="size-4" />
                 Start guided tour
               </Button>

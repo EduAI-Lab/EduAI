@@ -29,6 +29,11 @@ export function coreDashboardUrl(coreUrl: string): string {
   return `${coreUrl}/dashboard`;
 }
 
+/** Core's course list, where a course's app rail opens it in an extension. */
+export function coreCoursesUrl(coreUrl: string): string {
+  return `${coreUrl}/courses`;
+}
+
 /** Core's AI service status page — the extensions have no such route of their own. */
 export function coreStatusUrl(coreUrl: string): string {
   return `${coreUrl}/status`;

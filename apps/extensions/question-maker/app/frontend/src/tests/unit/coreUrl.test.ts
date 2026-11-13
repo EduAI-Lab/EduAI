@@ -11,6 +11,7 @@ import {
   getAiTutorUrl,
   getCoreDashboardUrl,
   getCoreLoginUrl,
+  getCoreCoursesUrl,
   getCoreStatusUrl,
   getCoreUrl,
 } from "../../lib/coreUrl";
@@ -113,5 +114,12 @@ describe("getCoreStatusUrl", () => {
     // A bare "/status" would 404 inside QM: the page lives in Core.
     vi.stubEnv("VITE_CORE_URL", "");
     expect(getCoreStatusUrl()).toBe("http://localhost:3000/status");
+  });
+});
+
+describe("getCoreCoursesUrl", () => {
+  it("points at Core's course list", () => {
+    vi.stubEnv("VITE_CORE_URL", "https://core.example.com");
+    expect(getCoreCoursesUrl()).toBe("https://core.example.com/courses");
   });
 });

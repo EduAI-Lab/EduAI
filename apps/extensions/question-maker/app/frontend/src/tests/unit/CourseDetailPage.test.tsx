@@ -179,7 +179,7 @@ vi.mock("@/components/question-bank/QuestionBank", () => ({
       <button disabled={props.disableUpload} onClick={props.onUploadQuestions}>
         upload-questions
       </button>
-      <button onClick={props.onOpenProfile}>open-profile</button>
+      <button onClick={props.onStartTour}>start-tour</button>
       {props.variants[0] && (
         <>
           <button onClick={() => props.onViewVariant(props.variants[0])}>view-variant</button>
@@ -531,7 +531,7 @@ describe("CourseDetailPage main content", () => {
     fireEvent.click(screen.getByText("upload-questions"));
     expect(await screen.findByTestId("upload-dialog")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("open-profile"));
+    fireEvent.click(screen.getByText("start-tour"));
     expect(tour.startTour).toHaveBeenCalledWith("main");
   });
 

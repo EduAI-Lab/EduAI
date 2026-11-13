@@ -108,12 +108,12 @@ describe("QuestionBank", () => {
     expect(onUploadQuestions).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the guided-tour empty state when there is no course and onOpenProfile is provided", () => {
-    const onOpenProfile = vi.fn();
-    render(<Harness variants={[]} onOpenProfile={onOpenProfile} />);
+  it("shows the guided-tour empty state when there is no course and onStartTour is provided", () => {
+    const onStartTour = vi.fn();
+    render(<Harness variants={[]} onStartTour={onStartTour} />);
 
     fireEvent.click(screen.getByRole("button", { name: /start guided tour/i }));
-    expect(onOpenProfile).toHaveBeenCalledTimes(1);
+    expect(onStartTour).toHaveBeenCalledTimes(1);
   });
 
   it("shows the server total and every card on the page", () => {

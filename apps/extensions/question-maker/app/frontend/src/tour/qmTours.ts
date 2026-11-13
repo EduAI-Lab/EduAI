@@ -29,7 +29,7 @@ export const QM_TOURS = {
         target: "qm-courses-empty",
         emptyTarget: "course-select",
         title: "Link a course to get started",
-        body: "Courses come from EduAI Core. Open your profile (top right) to link one, then take this tour again to see how questions and assessments work.",
+        body: "Courses come from EduAI Core. Open one there and choose Question Maker, or use Add course here, then take this tour again to see how questions and assessments work.",
       },
       {
         id: "course-select",
