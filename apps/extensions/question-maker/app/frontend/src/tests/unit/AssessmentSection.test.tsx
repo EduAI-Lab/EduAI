@@ -208,6 +208,18 @@ describe("AssessmentSection", () => {
     expect(onAddAssessment).toHaveBeenCalledWith({ name: "New one" });
   });
 
+  it("honours a controlled create-modal state from the parent", async () => {
+    const onCreateModalOpenChange = vi.fn();
+    const onAddAssessment = vi.fn().mockResolvedValue(undefined);
+    renderSection({ createModalOpen: true, onCreateModalOpenChange, onAddAssessment });
+    expect(screen.getByText("generate-assessment-modal")).toBeInTheDocument();
+    await lastGenerateModalProps.onGenerate({ name: "New one" });
+    expect(onCreateModalOpenChange).toHaveBeenCalledWith(false);
+
+    fireEvent.click(screen.getByText("New assessment"));
+    expect(onCreateModalOpenChange).toHaveBeenLastCalledWith(true);
+  });
+
   it("rethrows a failed blueprint creation so the modal stays open to show it", async () => {
     const failure = { response: { data: { error: "oops" } } };
     const onAddAssessment = vi.fn().mockRejectedValue(failure);

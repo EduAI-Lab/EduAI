@@ -10,6 +10,9 @@ import type { Question, Assessment } from "@/types/question";
 
 afterEach(cleanup);
 
+// Read only at click time, after hoisting, so a plain `let` is safe here.
+let addAssessmentResult: Promise<unknown> | undefined;
+
 // `vi.mock` factories are hoisted above every other top-level statement in this
 // file (including imports), so anything a factory references must itself be
 // created inside `vi.hoisted` — a plain `const` here throws a TDZ
@@ -198,7 +201,15 @@ vi.mock("@/components/assessments/AssessmentSection", () => ({
     <div data-testid="assessment-section">
       <span data-testid="as-loading">{String(props.isLoading)}</span>
       <span data-testid="as-error">{props.loadError}</span>
-      <button onClick={() => props.onAddAssessment({ name: "New A" })}>add-assessment</button>
+      <span data-testid="as-create-open">{String(props.createModalOpen)}</span>
+      <button
+        onClick={() => {
+          addAssessmentResult = props.onAddAssessment({ name: "New A" });
+          addAssessmentResult?.catch(() => {});
+        }}
+      >
+        add-assessment
+      </button>
       <button onClick={props.onImportFromCanvas}>import-canvas</button>
       {props.assessments.map((a: Assessment) => (
         <div key={a.id}>
@@ -837,18 +848,21 @@ describe("CourseDetailPage assessments tab", () => {
     assessmentService.createAssessment.mockResolvedValue({ ...assessment, id: 200, name: "New A" });
     fireEvent.click(screen.getByText("add-assessment"));
     await waitFor(() => expect(assessmentService.createAssessment).toHaveBeenCalled());
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/courses/5/assessments/200"));
 
     fireEvent.click(screen.getByText("next-assessments"));
     await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
   });
 
-  it("reports an assessment-creation failure", async () => {
+  it("rethrows an assessment-creation failure so the modal can show it inline", async () => {
     assessmentService.createAssessment.mockRejectedValue(new Error("fail"));
     setDefaultMocks({ tab: "assessments" });
     render(<CourseDetailPage />);
     await screen.findByTestId("assessment-section");
     fireEvent.click(screen.getByText("add-assessment"));
-    await waitFor(() => expect(toastFn.error).toHaveBeenCalled());
+    await expect(addAssessmentResult).rejects.toThrow("fail");
+    expect(toastFn.error).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("handles an assessments-loading failure", async () => {
@@ -962,6 +976,20 @@ describe("CourseDetailPage overview tab actions", () => {
 
     fireEvent.click(screen.getByText("overview-import-canvas"));
     expect(await screen.findByTestId("canvas-import-dialog")).toBeInTheDocument();
+  });
+
+  it("opens the create-assessment modal directly from the overview quick action", async () => {
+    setSearchParamsMock.mockImplementationOnce(
+      (update: (prev: URLSearchParams) => URLSearchParams) => {
+        searchParamsBox.current = update(searchParamsBox.current);
+      },
+    );
+    render(<CourseDetailPage />);
+    await screen.findByTestId("overview-tab");
+    fireEvent.click(screen.getByText("overview-new-assessment"));
+
+    expect(searchParamsBox.current.get("tab")).toBe("assessments");
+    expect(await screen.findByTestId("as-create-open")).toHaveTextContent("true");
   });
 
   it("changes topics via the hero topics action", async () => {
