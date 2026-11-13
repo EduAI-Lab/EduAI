@@ -248,6 +248,19 @@ export async function clickSidebar(page: Page, label: string): Promise<void> {
 }
 
 /**
+ * Open a ⋯ menu and wait for one of its items. Right after a reload the trigger
+ * is painted before it is interactive, and `_app.tsx` remounts the route once
+ * `/api/me` resolves, so a bare click is swallowed or the menu it opened is torn
+ * down. Retry the click until the item shows rather than clicking once.
+ */
+export async function openMenuItem(trigger: Locator, item: Locator): Promise<void> {
+  await expect(async () => {
+    await trigger.click();
+    await expect(item).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
+/**
  * Open a section by its visible label and wait for it to take effect. A course
  * page's sections live in the shell's course menu (links that set `?tab=`);
  * other pages (admin, settings) keep a `PageTabs` tablist. Right after a reload
