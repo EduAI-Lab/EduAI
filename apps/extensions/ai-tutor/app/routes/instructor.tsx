@@ -44,6 +44,7 @@ import {
 import { loadCourseFacets } from "~/lib/course-facets";
 import { redirectToContextualCourse } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { MissingCourseNotice } from "~/components/courses/MissingCourseNotice";
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -60,7 +61,11 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // total. `total` is now the filtered total, so the pager stays honest.
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
-  await redirectToContextualCourse(request, "instructor", api.listCourses);
+  const missingCoreCourseId = await redirectToContextualCourse(
+    request,
+    "instructor",
+    api.listCourses,
+  );
   // Optional `?pageSize=` override (clamped to the same ceiling the API uses).
   // The default stays COURSE_LIST_PAGE_SIZE; e2e and bookmarkable narrow pages
   // can request a smaller window without seeding 200+ courses.
@@ -103,6 +108,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
     pageSize: page.pageSize,
     selection,
     facets,
+    missingCoreCourseId,
   };
 }
 
@@ -135,7 +141,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   // Read straight from loaderData (not local state) so navigating pages via the
   // URL re-renders with the new page rather than freezing the first one.
   const courses = loaderData.courses ?? [];
-  const { total, page, pageSize, selection, facets } = loaderData;
+  const { total, page, pageSize, selection, facets, missingCoreCourseId } = loaderData;
   const navigation = useNavigation();
   const { searchDraft, setSearchDraft, setFilter, clearAll, goToPage } =
     useCourseListFilters(selection);
@@ -148,6 +154,10 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
       <PageHeading heading="Courses" subheading="Browse your courses and manage their content." />
+
+      {missingCoreCourseId && (
+        <MissingCourseNotice coreCourseId={missingCoreCourseId} audience="staff" />
+      )}
 
       {/* `data-tour` anchor for the staff tours (see lib/tours/tour-definitions) —
           the list, its search box and its filters in one highlightable region. */}

@@ -109,6 +109,22 @@ describe("student clientLoader (#1208)", () => {
     expect(thrown.headers.get("Location")).toBe("/student/courses/321?coreCourseId=core-321");
   });
 
+  it("flags an unknown or unpublished Core id instead of redirecting (#2158)", async () => {
+    listCourses
+      .mockResolvedValueOnce({ data: [], total: 0, page: 1, pageSize: 1 })
+      .mockResolvedValueOnce({ data: [], total: 0, page: 1, pageSize: 200 });
+
+    const data = await runLoader("http://x/student?coreCourseId=core-404");
+
+    expect(data.missingCoreCourseId).toBe("core-404");
+  });
+
+  it("leaves the flag unset without a Core id", async () => {
+    const data = await runLoader("http://x/student");
+
+    expect(data.missingCoreCourseId).toBeNull();
+  });
+
   it("returns the paging fields the new pager needs", async () => {
     listCourses.mockResolvedValue({ data: [], total: 450, page: 1, pageSize: 200 });
 

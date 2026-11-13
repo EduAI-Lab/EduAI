@@ -82,3 +82,22 @@ describe("StudentHome — empty course list tour anchor (#1746)", () => {
     ).not.toBeNull();
   });
 });
+
+describe("StudentHome — missing course notice (#2158)", () => {
+  it("tells the student the course isn't published yet, with a link back to Core", () => {
+    renderStudentHome("STUDENT", [], { missingCoreCourseId: "core-404" });
+
+    expect(screen.getByText("This course isn't open in AI Tutor yet.")).toBeInTheDocument();
+    expect(screen.getByText("Your instructor hasn't published it.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to course in Core" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/\/courses\/core-404$/),
+    );
+  });
+
+  it("shows no notice on a plain visit", () => {
+    renderStudentHome("STUDENT", []);
+
+    expect(screen.queryByTestId("missing-course-notice")).not.toBeInTheDocument();
+  });
+});
