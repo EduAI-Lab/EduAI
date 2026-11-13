@@ -44,6 +44,15 @@ describe("PageHeading", () => {
     expect(div).toBeInTheDocument();
   });
 
+  it("keeps the band when a className is passed, and drops it with banded={false}", () => {
+    const { container, rerender } = render(<PageHeading heading="Courses" className="mb-4" />);
+    expect(container.firstElementChild).toHaveClass("bg-muted/50", "mb-4");
+
+    rerender(<PageHeading heading="Courses" className="mb-4" banded={false} />);
+    expect(container.firstElementChild).not.toHaveClass("bg-muted/50");
+    expect(container.firstElementChild).toHaveClass("mb-4");
+  });
+
   it("puts the page's actions on the title row beside the heading", () => {
     render(
       <PageHeading

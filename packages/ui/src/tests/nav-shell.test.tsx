@@ -499,3 +499,21 @@ describe("NavShell — pages that draw their own heading", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
   });
 });
+
+describe("NavShell — app name crumb", () => {
+  it("names the app once, as the trail's first link", () => {
+    const model = makeModel({ currentAppId: "core" });
+
+    const plain = renderShell({}, model);
+    expect(screen.getAllByRole("link", { name: "Core" })).toHaveLength(1);
+    plain.unmount();
+
+    const course = renderShell({ courseNav: COURSE_NAV }, model);
+    expect(screen.getAllByRole("link", { name: "Core" })).toHaveLength(1);
+    course.unmount();
+
+    // An app's own trail opens with the app's name itself; the shell adds nothing.
+    renderShell({ breadcrumbs: <span>Settings crumb</span> }, model);
+    expect(screen.queryByRole("link", { name: "Core" })).not.toBeInTheDocument();
+  });
+});

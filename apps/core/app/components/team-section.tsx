@@ -17,8 +17,8 @@ export function TeamSection() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="Meet our team"
-          className="mb-12 text-center [&>div]:mx-auto"
           banded={false}
+          className="mb-12 text-center [&>div]:mx-auto"
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={
             <span className="mx-auto block max-w-3xl text-lg">
