@@ -81,9 +81,12 @@ type Invitation = {
   isExpired: boolean;
 };
 
+// #2162: unit admins mostly invite instructors.
+const DEFAULT_INVITE_ROLE: InviteRole = "INSTRUCTOR";
+
 const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
-  { value: "STUDENT", label: "Student" },
   { value: "INSTRUCTOR", label: "Professor (Instructor)" },
+  { value: "STUDENT", label: "Student" },
 ];
 
 const ROLE_LABEL = {
@@ -152,7 +155,7 @@ export default function UnitAdminInvitationsPage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const formatScope = useFormatScope();
-  const [role, setRole] = useState<InviteRole>("STUDENT");
+  const [role, setRole] = useState<InviteRole>(DEFAULT_INVITE_ROLE);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -188,7 +191,7 @@ export default function UnitAdminInvitationsPage() {
   const resetForm = () => {
     setEmail("");
     setName("");
-    setRole("STUDENT");
+    setRole(DEFAULT_INVITE_ROLE);
     setFormError(null);
   };
 

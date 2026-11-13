@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -104,6 +104,7 @@ export default function CoursesPage() {
     updateCourse,
     deleteCourse,
   } = useCourses();
+  const navigate = useNavigate();
 
   const handleFilterChange = (groupId: string, values: string[]) => {
     setFilter(groupId as CourseFilterKey, values);
@@ -145,9 +146,16 @@ export default function CoursesPage() {
     reject: (reason: Error) => void;
   } | null>(null);
 
+  // #2162: land on the new course's Overview rather than leaving it to be found in the list.
+  const openCourse = (id: string, message: string) => {
+    toast.success(message);
+    void navigate(`/courses/${id}`);
+  };
+
   const handleCreateCourse = async (data: CreateCourseInput) => {
     try {
-      await createCourse(data);
+      const course = await createCourse(data);
+      openCourse(course.id, "Course created.");
     } catch (error) {
       if (error instanceof CourseDuplicateError) {
         return new Promise<void>((resolve, reject) =>
@@ -161,8 +169,9 @@ export default function CoursesPage() {
 
   const handleResolveDuplicate = async (resolution: DuplicateResolution) => {
     if (!duplicate) return;
+    let course;
     try {
-      await createCourse(duplicate.input, resolution);
+      course = await createCourse(duplicate.input, resolution);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create course.";
       toast.error(message);
@@ -170,7 +179,8 @@ export default function CoursesPage() {
       setDuplicate(null);
       return;
     }
-    toast.success(
+    openCourse(
+      course.id,
       resolution.duplicateResolution === "restore" ? "Course restored." : "Course created.",
     );
     duplicate.resolve();

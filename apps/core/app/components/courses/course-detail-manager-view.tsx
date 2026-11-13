@@ -1308,6 +1308,7 @@ export function CourseDetailManagerView({
             tas={tas}
             canPublish={canPublishCourse}
             publishControl={publishControl}
+            onPublish={publishControl ? () => publishState.setConfirmOpen(true) : undefined}
           />
         </PageTabsContent>
 
