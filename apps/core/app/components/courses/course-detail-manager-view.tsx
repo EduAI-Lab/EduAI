@@ -1307,6 +1307,7 @@ export function CourseDetailManagerView({
             instructors={displayInstructors}
             tas={tas}
             canPublish={canPublishCourse}
+            canEnrollStudents={canManageStudentEnrollments}
             publishControl={publishControl}
             onPublish={publishControl ? () => publishState.setConfirmOpen(true) : undefined}
           />

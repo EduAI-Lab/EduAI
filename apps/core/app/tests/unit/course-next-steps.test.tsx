@@ -16,6 +16,7 @@ describe("courseSetupSteps", () => {
       isPublished: false,
       canPublish: true,
       studentCount: 0,
+      canEnrollStudents: true,
     });
     expect(steps.map((s) => [s.key, s.done])).toEqual([
       ["upload", false],
@@ -35,7 +36,13 @@ describe("courseSetupSteps", () => {
 
   it("lets the publish step open the publish confirm only for someone who can publish", () => {
     const onPublish = vi.fn();
-    const base = { materials: [], isPublished: false, studentCount: 0, onPublish };
+    const base = {
+      materials: [],
+      isPublished: false,
+      studentCount: 0,
+      canEnrollStudents: true,
+      onPublish,
+    };
     expect(courseSetupSteps({ ...base, canPublish: true })[2].onSelect).toBe(onPublish);
     expect(courseSetupSteps({ ...base, canPublish: false })[2].onSelect).toBeUndefined();
   });
@@ -46,8 +53,20 @@ describe("courseSetupSteps", () => {
       isPublished: true,
       canPublish: true,
       studentCount: 2,
+      canEnrollStudents: true,
     });
     expect(steps[3]).toMatchObject({ done: true, detail: "2 students enrolled." });
+  });
+
+  it("hides Add students when the user can't manage enrollments", () => {
+    const steps = courseSetupSteps({
+      materials: [],
+      isPublished: true,
+      canPublish: true,
+      studentCount: 0,
+      canEnrollStudents: false,
+    });
+    expect(steps.map((s) => s.key)).toEqual(["upload", "ready", "publish"]);
   });
 
   it("is not ready while a file is still processing, and counts failures", () => {
@@ -56,6 +75,7 @@ describe("courseSetupSteps", () => {
       isPublished: false,
       canPublish: false,
       studentCount: 0,
+      canEnrollStudents: true,
     });
     expect(steps[0]).toMatchObject({ done: true, detail: expect.stringMatching(/^3 files added/) });
     expect(steps[1]).toMatchObject({
@@ -71,6 +91,7 @@ describe("courseSetupSteps", () => {
       isPublished: true,
       canPublish: true,
       studentCount: 1,
+      canEnrollStudents: true,
     });
     expect(steps.every((s) => s.done)).toBe(true);
     expect(steps[0].detail).toMatch(/^1 file added/);
@@ -85,6 +106,7 @@ describe("courseSetupSteps", () => {
       isPublished: false,
       canPublish: true,
       studentCount: 0,
+      canEnrollStudents: true,
     });
     expect(ready.done).toBe(false);
   });

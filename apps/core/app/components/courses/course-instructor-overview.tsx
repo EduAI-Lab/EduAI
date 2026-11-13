@@ -81,12 +81,15 @@ export function courseSetupSteps({
   isPublished,
   canPublish,
   studentCount,
+  canEnrollStudents,
   onPublish,
 }: {
   materials: { status: string }[];
   isPublished: boolean;
   canPublish: boolean;
   studentCount: number;
+  /** False when the enrollments policy is off; the Add students step is then hidden. */
+  canEnrollStudents: boolean;
   /** Opens the page's publish confirm, so the step can publish in place. */
   onPublish?: () => void;
 }): CourseNextStep[] {
@@ -95,7 +98,7 @@ export function courseSetupSteps({
   const processing = materials.filter((m) => m.status === "PROCESSING").length;
   const failed = materials.filter((m) => m.status === "FAILED").length;
   const materialsHref = courseNavSearch("materials");
-  return [
+  const steps: CourseNextStep[] = [
     {
       key: "upload",
       label: "Add materials",
@@ -130,6 +133,10 @@ export function courseSetupSteps({
           : "Students can't see the course yet. Only an administrator can publish it.",
       onSelect: canPublish ? onPublish : undefined,
     },
+  ];
+  if (!canEnrollStudents) return steps;
+  return [
+    ...steps,
     {
       key: "students",
       label: "Add students",
@@ -159,6 +166,7 @@ export function CourseInstructorOverview({
   instructors,
   tas,
   canPublish,
+  canEnrollStudents,
   publishControl,
   onPublish,
 }: {
@@ -170,6 +178,7 @@ export function CourseInstructorOverview({
   instructors: Instructor[];
   tas: CourseTA[];
   canPublish: boolean;
+  canEnrollStudents: boolean;
   publishControl?: ReactNode;
   onPublish?: () => void;
 }) {
@@ -195,6 +204,7 @@ export function CourseInstructorOverview({
           isPublished: course.isPublished,
           canPublish,
           studentCount,
+          canEnrollStudents,
           onPublish,
         })}
       />
