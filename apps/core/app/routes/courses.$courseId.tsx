@@ -599,6 +599,7 @@ export default function CourseDetailPage() {
               onAddInstructor={handleAddInstructor}
               onRemoveInstructor={handleRemoveInstructor}
               onSetPrimaryInstructor={handleSetPrimaryInstructor}
+              onCourseUpdated={() => revalidator.revalidate()}
               onAddTA={addTA}
               onRemoveTA={removeTA}
               onRefreshMaterials={refetchMaterials}

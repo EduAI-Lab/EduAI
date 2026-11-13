@@ -113,4 +113,33 @@ describe("Core AIServiceIndicators", () => {
     const link = await screen.findByRole("link", { name: /view full status/i });
     expect(link).toHaveAttribute("href", "/status");
   });
+
+  it("shows the cloud chip while the status request is still pending", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    render(<AIServiceIndicators />);
+
+    expect(await screen.findByRole("button", { name: /Managed cloud AI/i })).toBeInTheDocument();
+  });
+
+  it("hides the cloud chip only when no cloud key is configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          cloud: { state: "outage", detail: "No cloud API key configured." },
+          ubc: { state: "operational" },
+          checkedAt: "2026-09-18T11:59:00.000Z",
+          stale: false,
+        }),
+      })),
+    );
+    render(<AIServiceIndicators />);
+
+    await screen.findByRole("button", { name: /UBC-hosted AI/i });
+    expect(screen.queryByRole("button", { name: /Managed cloud AI/i })).toBeNull();
+  });
 });

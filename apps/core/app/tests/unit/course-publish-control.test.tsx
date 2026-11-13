@@ -10,7 +10,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { CoursePublishControl } from "~/components/courses/course-publish-control";
+import {
+  CoursePublishButton,
+  CoursePublishControl,
+  CoursePublishDialog,
+  CoursePublishErrorMessage,
+  useCoursePublish,
+} from "~/components/courses/course-publish-control";
 import {
   SelfEnrollmentDraftNotice,
   selfEnrollmentStatusLabel,
@@ -153,5 +159,65 @@ describe("CoursePublishControl", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "You don't have permission to publish or unpublish this course.",
     );
+  });
+});
+
+describe("one publish switch shared by several triggers", () => {
+  function TwoTriggers({
+    onPublishChange,
+  }: {
+    onPublishChange: (publish: boolean) => Promise<void>;
+  }) {
+    const state = useCoursePublish(false, onPublishChange);
+    return (
+      <>
+        <CoursePublishButton state={state} />
+        <button onClick={() => state.setConfirmOpen(true)}>Menu: Publish course</button>
+        <CoursePublishErrorMessage state={state} />
+        <CoursePublishDialog courseLabel="DATA 301 — Intro" state={state} />
+      </>
+    );
+  }
+
+  it("opens one dialog whichever trigger was used", async () => {
+    render(<TwoTriggers onPublishChange={vi.fn(async () => {})} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Menu: Publish course" }));
+
+    expect(await screen.findAllByText('Publish "DATA 301 — Intro"?')).toHaveLength(1);
+  });
+
+  it("locks every trigger while a publish is in flight, so it can't fire twice", async () => {
+    let finish: () => void = () => {};
+    const onPublishChange = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    render(<TwoTriggers onPublishChange={onPublishChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Menu: Publish course" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+    // The modal dialog hides the page behind it from the accessibility tree.
+    const trigger = () => screen.getByRole("button", { name: "Publish course", hidden: true });
+    await waitFor(() => expect(trigger()).toBeDisabled());
+    expect(onPublishChange).toHaveBeenCalledTimes(1);
+    finish();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Publish course" })).toBeEnabled(),
+    );
+  });
+
+  it("reports a failure in one place, whichever trigger was used", async () => {
+    render(
+      <TwoTriggers
+        onPublishChange={vi.fn(async () => {
+          throw new Error("boom");
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Menu: Publish course" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+    expect(await screen.findAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not update the course");
   });
 });

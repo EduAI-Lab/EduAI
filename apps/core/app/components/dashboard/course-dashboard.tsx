@@ -422,8 +422,17 @@ function SidePanel({
   );
 }
 
-function AtAGlance({ stats, data }: { stats: DashboardStatDef[]; data: DashboardData }) {
-  const status = data.stats.materialsByStatus;
+function AtAGlance({
+  stats,
+  data,
+  flagMaterials,
+}: {
+  stats: DashboardStatDef[];
+  data: DashboardData;
+  /** Off for instructors, whose Material status panel already shows these counts. */
+  flagMaterials: boolean;
+}) {
+  const status = flagMaterials ? data.stats.materialsByStatus : undefined;
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
       {stats.map((s) => (
@@ -591,8 +600,38 @@ export function CourseDashboard({
             storageKey="eduai.dashboard.analyticsCollapsed"
             headerClassName="border-b border-border pb-1.5"
           >
-            <AtAGlance stats={stats} data={data} />
+            <AtAGlance stats={stats} data={data} flagMaterials={role !== "INSTRUCTOR"} />
           </CollapsibleSection>
+          {role === "INSTRUCTOR" && data.stats.materialsByStatus && (
+            <SidePanel title="Material status">
+              <dl className="grid grid-cols-3 gap-x-4 text-sm">
+                <div className="flex flex-col">
+                  <dt className="text-xs text-muted-foreground">Ready</dt>
+                  <dd className="font-semibold text-foreground">
+                    {data.stats.materialsByStatus.ready}
+                  </dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs text-muted-foreground">Processing</dt>
+                  <dd className="font-semibold text-foreground">
+                    {data.stats.materialsByStatus.processing}
+                  </dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs text-muted-foreground">Failed</dt>
+                  <dd
+                    className={
+                      data.stats.materialsByStatus.failed > 0
+                        ? "font-semibold text-destructive"
+                        : "font-semibold text-foreground"
+                    }
+                  >
+                    {data.stats.materialsByStatus.failed}
+                  </dd>
+                </div>
+              </dl>
+            </SidePanel>
+          )}
         </aside>
       </div>
     </div>
