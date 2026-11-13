@@ -191,4 +191,20 @@ describe("CourseDashboard", () => {
     expect(glance.getByText("2 processing")).toBeInTheDocument();
     expect(glance.getByText("1 failed")).toBeInTheDocument();
   });
+
+  it("gives an instructor one Material status panel instead of repeating its counts in At a glance", () => {
+    renderDashboard({ role: "INSTRUCTOR", data: data([course()]) });
+    const aside = within(screen.getByRole("complementary", { name: "Activity" }));
+    const panel = within(aside.getByText("Material status").closest("section")!);
+    expect(panel.getByText("Ready").nextElementSibling).toHaveTextContent("0");
+    expect(panel.getByText("Processing").nextElementSibling).toHaveTextContent("2");
+    expect(panel.getByText("Failed").nextElementSibling).toHaveTextContent("1");
+    expect(aside.queryByText("2 processing")).toBeNull();
+    expect(aside.queryByText("1 failed")).toBeNull();
+  });
+
+  it("leaves the Material status panel to instructors", () => {
+    renderDashboard({ data: data([course()]) });
+    expect(screen.queryByText("Material status")).toBeNull();
+  });
 });

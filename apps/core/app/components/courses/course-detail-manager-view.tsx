@@ -20,7 +20,12 @@ import {
   IconWorldUpload,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
-import { CoursePublishControl } from "~/components/courses/course-publish-control";
+import {
+  CoursePublishButton,
+  CoursePublishDialog,
+  CoursePublishErrorMessage,
+  useCoursePublish,
+} from "~/components/courses/course-publish-control";
 import {
   SelfEnrollmentDraftNotice,
   selfEnrollmentStatusLabel,
@@ -62,12 +67,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@eduai/ui";
-import {
-  ActiveBannerBadge,
-  BANNER_PRIMARY_ACTION_CLASS,
-  BannerBadge,
-  CourseHeader,
-} from "~/components/courses/course-header";
+import { BannerBadge, CourseHeader } from "~/components/courses/course-header";
 import { CourseInstructorOverview } from "~/components/courses/course-instructor-overview";
 import { PageTabs, PageTabsContent } from "@eduai/ui";
 import { DetailPageScaffold } from "@eduai/ui";
@@ -86,6 +86,7 @@ import {
 } from "~/lib/material-failure-notice";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
+import { CourseDescriptionSettings } from "~/components/courses/course-description-settings";
 import { CourseResponseStyleSettings } from "~/components/courses/course-response-style-settings";
 import { CourseStudentVisibilitySettings } from "~/components/courses/course-student-visibility-settings";
 import type { CourseMaterial, UploadItem } from "~/components/course-materials-upload";
@@ -269,6 +270,8 @@ interface Props {
   onRemoveInstructor: (enrollmentId: string) => Promise<void>;
   /** Moves `Course.instructorId` only — no enrollment is touched. */
   onSetPrimaryInstructor: (userId: string) => Promise<void>;
+  /** Called after the course description is saved so the page can reload the course. */
+  onCourseUpdated?: () => void;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
   onEnrollStudent: (userId: string) => Promise<void>;
@@ -400,6 +403,7 @@ export function CourseDetailManagerView({
   onAddInstructor,
   onRemoveInstructor,
   onSetPrimaryInstructor,
+  onCourseUpdated,
   onAddTA,
   onRemoveTA,
   onEnrollStudent,
@@ -451,7 +455,6 @@ export function CourseDetailManagerView({
     setUploadOpen(true);
   };
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
-  const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const deleteMaterialTitle = materials.find((m) => m.id === deleteMaterialId)?.title;
   const [deletingMaterial, setDeletingMaterial] = useState(false);
@@ -536,14 +539,18 @@ export function CourseDetailManagerView({
     getCourseNavItems(access, isEnabled),
   );
 
-  // #1939: one control, shown beside the Published badge and in the draft notice.
+  // #1939: one publish switch shared by the banner menu, Overview and the draft
+  // notice, so there is a single dialog, busy flag and error however it is opened.
+  const publishState = useCoursePublish(
+    course.isPublished,
+    onPublishChange ?? (() => Promise.resolve()),
+  );
   const publishControl =
     canPublishCourse && onPublishChange ? (
-      <CoursePublishControl
-        courseLabel={`${course.code} — ${course.name}`}
-        isPublished={course.isPublished}
-        onPublishChange={onPublishChange}
-      />
+      <div className="flex flex-col items-start gap-1">
+        <CoursePublishButton state={publishState} />
+        <CoursePublishErrorMessage state={publishState} />
+      </div>
     ) : null;
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
@@ -1056,24 +1063,9 @@ export function CourseDetailManagerView({
           name={course.name}
           department={course.department}
           accentColor={resolvePaletteAccent(course.id)}
-          badges={
-            <>
-              <ActiveBannerBadge active={course.isActive} />
-              <BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>
-            </>
-          }
+          badges={<BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>}
           // Topic chips only on Overview, so the other sections keep a slim banner.
           topics={activeTab === "overview" ? topics.map((t) => t.name) : []}
-          actions={
-            // The Materials section carries its own upload button.
-            canManage &&
-            activeTab !== "materials" && (
-              <Button size="sm" className={BANNER_PRIMARY_ACTION_CLASS} onClick={openUploadDialog}>
-                <IconUpload className="size-4" aria-hidden="true" />
-                Upload material
-              </Button>
-            )
-          }
           menu={
             <>
               <DropdownMenu>
@@ -1091,7 +1083,7 @@ export function CourseDetailManagerView({
                   {canPublishCourse && onPublishChange && (
                     <DropdownMenuItem
                       className="gap-2"
-                      onSelect={() => setPublishConfirmOpen(true)}
+                      onSelect={() => publishState.setConfirmOpen(true)}
                     >
                       {course.isPublished ? (
                         <IconWorldOff className="size-4 text-muted-foreground" />
@@ -1112,12 +1104,9 @@ export function CourseDetailManagerView({
                 </DropdownMenuContent>
               </DropdownMenu>
               {canPublishCourse && onPublishChange && (
-                <CoursePublishControl
+                <CoursePublishDialog
                   courseLabel={`${course.code} — ${course.name}`}
-                  isPublished={course.isPublished}
-                  onPublishChange={onPublishChange}
-                  confirmOpen={publishConfirmOpen}
-                  onConfirmOpenChange={setPublishConfirmOpen}
+                  state={publishState}
                 />
               )}
             </>
@@ -1318,6 +1307,7 @@ export function CourseDetailManagerView({
             instructors={displayInstructors}
             tas={tas}
             canPublish={canPublishCourse}
+            publishControl={publishControl}
           />
         </PageTabsContent>
 
@@ -2116,6 +2106,16 @@ export function CourseDetailManagerView({
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
+            {courseId && (
+              <div className="mb-6">
+                <CourseDescriptionSettings
+                  key={courseId}
+                  courseId={courseId}
+                  initialDescription={course.description ?? ""}
+                  onSaved={onCourseUpdated}
+                />
+              </div>
+            )}
             {/* #2002: what students see — files and topics. Same audience as the tab.
                 #2061: mounted only while the tab is open, so it reads the course
                 fresh on each visit and costs nothing on every other tab. */}

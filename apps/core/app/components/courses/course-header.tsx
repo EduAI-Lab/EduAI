@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
 import { HERO_GLASS_STYLE, HeroShell, termLabel, type CourseAccentColor } from "@eduai/ui";
 
-/** A solid white button on the banner, labelled in the course colour. */
-export const BANNER_PRIMARY_ACTION_CLASS =
-  "bg-white text-[var(--course-accent)] shadow-sm hover:bg-white/90 hover:text-[var(--course-accent)]";
-
 /** A see-through button on the banner. */
 export const BANNER_SECONDARY_ACTION_CLASS =
   "border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white";
@@ -78,11 +74,6 @@ export function CourseHeader({
       </HeroShell>
     </header>
   );
-}
-
-/** Active/Inactive, so an archived course doesn't read as a live one. */
-export function ActiveBannerBadge({ active }: { active: boolean }) {
-  return <BannerBadge>{active ? "Active" : "Inactive"}</BannerBadge>;
 }
 
 /** A status pill that reads on the banner. */

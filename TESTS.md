@@ -1301,6 +1301,7 @@ Uses only synthetic, fabricated participant data — never the real Qualtrics ex
 | [`auth-verify-email.route.test.ts`](apps/core/app/tests/unit/auth-verify-email.route.test.ts) | (#1942) The loader returns `{ email }`: empty for a signed-out visitor and for a stale unverified session (whose address is still never exposed). |
 | [`auth-forgot-password.route.test.tsx`](apps/core/app/tests/unit/auth-forgot-password.route.test.tsx) | (#1942) Every outcome redirects to a bare `/auth/reset-password`; the address travels in an HttpOnly cookie scoped to that page, and the reset loader reads it back. |
 | [`auth-reset-password.route.test.tsx`](apps/core/app/tests/unit/auth-reset-password.route.test.tsx) | (#1942) The loader ignores an address in the URL and a cookie that does not hold one. |
+| [`course-description-settings.test.tsx`](apps/core/app/tests/unit/course-description-settings.test.tsx) | (#2136) The Settings tab's course description editor saves the trimmed text and shows it trimmed, sends `null` when cleared, calls `onSaved`, drops the "Saved." message as soon as the text is edited again, shows the server's reason (or a plain message) on a refused save and "Network error." when the request fails (keeping the text and an enabled button), and disables the button while a save is in flight. |
 
 ## EduAI Integration Tests
 
