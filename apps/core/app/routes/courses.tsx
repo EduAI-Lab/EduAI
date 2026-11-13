@@ -286,6 +286,7 @@ export default function CoursesPage() {
         ) : (
           <CoursesView
             role="mixed"
+            launcherRole={isTA ? "TA" : (user.role ?? "STUDENT")}
             courses={courses}
             taCourseIds={taCourseIds}
             instructorCourseIds={instructorCourseIds}

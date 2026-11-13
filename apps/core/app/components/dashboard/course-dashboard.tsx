@@ -8,12 +8,14 @@ import { Link, useRevalidator } from "react-router";
 import {
   IconChevronRight,
   IconDotsVertical,
+  IconEdit,
   IconFiles,
   IconLayoutGrid,
   IconList,
   IconMessages,
   IconRobot,
   IconSettings,
+  IconTrash,
   IconWorldOff,
   IconWorldUpload,
   type Icon,
@@ -89,6 +91,26 @@ const SECTION_TITLES = {
   assisting: "Courses you assist",
   taking: "Courses you're taking",
 } satisfies Record<CourseKind, string>;
+
+/**
+ * The Courses page's own actions on a teaching card (#807: an item a policy
+ * turned off stays visible and greyed, with the reason under it). The page
+ * runs its own publish confirmation, so the card's built-in one is skipped.
+ */
+export type CourseMenuActions = {
+  onPublishToggle: () => void;
+  publishDisabledReason?: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  deleteDisabledReason?: string;
+};
+
+/** The extensions a viewer may open from a course card. */
+export function courseExtensions(courseId: string, launcherRole: string) {
+  return visibleAppsForRole(getLauncherApps(courseId), launcherRole).filter(
+    (app) => app.id !== "core" && app.id !== "course-chat" && app.url,
+  );
+}
 
 type CourseLink = {
   key: string;
@@ -206,11 +228,13 @@ function TeachingMenu({
   course,
   canPublish,
   onBanner,
+  actions,
 }: {
   course: DashboardCourse;
   canPublish: boolean;
   /** Drawn on the card's colour banner rather than a neutral row. */
   onBanner: boolean;
+  actions?: CourseMenuActions;
 }) {
   const revalidator = useRevalidator();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -233,7 +257,38 @@ function TeachingMenu({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[190px]">
-          {canPublish && (
+          {actions && (
+            <>
+              <DropdownMenuItem
+                className={cn(
+                  "gap-2",
+                  actions.publishDisabledReason && "flex-col items-start gap-0.5",
+                )}
+                disabled={!!actions.publishDisabledReason}
+                onSelect={actions.onPublishToggle}
+              >
+                <span className="flex items-center gap-2">
+                  {course.isPublished ? (
+                    <IconWorldOff className="size-4 text-muted-foreground" />
+                  ) : (
+                    <IconWorldUpload className="size-4 text-muted-foreground" />
+                  )}
+                  {course.isPublished ? "Unpublish course" : "Publish course"}
+                </span>
+                {actions.publishDisabledReason && (
+                  <span className="pl-6 text-[11px] text-muted-foreground">
+                    {actions.publishDisabledReason}
+                  </span>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="gap-2" onSelect={actions.onEdit}>
+                <IconEdit className="size-4 text-muted-foreground" />
+                Edit course
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {!actions && canPublish && (
             <>
               <DropdownMenuItem className="gap-2" onSelect={() => setConfirmOpen(true)}>
                 {course.isPublished ? (
@@ -252,9 +307,33 @@ function TeachingMenu({
               Course settings
             </Link>
           </DropdownMenuItem>
+          {actions && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className={cn(
+                  "gap-2 text-destructive focus:text-destructive",
+                  actions.deleteDisabledReason &&
+                    "flex-col items-start gap-0.5 text-muted-foreground focus:text-muted-foreground",
+                )}
+                disabled={!!actions.deleteDisabledReason}
+                onSelect={actions.onDelete}
+              >
+                <span className="flex items-center gap-2">
+                  <IconTrash className="size-4" />
+                  Delete course
+                </span>
+                {actions.deleteDisabledReason && (
+                  <span className="pl-6 text-[11px] text-muted-foreground">
+                    {actions.deleteDisabledReason}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
-      {canPublish && (
+      {!actions && canPublish && (
         <CoursePublishControl
           courseLabel={`${course.code} — ${course.name}`}
           isPublished={course.isPublished}
@@ -275,6 +354,10 @@ type CardProps = {
   kind: CourseKind;
   links: CourseLink[];
   canPublish: boolean;
+  /** Courses page only: Edit and Delete alongside the dashboard's items. */
+  menuActions?: CourseMenuActions;
+  /** Courses page only: e.g. the viewer's role in the course, the teaching team. */
+  extraBadges?: string[];
 };
 
 function useCardLook(course: DashboardCourse) {
@@ -293,11 +376,17 @@ function CardMenu({
   course,
   kind,
   canPublish,
+  menuActions,
   onBanner = true,
-}: Omit<CardProps, "links"> & { onBanner?: boolean }) {
+}: Omit<CardProps, "links" | "extraBadges"> & { onBanner?: boolean }) {
   const look = useCardLook(course);
   return kind === "teaching" ? (
-    <TeachingMenu course={course} canPublish={canPublish} onBanner={onBanner} />
+    <TeachingMenu
+      course={course}
+      canPublish={canPublish}
+      onBanner={onBanner}
+      actions={menuActions}
+    />
   ) : (
     <CourseCardCustomizePopover
       courseName={course.name}
@@ -308,7 +397,14 @@ function CardMenu({
   );
 }
 
-function CourseGridCard({ course, kind, links, canPublish }: CardProps) {
+export function CourseGridCard({
+  course,
+  kind,
+  links,
+  canPublish,
+  menuActions,
+  extraBadges,
+}: CardProps) {
   const look = useCardLook(course);
   const term = termLabel(course.term, course.year);
   return (
@@ -318,7 +414,7 @@ function CourseGridCard({ course, kind, links, canPublish }: CardProps) {
     >
       <div className="relative h-24 shrink-0" style={{ background: look.accent }}>
         <div className="absolute right-2 top-2 z-10">
-          <CardMenu course={course} kind={kind} canPublish={canPublish} />
+          <CardMenu course={course} kind={kind} canPublish={canPublish} menuActions={menuActions} />
         </div>
       </div>
       <Link
@@ -339,6 +435,15 @@ function CourseGridCard({ course, kind, links, canPublish }: CardProps) {
               inactiveLabel="Unpublished"
             />
           )}
+          {extraBadges?.map((badge) => (
+            // Same pill the Courses page's old card used for these.
+            <span
+              key={badge}
+              className="inline-flex items-center rounded-full border border-[var(--course-border)] bg-[var(--course-muted)] px-2 py-0.5 text-[11px] font-medium leading-none text-foreground/80"
+            >
+              {badge}
+            </span>
+          ))}
         </div>
       </div>
       <div className="flex items-center gap-1 border-t border-border px-2 py-1">
@@ -456,10 +561,7 @@ export function CourseDashboard({
   const { isEnabled } = usePolicyGate();
   const canPublish = userRole === "INSTRUCTOR" && isEnabled("instructors.canPublishCourses");
 
-  const extensionsFor = (courseId: string) =>
-    visibleAppsForRole(getLauncherApps(courseId), launcherRole).filter(
-      (app) => app.id !== "core" && app.id !== "course-chat" && app.url,
-    );
+  const extensionsFor = (courseId: string) => courseExtensions(courseId, launcherRole);
 
   const order: CourseKind[] = ["teaching", "assisting", "taking"];
   const sections = order

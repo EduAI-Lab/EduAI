@@ -51,6 +51,14 @@ function CoursesMixedView(
   return <CoursesView role="mixed" instructorCourseIds={[]} {...CONTROLLED_DEFAULTS} {...props} />;
 }
 
+// The instructor and mixed views use the dashboard's course card, whose
+// teaching menu revalidates through the data router; these tests render under
+// a plain MemoryRouter.
+vi.mock("react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-router")>()),
+  useRevalidator: () => ({ revalidate: vi.fn(), state: "idle" }),
+}));
+
 // §541: department labels/options now come from the DB-backed useDisciplines
 // hook (previously the static UNIT_OPTIONS). Stub it with a fixed list so the
 // views render labels synchronously in tests.
@@ -996,8 +1004,67 @@ describe("CoursesInstructorView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    // Actions are in a 3-dot dropdown per card
-    expect(screen.getByRole("button", { name: /course actions/i })).toBeInTheDocument();
+    // The dashboard's card (#2105): one 3-dot menu per card, named by its code.
+    expect(screen.getByRole("button", { name: "COSC 101 actions" })).toBeInTheDocument();
+  });
+
+  it("keeps Edit, Delete and Publish in the card menu", async () => {
+    const onPublishToggle = vi.fn(async () => {});
+    wrap(
+      <CoursesInstructorView
+        courses={[DRAFT_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={onPublishToggle}
+      />,
+    );
+    const menuButton = () => screen.getByRole("button", { name: `${DRAFT_COURSE.code} actions` });
+    openCourseActions(menuButton());
+    expect(await screen.findByRole("menuitem", { name: /course settings/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /publish course/i }));
+    expect(onPublishToggle).toHaveBeenCalledWith(DRAFT_COURSE.id, true);
+
+    openCourseActions(menuButton());
+    fireEvent.click(await screen.findByRole("menuitem", { name: /edit course/i }));
+    expect(await screen.findByRole("dialog", { name: /edit course/i })).toBeInTheDocument();
+  });
+
+  it("asks before deleting from the card menu", async () => {
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+    );
+    openCourseActions(screen.getByRole("button", { name: `${PUBLISHED_COURSE.code} actions` }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /delete course/i }));
+    expect(await screen.findByRole("dialog", { name: /delete course/i })).toBeInTheDocument();
+  });
+
+  it("greys out Publish and Delete in the card menu when the policy is off (#807)", async () => {
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+      { "instructors.canPublishCourses": false, "instructors.canDeleteCourses": false },
+    );
+    openCourseActions(screen.getByRole("button", { name: `${PUBLISHED_COURSE.code} actions` }));
+    expect(await screen.findByRole("menuitem", { name: /unpublish course/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: /delete course/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("renders both published and draft courses", () => {
@@ -1010,8 +1077,8 @@ describe("CoursesInstructorView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    expect(screen.getByText("COSC 101")).toBeInTheDocument();
-    expect(screen.getByText("COSC 201")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 101 · / })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 201 · / })).toBeInTheDocument();
   });
 
   // #1087 Group A: instructor now uses the same term grouping as admin —
@@ -1037,9 +1104,9 @@ describe("CoursesInstructorView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    expect(screen.getByText("COSC 101")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 101 · / })).toBeInTheDocument();
     expect(screen.getByText(/previous term/i)).toBeInTheDocument();
-    expect(screen.getByText("COSC 999")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 999 · / })).toBeInTheDocument();
   });
 
   it('labels future-term sections as "Upcoming term"', () => {
@@ -1063,9 +1130,9 @@ describe("CoursesInstructorView", () => {
         onPublishToggle={NOOP}
       />,
     );
-    expect(screen.getByText("COSC 101")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 101 · / })).toBeInTheDocument();
     expect(screen.getByText(/upcoming term/i)).toBeInTheDocument();
-    expect(screen.getByText("COSC 555")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 555 · / })).toBeInTheDocument();
   });
 
   it('labels the department field as "Course Code"', () => {
@@ -1103,7 +1170,7 @@ describe("CoursesMixedView", () => {
   it('shows only the "assisting" section when the user has TA courses only', () => {
     wrap(<CoursesMixedView courses={[TA_COURSE]} taCourseIds={["ta1"]} enrolledCourseIds={[]} />);
     expect(screen.getByText(/assisting/i)).toBeInTheDocument();
-    expect(screen.getByText("COSC 301")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 301 · / })).toBeInTheDocument();
     expect(screen.getByText("TA")).toBeInTheDocument();
     expect(screen.queryByText(/enrolled/i)).not.toBeInTheDocument();
   });
@@ -1115,7 +1182,7 @@ describe("CoursesMixedView", () => {
     expect(
       screen.getByRole("heading", { name: /courses you are enrolled in/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("COSC 401")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 401 · / })).toBeInTheDocument();
     expect(screen.getByText("Enrolled")).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: /courses you are assisting in/i }),
@@ -1136,8 +1203,8 @@ describe("CoursesMixedView", () => {
     expect(
       screen.getByRole("heading", { name: /courses you are enrolled in/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("COSC 301")).toBeInTheDocument();
-    expect(screen.getByText("COSC 401")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 301 · / })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 401 · / })).toBeInTheDocument();
     expect(screen.getByText("TA")).toBeInTheDocument();
     expect(screen.getByText("Enrolled")).toBeInTheDocument();
   });
@@ -1153,8 +1220,8 @@ describe("CoursesMixedView", () => {
         enrolledCourseIds={["stu1", "stu2"]}
       />,
     );
-    expect(screen.getByText("COSC 401")).toBeInTheDocument();
-    expect(screen.queryByText("COSC 402")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 401 · / })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^COSC 402 · / })).not.toBeInTheDocument();
   });
 
   it("shows empty state when the user has neither TA nor enrolled courses", () => {
@@ -1224,7 +1291,7 @@ describe("CoursesMixedView", () => {
     // both old buckets into an empty body.
     expect(screen.getByText(/1 course found/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /courses you are teaching/i })).toBeInTheDocument();
-    expect(screen.getByText("COSC 501")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^COSC 501 · / })).toBeInTheDocument();
     expect(screen.getByText("Instructor")).toBeInTheDocument();
   });
 
