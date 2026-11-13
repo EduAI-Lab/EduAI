@@ -17,7 +17,6 @@ import {
   AIServiceIndicators as SharedAIServiceIndicators,
   AIServiceHistoryPanel,
   useAiServiceStatus,
-  isServiceActive,
   useHistoryOnOpen,
   type HistoryPayload,
 } from "@eduai/ui";
@@ -67,8 +66,9 @@ export function AIServiceIndicators() {
     <span data-tour="ai-status" className="hidden sm:inline-flex">
       <SharedAIServiceIndicators
         cloud={cloud}
-        // Cloud is `outage` only when no provider key is set (lib/ai/service-status.server.ts:84), so hide it then.
-        showCloud={isServiceActive(cloud.state)}
+        // Hide the chip only when no cloud key is configured, which classifyCloudStatus reports as
+        // `outage`. While loading or unknown it still shows, so a slow or failed poll isn't silent.
+        showCloud={cloud.state !== "outage"}
         cloudLabel="Managed cloud AI"
         ubc={ubc}
         ubcHistory={panel}

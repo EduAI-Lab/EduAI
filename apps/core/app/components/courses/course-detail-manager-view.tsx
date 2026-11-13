@@ -20,7 +20,12 @@ import {
   IconWorldUpload,
 } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
-import { CoursePublishControl } from "~/components/courses/course-publish-control";
+import {
+  CoursePublishButton,
+  CoursePublishDialog,
+  CoursePublishErrorMessage,
+  useCoursePublish,
+} from "~/components/courses/course-publish-control";
 import {
   SelfEnrollmentDraftNotice,
   selfEnrollmentStatusLabel,
@@ -450,7 +455,6 @@ export function CourseDetailManagerView({
     setUploadOpen(true);
   };
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
-  const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const deleteMaterialTitle = materials.find((m) => m.id === deleteMaterialId)?.title;
   const [deletingMaterial, setDeletingMaterial] = useState(false);
@@ -535,14 +539,18 @@ export function CourseDetailManagerView({
     getCourseNavItems(access, isEnabled),
   );
 
-  // #1939: one control, shown beside the Published badge and in the draft notice.
+  // #1939: one publish switch shared by the banner menu, Overview and the draft
+  // notice, so there is a single dialog, busy flag and error however it is opened.
+  const publishState = useCoursePublish(
+    course.isPublished,
+    onPublishChange ?? (() => Promise.resolve()),
+  );
   const publishControl =
     canPublishCourse && onPublishChange ? (
-      <CoursePublishControl
-        courseLabel={`${course.code} — ${course.name}`}
-        isPublished={course.isPublished}
-        onPublishChange={onPublishChange}
-      />
+      <div className="flex flex-col items-start gap-1">
+        <CoursePublishButton state={publishState} />
+        <CoursePublishErrorMessage state={publishState} />
+      </div>
     ) : null;
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
@@ -1075,7 +1083,7 @@ export function CourseDetailManagerView({
                   {canPublishCourse && onPublishChange && (
                     <DropdownMenuItem
                       className="gap-2"
-                      onSelect={() => setPublishConfirmOpen(true)}
+                      onSelect={() => publishState.setConfirmOpen(true)}
                     >
                       {course.isPublished ? (
                         <IconWorldOff className="size-4 text-muted-foreground" />
@@ -1096,12 +1104,9 @@ export function CourseDetailManagerView({
                 </DropdownMenuContent>
               </DropdownMenu>
               {canPublishCourse && onPublishChange && (
-                <CoursePublishControl
+                <CoursePublishDialog
                   courseLabel={`${course.code} — ${course.name}`}
-                  isPublished={course.isPublished}
-                  onPublishChange={onPublishChange}
-                  confirmOpen={publishConfirmOpen}
-                  onConfirmOpenChange={setPublishConfirmOpen}
+                  state={publishState}
                 />
               )}
             </>

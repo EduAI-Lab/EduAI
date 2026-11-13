@@ -28,6 +28,8 @@ export function CourseDescriptionSettings({
         body: JSON.stringify({ description: value.trim() || null }),
       });
       if (res.ok) {
+        // Show what was stored, not the untrimmed text the user typed.
+        setValue(value.trim());
         setSaveMsg("Saved.");
         onSaved?.();
       } else {
@@ -54,7 +56,10 @@ export function CourseDescriptionSettings({
             id="course-description-input"
             rows={4}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setSaveMsg(null);
+            }}
           />
         </div>
         <div className="flex items-center gap-3">
