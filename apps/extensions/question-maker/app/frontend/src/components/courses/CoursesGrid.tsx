@@ -76,6 +76,8 @@ export type CoursesGridProps = {
   courses: Course[];
   isLoading: boolean;
   emptyHint?: string;
+  /** CTA under the empty hint. */
+  emptyAction?: ReactNode;
   showDepartment?: boolean;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
   filters?: ReactNode;
@@ -92,6 +94,7 @@ export function CoursesGrid({
   courses,
   isLoading,
   emptyHint,
+  emptyAction,
   showDepartment = false,
   filters,
   matchesFilter,
@@ -164,6 +167,7 @@ export function CoursesGrid({
             icon={<IconBooks className="size-6" />}
             title="No courses yet"
             description={emptyHint || "Courses you can access from EduAI Core will appear here."}
+            action={emptyAction}
           />
         </div>
       }

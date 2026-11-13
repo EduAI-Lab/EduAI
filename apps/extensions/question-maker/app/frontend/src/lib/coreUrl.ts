@@ -6,7 +6,7 @@
  * with AI Tutor so the two apps cannot drift on how Core is addressed. The AI
  * Tutor links below are Question Maker's own.
  */
-import { coreDashboardUrl, coreLoginUrl, coreStatusUrl } from "@eduai/ui/core-url";
+import { coreCoursesUrl, coreDashboardUrl, coreLoginUrl, coreStatusUrl } from "@eduai/ui/core-url";
 
 /** EduAI Core base URL for cross-app navigation (login, dashboard). */
 export function getCoreUrl(): string {
@@ -20,6 +20,10 @@ export function getCoreLoginUrl(returnUrl = window.location.href): string {
 
 export function getCoreDashboardUrl(): string {
   return coreDashboardUrl(getCoreUrl());
+}
+
+export function getCoreCoursesUrl(): string {
+  return coreCoursesUrl(getCoreUrl());
 }
 
 /** Core's AI service status page — the extensions have no such route of their own. */

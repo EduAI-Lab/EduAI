@@ -60,6 +60,11 @@ export function useQmLayout() {
   return ctx;
 }
 
+/** Opens the Add Courses dialog; `undefined` outside the layout. */
+export function useOpenProfile(): (() => void) | undefined {
+  return useContext(QmLayoutContext)?.openProfile;
+}
+
 /** A course's last reported Canvas link; `undefined` until its page reports. */
 export function useCanvasLinkStatus(courseId: number | null): CanvasLinkStatus | undefined {
   const ctx = useContext(QmLayoutContext);

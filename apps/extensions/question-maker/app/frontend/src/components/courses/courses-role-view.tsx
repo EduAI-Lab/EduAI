@@ -1,7 +1,11 @@
 import { PageHeading } from "@eduai/ui";
 import { CoursesGrid, type CoursesGridProps } from "./CoursesGrid";
+import { CoursesEmptyActions } from "./CoursesEmptyActions";
 
-type CoursesRoleViewProps = Omit<CoursesGridProps, "emptyHint" | "showDepartment"> & {
+type CoursesRoleViewProps = Omit<
+  CoursesGridProps,
+  "emptyHint" | "emptyAction" | "showDepartment"
+> & {
   role: "admin" | "instructor";
 };
 
@@ -17,14 +21,15 @@ const ROLE_CONFIG = {
     heading: "Courses",
     subheading:
       "Every course you have access to appears here. Open a course to manage its question bank.",
-    emptyHint: "No courses linked yet. Add a course to start authoring.",
+    emptyHint: "Open a course in EduAI Core and choose Question Maker to start authoring it.",
     showDepartment: true,
   },
   instructor: {
     heading: "Courses",
     subheading:
       "Select a course to manage its question bank and assessments. Shared courses are ones you co-teach via enrollment.",
-    emptyHint: "No courses yet. Add a course from your profile to get started.",
+    emptyHint:
+      "Open a course in EduAI Core and choose Question Maker to start writing questions for it.",
     // Spelled out rather than left absent: both arms answer the same questions,
     // so a reader does not have to know which keys each one happens to carry.
     showDepartment: false,
@@ -42,7 +47,12 @@ export function CoursesRoleView({ role, ...props }: CoursesRoleViewProps) {
   return (
     <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
       <PageHeading heading={config.heading} subheading={config.subheading} />
-      <CoursesGrid {...props} showDepartment={config.showDepartment} emptyHint={config.emptyHint} />
+      <CoursesGrid
+        {...props}
+        showDepartment={config.showDepartment}
+        emptyHint={config.emptyHint}
+        emptyAction={<CoursesEmptyActions />}
+      />
     </div>
   );
 }

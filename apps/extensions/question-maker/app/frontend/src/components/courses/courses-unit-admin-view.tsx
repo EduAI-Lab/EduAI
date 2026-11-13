@@ -9,10 +9,11 @@ import {
 } from "@eduai/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { CoursesGrid, type CoursesGridProps } from "./CoursesGrid";
+import { CoursesEmptyActions } from "./CoursesEmptyActions";
 
 type CoursesUnitAdminViewProps = Omit<
   CoursesGridProps,
-  "emptyHint" | "courses" | "showDepartment"
+  "emptyHint" | "emptyAction" | "courses" | "showDepartment"
 > & {
   courses: CoursesGridProps["courses"];
 };
@@ -76,9 +77,10 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
         }
         emptyHint={
           unitFilter === "all"
-            ? "No courses in your unit yet. Link a course from your profile to begin."
-            : `No courses in ${unitFilter}. Try another unit or link a new course.`
+            ? "No courses in your unit yet. Open one in EduAI Core and choose Question Maker to begin."
+            : `No courses in ${unitFilter}. Try another unit.`
         }
+        emptyAction={<CoursesEmptyActions />}
       />
     </div>
   );

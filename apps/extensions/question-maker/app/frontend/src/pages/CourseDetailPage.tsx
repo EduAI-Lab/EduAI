@@ -1130,7 +1130,7 @@ export const CourseDetailPage = () => {
             emptyMessage={emptyStateMessage}
             disableAdd={writesDisabled}
             disableUpload={writesDisabled}
-            onOpenProfile={() => startTour("main")}
+            onStartTour={() => startTour("main")}
             onMoveToBank={
               canManageAssessmentForCourse && !writesDisabled && questionFilters.questionBankId
                 ? (entry) => setBankAction({ entry, mode: "move" })
