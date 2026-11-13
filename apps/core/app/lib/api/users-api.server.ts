@@ -466,19 +466,27 @@ export async function handleUsersApiRequest(request: Request) {
             }
             const previousTAEnrollments = await tx.enrollment.findMany({
               where: { userId, role: "TA", isActive: true },
-              select: { courseId: true },
+              select: { courseId: true, course: { select: { deletedAt: true } } },
             });
             let convertedCourseIds: readonly string[] = [];
             if (convertsInstructorEnrollments) {
               const conversion = await convertInstructorEnrollmentsToTA(tx, userId);
-              if (conversion.error) return { error: conversion.error } as const;
+              if (conversion.error) {
+                return {
+                  error: conversion.error,
+                  blockedCourseIds: conversion.blockedCourseIds,
+                } as const;
+              }
               convertedCourseIds = conversion.convertedCourseIds;
             }
             // Without taCourseIds a STUDENT keeps their current TA courses; any other role clears them.
             const desiredTACourseIds = [
               ...(taCourseIds ??
                 (convertsInstructorEnrollments
-                  ? previousTAEnrollments.map((enrollment) => enrollment.courseId)
+                  ? // a soft-deleted course would fail the live-course lookup in reconcile
+                    previousTAEnrollments
+                      .filter((enrollment) => enrollment.course.deletedAt === null)
+                      .map((enrollment) => enrollment.courseId)
                   : [])),
               ...convertedCourseIds,
             ];
@@ -499,9 +507,19 @@ export async function handleUsersApiRequest(request: Request) {
           });
 
           if (transactionResult.error) {
+            if ("blockedCourseIds" in transactionResult) {
+              // Name the courses so the admin knows where to add another instructor.
+              const blocked = await prisma.course.findMany({
+                where: { id: { in: transactionResult.blockedCourseIds } },
+                select: { code: true },
+                orderBy: { code: "asc" },
+              });
+              return apiError(409, transactionResult.error, {
+                courses: blocked.map((course) => course.code).join(", "),
+              });
+            }
             const status =
-              transactionResult.error === "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" ||
-              transactionResult.error === "INSTRUCTOR_FLOOR_VIOLATION"
+              transactionResult.error === "TA_INSTRUCTOR_ENROLLMENT_CONFLICT"
                 ? 409
                 : transactionResult.error === "TA_COURSE_NOT_FOUND"
                   ? 404

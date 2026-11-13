@@ -19,6 +19,7 @@ import { useForm, useWatch } from "react-hook-form";
 // (users-api.server.ts). Importing them as values here pulled zod into the
 // client bundle (#1223); the types are erased, so this import is free.
 import type { CreateUserInput, UpdateUserInput } from "~/lib/auth/schemas";
+import { ApiError } from "~/hooks/api/config";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 
 import type { User } from "~/components/admin/users-table";
@@ -182,7 +183,14 @@ export function UserFormDialog({
       setSelectedUnits([]);
       setSelectedTACourseIds([]);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to save user.");
+      if (error instanceof ApiError && error.message === "INSTRUCTOR_FLOOR_VIOLATION") {
+        const courses = error.fields?.courses;
+        setSubmitError(
+          `This user is the only instructor of ${courses ?? "a course"}. Add another instructor before changing their role.`,
+        );
+      } else {
+        setSubmitError(error instanceof Error ? error.message : "Failed to save user.");
+      }
     } finally {
       submissionInFlightRef.current = false;
       setIsSubmitting(false);

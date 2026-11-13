@@ -142,7 +142,14 @@ describe("PATCH /api/users/:id — instructor enrollments on a change to STUDENT
     const res = await patchUser(targetId, { role: "STUDENT", taCourseIds: [] });
 
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe("INSTRUCTOR_FLOOR_VIOLATION");
+    const body = await res.json();
+    expect(body.error).toBe("INSTRUCTOR_FLOOR_VIOLATION");
+    // names the blocked course (B only) so the admin can act on it
+    const blocked = await prisma.course.findUnique({
+      where: { id: courseB },
+      select: { code: true },
+    });
+    expect(body.fields).toEqual({ courses: blocked?.code });
     const user = await prisma.user.findUnique({ where: { id: targetId }, select: { role: true } });
     expect(user?.role).toBe("INSTRUCTOR");
     expect(await enrollmentRole(courseA, targetId)).toBe("INSTRUCTOR");
@@ -160,6 +167,20 @@ describe("PATCH /api/users/:id — instructor enrollments on a change to STUDENT
     expect(res.status).toBe(200);
     expect(await enrollmentRole(courseA, targetId)).toBe("TA");
     expect(await enrollmentRole(courseB, targetId)).toBe("INSTRUCTOR");
+  });
+
+  it("ignores a TA row on a soft-deleted course on a role-only save", async () => {
+    const { targetId, courseA, courseB } = await setup("STUDENT");
+    await prisma.enrollment.updateMany({
+      where: { userId: targetId, courseId: courseB },
+      data: { role: "TA" },
+    });
+    await prisma.course.update({ where: { id: courseB }, data: { deletedAt: new Date() } });
+
+    const res = await patchUser(targetId, { role: "STUDENT" });
+
+    expect(res.status).toBe(200);
+    expect(await enrollmentRole(courseA, targetId)).toBe("TA");
   });
 
   it("converts enrollments when taCourseIds is omitted", async () => {
