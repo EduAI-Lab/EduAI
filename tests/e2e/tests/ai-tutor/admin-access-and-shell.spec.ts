@@ -45,7 +45,7 @@ test.describe("AI Tutor ADMIN — sign-in and landing", () => {
     await page.getByRole("button", { name: /^sign in$/i }).click();
 
     await page.waitForURL(/localhost:3001/, { timeout: 30_000 });
-    await expect(page.getByText("Platform overview")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("AI Tutor overview")).toBeVisible({ timeout: 30_000 });
     // The signed-in user is shown in the rail's Account tray.
     await expect((await openRailTray(page, "Account")).getByText(user.email)).toBeVisible();
   });
@@ -54,7 +54,7 @@ test.describe("AI Tutor ADMIN — sign-in and landing", () => {
     await createAdmin(page.request, { prefix: "at-admin-root" });
     await page.goto(`${AI_TUTOR_URL}/`);
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
-    await expect(page.getByText("Platform overview")).toBeVisible();
+    await expect(page.getByText("AI Tutor overview")).toBeVisible();
   });
 });
 
@@ -89,7 +89,7 @@ test.describe("AI Tutor ADMIN — sidebar navigation", () => {
     await loginAsAdmin(page, "at-admin-nav-admin");
     await sidebar(page).getByRole("link", { name: "Admin", exact: true }).first().click();
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bug reports", exact: true })).toBeVisible();
   });
 
   test("the user menu exposes Settings and Log out", async ({ page }) => {
@@ -131,7 +131,7 @@ test.describe("AI Tutor ADMIN — command palette", () => {
     await page.keyboard.press("Enter");
 
     await expect(page).toHaveURL(/\/admin$/, { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bug reports", exact: true })).toBeVisible();
   });
 });
 
@@ -345,7 +345,7 @@ test.describe("AI Tutor ADMIN — shell affordances scoped to other roles", () =
     await createAdmin(page.request, { prefix: "at-admin-unsupported" });
     await page.goto(`${AI_TUTOR_URL}/unsupported-role`);
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
-    await expect(page.getByText("Platform overview")).toBeVisible();
+    await expect(page.getByText("AI Tutor overview")).toBeVisible();
   });
 });
 

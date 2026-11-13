@@ -65,10 +65,11 @@ app/
       CourseTopicsHeroAction.tsx, ModuleCard.tsx, SubmissionCard.tsx,
       ContentListRow.tsx, CourseNextSteps.tsx, CourseBannerMenu.tsx, useCoursePublishToggle.tsx
     dashboard/
-      DashboardView.tsx              #   Student/admin shell
+      DashboardView.tsx              #   Student shell
       TeachingDashboard.tsx          #   Staff course grid (instructor, unit admin, TA)
-      Dashboard{Student,Ta,Instructor,UnitAdmin,Admin}View.tsx  # Per-role content
-      ContinueLearningPanel.tsx, BugReportTriagePanel.tsx
+      Dashboard{Student,Ta,Instructor,UnitAdmin}View.tsx  # Per-role content
+      AdminDashboard.tsx             #   ADMIN: Core's admin dashboard layout, AI Tutor data
+      ContinueLearningPanel.tsx
       dashboard-helpers.ts
     help/
       HelpView.tsx

@@ -7,16 +7,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const listCourses = vi.fn();
 const mySubmissions = vi.fn();
-const listAdminUsers = vi.fn();
-const listAdminBugReports = vi.fn();
+const adminDashboard = vi.fn();
+const adminAiTraces = vi.fn();
 const dashboardStats = vi.fn();
 
 vi.mock("~/lib/api", () => {
   const api = {
     listCourses: (...a: unknown[]) => listCourses(...a),
     mySubmissions: (...a: unknown[]) => mySubmissions(...a),
-    listAdminUsers: (...a: unknown[]) => listAdminUsers(...a),
-    listAdminBugReports: (...a: unknown[]) => listAdminBugReports(...a),
+    adminDashboard: (...a: unknown[]) => adminDashboard(...a),
+    adminAiTraces: (...a: unknown[]) => adminAiTraces(...a),
     dashboardStats: (...a: unknown[]) => dashboardStats(...a),
   };
   return { default: api, api };
@@ -42,8 +42,8 @@ describe("dashboard clientLoader (#1208)", () => {
       pageSize: 200,
     });
     mySubmissions.mockReset().mockResolvedValue([]);
-    listAdminUsers.mockReset().mockResolvedValue(null);
-    listAdminBugReports.mockReset().mockResolvedValue([]);
+    adminDashboard.mockReset().mockResolvedValue(null);
+    adminAiTraces.mockReset().mockResolvedValue([]);
     dashboardStats.mockReset().mockResolvedValue(null);
   });
 
@@ -79,13 +79,32 @@ describe("dashboard clientLoader (#1208)", () => {
     expect(data.role).toBe("STUDENT");
   });
 
-  it("loads the admin-only extras for an admin", async () => {
+  it("loads the AI Tutor rollup and the five latest tutor replies for an admin", async () => {
     requireClientUser.mockResolvedValue({ id: "u3", name: "Admin", role: "ADMIN" });
-    listAdminUsers.mockResolvedValue({ data: [], total: 12, page: 1, pageSize: 1 });
+    adminDashboard.mockResolvedValue({ content: { activities: 3 } });
+    adminAiTraces.mockResolvedValue([{ id: 1 }]);
 
     const data = await runLoader();
 
-    expect(listAdminUsers).toHaveBeenCalledWith({ pageSize: 1 });
-    expect(data.adminUsers).toMatchObject({ total: 12 });
+    expect(adminAiTraces).toHaveBeenCalledWith({ limit: 5 });
+    expect(data.adminDashboard).toMatchObject({ content: { activities: 3 } });
+    expect(data.adminRecentTraces).toEqual([{ id: 1 }]);
+  });
+
+  it("keeps the dashboard loading when the admin calls fail", async () => {
+    requireClientUser.mockResolvedValue({ id: "u3", name: "Admin", role: "ADMIN" });
+    adminDashboard.mockRejectedValue(new Error("boom"));
+    adminAiTraces.mockRejectedValue(new Error("boom"));
+
+    const data = await runLoader();
+
+    expect(data.adminDashboard).toBeNull();
+    expect(data.adminRecentTraces).toBeNull();
+  });
+
+  it("makes no admin calls for other roles", async () => {
+    await runLoader();
+    expect(adminDashboard).not.toHaveBeenCalled();
+    expect(adminAiTraces).not.toHaveBeenCalled();
   });
 });

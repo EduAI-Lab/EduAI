@@ -2,8 +2,10 @@
  * AI Tutor — ADMIN dashboard workflows, driven through the browser.
  *
  * `/dashboard` is the shared landing page for every role (`role-routing.ts`);
- * for ADMIN it renders `DashboardAdminView`: a platform-wide stat row, two
- * rollup donuts, the all-courses panel, quick actions, and bug-report triage.
+ * for ADMIN it renders `AdminDashboard`: Core's admin dashboard layout with AI
+ * Tutor data — courses and content & tutoring totals, "Needs your attention",
+ * AI tutor health, weekly tutoring sessions, a courses preview, recent tutor
+ * replies, and an inline Getting started checklist.
  *
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
  */
@@ -12,27 +14,40 @@ import { loginAsAdmin, openBugReport } from "../helpers/at-ui";
 import { seedAtCourse } from "../helpers/at-admin-fixtures";
 
 test.describe("AI Tutor ADMIN — dashboard overview", () => {
-  test("shows the platform-wide stat row", async ({ page }) => {
-    await loginAsAdmin(page, "at-admin-dash-stats");
+  test("shows the cards in Core's admin layout, about AI Tutor only", async ({ page }) => {
+    await loginAsAdmin(page, "at-admin-dash-cards");
 
-    await expect(page.getByText("Platform overview")).toBeVisible();
-    for (const label of ["Total courses", "Published", "Platform users", "Open bug reports"]) {
-      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("AI Tutor overview")).toBeVisible();
+    for (const name of [
+      "Courses",
+      "Content & tutoring",
+      "Needs your attention",
+      "AI tutor health",
+      "Usage",
+      "Recent AI activity",
+    ]) {
+      await expect(page.getByRole("heading", { name, exact: true }).first()).toBeVisible({
+        timeout: 20_000,
+      });
     }
+    // Users are managed in Core, so the AI Tutor dashboard has no user rollup.
+    await expect(page.getByRole("heading", { name: "Users by role" })).toHaveCount(0);
+    await expect(page.getByText(/couldn't load/i)).toHaveCount(0);
   });
 
-  test("shows the publish-status and users-by-role rollups", async ({ page }) => {
-    await loginAsAdmin(page, "at-admin-dash-donuts");
+  test("reports the AI tutor's health with a status per row", async ({ page }) => {
+    await loginAsAdmin(page, "at-admin-dash-health");
 
-    await expect(page.getByRole("heading", { name: "Publish status" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Users by role" })).toBeVisible();
-    // The role donut is fed by Core's platform-wide stats, so an admin always
-    // counts at least themselves — an empty donut here means the rollup broke.
-    // The donut centre labels are uppercased in CSS, so match the DOM casing.
-    await expect(page.getByText(/^users$/i).first()).toBeVisible();
-    await expect(page.getByText(/^courses$/i).first()).toBeVisible();
-    await expect(page.getByText("Students", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Unpublished", { exact: true }).first()).toBeVisible();
+    for (const name of ["EduAI API key", "Model catalog (Core)", "Tutor model", "Reviewer model"]) {
+      await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 20_000 });
+    }
+    await page.getByRole("link", { name: /view ai settings/i }).click();
+    await expect(page).toHaveURL(/\/admin\?tab=ai-settings$/, { timeout: 20_000 });
+    await expect(
+      page
+        .getByRole("navigation", { name: "Administration" })
+        .getByRole("link", { name: "AI settings", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   test("lists a course owned by another instructor and links to the full list", async ({
@@ -46,11 +61,9 @@ test.describe("AI Tutor ADMIN — dashboard overview", () => {
     try {
       await loginAsAdmin(page, "at-admin-dash-courses");
 
-      await expect(page.getByRole("heading", { name: "All courses" })).toBeVisible();
       await expect(page.getByText(seeded.name).first()).toBeVisible({ timeout: 20_000 });
-
       await page
-        .getByRole("link", { name: /browse all/i })
+        .getByRole("link", { name: /view all/i })
         .first()
         .click();
       await expect(page).toHaveURL(/\/instructor/);
@@ -58,48 +71,22 @@ test.describe("AI Tutor ADMIN — dashboard overview", () => {
       await seeded.dispose();
     }
   });
-});
 
-test.describe("AI Tutor ADMIN — dashboard quick actions", () => {
-  const actions: Array<[string, RegExp]> = [
-    ["View courses", /\/instructor$/],
-    ["Triage bug reports", /\/admin$/],
-    ["Open settings", /\/settings$/],
-  ];
+  test("opens AI oversight from Recent AI activity", async ({ page }) => {
+    await loginAsAdmin(page, "at-admin-dash-oversight");
 
-  for (const [label, url] of actions) {
-    test(`"${label}" navigates to its destination`, async ({ page }) => {
-      await loginAsAdmin(page, "at-admin-dash-quick");
-      // The quick-action panel renders once the stats resolve.
-      await expect(page.getByText("Quick actions")).toBeVisible({ timeout: 20_000 });
-
-      await page
-        .getByRole("link", { name: new RegExp(label, "i") })
-        .first()
-        .click();
-      await expect(page).toHaveURL(url, { timeout: 20_000 });
-    });
-  }
-});
-
-test.describe("AI Tutor ADMIN — bug-report triage panel", () => {
-  test("renders the triage panel in whichever of its two states applies", async ({ page }) => {
-    // Honest name: the bug-report queue is platform-wide, so a fresh admin
-    // still sees whatever other runs filed. This asserts the panel resolves to
-    // one of its two documented states rather than erroring or hanging — it is
-    // *not* a test of the empty state, which cannot be forced here.
-    await loginAsAdmin(page, "at-admin-dash-triage-empty");
-
-    await expect(page.getByText("Bug reports to triage")).toBeVisible();
-    const empty = page.getByText("Nothing to triage");
-    const triageCta = page.getByRole("button", { name: /triage report/i });
-    await expect(empty.or(triageCta).first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/could not load/i)).toHaveCount(0);
+    await page.getByRole("link", { name: /all interactions/i }).click();
+    await expect(page).toHaveURL(/\/admin\?tab=ai-oversight$/, { timeout: 20_000 });
+    await expect(
+      page
+        .getByRole("navigation", { name: "Administration" })
+        .getByRole("link", { name: "AI oversight", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
   });
+});
 
-  test("a report submitted from the shell appears in the panel and opens triage", async ({
-    page,
-  }) => {
+test.describe("AI Tutor ADMIN — needs your attention", () => {
+  test("counts a report submitted from the shell and opens bug-report triage", async ({ page }) => {
     await loginAsAdmin(page, "at-admin-dash-triage");
 
     const description = `E2E dashboard triage probe ${Date.now()}`;
@@ -112,14 +99,14 @@ test.describe("AI Tutor ADMIN — bug-report triage panel", () => {
     await expect(dialog).toBeHidden({ timeout: 20_000 });
 
     await page.reload();
-    await expect(page.getByText(description)).toBeVisible({ timeout: 30_000 });
+    // The queue is platform-wide, so other runs' reports count too: at least ours.
+    const row = page.getByRole("link", { name: /unhandled bug reports/i });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row).not.toContainText("No reports waiting");
 
-    await page
-      .getByRole("button", { name: /triage report/i })
-      .first()
-      .click();
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+    await row.click();
+    await expect(page).toHaveURL(/\/admin\?tab=bug-reports$/, { timeout: 20_000 });
+    await expect(page.getByText(description)).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -128,7 +115,7 @@ test.describe("AI Tutor ADMIN — dashboard course-list bound", () => {
     page,
     playwright,
   }) => {
-    // The dashboard panel shows one short page; #1208 requires the bound to be
+    // The Courses card shows a 4-course preview; #1208 requires the bound to be
     // stated. Seed enough courses that the notice must appear.
     const seeded = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
@@ -137,8 +124,7 @@ test.describe("AI Tutor ADMIN — dashboard course-list bound", () => {
     );
     try {
       await loginAsAdmin(page, "at-admin-dash-bound");
-      await expect(page.getByRole("heading", { name: "All courses" })).toBeVisible();
-      await expect(page.getByText(/Showing \d+ of \d+ courses/i)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/Showing 4 of \d+ courses/i)).toBeVisible({ timeout: 20_000 });
     } finally {
       await Promise.all(seeded.map((s) => s.dispose()));
     }

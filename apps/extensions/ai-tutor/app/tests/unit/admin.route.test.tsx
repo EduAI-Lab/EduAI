@@ -3,7 +3,7 @@
  * reports + AI settings hit ADMIN-only server routes, so UNIT_ADMIN must not
  * request them), and the tab set/content rendered per role.
  */
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
 import type { Route } from "../../routes/+types/admin";
@@ -40,38 +40,6 @@ vi.mock("~/components/layout/ShellBreadcrumbContext", () => ({
 // Real Radix-backed PageTabs needs pointer capture jsdom doesn't implement;
 // reduce it to plain state so a click reliably switches the active panel
 // (same pattern used by CourseDetailPage.test.tsx in question-maker).
-vi.mock("@eduai/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@eduai/ui")>();
-  type TabsBox = { value: string; onValueChange: (v: string) => void };
-  const tabsBox: TabsBox = {
-    value: "",
-    onValueChange: () => {},
-  };
-  return {
-    ...actual,
-    PageTabs: ({
-      value,
-      onValueChange,
-      children,
-    }: {
-      value: string;
-      onValueChange: (v: string) => void;
-      children: React.ReactNode;
-    }) => {
-      tabsBox.value = value;
-      tabsBox.onValueChange = onValueChange;
-      return <div>{children}</div>;
-    },
-    PageTabsList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-    PageTabsTrigger: ({ value, children }: { value: string; children: React.ReactNode }) => (
-      <button type="button" role="tab" onClick={() => tabsBox.onValueChange(value)}>
-        {children}
-      </button>
-    ),
-    PageTabsContent: ({ value, children }: { value: string; children: React.ReactNode }) =>
-      tabsBox.value === value ? <div>{children}</div> : null,
-  };
-});
 
 vi.mock("~/components/admin/BugReportsTab", () => ({
   default: ({ initialReports }: { initialReports: unknown[] }) => (
@@ -87,7 +55,7 @@ vi.mock("~/components/admin/AiOversightPanel", () => ({
   ),
 }));
 
-import AdminHome, { clientLoader } from "~/routes/admin";
+import AdminHome, { clientLoader, shouldRevalidate } from "~/routes/admin";
 
 describe("admin route — clientLoader ADMIN-only gating", () => {
   beforeEach(() => {
@@ -122,7 +90,7 @@ describe("admin route — clientLoader ADMIN-only gating", () => {
   });
 });
 
-function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
+function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}, path = "/admin") {
   const props = {
     loaderData: {
       adminSettings: {
@@ -138,88 +106,105 @@ function wrap(overrides: Partial<Route.ComponentProps["loaderData"]> = {}) {
     },
   } as unknown as Route.ComponentProps;
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <AdminHome {...props} />
     </MemoryRouter>,
   );
 }
 
 describe("admin route — rendering", () => {
-  it("shows all three tabs for an ADMIN", () => {
+  it("opens on Bug reports, with no tab set (sections live in the shell's Administration menu)", () => {
     wrap();
 
-    expect(screen.getByRole("tab", { name: /bug reports/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /ai settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /ai oversight/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Bug reports" })).toBeInTheDocument();
     expect(screen.getByTestId("bug-reports-tab")).toHaveTextContent("1 reports");
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("admin-settings-panel")).not.toBeInTheDocument();
   });
 
-  it("switching to the AI settings tab renders the settings panel and source badge", async () => {
-    wrap();
+  it("falls back to Bug reports for an unknown ?tab=", () => {
+    wrap({}, "/admin?tab=nope");
+    expect(screen.getByRole("heading", { name: "Bug reports" })).toBeInTheDocument();
+  });
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: /ai settings/i }));
-    });
+  it("?tab=ai-settings renders the settings panel and source badge", () => {
+    wrap({}, "/admin?tab=ai-settings");
 
+    expect(screen.getByRole("heading", { name: "AI settings" })).toBeInTheDocument();
     expect(screen.getByTestId("admin-settings-panel")).toBeInTheDocument();
     expect(screen.getByText("Admin override")).toBeInTheDocument();
+    expect(screen.queryByTestId("bug-reports-tab")).not.toBeInTheDocument();
   });
 
-  it("switching to the AI oversight tab renders the oversight panel", async () => {
-    wrap();
+  it("?tab=ai-oversight renders the oversight panel", () => {
+    wrap({}, "/admin?tab=ai-oversight");
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: /ai oversight/i }));
-    });
-
+    expect(screen.getByRole("heading", { name: "AI oversight" })).toBeInTheDocument();
     expect(screen.getByTestId("ai-oversight-panel")).toHaveTextContent("1 traces");
   });
 
-  it("hides the AI settings tab content when the key status is not configured (no source tag)", async () => {
-    wrap({
-      adminSettings: {
-        status: {
-          configured: false,
-          source: "NONE",
-          hasAdminOverride: false,
-          envConfigured: false,
-          updatedAt: null,
+  it("hides the AI settings content when the key status is not configured (no source tag)", () => {
+    wrap(
+      {
+        adminSettings: {
+          status: {
+            configured: false,
+            source: "NONE",
+            hasAdminOverride: false,
+            envConfigured: false,
+            updatedAt: null,
+          },
+          aiPolicy: null,
+          aiModels: [],
+          aiPolicyAvailable: true,
+          aiPolicyError: null,
         },
-        aiPolicy: null,
-        aiModels: [],
-        aiPolicyAvailable: true,
-        aiPolicyError: null,
       },
-    });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: /ai settings/i }));
-    });
+      "/admin?tab=ai-settings",
+    );
 
     expect(screen.queryByTestId("admin-settings-panel")).not.toBeInTheDocument();
   });
 
-  it('shows a "From .env" badge for an ENV-sourced key', async () => {
-    wrap({
-      adminSettings: {
-        status: {
-          configured: true,
-          source: "ENV",
-          hasAdminOverride: false,
-          envConfigured: true,
-          updatedAt: null,
+  it('shows a "From .env" badge for an ENV-sourced key', () => {
+    wrap(
+      {
+        adminSettings: {
+          status: {
+            configured: true,
+            source: "ENV",
+            hasAdminOverride: false,
+            envConfigured: true,
+            updatedAt: null,
+          },
+          aiPolicy: null,
+          aiModels: [],
+          aiPolicyAvailable: true,
+          aiPolicyError: null,
         },
-        aiPolicy: null,
-        aiModels: [],
-        aiPolicyAvailable: true,
-        aiPolicyError: null,
       },
-    });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: /ai settings/i }));
-    });
+      "/admin?tab=ai-settings",
+    );
 
     expect(screen.getByText("From .env")).toBeInTheDocument();
+  });
+});
+
+describe("admin route — shouldRevalidate", () => {
+  const args = (from: string, to: string, formMethod?: string) =>
+    ({
+      currentUrl: new URL(`http://x${from}`),
+      nextUrl: new URL(`http://x${to}`),
+      formMethod,
+      defaultShouldRevalidate: true,
+    }) as Parameters<typeof shouldRevalidate>[0];
+
+  it("skips the reload when only the section changes", () => {
+    expect(shouldRevalidate(args("/admin", "/admin?tab=ai-oversight"))).toBe(false);
+  });
+
+  it("reloads after a form submission or a move to another page", () => {
+    expect(shouldRevalidate(args("/admin", "/admin?tab=ai-settings", "POST"))).toBe(true);
+    expect(shouldRevalidate(args("/dashboard", "/admin"))).toBe(true);
   });
 });
