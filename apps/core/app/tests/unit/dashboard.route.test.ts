@@ -23,6 +23,11 @@ vi.mock("~/lib/canvas/onboarding.server", () => ({
 vi.mock("~/lib/dashboard/dashboard-data.server", () => ({
   loadDashboardData: vi.fn(),
 }));
+// ADMIN's own dashboard loader; its reads are pinned in
+// admin-dashboard-data.server.test.ts.
+vi.mock("~/lib/dashboard/admin-dashboard-data.server", () => ({
+  loadAdminDashboardData: vi.fn(),
+}));
 
 // Same for the Canvas card's integration, also resolved here now (#1220); its
 // role/policy gates are pinned by canvas-integration.server.test.ts.
@@ -36,8 +41,10 @@ import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { loadDashboardData } from "~/lib/dashboard/dashboard-data.server";
+import { loadAdminDashboardData } from "~/lib/dashboard/admin-dashboard-data.server";
 
 const DASHBOARD = { stats: {}, recentChats: [], courses: [], courseTotal: 0 };
+const ADMIN_DASHBOARD = { attention: [], health: [] };
 
 function makeArgs() {
   return {
@@ -52,6 +59,7 @@ beforeEach(() => {
   vi.mocked(redirectToStudentIdOnboardingIfNeeded).mockResolvedValue(null);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
   vi.mocked(loadDashboardData).mockResolvedValue(DASHBOARD as never);
+  vi.mocked(loadAdminDashboardData).mockResolvedValue(ADMIN_DASHBOARD as never);
   vi.mocked(getDashboardCanvasIntegration).mockResolvedValue(null);
 });
 
@@ -91,6 +99,7 @@ describe("dashboard loader", () => {
       user: { id: "u1", role: "STUDENT" },
       isTA: true,
       dashboard: DASHBOARD,
+      adminDashboard: null,
       canvasIntegration: null,
     });
   });
@@ -104,9 +113,27 @@ describe("dashboard loader", () => {
     expect(result).toEqual({
       user: { id: "admin-1", role: "ADMIN" },
       isTA: false,
-      dashboard: DASHBOARD,
+      dashboard: null,
+      adminDashboard: ADMIN_DASHBOARD,
       canvasIntegration: null,
     });
     expect(prisma.enrollment.count).not.toHaveBeenCalled();
+  });
+
+  it("loads only the admin dashboard for ADMIN and only the role dashboard otherwise", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "admin-1", role: "ADMIN" },
+    } as never);
+    await loader(makeArgs());
+    expect(loadAdminDashboardData).toHaveBeenCalledTimes(1);
+    expect(loadDashboardData).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "i1", role: "INSTRUCTOR" },
+    } as never);
+    await loader(makeArgs());
+    expect(loadDashboardData).toHaveBeenCalledTimes(1);
+    expect(loadAdminDashboardData).not.toHaveBeenCalled();
   });
 });

@@ -237,7 +237,7 @@ function isSafeScreenshotHref(value: string): boolean {
   );
 }
 
-function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
+export function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
   if (!report.screenshot) {
     return <p className="text-sm text-muted-foreground">No screenshot captured.</p>;
   }

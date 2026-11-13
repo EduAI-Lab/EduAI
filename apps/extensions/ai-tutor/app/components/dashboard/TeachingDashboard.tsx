@@ -23,20 +23,22 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import {
-  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuWithTooltip,
   StatusBadge,
   ToggleGroup,
   ToggleGroupItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  CourseTile,
+  CourseTileLinkButton,
   cn,
   courseThemeVars,
   termLabel,
+  type CourseTileLink,
 } from "@eduai/ui";
 import type { Course } from "~/lib/types";
 import { useLocalUser } from "~/hooks/useLocalUser";
@@ -87,7 +89,7 @@ function useCourseView(): [CourseView, (view: CourseView) => void] {
   return [view, update];
 }
 
-type CourseLink = { key: string; label: string; icon: Icon; href: string };
+type CourseLink = CourseTileLink & { href: string };
 
 const SECTION_ICONS = {
   content: IconLayoutList,
@@ -134,28 +136,8 @@ function courseHref(course: Course, kind: TeachingCourseKind) {
   return kind === "taking" ? `/student/courses/${course.id}` : `/instructor/courses/${course.id}`;
 }
 
-/** Cards show icon buttons named by a tooltip; list rows also show the label. */
 function CourseLinkButton({ link, iconOnly }: { link: CourseLink; iconOnly?: boolean }) {
-  const control = (
-    <Link
-      to={link.href}
-      className={cn(
-        "relative z-10 inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-[color-mix(in_oklch,var(--course-accent)_72%,var(--foreground))] transition-colors hover:bg-[var(--course-muted)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        iconOnly ? "size-9 justify-center" : "px-2 py-1.5",
-      )}
-    >
-      <link.icon className={iconOnly ? "size-5" : "size-4 shrink-0"} aria-hidden="true" />
-      <span className={cn(iconOnly && "sr-only")}>{link.label}</span>
-    </Link>
-  );
-  if (!iconOnly) return control;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{control}</TooltipTrigger>
-      <TooltipContent>{link.label}</TooltipContent>
-    </Tooltip>
-  );
+  return <CourseTileLinkButton link={link} iconOnly={iconOnly} LinkComponent={Link} />;
 }
 
 function CourseMenu({
@@ -174,8 +156,9 @@ function CourseMenu({
     : null;
   if (!canPublish && !coreHref) return null;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <DropdownMenuWithTooltip
+      tooltip="Course actions"
+      trigger={
         <button
           type="button"
           aria-label={`${courseCode(course)} actions`}
@@ -188,7 +171,8 @@ function CourseMenu({
         >
           <IconDotsVertical className="size-4" aria-hidden="true" />
         </button>
-      </DropdownMenuTrigger>
+      }
+    >
       <DropdownMenuContent align="end" className="min-w-[200px]">
         {canPublish && (
           <DropdownMenuItem className="gap-2" onSelect={() => onTogglePublish(course)}>
@@ -210,7 +194,7 @@ function CourseMenu({
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenuWithTooltip>
   );
 }
 
@@ -254,51 +238,39 @@ export function CourseGridCard({
   extraBadges,
   headingLevel = 3,
 }: CardProps) {
-  const accent = accentForCourse(course);
-  const label = `${courseCode(course)} · ${courseName(course)}`;
-  const Heading = headingLevel === 4 ? "h4" : "h3";
+  // The shared card (Core's #2105 design), so Core, AI Tutor and QM match.
+  const menu =
+    kind !== "taking" ? (
+      <CourseMenu
+        course={course}
+        canPublish={canPublish}
+        onBanner
+        onTogglePublish={onTogglePublish}
+      />
+    ) : null;
+  const progress = course.progress;
   return (
-    <article
-      className="group/card relative flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-shadow focus-within:shadow-md hover:shadow-md"
-      style={courseThemeVars(accent)}
-    >
-      <div className="relative h-24 shrink-0" style={{ background: accent }}>
-        {kind !== "taking" && (
-          <div className="absolute right-2 top-2 z-10">
-            <CourseMenu
-              course={course}
-              canPublish={canPublish}
-              onBanner
-              onTogglePublish={onTogglePublish}
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex flex-1 flex-col gap-1 px-4 pt-3 pb-2">
-        <Heading className="line-clamp-2 text-[15px] font-semibold leading-snug">
-          <Link
-            to={courseHref(course, kind)}
-            className="text-[color-mix(in_oklch,var(--course-accent)_72%,var(--foreground))] after:absolute after:inset-0 after:content-[''] hover:underline focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
-          >
-            {label}
-          </Link>
-        </Heading>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <StatusLine course={course} kind={kind} />
+    <CourseTile
+      code={courseCode(course)}
+      title={courseName(course)}
+      term={courseTerm(course)}
+      year={courseYear(course)}
+      accent={accentForCourse(course)}
+      href={courseHref(course, kind)}
+      LinkComponent={Link}
+      links={links}
+      publishState={kind === "taking" ? undefined : course.isPublished}
+      meta={
+        <>
+          {kind === "taking" && progress && progress.total > 0 && (
+            <span>{Math.round(progress.percentage)}% complete</span>
+          )}
           {extraBadges}
-        </div>
-      </div>
-      {links.length > 0 && (
-        <nav
-          aria-label={`${courseCode(course)} sections`}
-          className="flex items-center gap-1 border-t border-border px-2 py-1"
-        >
-          {links.map((link) => (
-            <CourseLinkButton key={link.key} link={link} iconOnly />
-          ))}
-        </nav>
-      )}
-    </article>
+        </>
+      }
+      menu={menu}
+      headingLevel={headingLevel}
+    />
   );
 }
 
@@ -481,12 +453,22 @@ export function TeachingDashboard({
               onValueChange={(v) => (v === "card" || v === "list") && setView(v)}
               aria-label="Course layout"
             >
-              <ToggleGroupItem value="card" aria-label="Card view">
-                <IconLayoutGrid className="size-4" aria-hidden="true" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label="List view">
-                <IconList className="size-4" aria-hidden="true" />
-              </ToggleGroupItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="card" aria-label="Card view">
+                    <IconLayoutGrid className="size-4" aria-hidden="true" />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Card view</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="list" aria-label="List view">
+                    <IconList className="size-4" aria-hidden="true" />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>List view</TooltipContent>
+              </Tooltip>
             </ToggleGroup>
           </div>
         </div>

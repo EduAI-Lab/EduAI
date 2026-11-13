@@ -2,8 +2,8 @@
  * Unit tests for the per-role dashboard config (#1041).
  *
  * The counts on these dashboards used to come from `array.length` on a
- * full-list read. Under required paging the lists are one page, so ADMIN and
- * UNIT_ADMIN instead take `pageSize: 1` reads and display `stats.total` / the
+ * full-list read. Under required paging the lists are one page, so UNIT_ADMIN
+ * instead take `pageSize: 1` reads and display `stats.total` / the
  * envelope's `total`. Each `statBuilder` renders a server total (and an em dash,
  * not a misleading 0, while loading — which never happens under SSR but the
  * fallback is kept). The reads themselves now happen in the route's SSR loader;
@@ -22,8 +22,6 @@ const baseCtx = {
   courseTotal: 0,
   stats: undefined,
   statsLoading: false,
-  userTotal: 0,
-  usersLoading: false,
   activeCourseTotal: 0,
   activeCoursesLoading: false,
 };
@@ -36,38 +34,6 @@ const statsFor = (role: keyof typeof DASHBOARD_CONFIG, ctx: Partial<typeof baseC
   );
 
 describe("DASHBOARD_CONFIG statBuilders", () => {
-  it("ADMIN shows the platform user total and the active-course total from the server", () => {
-    const stats = statsFor("ADMIN", {
-      userTotal: 512,
-      activeCourseTotal: 48,
-      stats: { chatCount: 90, materialCount: 12 } as never,
-    });
-
-    expect(stats["Total users"]).toBe("512");
-    expect(stats["Active courses"]).toBe("48");
-    expect(stats["AI sessions"]).toBe("90");
-    expect(stats["Materials uploaded"]).toBe("12");
-  });
-
-  it("ADMIN shows an em dash while each total is still loading, not a misleading 0", () => {
-    const stats = statsFor("ADMIN", {
-      usersLoading: true,
-      activeCoursesLoading: true,
-      statsLoading: true,
-    });
-
-    expect(stats["Total users"]).toBe("—");
-    expect(stats["Active courses"]).toBe("—");
-    expect(stats["AI sessions"]).toBe("—");
-  });
-
-  it("ADMIN falls back to 0 when a total is absent rather than rendering undefined", () => {
-    const stats = statsFor("ADMIN", { userTotal: undefined, activeCourseTotal: undefined });
-
-    expect(stats["Total users"]).toBe("0");
-    expect(stats["Active courses"]).toBe("0");
-  });
-
   it("UNIT_ADMIN reports unit and active course totals", () => {
     const stats = statsFor("UNIT_ADMIN", {
       courseTotal: 7,
@@ -138,20 +104,6 @@ const dataWith = (overrides: Partial<DashboardData> = {}): DashboardData => ({
 });
 
 describe("DashboardBody", () => {
-  it("renders ADMIN quick actions and the platform user total from loader data", () => {
-    renderInRouter(
-      <DashboardBody
-        effectiveRole="ADMIN"
-        data={dataWith({ userTotal: 500, activeCourseTotal: 12 })}
-      />,
-    );
-
-    // Admin panel is quick actions, not course cards.
-    expect(screen.getByText("Quick actions")).toBeInTheDocument();
-    expect(screen.getByText("Total users")).toBeInTheDocument();
-    expect(screen.getByText("500")).toBeInTheDocument();
-  });
-
   it("renders UNIT_ADMIN unit + active course totals off loader data", () => {
     renderInRouter(
       <DashboardBody

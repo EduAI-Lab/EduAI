@@ -4,11 +4,14 @@ import { Link, useLocation, useNavigate } from "react-router";
 import {
   GettingStartedButton,
   CommandSearchButton,
+  isNavHrefActive,
   NavShell,
   OnboardingChecklist,
   PageTourButton,
   ThemeToggle,
+  TRAY_TITLES,
   type CourseNavConfig,
+  type SectionNavConfig,
   type NavShellEntry,
   type NavShellModel,
 } from "@eduai/ui";
@@ -184,12 +187,20 @@ export function CoreAppShell({
   // which app the shell presents.
   const coreModel = useCoreNavModel(user, openBugReport);
   const chatModel = useCourseChatNavModel(user, openBugReport, chatApp ?? {});
-  const model = !isCourseChatPath(pathname)
+  const inCourseChat = isCourseChatPath(pathname);
+  const model = !inCourseChat
     ? coreModel
     : ADMIN_ROLES.has(user.role ?? "")
       ? chatModel
       : withChatEntries(coreModel, chatApp ?? {});
   const navigate = useNavigate();
+  // Every Administration page keeps its menu beside the page, so moving
+  // between them never needs the rail's tray.
+  const adminNav: SectionNavConfig | undefined = coreModel.adminLinks.some((link) =>
+    isNavHrefActive(pathname, link.href),
+  )
+    ? { title: TRAY_TITLES.admin, links: coreModel.adminLinks }
+    : undefined;
 
   return (
     <CurrentUserIdProvider userId={user.id}>
@@ -199,7 +210,9 @@ export function CoreAppShell({
         locationKey={location.key}
         title={resolveCoreHeaderTitle(pathname, title)}
         breadcrumbs={breadcrumbs}
+        appHomeHref={inCourseChat ? "/chat" : "/dashboard"}
         courseNav={courseNav}
+        sectionNav={adminNav}
         headerActions={
           <CoreHeaderActions
             extraActions={actions}
@@ -234,7 +247,8 @@ export function CoreAppShell({
         mainClassName={mainClassName}
         providerClassName={providerClassName}
       >
-        {pathname === "/dashboard" ? (
+        {/* The admin dashboard places its own Getting started card in its grid. */}
+        {pathname === "/dashboard" && user.role !== "ADMIN" ? (
           <OnboardingChecklist
             platform="core"
             userId={user.id}

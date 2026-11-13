@@ -3,11 +3,21 @@ import { toast } from "sonner";
 
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
 import { UsersTable } from "~/components/admin/users-table";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
+import { IconPlus } from "@tabler/icons-react";
+
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  PageHeading,
+} from "@eduai/ui";
 import { ApiError } from "~/hooks/api/config";
 import type { CreateUserInput, PlatformUser, UpdateUserInput } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
-import type { UsersQuery, UserStats } from "~/hooks/api/use-users";
+import type { BulkDeleteFailure, UsersQuery, UserStats } from "~/hooks/api/use-users";
 
 // Only mounted when an admin opens a user's chat history, and it pulls the heavy
 // chat-message chunk (streamdown + shiki). Load it on open so the users admin
@@ -49,6 +59,8 @@ export type UsersAdminViewProps = {
   onCreateUser: (data: CreateUserInput) => Promise<void>;
   onUpdateUser: (id: string, data: UpdateUserInput) => Promise<void>;
   onDeleteUser: (id: string) => Promise<void>;
+  /** Deletes several users, resolving with the ones that could not be deleted. */
+  onDeleteUsers: (ids: string[]) => Promise<BulkDeleteFailure[]>;
   onToggleUserActive: (user: PlatformUser) => Promise<void>;
 };
 
@@ -63,6 +75,7 @@ export function UsersAdminView({
   onCreateUser,
   onUpdateUser,
   onDeleteUser,
+  onDeleteUsers,
   onToggleUserActive,
 }: UsersAdminViewProps) {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
@@ -109,6 +122,20 @@ export function UsersAdminView({
     }
   };
 
+  // Each failure gets its own toast with the person's name, so a partly
+  // failed bulk delete says exactly who is left and why.
+  const handleDeleteUsers = async (selected: PlatformUser[]) => {
+    const failures = await onDeleteUsers(selected.map((user) => user.id));
+    const deleted = selected.length - failures.length;
+    if (deleted > 0) toast.success(`Deleted ${deleted} ${deleted === 1 ? "user" : "users"}.`);
+    for (const failure of failures) {
+      const user = selected.find((candidate) => candidate.id === failure.id);
+      toast.error(
+        `${user?.name || user?.email || "A user"}: ${deleteUserErrorMessage(failure.code)}`,
+      );
+    }
+  };
+
   const handleToggleUserActive = async (user: PlatformUser) => {
     try {
       await onToggleUserActive(user);
@@ -136,6 +163,17 @@ export function UsersAdminView({
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <div className="px-4 lg:px-6">
             <PageHeading
+              actions={
+                <Button
+                  onClick={() => {
+                    setEditingUser(null);
+                    setUserDialogOpen(true);
+                  }}
+                >
+                  <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
+                  Add User
+                </Button>
+              }
               heading="User management"
               subheading={
                 <>
@@ -175,13 +213,10 @@ export function UsersAdminView({
                     setUserDialogOpen(true);
                   }}
                   onDelete={handleDeleteUser}
+                  onDeleteMany={handleDeleteUsers}
                   onToggleActive={handleToggleUserActive}
                   onViewChatHistory={(user) => {
                     setHistoryUser({ id: user.id, name: user.name });
-                  }}
-                  onCreateUser={() => {
-                    setEditingUser(null);
-                    setUserDialogOpen(true);
                   }}
                 />
               </CardContent>

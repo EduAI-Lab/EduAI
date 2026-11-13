@@ -21,13 +21,11 @@ export type DashboardData = {
   stats: DashboardStats;
   recentChats: DashboardRecentChat[];
   /** Course cards for the standard (INSTRUCTOR/TA/STUDENT) panel; `[]` for the
-   *  quick-actions roles (ADMIN/UNIT_ADMIN). */
+   *  quick-actions role (UNIT_ADMIN). */
   courses: DashboardCourse[];
   /** Server-side total for the caller's visible course list (#1041). */
   courseTotal: number;
-  /** Platform-wide user count — ADMIN only. */
-  userTotal?: number;
-  /** Access-scoped active-course count — ADMIN and UNIT_ADMIN. */
+  /** Access-scoped active-course count — UNIT_ADMIN. */
   activeCourseTotal?: number;
 };
 
@@ -333,9 +331,10 @@ function toDashboardCourse(course: {
  * separately. So the `isTA` lookup and this batch are independent and the route
  * runs them concurrently.
  *
- * Per-role query gating is deliberate (#1041): non-admins never touch
- * `user.count()`, and the quick-actions roles ask for counts rather than course
- * pages.
+ * Per-role query gating is deliberate (#1041): the quick-actions role
+ * (UNIT_ADMIN) asks for counts rather than course pages.
+ *
+ * ADMIN does not come through here: its dashboard is `loadAdminDashboardData`.
  */
 export async function loadDashboardData(user: DashboardUser): Promise<DashboardData> {
   const role = user.role ?? "STUDENT";
@@ -345,23 +344,6 @@ export async function loadDashboardData(user: DashboardUser): Promise<DashboardD
     authorizedUnits: user.authorizedUnits ?? undefined,
   };
   const viewer = { id: user.id, role: user.role };
-
-  if (role === "ADMIN") {
-    const [stats, recentChats, userTotal, activeCourses] = await Promise.all([
-      computeDashboardStats(user),
-      listChats(viewer, { limit: RECENT_CHATS_LIMIT }),
-      prisma.user.count(),
-      listCoursesForUser(rbacUser, { countOnly: true, isActive: true }),
-    ]);
-    return {
-      stats,
-      recentChats: recentChats.map(toDashboardRecentChat),
-      courses: [],
-      courseTotal: 0,
-      userTotal,
-      activeCourseTotal: activeCourses.total,
-    };
-  }
 
   if (role === "UNIT_ADMIN") {
     // One access-scoped course read backs all three consumers: the stats, the

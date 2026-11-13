@@ -27,6 +27,12 @@ import {
  */
 export const ONBOARDING_SLOT_ATTRIBUTE = "data-onboarding-slot";
 
+export interface OnboardingTask {
+  id: string;
+  label: string;
+  href: string;
+}
+
 interface ChecklistProps {
   platform: OnboardingPlatform;
   role?: string | null;
@@ -34,6 +40,16 @@ interface ChecklistProps {
   navigate: (to: string) => void;
   /** The dashboard the checklist sits beside. */
   children?: React.ReactNode;
+  /** Replaces the catalog's tasks for this role, e.g. the admin dashboard's own list. */
+  tasks?: OnboardingTask[];
+  /**
+   * "aside" (default) places the card beside `children` (or in the dashboard's slot).
+   * "inline" renders only the card, for a page that places it in its own grid; it can
+   * collapse but not be closed, since closing would leave an empty slot in that layout.
+   */
+  layout?: "aside" | "inline";
+  /** Replaces the instructions shown above the task list. */
+  intro?: string;
 }
 
 type TaskProgress = { completed: string[]; persistent: boolean };
@@ -89,10 +105,25 @@ function useOnboardingSlot(root: React.RefObject<HTMLDivElement | null>) {
   return slot;
 }
 
-function Checklist({ platform, role, userId, navigate, children }: ChecklistProps) {
+const DEFAULT_INTRO =
+  "Open a task, then tick its circle when you have finished. For course tasks, choose a course first.";
+
+function Checklist({
+  platform,
+  role,
+  userId,
+  navigate,
+  children,
+  tasks: taskOverride,
+  layout = "aside",
+  intro = DEFAULT_INTRO,
+}: ChecklistProps) {
   const storageKey = storageKeyFor(platform, userId);
   const panelKey = `${storageKey}:panel`;
-  const tasks = onboardingTasks(platform, role);
+  const tasks = taskOverride ?? onboardingTasks(platform, role);
+  const inline = layout === "inline";
+  // A stable key for the task list, so an override passed inline doesn't re-run the effect.
+  const taskIdsKey = tasks.map((task) => task.id).join(",");
   const [progress, setProgress] = React.useState<TaskProgress>({
     completed: [],
     persistent: true,
@@ -117,15 +148,15 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
     const saved = readProgress(storageKey);
     setProgress(saved);
     // Once someone has started, the card waits collapsed unless they chose to keep it open.
-    const started = onboardingTasks(platform, role).some((t) => saved.completed.includes(t.id));
+    const started = taskIdsKey.split(",").some((id) => saved.completed.includes(id));
     setPanel(readPanel(panelKey) ?? (started ? "collapsed" : "open"));
     setReady(true);
     const reopen = () => setPanel("open");
     window.addEventListener(REOPEN_EVENT, reopen);
     return () => window.removeEventListener(REOPEN_EVENT, reopen);
-  }, [storageKey, panelKey, platform, role]);
+  }, [storageKey, panelKey, taskIdsKey]);
 
-  const hidden = !ready || panel === "dismissed" || !userId || tasks.length === 0;
+  const hidden = !ready || (!inline && panel === "dismissed") || !userId || tasks.length === 0;
   const count = tasks.filter((task) => progress.completed.includes(task.id)).length;
   const collapsed = panel === "collapsed";
 
@@ -183,40 +214,39 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
           >
             {collapsed ? "Expand" : "Collapse"}
           </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-8"
-            aria-label="Close getting started"
-            title="Close getting started"
-            onClick={() => {
-              changePanel("dismissed");
-              toast(
-                "Getting started is hidden. Bring it back anytime with the checklist icon in the top bar.",
-                {
-                  duration: 10_000,
-                  position: "bottom-right",
-                  closeButton: true,
-                  // Close sits inside the top-right corner, where people look for it.
-                  classNames: {
-                    toast: "pr-10!",
-                    closeButton:
-                      "top-3! right-2! left-auto! size-7! transform-none! border-0! bg-transparent! [&>svg]:size-4!",
+          {!inline && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              aria-label="Close getting started"
+              title="Close getting started"
+              onClick={() => {
+                changePanel("dismissed");
+                toast(
+                  "Getting started is hidden. Bring it back anytime with the checklist icon in the top bar.",
+                  {
+                    duration: 10_000,
+                    position: "bottom-right",
+                    closeButton: true,
+                    // Close sits inside the top-right corner, where people look for it.
+                    classNames: {
+                      toast: "pr-10!",
+                      closeButton:
+                        "top-3! right-2! left-auto! size-7! transform-none! border-0! bg-transparent! [&>svg]:size-4!",
+                    },
                   },
-                },
-              );
-            }}
-          >
-            <IconX aria-hidden />
-          </Button>
+                );
+              }}
+            >
+              <IconX aria-hidden />
+            </Button>
+          )}
         </div>
       </div>
       {!collapsed && (
         <div id={listId} className="border-t px-4 pb-4">
-          <p className="pt-3 text-sm text-muted-foreground">
-            Open a task, then tick its circle when you have finished. For course tasks, choose a
-            course first.
-          </p>
+          <p className="pt-3 text-sm text-muted-foreground">{intro}</p>
           <ul className="divide-y">
             {tasks.map((task) => {
               const done = progress.completed.includes(task.id);
@@ -273,7 +303,8 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
   // Where the card goes: the dashboard's own side column when it has one, else one line above
   // the dashboard when collapsed, else a column beside it (#2070). Only the card's wrapper
   // changes, so the dashboard itself never remounts.
-  const placement = hidden ? null : slot ? "slot" : collapsed ? "strip" : "column";
+  // Inline: the page places the card itself, so the host stays detached.
+  const placement = hidden || inline ? null : slot ? "slot" : collapsed ? "strip" : "column";
 
   // The card always renders into one host node, moved between places, so it never remounts.
   React.useLayoutEffect(() => {
@@ -286,6 +317,8 @@ function Checklist({ platform, role, userId, navigate, children }: ChecklistProp
     // Moving a node drops focus to <body>, so hand it back.
     if (focused && target && document.activeElement !== focused) focused.focus();
   });
+
+  if (inline) return hidden ? null : card;
 
   return (
     <div className="@container/onboarding">

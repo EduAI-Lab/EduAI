@@ -6,17 +6,24 @@
  *      use GET /api/admin/bug-reports/:id for full attachments (#979).
  *      Anonymous reports surface with userId/email/name masked.
  * GET  /api/admin/bug-reports/:id — single report including console/network/screenshot.
- * PATCH /api/admin/bug-reports/:id — change BugReportStatus.
+ * PATCH /api/admin/bug-reports/:id — change BugReportStatus, or, with
+ *      `{ reporterNote: { subject, body } }`, save the admin's status note to
+ *      the reporter and email it to them.
  *
  * AI Tutor's admin bug-report routes proxy here once wired.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
+
+import { jsonObjectSchema } from "~/lib/json-value";
 
 import {
   getBugReportById,
   isBugReportSource,
   isBugReportStatus,
   listBugReports,
+  reporterNoteSchema,
+  saveReporterNote,
   updateBugReportStatus,
 } from "~/lib/bug-reports/server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
@@ -25,6 +32,8 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 import { withErrorResponse } from "~/lib/errors.server";
+
+const noteRequestSchema = z.object({ reporterNote: jsonObjectSchema });
 
 function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
@@ -128,6 +137,43 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       const body = await request.json().catch(() => ({}));
+
+      // A body carrying `reporterNote` saves the note; anything else is a status change.
+      const noteRequest = noteRequestSchema.safeParse(body);
+      if (noteRequest.success) {
+        const parsed = reporterNoteSchema.safeParse(noteRequest.data.reporterNote);
+        if (!parsed.success) {
+          const fields = Object.fromEntries(
+            parsed.error.issues.map((issue) => [
+              String(issue.path[0] ?? "reporterNote"),
+              issue.message,
+            ]),
+          );
+          return json(422, { error: "VALIDATION_ERROR", fields });
+        }
+        const saved = await saveReporterNote(reportId, parsed.data);
+        if (!saved) {
+          return json(404, { error: "REPORT_NOT_FOUND" });
+        }
+        // Each note is kept here, since the report only holds the latest one.
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "BUG_REPORT_REPORTER_NOTE_SENT",
+            category: "BUG_REPORT",
+            entityType: "BugReport",
+            entityId: reportId,
+            details: {
+              subject: parsed.data.subject,
+              body: parsed.data.body,
+              delivery: saved.delivery,
+            },
+          }),
+        );
+        return json(200, saved);
+      }
+
       if (!isBugReportStatus(body?.status)) {
         return json(422, {
           error: "VALIDATION_ERROR",

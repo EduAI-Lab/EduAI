@@ -8,15 +8,16 @@ import { Link, useRevalidator } from "react-router";
 import {
   IconChevronRight,
   IconDotsVertical,
+  IconEdit,
   IconFiles,
   IconLayoutGrid,
   IconList,
   IconMessages,
   IconRobot,
   IconSettings,
+  IconTrash,
   IconWorldOff,
   IconWorldUpload,
-  type Icon,
 } from "@tabler/icons-react";
 import {
   CollapsibleSection,
@@ -31,11 +32,14 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  CourseTile,
+  CourseTileLinkButton,
   cn,
   courseThemeVars,
   termLabel,
   useMenuTooltip,
   visibleAppsForRole,
+  type CourseTileLink,
 } from "@eduai/ui";
 
 import type { DashboardStatDef, DashboardCourse } from "~/components/dashboard/dashboard-view";
@@ -92,15 +96,27 @@ const SECTION_TITLES = {
   taking: "Courses you're taking",
 } satisfies Record<CourseKind, string>;
 
-type CourseLink = {
-  key: string;
-  label: string;
-  icon: Icon;
-  href?: string;
-  external?: boolean;
-  /** Shown instead of a link when the destination can't open yet. */
-  disabledReason?: string;
+/**
+ * The Courses page's own actions on a teaching card (#807: an item a policy
+ * turned off stays visible and greyed, with the reason under it). The page
+ * runs its own publish confirmation, so the card's built-in one is skipped.
+ */
+export type CourseMenuActions = {
+  onPublishToggle: () => void;
+  publishDisabledReason?: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  deleteDisabledReason?: string;
 };
+
+/** The extensions a viewer may open from a course card. */
+export function courseExtensions(courseId: string, launcherRole: string) {
+  return visibleAppsForRole(getLauncherApps(courseId), launcherRole).filter(
+    (app) => app.id !== "core" && app.id !== "course-chat" && app.url,
+  );
+}
+
+type CourseLink = CourseTileLink;
 
 /**
  * What a card offers. Learners: their course chat, then the extensions. Staff:
@@ -146,73 +162,49 @@ export function courseLinks(
   } else {
     links.push({ key: "chat", label: "Chat", icon: IconMessages, href: `/chat?courseId=${id}` });
   }
-  for (const app of extensions) {
-    links.push({
-      key: app.id,
-      label: app.name,
-      icon: extensionIcon(app.id),
-      href: app.url,
-      external: true,
-    });
-  }
+  links.push(...extensionLinks(extensions));
   return links;
 }
 
-/** Cards show icon buttons (Canvas-style) named by a tooltip; list rows also show the label. */
+function extensionLinks(extensions: { id: string; name: string; url: string }[]): CourseLink[] {
+  return extensions.map((app) => ({
+    key: app.id,
+    label: app.name,
+    icon: extensionIcon(app.id),
+    href: app.url,
+    external: true,
+  }));
+}
+
+/**
+ * Admins and unit admins manage courses they don't teach: materials, the
+ * course chat (`/instructor/chat` lists only courses the viewer teaches), and
+ * the extensions.
+ */
+export function managedCourseLinks(courseId: string, launcherRole: string): CourseLink[] {
+  const id = encodeURIComponent(courseId);
+  return [
+    { key: "materials", label: "Materials", icon: IconFiles, href: `/courses/${id}?tab=materials` },
+    { key: "chat", label: "Chat", icon: IconMessages, href: `/chat?courseId=${id}` },
+    ...extensionLinks(courseExtensions(courseId, launcherRole)),
+  ];
+}
+
 function CourseLinkButton({ link, iconOnly }: { link: CourseLink; iconOnly?: boolean }) {
-  const className = cn(
-    "relative z-10 inline-flex items-center gap-1.5 rounded-md text-xs font-medium transition-colors",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-    iconOnly ? "size-9 justify-center" : "px-2 py-1.5",
-  );
-  const content = (
-    <>
-      <link.icon className={iconOnly ? "size-5" : "size-4 shrink-0"} aria-hidden="true" />
-      <span className={cn(iconOnly && "sr-only")}>{link.label}</span>
-    </>
-  );
-  const tip = link.href ? link.label : `${link.label}: ${link.disabledReason}`;
-  let control: ReactNode;
-  if (!link.href) {
-    control = (
-      <span
-        aria-disabled="true"
-        tabIndex={0}
-        className={cn(className, "cursor-not-allowed text-muted-foreground/60")}
-      >
-        {content}
-      </span>
-    );
-  } else {
-    const linkClass = cn(className, "text-[var(--course-accent)] hover:bg-[var(--course-muted)]");
-    control = link.external ? (
-      <a href={link.href} className={linkClass}>
-        {content}
-      </a>
-    ) : (
-      <Link to={link.href} className={linkClass}>
-        {content}
-      </Link>
-    );
-  }
-  if (!iconOnly && link.href) return control;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{control}</TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
-  );
+  return <CourseTileLinkButton link={link} iconOnly={iconOnly} LinkComponent={Link} />;
 }
 
 function TeachingMenu({
   course,
   canPublish,
   onBanner,
+  actions,
 }: {
   course: DashboardCourse;
   canPublish: boolean;
   /** Drawn on the card's colour banner rather than a neutral row. */
   onBanner: boolean;
+  actions?: CourseMenuActions;
 }) {
   const revalidator = useRevalidator();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -243,7 +235,38 @@ function TeachingMenu({
           <TooltipContent>Course actions</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" className="min-w-[190px]">
-          {canPublish && (
+          {actions && (
+            <>
+              <DropdownMenuItem
+                className={cn(
+                  "gap-2",
+                  actions.publishDisabledReason && "flex-col items-start gap-0.5",
+                )}
+                disabled={!!actions.publishDisabledReason}
+                onSelect={actions.onPublishToggle}
+              >
+                <span className="flex items-center gap-2">
+                  {course.isPublished ? (
+                    <IconWorldOff className="size-4 text-muted-foreground" />
+                  ) : (
+                    <IconWorldUpload className="size-4 text-muted-foreground" />
+                  )}
+                  {course.isPublished ? "Unpublish course" : "Publish course"}
+                </span>
+                {actions.publishDisabledReason && (
+                  <span className="pl-6 text-[11px] text-muted-foreground">
+                    {actions.publishDisabledReason}
+                  </span>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="gap-2" onSelect={actions.onEdit}>
+                <IconEdit className="size-4 text-muted-foreground" />
+                Edit course
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {!actions && canPublish && (
             <>
               <DropdownMenuItem className="gap-2" onSelect={() => setConfirmOpen(true)}>
                 {course.isPublished ? (
@@ -262,9 +285,33 @@ function TeachingMenu({
               Course settings
             </Link>
           </DropdownMenuItem>
+          {actions && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className={cn(
+                  "gap-2 text-destructive focus:text-destructive",
+                  actions.deleteDisabledReason &&
+                    "flex-col items-start gap-0.5 text-muted-foreground focus:text-muted-foreground",
+                )}
+                disabled={!!actions.deleteDisabledReason}
+                onSelect={actions.onDelete}
+              >
+                <span className="flex items-center gap-2">
+                  <IconTrash className="size-4" />
+                  Delete course
+                </span>
+                {actions.deleteDisabledReason && (
+                  <span className="pl-6 text-[11px] text-muted-foreground">
+                    {actions.deleteDisabledReason}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
-      {canPublish && (
+      {!actions && canPublish && (
         <CoursePublishControl
           courseLabel={`${course.code} — ${course.name}`}
           isPublished={course.isPublished}
@@ -285,6 +332,10 @@ type CardProps = {
   kind: CourseKind;
   links: CourseLink[];
   canPublish: boolean;
+  /** Courses page only: Edit and Delete alongside the dashboard's items. */
+  menuActions?: CourseMenuActions;
+  /** Courses page only: e.g. the viewer's role in the course, the teaching team. */
+  extraBadges?: string[];
 };
 
 function useCardLook(course: DashboardCourse) {
@@ -303,11 +354,17 @@ function CardMenu({
   course,
   kind,
   canPublish,
+  menuActions,
   onBanner = true,
-}: Omit<CardProps, "links"> & { onBanner?: boolean }) {
+}: Omit<CardProps, "links" | "extraBadges"> & { onBanner?: boolean }) {
   const look = useCardLook(course);
   return kind === "teaching" ? (
-    <TeachingMenu course={course} canPublish={canPublish} onBanner={onBanner} />
+    <TeachingMenu
+      course={course}
+      canPublish={canPublish}
+      onBanner={onBanner}
+      actions={menuActions}
+    />
   ) : (
     <CourseCardCustomizePopover
       courseName={course.name}
@@ -318,45 +375,31 @@ function CardMenu({
   );
 }
 
-function CourseGridCard({ course, kind, links, canPublish }: CardProps) {
+export function CourseGridCard({
+  course,
+  kind,
+  links,
+  canPublish,
+  menuActions,
+  extraBadges,
+}: CardProps) {
   const look = useCardLook(course);
-  const term = termLabel(course.term, course.year);
   return (
-    <article
-      className="group/card relative flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-shadow hover:shadow-md"
-      style={courseThemeVars(look.accent)}
-    >
-      <div className="relative h-24 shrink-0" style={{ background: look.accent }}>
-        <div className="absolute right-2 top-2 z-10">
-          <CardMenu course={course} kind={kind} canPublish={canPublish} />
-        </div>
-      </div>
-      <Link
-        to={`/courses/${encodeURIComponent(course.id)}`}
-        className="absolute inset-0 z-0"
-        aria-label={`${course.code} ${look.title}`}
-      />
-      <div className="pointer-events-none flex flex-1 flex-col gap-1 px-4 pt-3 pb-2">
-        <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--course-accent)]">
-          {course.code} · {look.title}
-        </h3>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{term}</span>
-          {kind === "teaching" && (
-            <StatusBadge
-              active={course.isPublished}
-              activeLabel="Published"
-              inactiveLabel="Unpublished"
-            />
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-1 border-t border-border px-2 py-1">
-        {links.map((link) => (
-          <CourseLinkButton key={link.key} link={link} iconOnly />
-        ))}
-      </div>
-    </article>
+    <CourseTile
+      code={course.code}
+      title={look.title}
+      term={course.term}
+      year={course.year}
+      accent={look.accent}
+      href={`/courses/${encodeURIComponent(course.id)}`}
+      LinkComponent={Link}
+      links={links}
+      publishState={kind === "teaching" ? course.isPublished : undefined}
+      extraBadges={extraBadges}
+      menu={
+        <CardMenu course={course} kind={kind} canPublish={canPublish} menuActions={menuActions} />
+      }
+    />
   );
 }
 
@@ -475,10 +518,7 @@ export function CourseDashboard({
   const { isEnabled } = usePolicyGate();
   const canPublish = userRole === "INSTRUCTOR" && isEnabled("instructors.canPublishCourses");
 
-  const extensionsFor = (courseId: string) =>
-    visibleAppsForRole(getLauncherApps(courseId), launcherRole).filter(
-      (app) => app.id !== "core" && app.id !== "course-chat" && app.url,
-    );
+  const extensionsFor = (courseId: string) => courseExtensions(courseId, launcherRole);
 
   const order: CourseKind[] = ["teaching", "assisting", "taking"];
   const sections = order
@@ -514,12 +554,22 @@ export function CourseDashboard({
                 onValueChange={(v) => (v === "card" || v === "list") && setView(v)}
                 aria-label="Course layout"
               >
-                <ToggleGroupItem value="card" aria-label="Card view">
-                  <IconLayoutGrid className="size-4" />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="list" aria-label="List view">
-                  <IconList className="size-4" />
-                </ToggleGroupItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="card" aria-label="Card view">
+                      <IconLayoutGrid className="size-4" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>Card view</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="list" aria-label="List view">
+                      <IconList className="size-4" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>List view</TooltipContent>
+                </Tooltip>
               </ToggleGroup>
             </div>
           </div>

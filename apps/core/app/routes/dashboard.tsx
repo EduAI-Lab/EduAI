@@ -15,6 +15,9 @@ import { getDashboardCanvasIntegration } from "~/lib/canvas/integration.server";
 import type { CanvasIntegrationPublic } from "~/lib/canvas/schemas";
 import prisma from "~/lib/prisma.server";
 import { loadDashboardData, type DashboardData } from "~/lib/dashboard/dashboard-data.server";
+import { loadAdminDashboardData } from "~/lib/dashboard/admin-dashboard-data.server";
+import { ADMIN_HERO_COPY, AdminDashboard } from "~/components/dashboard/admin-dashboard";
+import type { AdminDashboardData } from "~/types/admin-dashboard";
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import type { User } from "~/lib/auth/types";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -40,13 +43,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // picks the display config, not which data is read (a TA issues the same
   // STUDENT course queries), so the enrollment lookup and the full dashboard
   // batch are independent — run them concurrently (#1220).
-  const [isTA, dashboard, canvasIntegration] = await Promise.all([
+  // ADMIN has its own dashboard (attention list, system health, usage chart)
+  // and never renders the per-role `DashboardData`, so it loads only its own.
+  const isAdmin = session.user.role === "ADMIN";
+  const [isTA, dashboard, adminDashboard, canvasIntegration] = await Promise.all([
     session.user.role === "STUDENT"
       ? prisma.enrollment
           .count({ where: { userId: session.user.id, role: "TA", isActive: true } })
           .then((n) => n > 0)
       : Promise.resolve(false),
-    loadDashboardData(session.user),
+    isAdmin ? Promise.resolve(null) : loadDashboardData(session.user),
+    isAdmin ? loadAdminDashboardData(session.user) : Promise.resolve(null),
     // The Canvas card is the dashboard's one remaining client fetch; resolving
     // it here means it paints connected/not-connected instead of a spinner
     // (#1220). Returns null for roles/policies that can't manage Canvas, which
@@ -58,6 +65,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     user: session.user,
     isTA,
     dashboard,
+    adminDashboard,
     canvasIntegration,
   };
 }
@@ -93,7 +101,10 @@ function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: Eff
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const name = (user.name ?? "").split(" ");
   const firstName = name.length == 3 && name[0].endsWith(".") ? name[1] : name[0];
-  const { heading, subheading } = DASHBOARD_CONFIG[effectiveRole].heroCopy(firstName, greeting);
+  const { heading, subheading } =
+    effectiveRole === "ADMIN"
+      ? ADMIN_HERO_COPY
+      : DASHBOARD_CONFIG[effectiveRole].heroCopy(firstName, greeting);
   const dateStr = now.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -103,7 +114,7 @@ function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: Eff
   });
 
   return (
-    <div className="px-4 lg:px-6 pt-6 pb-4" data-tour="dashboard-hero">
+    <div className="px-4 lg:px-6 pt-4 pb-3" data-tour="dashboard-hero">
       <PageHeading heading={heading} subheading={`${dateStr} · ${subheading}`} />
     </div>
   );
@@ -113,11 +124,13 @@ function DashboardContent({
   user,
   isTA,
   dashboard,
+  adminDashboard,
   canvasIntegration,
 }: {
   user: User;
   isTA: boolean;
-  dashboard: DashboardData;
+  dashboard: DashboardData | null;
+  adminDashboard: AdminDashboardData | null;
   canvasIntegration: CanvasIntegrationPublic | null;
 }) {
   const { isEnabled } = usePolicyGate();
@@ -135,7 +148,14 @@ function DashboardContent({
   return (
     <>
       <DashboardHero user={user} effectiveRole={effectiveRole} />
-      <DashboardBody effectiveRole={effectiveRole} data={dashboard} userRole={user.role} />
+      {effectiveRole === "ADMIN" && adminDashboard ? (
+        <AdminDashboard data={adminDashboard} userId={user.id} />
+      ) : (
+        effectiveRole !== "ADMIN" &&
+        dashboard && (
+          <DashboardBody effectiveRole={effectiveRole} data={dashboard} userRole={user.role} />
+        )
+      )}
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">
           <CanvasDashboardCard disabled={!canvasPolicyOk} initialIntegration={canvasIntegration} />
@@ -146,7 +166,8 @@ function DashboardContent({
 }
 
 export default function Page() {
-  const { user, isTA, dashboard, canvasIntegration } = useLoaderData<typeof loader>();
+  const { user, isTA, dashboard, adminDashboard, canvasIntegration } =
+    useLoaderData<typeof loader>();
   useTourQueryParam("dashboard");
 
   return (
@@ -156,7 +177,7 @@ export default function Page() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbPage>Home</BreadcrumbPage>
+              <BreadcrumbPage>Core</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -166,6 +187,7 @@ export default function Page() {
         user={user}
         isTA={isTA}
         dashboard={dashboard}
+        adminDashboard={adminDashboard}
         canvasIntegration={canvasIntegration}
       />
     </CoreAppShell>

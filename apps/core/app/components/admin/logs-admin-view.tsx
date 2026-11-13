@@ -3,7 +3,18 @@ import { useMemo, useRef, useState } from "react";
 import { Form, Link, useNavigation } from "react-router";
 
 import { LogDetailsDialog } from "~/components/admin/log-details-dialog";
-import { Badge, PageHeading, Spinner } from "@eduai/ui";
+import { IconAdjustmentsHorizontal, IconChevronDown } from "@tabler/icons-react";
+
+import {
+  Badge,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  PageHeading,
+  Spinner,
+} from "@eduai/ui";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { Input } from "@eduai/ui";
@@ -12,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
 import { asJsonObject, asPresentText, asText } from "~/lib/json-value";
+import { cn } from "~/lib/utils";
 import { useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 export type LogsTab = "audit" | "security" | "system" | "servers";
@@ -716,6 +728,8 @@ export function LogsAdminView({
   peakUsageHours,
 }: LogsAdminViewProps) {
   const [selectedRow, setSelectedRow] = useState<JsonObject | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [retentionOpen, setRetentionOpen] = useState(false);
   const formatScope = useFormatScope();
 
   // Hoisted above ServerRoutingPanel (rather than read inside it) so the
@@ -741,12 +755,17 @@ export function LogsAdminView({
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 px-4 lg:px-6">
-          <div className="flex items-start justify-between gap-4">
-            <PageHeading
-              heading="Logs"
-              subheading="Audit, security, and system diagnostics for operational investigations."
-            />
-          </div>
+          <PageHeading
+            heading="Logs"
+            subheading="Audit, security, and system diagnostics for operational investigations."
+            actions={
+              tab !== "servers" ? (
+                <Button type="button" variant="outline" onClick={() => setRetentionOpen(true)}>
+                  Retention
+                </Button>
+              ) : undefined
+            }
+          />
 
           {/* Tabs are links so each view remains directly shareable by URL. */}
           <Tabs value={tab}>
@@ -792,44 +811,10 @@ export function LogsAdminView({
                     {/* Filter submits always reset to page 1 so newly narrowed results start at a valid index. */}
                     <input type="hidden" name="page" value="1" />
 
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Page size</Label>
-                        <FilterSelect
-                          name="pageSize"
-                          defaultValue={query.pageSize ?? String(pageSize)}
-                          placeholder="Page size"
-                          options={[
-                            { value: "25", label: "25" },
-                            { value: "50", label: "50" },
-                            { value: "100", label: "100" },
-                          ]}
-                        />
-                      </div>
-
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Direction</Label>
-                        <FilterSelect
-                          name="direction"
-                          defaultValue={query.direction ?? "desc"}
-                          placeholder="Direction"
-                          options={[
-                            { value: "desc", label: "Newest first" },
-                            { value: "asc", label: "Oldest first" },
-                          ]}
-                        />
-                      </div>
-
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Date from</Label>
-                        <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
-                      </div>
-
-                      <div className="grid gap-1.5">
-                        <Label className="text-xs">Date to</Label>
-                        <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
-                      </div>
-
+                    {/* One row of the everyday filters; the rest wait behind
+                        "Advanced filters". Hidden fields stay in the form, so
+                        their values still submit and survive in the URL. */}
+                    <div className="flex flex-wrap items-end gap-3 [&>div]:w-full sm:[&>div]:w-44">
                       {tab === "audit" && (
                         <>
                           <div className="grid gap-1.5">
@@ -848,18 +833,6 @@ export function LogsAdminView({
                             />
                           </div>
                           <div className="grid gap-1.5">
-                            <Label className="text-xs">Action code</Label>
-                            <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
-                          </div>
-                          <div className="grid gap-1.5">
-                            <Label className="text-xs">Actor role</Label>
-                            <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
-                          </div>
-                          <div className="grid gap-1.5">
-                            <Label className="text-xs">Entity type</Label>
-                            <Input name="entityType" defaultValue={query.entityType ?? ""} />
-                          </div>
-                          <div className="grid gap-1.5">
                             <Label className="text-xs">Outcome</Label>
                             <FilterSelect
                               name="outcome"
@@ -871,20 +844,11 @@ export function LogsAdminView({
                               ]}
                             />
                           </div>
-                          <div className="grid gap-1.5">
-                            <Label className="text-xs">Route path</Label>
-                            <Input name="routePath" defaultValue={query.routePath ?? ""} />
-                          </div>
                         </>
                       )}
-
                       {tab === "security" && (
                         <>
                           <div className="grid gap-1.5">
-                            <Label className="text-xs">Action code</Label>
-                            <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
-                          </div>
-                          <div className="grid gap-1.5">
                             <Label className="text-xs">Outcome</Label>
                             <FilterSelect
                               name="outcome"
@@ -896,21 +860,8 @@ export function LogsAdminView({
                               ]}
                             />
                           </div>
-                          <div className="grid gap-1.5">
-                            <Label className="text-xs">Actor role</Label>
-                            <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
-                          </div>
-                          <div className="grid gap-1.5">
-                            <Label className="text-xs">Route path</Label>
-                            <Input name="routePath" defaultValue={query.routePath ?? ""} />
-                          </div>
-                          <div className="grid gap-1.5">
-                            <Label className="text-xs">IP address</Label>
-                            <Input name="ipAddress" defaultValue={query.ipAddress ?? ""} />
-                          </div>
                         </>
                       )}
-
                       {tab === "system" && (
                         <>
                           <div className="grid gap-1.5">
@@ -940,6 +891,107 @@ export function LogsAdminView({
                               ]}
                             />
                           </div>
+                        </>
+                      )}
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Date from</Label>
+                        <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Date to</Label>
+                        <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        aria-expanded={advancedOpen}
+                        aria-controls="logs-advanced-filters"
+                        onClick={() => setAdvancedOpen((open) => !open)}
+                      >
+                        <IconAdjustmentsHorizontal className="h-4 w-4" aria-hidden="true" />
+                        Advanced filters
+                        <IconChevronDown
+                          className={cn(
+                            "h-4 w-4 transition-transform",
+                            advancedOpen && "rotate-180",
+                          )}
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    </div>
+
+                    <div
+                      id="logs-advanced-filters"
+                      hidden={!advancedOpen}
+                      className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                    >
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Page size</Label>
+                        <FilterSelect
+                          name="pageSize"
+                          defaultValue={query.pageSize ?? String(pageSize)}
+                          placeholder="Page size"
+                          options={[
+                            { value: "25", label: "25" },
+                            { value: "50", label: "50" },
+                            { value: "100", label: "100" },
+                          ]}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Direction</Label>
+                        <FilterSelect
+                          name="direction"
+                          defaultValue={query.direction ?? "desc"}
+                          placeholder="Direction"
+                          options={[
+                            { value: "desc", label: "Newest first" },
+                            { value: "asc", label: "Oldest first" },
+                          ]}
+                        />
+                      </div>
+                      {tab === "audit" && (
+                        <>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Action code</Label>
+                            <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Actor role</Label>
+                            <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Entity type</Label>
+                            <Input name="entityType" defaultValue={query.entityType ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Route path</Label>
+                            <Input name="routePath" defaultValue={query.routePath ?? ""} />
+                          </div>
+                        </>
+                      )}
+                      {tab === "security" && (
+                        <>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Action code</Label>
+                            <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Actor role</Label>
+                            <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Route path</Label>
+                            <Input name="routePath" defaultValue={query.routePath ?? ""} />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">IP address</Label>
+                            <Input name="ipAddress" defaultValue={query.ipAddress ?? ""} />
+                          </div>
+                        </>
+                      )}
+                      {tab === "system" && (
+                        <>
                           <div className="grid gap-1.5">
                             <Label className="text-xs">Code</Label>
                             <Input name="code" defaultValue={query.code ?? ""} />
@@ -960,62 +1012,6 @@ export function LogsAdminView({
                 </CardContent>
               </Card>
 
-              {/* Retention policy + manual cleanup. */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Retention</CardTitle>
-                  <CardDescription>
-                    Logs older than the configured window are removed on a daily sweep, or on demand
-                    below.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Form method="post" className="flex flex-wrap items-end gap-3">
-                    <input type="hidden" name="intent" value="updateLogRetentionPolicy" />
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs">Audit retention (days)</Label>
-                      <Input
-                        type="number"
-                        name="auditRetentionDays"
-                        min={1}
-                        max={3650}
-                        defaultValue={retentionPolicy.auditRetentionDays}
-                        className="w-40"
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs">System retention (days)</Label>
-                      <Input
-                        type="number"
-                        name="systemRetentionDays"
-                        min={1}
-                        max={3650}
-                        defaultValue={retentionPolicy.systemRetentionDays}
-                        className="w-40"
-                      />
-                    </div>
-                    <Button type="submit" size="sm">
-                      Save retention policy
-                    </Button>
-                  </Form>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="cleanupAuditLogsNow" />
-                      <Button type="submit" size="sm" variant="outline">
-                        Cleanup audit &gt; {retentionPolicy.auditRetentionDays} days
-                      </Button>
-                    </Form>
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="cleanupSystemLogsNow" />
-                      <Button type="submit" size="sm" variant="outline">
-                        Cleanup system &gt; {retentionPolicy.systemRetentionDays} days
-                      </Button>
-                    </Form>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Results table. */}
               <Card>
                 <CardContent className="overflow-x-auto pt-6">
@@ -1029,7 +1025,6 @@ export function LogsAdminView({
                           <TableHead>Actor</TableHead>
                           <TableHead>Entity</TableHead>
                           <TableHead>Outcome</TableHead>
-                          <TableHead>Route</TableHead>
                           <TableHead className="text-right">Details</TableHead>
                         </TableRow>
                       )}
@@ -1039,7 +1034,6 @@ export function LogsAdminView({
                           <TableHead>Action</TableHead>
                           <TableHead>Actor</TableHead>
                           <TableHead>Outcome</TableHead>
-                          <TableHead>Route</TableHead>
                           <TableHead>IP</TableHead>
                           <TableHead className="text-right">Details</TableHead>
                         </TableRow>
@@ -1059,7 +1053,7 @@ export function LogsAdminView({
                       {rows.length === 0 && (
                         <TableRow>
                           <TableCell
-                            colSpan={tab === "audit" ? 8 : tab === "security" ? 7 : 6}
+                            colSpan={tab === "audit" ? 7 : 6}
                             className="text-muted-foreground py-8 text-center"
                           >
                             No logs found for the selected filters.
@@ -1086,9 +1080,6 @@ export function LogsAdminView({
                                   {getRowValue(row, "outcome")}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {getRowValue(row, "routePath")}
-                              </TableCell>
                             </>
                           )}
 
@@ -1102,9 +1093,6 @@ export function LogsAdminView({
                                 <Badge variant={outcomeVariant(getRowValue(row, "outcome"))}>
                                   {getRowValue(row, "outcome")}
                                 </Badge>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {getRowValue(row, "routePath")}
                               </TableCell>
                               <TableCell>{getRowValue(row, "ipAddress")}</TableCell>
                             </>
@@ -1160,6 +1148,64 @@ export function LogsAdminView({
                   </Button>
                 </div>
               </div>
+
+              {/* Retention policy + manual cleanup, opened from the header's Retention button. */}
+              <Dialog open={retentionOpen} onOpenChange={setRetentionOpen}>
+                <DialogContent className="max-w-xl">
+                  <DialogHeader>
+                    <DialogTitle>Retention</DialogTitle>
+                    <DialogDescription>
+                      Logs older than the configured window are removed on a daily sweep, or on
+                      demand below.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <Form method="post" className="flex flex-wrap items-end gap-3">
+                      <input type="hidden" name="intent" value="updateLogRetentionPolicy" />
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Audit retention (days)</Label>
+                        <Input
+                          type="number"
+                          name="auditRetentionDays"
+                          min={1}
+                          max={3650}
+                          defaultValue={retentionPolicy.auditRetentionDays}
+                          className="w-40"
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">System retention (days)</Label>
+                        <Input
+                          type="number"
+                          name="systemRetentionDays"
+                          min={1}
+                          max={3650}
+                          defaultValue={retentionPolicy.systemRetentionDays}
+                          className="w-40"
+                        />
+                      </div>
+                      <Button type="submit" size="sm">
+                        Save retention policy
+                      </Button>
+                    </Form>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="cleanupAuditLogsNow" />
+                        <Button type="submit" size="sm" variant="outline">
+                          Cleanup audit &gt; {retentionPolicy.auditRetentionDays} days
+                        </Button>
+                      </Form>
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="cleanupSystemLogsNow" />
+                        <Button type="submit" size="sm" variant="outline">
+                          Cleanup system &gt; {retentionPolicy.systemRetentionDays} days
+                        </Button>
+                      </Form>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
               <LogDetailsDialog
                 title={`${tab.toUpperCase()} log details`}
