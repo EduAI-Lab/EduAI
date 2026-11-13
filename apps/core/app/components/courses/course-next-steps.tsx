@@ -11,14 +11,16 @@ export type CourseNextStep = {
   detail: string;
   /** Where to go to finish it. */
   href?: string;
+  /** Finishes it in place (e.g. opens the publish confirm); wins over `href`. */
+  onSelect?: () => void;
 };
 
 const COLLAPSED_KEY = "eduai.course.nextStepsCollapsed";
 
 /**
  * The course's setup path as one compact step bar (#2105): material added →
- * ready for the AI → published. Collapsible, with each step's detail on hover,
- * so it never takes over the page.
+ * ready for the AI → published → students enrolled. Collapsible, with each
+ * step's detail on hover, so it never takes over the page.
  */
 export function CourseNextSteps({ steps }: { steps: CourseNextStep[] }) {
   const doneCount = steps.filter((s) => s.done).length;
@@ -102,7 +104,9 @@ export function CourseNextSteps({ steps }: { steps: CourseNextStep[] }) {
                   className={cn(
                     "text-xs font-medium",
                     step.done ? "text-muted-foreground" : "text-foreground",
-                    isNext && step.href && "underline-offset-2 group-hover:underline",
+                    isNext &&
+                      (step.href || step.onSelect) &&
+                      "underline-offset-2 group-hover:underline",
                   )}
                 >
                   {step.label}
@@ -116,7 +120,15 @@ export function CourseNextSteps({ steps }: { steps: CourseNextStep[] }) {
               <li key={step.key} className="flex items-center sm:flex-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    {step.href && !step.done ? (
+                    {step.onSelect && !step.done ? (
+                      <button
+                        type="button"
+                        onClick={step.onSelect}
+                        className="group rounded-md text-left focus-visible:ring-2"
+                      >
+                        {body}
+                      </button>
+                    ) : step.href && !step.done ? (
                       <Link to={step.href} className="group rounded-md focus-visible:ring-2">
                         {body}
                       </Link>

@@ -11,18 +11,62 @@ const material = (status: string) => ({ status });
 
 describe("courseSetupSteps", () => {
   it("has nothing done on an empty, unpublished course", () => {
-    const steps = courseSetupSteps({ materials: [], isPublished: false, canPublish: true });
+    const steps = courseSetupSteps({
+      materials: [],
+      isPublished: false,
+      canPublish: true,
+      studentCount: 0,
+      canEnrollStudents: true,
+    });
     expect(steps.map((s) => [s.key, s.done])).toEqual([
       ["upload", false],
       ["ready", false],
       ["publish", false],
+      ["students", false],
     ]);
     expect(steps[0].detail).toMatch(/^Upload lecture notes/);
     expect(steps[1].detail).toBe("Files are processed for the AI after you upload them.");
-    expect(steps[2].detail).toMatch(/Publish it from the ⋯ menu/);
+    expect(steps[2].detail).toMatch(/Publish course button under Course details/);
+    expect(steps[3].detail).toMatch(/Join links only work once the course is published/);
     expect(steps[0].href).toBe("?tab=materials");
     expect(steps[1].href).toBe("?tab=materials");
     expect(steps[2].href).toBeUndefined();
+    expect(steps[3]).toMatchObject({ label: "Add students", href: "?tab=enrollments" });
+  });
+
+  it("lets the publish step open the publish confirm only for someone who can publish", () => {
+    const onPublish = vi.fn();
+    const base = {
+      materials: [],
+      isPublished: false,
+      studentCount: 0,
+      canEnrollStudents: true,
+      onPublish,
+    };
+    expect(courseSetupSteps({ ...base, canPublish: true })[2].onSelect).toBe(onPublish);
+    expect(courseSetupSteps({ ...base, canPublish: false })[2].onSelect).toBeUndefined();
+  });
+
+  it("marks Add students done once a student is enrolled", () => {
+    const steps = courseSetupSteps({
+      materials: [],
+      isPublished: true,
+      canPublish: true,
+      studentCount: 2,
+      canEnrollStudents: true,
+    });
+    expect(steps[3]).toMatchObject({ done: true, detail: "2 students enrolled." });
+  });
+
+  it("hides Add students when the user can't manage enrollments", () => {
+    const steps = courseSetupSteps({
+      materials: [],
+      isPublished: true,
+      canPublish: true,
+      studentCount: 0,
+      canEnrollStudents: false,
+    });
+    expect(steps.map((s) => s.key)).toEqual(["upload", "ready", "publish"]);
   });
 
   it("is not ready while a file is still processing, and counts failures", () => {
@@ -30,6 +74,8 @@ describe("courseSetupSteps", () => {
       materials: [material("READY"), material("PROCESSING"), material("FAILED")],
       isPublished: false,
       canPublish: false,
+      studentCount: 0,
+      canEnrollStudents: true,
     });
     expect(steps[0]).toMatchObject({ done: true, detail: expect.stringMatching(/^3 files added/) });
     expect(steps[1]).toMatchObject({
@@ -44,11 +90,14 @@ describe("courseSetupSteps", () => {
       materials: [material("READY")],
       isPublished: true,
       canPublish: true,
+      studentCount: 1,
+      canEnrollStudents: true,
     });
     expect(steps.every((s) => s.done)).toBe(true);
     expect(steps[0].detail).toMatch(/^1 file added/);
     expect(steps[1].detail).toBe("1 of 1 ready for chat.");
     expect(steps[2].detail).toBe("Students can see this course and chat about it.");
+    expect(steps[3].detail).toBe("1 student enrolled.");
   });
 
   it("is not ready when every file failed", () => {
@@ -56,6 +105,8 @@ describe("courseSetupSteps", () => {
       materials: [material("FAILED")],
       isPublished: false,
       canPublish: true,
+      studentCount: 0,
+      canEnrollStudents: true,
     });
     expect(ready.done).toBe(false);
   });
@@ -88,6 +139,17 @@ describe("CourseNextSteps", () => {
     expect(screen.getByText("1 of 3 done")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Materials ready/ })).toHaveAttribute("href", "/?b");
     expect(screen.queryByRole("link", { name: /Add materials/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Publish course/ })).toBeNull();
+  });
+
+  it("runs a step's action in place instead of linking", () => {
+    const onSelect = vi.fn();
+    renderSteps([
+      ...STEPS.slice(0, 2),
+      { key: "publish", label: "Publish course", done: false, detail: "Not yet.", onSelect },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /Publish course/ }));
+    expect(onSelect).toHaveBeenCalledOnce();
     expect(screen.queryByRole("link", { name: /Publish course/ })).toBeNull();
   });
 

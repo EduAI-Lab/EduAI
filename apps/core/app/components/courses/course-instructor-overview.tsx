@@ -75,22 +75,30 @@ function Section({
   );
 }
 
-/** material added → ready for the AI → published (#2105). */
+/** material added → ready for the AI → published → students enrolled (#2105, #2162). */
 export function courseSetupSteps({
   materials,
   isPublished,
   canPublish,
+  studentCount,
+  canEnrollStudents,
+  onPublish,
 }: {
   materials: { status: string }[];
   isPublished: boolean;
   canPublish: boolean;
+  studentCount: number;
+  /** False when the enrollments policy is off; the Add students step is then hidden. */
+  canEnrollStudents: boolean;
+  /** Opens the page's publish confirm, so the step can publish in place. */
+  onPublish?: () => void;
 }): CourseNextStep[] {
   const total = materials.length;
   const ready = materials.filter((m) => m.status === "READY").length;
   const processing = materials.filter((m) => m.status === "PROCESSING").length;
   const failed = materials.filter((m) => m.status === "FAILED").length;
   const materialsHref = courseNavSearch("materials");
-  return [
+  const steps: CourseNextStep[] = [
     {
       key: "upload",
       label: "Add materials",
@@ -121,8 +129,25 @@ export function courseSetupSteps({
       detail: isPublished
         ? "Students can see this course and chat about it."
         : canPublish
-          ? "Students can't see the course yet. Publish it from the ⋯ menu at the top."
+          ? "Students can't see the course yet. Publish it with the Publish course button under Course details."
           : "Students can't see the course yet. Only an administrator can publish it.",
+      onSelect: canPublish ? onPublish : undefined,
+    },
+  ];
+  if (!canEnrollStudents) return steps;
+  return [
+    ...steps,
+    {
+      key: "students",
+      label: "Add students",
+      done: studentCount > 0,
+      detail:
+        studentCount > 0
+          ? `${studentCount} student${studentCount === 1 ? "" : "s"} enrolled.`
+          : isPublished
+            ? "Enroll students or share a join link from Enrollments."
+            : "Enroll students from Enrollments. Join links only work once the course is published.",
+      href: courseNavSearch("enrollments"),
     },
   ];
 }
@@ -141,7 +166,9 @@ export function CourseInstructorOverview({
   instructors,
   tas,
   canPublish,
+  canEnrollStudents,
   publishControl,
+  onPublish,
 }: {
   course: CourseDetail;
   materials: { status: string }[];
@@ -151,7 +178,9 @@ export function CourseInstructorOverview({
   instructors: Instructor[];
   tas: CourseTA[];
   canPublish: boolean;
+  canEnrollStudents: boolean;
   publishControl?: ReactNode;
+  onPublish?: () => void;
 }) {
   const ready = materials.filter((m) => m.status === "READY").length;
   const styleTags = course.responseStyleTags ?? [];
@@ -170,7 +199,14 @@ export function CourseInstructorOverview({
   return (
     <div style={courseThemeVars(resolvePaletteAccent(course.id))}>
       <CourseNextSteps
-        steps={courseSetupSteps({ materials, isPublished: course.isPublished, canPublish })}
+        steps={courseSetupSteps({
+          materials,
+          isPublished: course.isPublished,
+          canPublish,
+          studentCount,
+          canEnrollStudents,
+          onPublish,
+        })}
       />
 
       {/* Not "Course …": that would also match the shell's course menu landmark. */}

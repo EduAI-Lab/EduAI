@@ -1050,6 +1050,14 @@ describe("CourseDetailManagerView — access-gated visibility", () => {
     expect(screen.queryByText("Add students")).not.toBeInTheDocument();
   });
 
+  it("drops the Add students setup step when the manage-enrollments grant is off (#2162)", () => {
+    renderView({ access: "instructor" }, { "instructors.canManageEnrollments": false });
+    expect(screen.queryByText("Add students")).not.toBeInTheDocument();
+    cleanup();
+    renderView({ access: "instructor" });
+    expect(screen.getByText("Add students")).toBeInTheDocument();
+  });
+
   it("hides the TAs and settings tabs for a plain TA access level", () => {
     renderView({ access: "ta" });
     expect(queryCourseNavEntry(/^settings$/i)).not.toBeInTheDocument();
