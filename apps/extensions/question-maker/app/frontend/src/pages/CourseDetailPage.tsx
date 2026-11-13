@@ -807,7 +807,8 @@ export const CourseDetailPage = () => {
   }, [variantToDelete, questions, toast]);
 
   const handleQuestionsUploaded = useCallback(
-    async (createdQuestions: Question[]) => {
+    async (createdQuestions: Question[], meta?: { assessmentId: number | null }) => {
+      if (meta?.assessmentId) void fetchAssessments();
       if (createdQuestions.length === 0) {
         setIsUploadOpen(false);
         return;
@@ -827,7 +828,7 @@ export const CourseDetailPage = () => {
       setSelectedVariant(null);
       setIsUploadOpen(false);
     },
-    [loadTopicsForCourse],
+    [fetchAssessments, loadTopicsForCourse],
   );
 
   const handleExtractInBackground = useCallback(
@@ -1265,6 +1266,8 @@ export const CourseDetailPage = () => {
             topics={topicsByCourse[courseId] ?? []}
             onEnsureTopics={loadTopicsForCourse}
             onQuestionsSaved={handleQuestionsUploaded}
+            saveTarget="bank"
+            allowAssessmentOption={canManageAssessmentForCourse}
             onExtractInBackground={handleExtractInBackground}
             initialDraftQuestions={
               pendingExtractionReview?.courseId === courseId ? pendingExtractionReview.drafts : null

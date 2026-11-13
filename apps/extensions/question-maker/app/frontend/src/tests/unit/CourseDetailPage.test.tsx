@@ -266,13 +266,26 @@ vi.mock("@/pages/course-detail/CourseCanvasTab", () => ({
 vi.mock("@/components/question-bank/QuestionUploadDialog", () => ({
   QuestionUploadDialog: (props: any) =>
     props.open ? (
-      <div data-testid="upload-dialog">
+      <div
+        data-testid="upload-dialog"
+        data-save-target={props.saveTarget}
+        data-allow-assessment={String(Boolean(props.allowAssessmentOption))}
+      >
         <button onClick={props.onClose}>close-upload</button>
         <button onClick={() => props.onQuestionsSaved([])}>save-empty</button>
         <button
           onClick={() => props.onQuestionsSaved([{ id: 99, courseId: 5, createdAt: "2024-01-01" }])}
         >
           save-questions
+        </button>
+        <button
+          onClick={() =>
+            props.onQuestionsSaved([{ id: 98, courseId: 5, createdAt: "2024-01-02" }], {
+              assessmentId: 300,
+            })
+          }
+        >
+          save-with-assessment
         </button>
         <button
           onClick={() =>
@@ -575,6 +588,56 @@ describe("CourseDetailPage main content", () => {
     await screen.findByTestId("question-bank");
     fireEvent.click(screen.getByText("upload-questions"));
     fireEvent.click(await screen.findByText("save-questions"));
+    await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
+  });
+
+  it("opens the upload dialog in bank mode without the assessment option for non-managers", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    const dialog = await screen.findByTestId("upload-dialog");
+    expect(dialog).toHaveAttribute("data-save-target", "bank");
+    expect(dialog).toHaveAttribute("data-allow-assessment", "false");
+  });
+
+  it("offers the assessment option to assessment managers", async () => {
+    setDefaultMocks({ tab: "questions" });
+    useQmPermissionsForCourseMock.mockReturnValue({
+      canCreateQuestion: true,
+      canManageCanvas: true,
+      canManageAssessment: true,
+      hasCourseAccess: true,
+      accessLoading: false,
+    });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    fireEvent.click(screen.getByText("upload-questions"));
+    expect(await screen.findByTestId("upload-dialog")).toHaveAttribute(
+      "data-allow-assessment",
+      "true",
+    );
+  });
+
+  it("does not refetch assessments after a bank-only upload", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("save-questions"));
+    await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
+    expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches assessments when the upload also created an assessment", async () => {
+    setDefaultMocks({ tab: "questions" });
+    render(<CourseDetailPage />);
+    await screen.findByTestId("question-bank");
+    await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("upload-questions"));
+    fireEvent.click(await screen.findByText("save-with-assessment"));
+    await waitFor(() => expect(assessmentService.getAssessmentsPage).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByTestId("upload-dialog")).not.toBeInTheDocument());
   });
 
