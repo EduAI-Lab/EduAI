@@ -43,6 +43,8 @@ export interface AIServiceIndicatorsProps {
   cloud: ServiceStatus;
   ubc: ServiceStatus;
   cloudLabel?: string;
+  /** Render the Cloud chip. Defaults to true; pass false to hide it (e.g. no cloud key configured). */
+  showCloud?: boolean;
   /**
    * When supplied, clicking the UBC chip opens this in a popover instead of
    * calling onRefresh. onRefresh then applies to the cloud chip only; the panel
@@ -124,6 +126,7 @@ export function AIServiceIndicators({
   cloud,
   ubc,
   cloudLabel = "Cloud AI",
+  showCloud = true,
   ubcHistory,
   onRefresh,
   onUbcOpenChange,
@@ -152,14 +155,16 @@ export function AIServiceIndicators({
       ) : (
         ubcChip
       )}
-      <Chip
-        label={cloudLabel}
-        status={cloud}
-        active={isServiceActive(cloud.state)}
-        onClick={onRefresh}
-      >
-        <IconCloud className="size-3.5" strokeWidth={1.75} />
-      </Chip>
+      {showCloud && (
+        <Chip
+          label={cloudLabel}
+          status={cloud}
+          active={isServiceActive(cloud.state)}
+          onClick={onRefresh}
+        >
+          <IconCloud className="size-3.5" strokeWidth={1.75} />
+        </Chip>
+      )}
     </div>
   );
 }

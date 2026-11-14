@@ -12,10 +12,10 @@ const ADMIN_NAV: NavItem[] = [
   { key: "admin-ai", title: "AI Management", url: "/admin/ai-models" },
   { key: "admin-bugs", title: "Bug Reports", url: "/admin/bug-reports" },
   { key: "admin-invites", title: "Invitations", url: "/admin/invitations" },
-  { key: "admin-settings", title: "Settings", url: "/admin/settings" },
-  { key: "admin-logs", title: "Logs", url: "/admin/logs" },
   { key: "admin-cron", title: "Cron Jobs", url: "/admin/cron-jobs" },
+  { key: "admin-logs", title: "Logs", url: "/admin/logs" },
   { key: "admin-api-access", title: "API Access", url: "/admin/api-access" },
+  { key: "admin-settings", title: "Settings", url: "/admin/settings" },
 ];
 
 const ADMIN_SECONDARY_NAV: NavItem[] = [
@@ -51,7 +51,7 @@ export function getNavForUser(user: NavUser, opts: NavOptions = {}): (NavItem | 
   const nav = [...CORE_NAV];
 
   if (role === "ADMIN") {
-    return [...nav, { key: "admin-group" as const, title: "Administration", children: ADMIN_NAV }];
+    return [...nav, { key: "admin-group" as const, title: "Admin", children: ADMIN_NAV }];
   }
 
   if (role === "UNIT_ADMIN") {

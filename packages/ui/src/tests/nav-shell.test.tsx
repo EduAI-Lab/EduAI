@@ -273,6 +273,33 @@ describe("NavShell — rail", () => {
   });
 });
 
+describe("NavShell — app-name breadcrumb", () => {
+  it("opens a course page's trail with the current app's name", () => {
+    renderShell({ courseNav: COURSE_NAV }, makeModel({ currentAppId: "core" }));
+    const crumbs = screen.getByRole("navigation", { name: "breadcrumb" });
+    const links = within(crumbs).getAllByRole("link");
+    expect(links[0]).toHaveTextContent("Core");
+    expect(links[0]).toHaveAttribute("data-router-link", "/dashboard");
+  });
+
+  it("puts the app's name before a plain title, linking to appHomeHref", () => {
+    renderShell({ title: "History", appHomeHref: "/chat" });
+    const crumbs = screen.getByRole("navigation", { name: "breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "Test App" })).toHaveAttribute(
+      "data-router-link",
+      "/chat",
+    );
+    expect(within(crumbs).getByText("History")).toBeInTheDocument();
+  });
+
+  it("uses appName over the launcher, and skips the crumb when the title is the app", () => {
+    renderShell({ title: "Question Maker", appName: "Question Maker" });
+    const crumbs = screen.getByRole("navigation", { name: "breadcrumb" });
+    expect(within(crumbs).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(crumbs).getByText("Question Maker")).toBeInTheDocument();
+  });
+});
+
 describe("NavShell — course pages", () => {
   it("draws the course menu, its tour anchor, and the course breadcrumb", () => {
     renderShell({ courseNav: COURSE_NAV });
@@ -297,6 +324,19 @@ describe("NavShell — course pages", () => {
       "/courses/7?tab=banks",
     );
     expect(within(crumbs).getByText("Question bank")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("names the hamburger and the rail's collapse button with tooltips", async () => {
+    renderShell({ courseNav: COURSE_NAV });
+    fireEvent.focus(screen.getByRole("button", { name: "Hide course menu" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hide course menu");
+
+    fireEvent.focus(screen.getByRole("button", { name: "Collapse navigation" }));
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("tooltip").some((t) => t.textContent === "Collapse navigation"),
+      ).toBe(true),
+    );
   });
 
   it("toggles the course menu from the hamburger", () => {
@@ -470,5 +510,23 @@ describe("NavShell — pages that draw their own heading", () => {
   it("makes the header's title the page heading by default", () => {
     renderShell({ title: "Settings", breadcrumbs: <span>Settings crumb</span> });
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+  });
+});
+
+describe("NavShell — app name crumb", () => {
+  it("names the app once, as the trail's first link", () => {
+    const model = makeModel({ currentAppId: "core" });
+
+    const plain = renderShell({}, model);
+    expect(screen.getAllByRole("link", { name: "Core" })).toHaveLength(1);
+    plain.unmount();
+
+    const course = renderShell({ courseNav: COURSE_NAV }, model);
+    expect(screen.getAllByRole("link", { name: "Core" })).toHaveLength(1);
+    course.unmount();
+
+    // An app's own trail opens with the app's name itself; the shell adds nothing.
+    renderShell({ breadcrumbs: <span>Settings crumb</span> }, model);
+    expect(screen.queryByRole("link", { name: "Core" })).not.toBeInTheDocument();
   });
 });

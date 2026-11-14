@@ -50,34 +50,6 @@ describe("ModuleCard", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
-  it("renders the lesson count row only when provided", () => {
-    const { rerender } = render(
-      <ModuleCard title="Week 1" index={0} accentColor="blue" onClick={vi.fn()} lessonCount={3} />,
-    );
-    expect(screen.getByText("3 lessons")).toBeInTheDocument();
-
-    rerender(
-      <ModuleCard title="Week 1" index={0} accentColor="blue" onClick={vi.fn()} lessonCount={1} />,
-    );
-    expect(screen.getByText("1 lesson")).toBeInTheDocument();
-
-    rerender(<ModuleCard title="Week 1" index={0} accentColor="blue" onClick={vi.fn()} />);
-    expect(screen.queryByText(/lesson/)).not.toBeInTheDocument();
-  });
-
-  it("renders the updated-label meta row when provided", () => {
-    render(
-      <ModuleCard
-        title="Week 1"
-        index={0}
-        accentColor="blue"
-        onClick={vi.fn()}
-        updatedLabel="Updated 2 days ago"
-      />,
-    );
-    expect(screen.getByText("Updated 2 days ago")).toBeInTheDocument();
-  });
-
   it("renders a progress bar when progress has total > 0", () => {
     render(
       <ModuleCard
@@ -104,45 +76,5 @@ describe("ModuleCard", () => {
       />,
     );
     expect(screen.getByText("Not started yet")).toBeInTheDocument();
-  });
-
-  it("renders a published/draft status badge only when isPublished is provided", () => {
-    const { rerender } = render(
-      <ModuleCard title="Week 1" index={0} accentColor="blue" onClick={vi.fn()} isPublished />,
-    );
-    expect(screen.getByText("Published")).toBeInTheDocument();
-
-    rerender(
-      <ModuleCard
-        title="Week 1"
-        index={0}
-        accentColor="blue"
-        onClick={vi.fn()}
-        isPublished={false}
-      />,
-    );
-    expect(screen.getByText("Unpublished")).toBeInTheDocument();
-  });
-
-  it("renders actions and stops click propagation to the card", () => {
-    const onClick = vi.fn();
-    const onActionClick = vi.fn();
-    render(
-      <ModuleCard
-        title="Week 1"
-        index={0}
-        accentColor="blue"
-        onClick={onClick}
-        actions={
-          <button type="button" onClick={onActionClick}>
-            Menu
-          </button>
-        }
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-    expect(onActionClick).toHaveBeenCalledTimes(1);
-    expect(onClick).not.toHaveBeenCalled();
   });
 });

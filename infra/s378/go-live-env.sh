@@ -53,6 +53,9 @@ GOOGLE_KEY=$(read_env "$CORE" GOOGLE_GENERATIVE_AI_API_KEY)
 # Core — public URLs for app switcher + shared cookie
 set_or_replace "$CORE" BETTER_AUTH_URL "https://dev.eduai.ok.ubc.ca"
 set_or_replace "$CORE" COOKIE_DOMAIN ".eduai.ok.ubc.ca"
+# Prod shares .eduai.ok.ubc.ca, so dev needs its own cookie name or each
+# environment's sign-in overwrites the other's (#2129).
+set_or_replace "$CORE" COOKIE_PREFIX "eduai-dev"
 set_or_replace "$CORE" VITE_EDUAI_URL "https://dev.eduai.ok.ubc.ca"
 set_or_replace "$CORE" VITE_AI_TUTOR_URL "https://dev.aitutor.eduai.ok.ubc.ca"
 set_or_replace "$CORE" VITE_QUESTION_MAKER_URL "https://dev.questionmaker.eduai.ok.ubc.ca"
@@ -60,6 +63,10 @@ set_or_replace "$CORE" VITE_COOKIE_DOMAIN ".eduai.ok.ubc.ca"
 # Core → extension cascade-delete targets (#802)
 set_or_replace "$CORE" QM_BACKEND_URL "http://127.0.0.1:8000"
 set_or_replace "$CORE" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
+# Fleet model map (#2092): which models each CMPS server serves. Without it,
+# every VLLM_FLEET_CHAT_URLS server is assumed to serve VLLM_FLEET_DEFAULT_MODELS,
+# so 9B requests can land on cmps02. The file itself is host-local (GO-LIVE.md).
+set_or_replace "$CORE" FLEET_CONFIG_PATH "/etc/eduai/fleet/fleet.config.json"
 
 # AI Tutor server — Core session + service-key API
 set_or_replace "$AT_SRV" CORE_URL "https://dev.eduai.ok.ubc.ca"

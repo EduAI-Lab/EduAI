@@ -66,6 +66,9 @@ export function AIServiceIndicators() {
     <span data-tour="ai-status" className="hidden sm:inline-flex">
       <SharedAIServiceIndicators
         cloud={cloud}
+        // Hide the chip only when no cloud key is configured, which classifyCloudStatus reports as
+        // `outage`. While loading or unknown it still shows, so a slow or failed poll isn't silent.
+        showCloud={cloud.state !== "outage"}
         cloudLabel="Managed cloud AI"
         ubc={ubc}
         ubcHistory={panel}

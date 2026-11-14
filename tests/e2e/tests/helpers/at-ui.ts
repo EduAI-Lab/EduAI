@@ -191,12 +191,34 @@ export function commandPalette(page: Page) {
 /**
  * The card-level link for a course in a course list.
  *
- * `CourseCard`'s clickable element is a transparent overlay `<a>` carrying only
- * an `aria-label`, so it has no visible text to match on — the href is what
- * identifies it.
+ * Matched by href so it works for both the staff `CourseGridCard` title link and
+ * the student `CourseCard` overlay `<a>`; `.first()` is the title, ahead of the
+ * card's section links.
  */
 export function courseLink(page: Page, courseId: number) {
   return page.locator(`a[href$="/courses/${courseId}"]`).first();
+}
+
+/**
+ * A module/lesson row's title link on a staff course or module page
+ * (`ContentListRow`), named "Module 01: <title>" / "Lesson 1.2: <title>".
+ * Anchored on `: <title>$` so "X" never matches "X (renamed)".
+ */
+export function contentRowLink(scope: Page | Locator, title: string): Locator {
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return scope.getByRole("link", { name: new RegExp(`: ${escaped}$`) });
+}
+
+/** The whole `ContentListRow` for `title`, for its badge, drag handle and ⋯ menu. */
+export function contentRow(scope: Page | Locator, title: string): Locator {
+  // `has` is resolved inside each listitem, so it must be built from the page.
+  const page = "goto" in scope ? scope : scope.page();
+  return scope.getByRole("listitem").filter({ has: contentRowLink(page, title) });
+}
+
+/** A row's ⋯ trigger, named per item ("More options for <title>"). */
+export function contentRowMenu(scope: Page | Locator, title: string): Locator {
+  return contentRow(scope, title).getByRole("button", { name: `More options for ${title}` });
 }
 
 /**
@@ -226,9 +248,23 @@ export async function clickSidebar(page: Page, label: string): Promise<void> {
 }
 
 /**
+ * Open a ⋯ menu and wait for one of its items. Right after a reload the trigger
+ * is painted before it is interactive, and `_app.tsx` remounts the route once
+ * `/api/me` resolves, so a bare click is swallowed or the menu it opened is torn
+ * down. Retry the click until the item shows rather than clicking once.
+ */
+export async function openMenuItem(trigger: Locator, item: Locator): Promise<void> {
+  await expect(async () => {
+    await trigger.click();
+    await expect(item).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
+/**
  * Open a section by its visible label and wait for it to take effect. A course
- * page's sections live in the shell's course menu (links that set `?tab=`);
- * other pages (admin, settings) keep a `PageTabs` tablist. Right after a reload
+ * page's sections live in the shell's course menu, and the admin console's in
+ * its Administration menu (links that set `?tab=`); other pages (settings)
+ * keep a `PageTabs` tablist. Right after a reload
  * either can be painted before it is interactive, so a bare click is retried.
  */
 export async function openTab(page: Page, label: string | RegExp): Promise<void> {
@@ -241,7 +277,7 @@ export async function openTab(page: Page, label: string | RegExp): Promise<void>
     timeout: 30_000,
   });
 
-  const courseMenu = page.getByRole("navigation", { name: "Course" });
+  const courseMenu = page.getByRole("navigation", { name: /^(Course|Administration)$/ });
   if (await courseMenu.count()) {
     const link = courseMenu.getByRole("link", { name: label });
     await expect(async () => {

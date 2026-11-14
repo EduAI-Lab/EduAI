@@ -102,7 +102,13 @@ function renderShell({
   courseNav,
   path = "/courses/c1?tab=materials",
   chatApp,
-}: { courseNav?: CourseNavConfig; path?: string; chatApp?: CourseChatNavOptions } = {}) {
+  user = USER,
+}: {
+  courseNav?: CourseNavConfig;
+  path?: string;
+  chatApp?: CourseChatNavOptions;
+  user?: User;
+} = {}) {
   const router = createMemoryRouter(
     [
       {
@@ -111,7 +117,7 @@ function renderShell({
           <ThemeProvider>
             <PolicyProvider policies={{}}>
               <CoreAppShell
-                user={USER}
+                user={user}
                 title="Intro Biology"
                 courseNav={courseNav}
                 chatApp={chatApp}
@@ -246,6 +252,43 @@ describe("CoreAppShell — Course Chat as its own app (#1996)", () => {
     expect(within(rail).queryByRole("link", { name: "Dashboard" })).toBeNull();
   });
 
+  it("keeps Core's rail for a student, with History right after Course Chat (#2105)", () => {
+    const onNewChat = vi.fn();
+    renderShell({
+      path: "/chat",
+      chatApp: { history, onNewChat },
+      user: { ...USER, role: "STUDENT" },
+    });
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(
+      within(rail).getByRole("button", { name: "Switch app, current app: EduAI Core" }),
+    ).toBeInTheDocument();
+    expect(within(rail).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(within(rail).queryByRole("link", { name: "New chat" })).toBeNull();
+
+    const items = within(rail).getAllByRole("listitem");
+    const chatIndex = items.findIndex((item) =>
+      within(item).queryByRole("link", { name: "Course Chat" }),
+    );
+    expect(
+      within(items[chatIndex + 1]).getByRole("button", { name: "History" }),
+    ).toBeInTheDocument();
+
+    // Course Chat starts a new chat in place instead of reloading the page.
+    fireEvent.click(within(rail).getByRole("link", { name: "Course Chat" }));
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a student's Course Chat entry a plain link when the page has no history", () => {
+    renderShell({ path: "/chat", chatApp: {}, user: { ...USER, role: "STUDENT" } });
+    const rail = screen.getByRole("navigation", { name: "Global" });
+    expect(within(rail).getByRole("link", { name: "Course Chat" })).toHaveAttribute(
+      "href",
+      "/chat",
+    );
+    expect(within(rail).queryByRole("button", { name: "History" })).toBeNull();
+  });
+
   it("stays Core everywhere else", () => {
     renderShell({ path: "/dashboard" });
     const rail = screen.getByRole("navigation", { name: "Global" });
@@ -253,6 +296,90 @@ describe("CoreAppShell — Course Chat as its own app (#1996)", () => {
       within(rail).getByRole("button", { name: "Switch app, current app: EduAI Core" }),
     ).toBeInTheDocument();
     expect(within(rail).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+  });
+});
+
+/** What the stubbed endpoints answer: the badge counts, cron statuses, or an empty list. */
+type StubBody =
+  | { unhandledBugReports: number; pendingInvitations: number }
+  | { jobs: Array<{ name: string; lastRun: { status: string } }> }
+  | { data: never[] };
+
+/** A fetch answering the admin badge endpoints, everything else with an empty list. */
+function stubAdminFetch() {
+  const json = (body: StubBody) => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "Content-Type": "application/json" }),
+    json: () => Promise.resolve(body),
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url === "/api/admin/nav-counts") {
+        return Promise.resolve(json({ unhandledBugReports: 6, pendingInvitations: 0 }));
+      }
+      if (url === "/api/admin/cron-jobs") {
+        return Promise.resolve(
+          json({
+            jobs: [
+              { name: "backup-nightly", lastRun: { status: "ERROR" } },
+              { name: "ai-status-probe", lastRun: { status: "SUCCESS" } },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(json({ data: [] }));
+    }),
+  );
+}
+
+describe("CoreAppShell — Administration menu", () => {
+  beforeEach(stubAdminFetch);
+
+  it("stays beside every admin page with the current page marked", () => {
+    renderShell({ path: "/admin/logs" });
+    const menu = screen.getByRole("navigation", { name: "Administration" });
+    const links = within(menu).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual([
+      "User Management",
+      "AI Management",
+      "Bug Reports",
+      "Invitations",
+      "Cron Jobs",
+      "Logs",
+      "API Access",
+      "Settings",
+    ]);
+    expect(within(menu).getByRole("link", { name: "Logs" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Hide Administration menu" })).toBeInTheDocument();
+  });
+
+  it("shows the unhandled and failed counts, and no badge for a zero count", async () => {
+    renderShell({ path: "/admin/users" });
+    const menu = screen.getByRole("navigation", { name: "Administration" });
+    expect(await within(menu).findByLabelText("6 unhandled")).toBeInTheDocument();
+    expect(await within(menu).findByLabelText("1 failed")).toBeInTheDocument();
+    expect(within(menu).queryByLabelText(/pending/)).not.toBeInTheDocument();
+  });
+
+  it("is not drawn off the admin pages", () => {
+    renderShell({ path: "/dashboard" });
+    expect(screen.queryByRole("navigation", { name: "Administration" })).not.toBeInTheDocument();
+  });
+
+  it("opens as an overlay drawer on tablets", async () => {
+    renderShell({ path: "/admin/cron-jobs" });
+    setViewportWidth(900);
+    fireEvent.click(screen.getByRole("button", { name: "Show Administration menu" }));
+    const drawer = await screen.findByRole("dialog", { name: "Administration menu" });
+    expect(within(drawer).getByRole("link", { name: /Cron Jobs/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });
 
@@ -297,18 +424,19 @@ describe("CoreAppShell — mobile drawer", () => {
     expect(drawer).toHaveAttribute("aria-modal", "true");
     expect(within(drawer).getByText("Test User")).toBeInTheDocument();
     expect(within(drawer).getByText("test@eduai.test")).toBeInTheDocument();
-    expect(within(drawer).getByText("Admin")).toBeInTheDocument();
+    // The role badge (its label is a text-xs span), not the "Admin" rail entry's accordion.
+    expect(within(drawer).getByText("Admin", { selector: "span.text-xs" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: /mode$/ })).toBeInTheDocument();
     expect(within(drawer).getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Log out" })).toBeInTheDocument();
   });
 
-  it("expands Administration and Help inline as accordions", async () => {
+  it("expands Admin and Help inline as accordions", async () => {
     renderShell({ path: "/dashboard" });
     setViewportWidth(375);
     const { drawer } = await openDrawer();
 
-    const admin = within(drawer).getByRole("button", { name: "Administration" });
+    const admin = within(drawer).getByRole("button", { name: "Admin" });
     expect(admin).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(admin);
     expect(admin).toHaveAttribute("aria-expanded", "true");

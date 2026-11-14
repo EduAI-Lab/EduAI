@@ -103,6 +103,7 @@ function wrap() {
       lesson,
       activities: [],
       activitiesTotal: 0,
+      activityCount: 0,
       orderText: "1.1",
       page: 1,
       pageSize: 25,

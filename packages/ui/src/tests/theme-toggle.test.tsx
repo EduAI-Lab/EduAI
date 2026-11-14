@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ThemeProvider } from "../theme-provider";
@@ -55,5 +55,18 @@ describe("ThemeToggle", () => {
     );
     const button = screen.getByRole("button");
     expect(button).toHaveAttribute("type", "button");
+  });
+
+  it("shows what clicking does in a tooltip, matching its accessible name", async () => {
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
+    const button = screen.getByRole("button");
+    act(() => button.focus());
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent(/^Switch to (light|dark) mode$/);
+    expect(tip).toHaveTextContent(button.getAttribute("aria-label")!);
   });
 });

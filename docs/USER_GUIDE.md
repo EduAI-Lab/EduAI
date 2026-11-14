@@ -31,7 +31,7 @@ You remain signed in because Core provides the shared session for all three appl
 - Use the **search/command button** in the header, or `Ctrl+K` / `Cmd+K`, to find destinations and switch courses quickly.
 - Open **Account** in the left navigation bar for Settings and Log out.
 - Use **Help** for the in-product guide. Some controls also have a small **(i)**: hover over or focus it for a one-line summary, or select it for a short explanation linking to the matching Help section.
-- Each app's dashboard has a five-task **Getting started** checklist. **Open** takes you to a task; tick it yourself when you have finished. Progress is saved for your account in this browser only.
+- Each app's dashboard has a five-task **Getting started** checklist on the right. **Open** takes you to a task; tick its circle yourself when you have finished. **Collapse** shrinks it to its progress bar, and **✕** hides it; the checklist button in the header brings it back from any page. Progress, and whether it is collapsed or hidden, is saved for your account in this browser only.
 - Five main pages in each app have a ▶ **Page tour** button in the header. Tours start only when you press it. On the Core and Question Maker dashboards, ▶ plays the app's overview tour, the same one **(?) → Take the tour** offers. Question Maker's checklist and page tours are for instructors and administrators.
 - Use **Report a bug** under **Help** in the left navigation bar (in the menu on a phone) when something does not work. Core, AI Tutor, and Question Maker all open the same form. Include what you were trying to do.
 - Diagnostics are opt-in in every app: turn on **Include diagnostics** to attach recent console and request logs, the page address, and a screenshot of the page (the bug-report form itself is left out). With it off, nothing but your description, bug type, and anonymity choice is sent.
@@ -139,7 +139,7 @@ The selected course controls which material can be retrieved; changing course st
 **Assistive Mode.** Course Chat has an Assist toggle that reformats answers into a predictable structure (top summary, short stages, an explicit "next?" prompt) for readers who find long unbroken prose hard to work through. Turning it on may switch the request to a larger model, so replies can take longer; the progress indicator shows an expected duration and says so when a reply is taking longer than usual. Toggling Assist on the last reply re-generates that reply in place rather than only restyling it. Set your default in
 **Settings → Accessibility**.
 
-**Restrict Course Chat.** Instructors can turn on **Restrict Course Chat to this course** in a course's **Settings** tab so that course chat declines questions unrelated to the course. An administrator can switch the feature off for every course with **Course chat restriction available** in **Administration → Settings**; the course switch then says so.
+**Restrict Course Chat.** Instructors can turn on **Restrict Course Chat to this course** in a course's **Settings** tab so that course chat declines questions unrelated to the course. An administrator can switch the feature off for every course with **Course chat restriction available** in **Admin → Settings**; the course switch then says so.
 
 **Model selection and Auto.** Where the model picker offers **Auto**, EduAI chooses a model per message based on the question. Administrators decide in **AI Management** which Auto modes are available, so the picker may show one, both, or neither. Some models are hosted on UBC hardware; a "degraded" indicator in the header means those machines are busy, not that anything is broken.
 
@@ -223,24 +223,24 @@ Open **Invitations** in Core to invite or manage users within your authorized un
 
 ### Platform administrator
 
-The **Administration** sidebar group provides:
+**Admin** in the sidebar opens **User Management**. Every admin page then lists the others in an **Administration** menu beside it:
 
 - **User Management** — roles, authorized units, and TA course assignments.
 - **AI Management** — AI providers and models.
 - **Bug Reports** — report triage and status updates.
 - **Invitations** — platform invitation management.
-- **Settings** — platform policies and retention/configuration controls.
+- **Cron Jobs** — job status, manual runs, and per-job settings such as how many days deleted course materials are kept before they are purged (**History → Edit settings → Delete after (days)**).
 - **Logs** — audit, security, and system activity.
-- **Cron Jobs** — job status, manual runs, and per-job settings such as how many days deleted course materials are kept before they are purged (**Edit settings → Delete after (days)**).
 - **API Access** — who besides administrators may use an API key, and how much they used in the last 24 hours (see [API access for students and researchers](#api-access-for-students-and-researchers)).
+- **Settings** — platform policies and retention/configuration controls.
 
 **Admin Chatbot** appears separately near the bottom of the navigation bar. It is platform-wide (there is no course selector — name the course in your question) and can both read and change platform state. Any change requires an explicit two-step confirmation: the assistant first previews exactly what it will do, and only applies it after you confirm in a **new** message. A write only succeeded if the assistant reports it did; ask it to re-read the record if you are unsure.
 
 **Turn on Penny, the help assistant, for everyone:** Penny is off until an administrator turns it on.
 
-1. Open **Administration → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on every signed-in page of Core, AI Tutor and Question Maker, for every role.
+1. Open **Admin → Settings** and switch on **Enable Penny, the help assistant** in the **Help assistant (Penny)** card. It then appears on every signed-in page of Core, AI Tutor and Question Maker, for every role.
 2. In the same card, **Students can ask about course material** decides whether students can also ask about the course they are viewing. Instructors and administrators can always ask about their own courses while Penny is on.
-3. Penny answers with the AI providers and models enabled under **Administration → AI Management**. Each user can save their own key in Penny's gear menu; anyone without one uses the platform's configured key. Under **Help assistant tuning** on the AI Management page you can choose the **Default answer model** and how many guide pages one answer may draw on.
+3. Penny answers with the AI providers and models enabled under **Admin → AI Management**. Each user can save their own key in Penny's gear menu; anyone without one uses the platform's configured key. Under **Help assistant tuning** on the AI Management page you can choose the **Default answer model** and how many guide pages one answer may draw on.
 4. To stop Penny during a cost or provider incident, switch off **Enable Penny, the help assistant**. This stops every Penny question, documentation and course material alike, for everyone, administrators included.
 
 Instructors can keep a course's materials out of Penny with the course's own **Let Penny answer from this course** switch.
@@ -253,14 +253,14 @@ Only administrators can use an EduAI API key until an administrator gives someon
 
 **Give access (administrator):**
 
-1. Open **Administration → API Access** and choose **Give API access**, or open the person's **⋮** menu in **User Management** and choose **Give API access**.
+1. Open **Admin → API Access** and choose **Give API access**, or open the person's **⋮** menu in **User Management** and choose **Give API access**.
 2. Pick the person, enter the purpose (for example the project or course), and choose when access ends. It defaults to the end of the current term.
 3. Set the daily limits. They start at 200 requests and 500,000 tokens, counted over the last 24 hours across all of the person's keys.
 4. Choose **Give access**. The person can now create their own key in **Settings → API Keys**.
 
 The API Access page shows each person's last 24 hours of use against their limits. **Revoke** stops their keys at once and disables them; to give access again later, grant it anew and they create a new key. Access also ends by itself on its end date, and their keys stop working then.
 
-Every request made with an API key is recorded against the person: when, which model, the outcome, and how many tokens it used. The prompt and the answer are never stored. These records are kept as long as audit logs (**Administration → Settings**). A daily email summarises the last 24 hours of use and flags anyone near a limit (see the `api-usage-report` job under **Cron Jobs**).
+Every request made with an API key is recorded against the person: when, which model, the outcome, and how many tokens it used. The prompt and the answer are never stored. These records are kept as long as audit logs (**Admin → Settings**). A daily email summarises the last 24 hours of use and flags anyone near a limit (see the `api-usage-report` job under **Cron Jobs**).
 
 **Use your key (student or researcher):**
 

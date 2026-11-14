@@ -64,7 +64,7 @@ export default function AdminApiAccessRoute() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to="/dashboard">Home</Link>
+                <Link to="/dashboard">Core</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -89,6 +89,7 @@ export default function AdminApiAccessRoute() {
           error={access.error}
           onCreateGrant={access.createGrant}
           onRevokeGrant={access.revokeGrant}
+          onUpdateGrant={access.updateGrant}
           initialPerson={initialPerson}
         />
       )}

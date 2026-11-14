@@ -1,3 +1,5 @@
+import { formatDate, type FormatScope } from "~/lib/hydration-format";
+
 export const MAX_API_KEY_EXPIRATION_DAYS = 365;
 
 export const API_KEY_SUPPORTED_ROUTES = [
@@ -51,13 +53,15 @@ export function getApiKeyExpirationStatus(
   return "active";
 }
 
+/** Pass `useFormatScope()` as `scope` when the label renders during SSR (#1941). */
 export function formatExpirationLabel(
   expiresAt: Date | string | null | undefined,
   now = Date.now(),
+  scope: FormatScope = { locale: undefined, timeZone: undefined },
 ): string {
   const status = getApiKeyExpirationStatus(expiresAt, now);
   if (status === "none") return "No expiration";
-  const date = new Date(expiresAt as Date | string).toLocaleDateString();
+  const date = formatDate(expiresAt as Date | string, scope);
   if (status === "expired") return `Expired ${date}`;
   const daysLeft = daysUntilExpiration(expiresAt, now);
   if (daysLeft === 1) return `Expires tomorrow (${date})`;

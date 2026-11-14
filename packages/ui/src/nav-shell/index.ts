@@ -4,7 +4,7 @@ export { GlobalNavRail } from "./global-nav-rail";
 export type { GlobalNavRailProps } from "./global-nav-rail";
 export { MobileNav } from "./mobile-nav";
 export type { MobileNavProps } from "./mobile-nav";
-export { CourseNavMenu } from "./course-nav-menu";
+export { CourseNavMenu, SectionNavMenu } from "./course-nav-menu";
 export { NavTray, RAIL_WIDTH, TRAY_TITLES } from "./nav-trays";
 export {
   NavAnchor,
@@ -15,6 +15,7 @@ export {
 } from "./nav-shared";
 export {
   COURSE_MENU_OPEN_KEY,
+  SECTION_MENU_OPEN_KEY,
   RAIL_COLLAPSED_KEY,
   useNavBreakpoint,
   usePersistedFlag,
@@ -31,4 +32,5 @@ export type {
   NavShellModel,
   NavOpenTray,
   NavTrayKey,
+  SectionNavConfig,
 } from "./types";

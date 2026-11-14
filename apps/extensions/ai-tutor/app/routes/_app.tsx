@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link, Outlet, useLocation, useMatches, useNavigate } from "react-router";
 import {
+  GettingStartedButton,
   OnboardingChecklist,
   PageTourButton,
   AIServiceHistoryPanel,
@@ -9,6 +10,7 @@ import {
   CommandSearchButton,
   NavShell,
   ThemeToggle,
+  TRAY_TITLES,
   termLabel,
   useAiServiceStatus,
   useHistoryOnOpen,
@@ -18,12 +20,15 @@ import {
   type NavShellCourse,
   type NavShellEntry,
   type NavShellModel,
+  type SectionNavConfig,
 } from "@eduai/ui";
 import { assistantPlacementFor, ExtensionHelpAssistant } from "@eduai/ui/assistant";
 import { getCoreDashboardUrl, getCoreStatusUrl, getCoreUrl } from "../lib/coreUrl";
 import {
   IconArrowLeft,
   IconBooks,
+  IconBrain,
+  IconBug,
   IconDashboard,
   IconHelpCircle,
   IconSettings,
@@ -35,8 +40,21 @@ import { toast } from "sonner";
 import api from "~/lib/api";
 import { useLocalUser } from "~/hooks/useLocalUser";
 import { getNavForUser } from "~/lib/rbac/nav";
+import {
+  ADMIN_SECTIONS,
+  adminSectionFrom,
+  adminSectionHref,
+  type AdminSectionKey,
+} from "~/lib/admin-sections";
 import type { AtNavItemKey, AtUser } from "~/lib/rbac/types";
 import { courseCode, courseName, courseTerm, courseYear } from "~/lib/course-display";
+
+/** The icons the admin console's tabs had, now on its Administration menu. */
+const ADMIN_SECTION_ICONS = {
+  "bug-reports": IconBug,
+  "ai-settings": IconSettings,
+  "ai-oversight": IconBrain,
+} satisfies Record<AdminSectionKey, Icon>;
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import { getRouteCourseId } from "~/lib/route-course";
 import { CommandPalette, AITUTOR_COMMAND_EVENT } from "~/components/command/CommandPalette";
@@ -149,7 +167,8 @@ function HeaderBreadcrumbs() {
   // Anchors the lesson tour's "climb back up a level" step.
   return (
     <div data-tour="shell-breadcrumbs" className="min-w-0">
-      <ShellBreadcrumbs items={items} />
+      {/* The trail opens with the app's name, so it's always clear you're in AI Tutor. */}
+      <ShellBreadcrumbs items={[{ label: "AI Tutor", href: "/dashboard" }, ...items]} />
     </div>
   );
 }
@@ -229,6 +248,22 @@ function AppLayoutInner() {
     }
   };
 
+  // The admin console's sections sit in the Administration menu beside it,
+  // as Core's admin pages do.
+  const adminNav: SectionNavConfig | undefined =
+    pathname === "/admin" && user.role === "ADMIN"
+      ? {
+          title: TRAY_TITLES.admin,
+          activeKey: adminSectionFrom(search),
+          links: ADMIN_SECTIONS.map(({ key, label }) => ({
+            key,
+            label,
+            href: adminSectionHref(key),
+            icon: ADMIN_SECTION_ICONS[key],
+          })),
+        }
+      : undefined;
+
   const model = buildAtNavModel({
     user,
     pathname,
@@ -249,6 +284,7 @@ function AppLayoutInner() {
       // header's title only labels the mobile bar.
       headingInPage
       courseNav={courseNav}
+      sectionNav={adminNav}
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
@@ -281,6 +317,13 @@ function AppLayoutInner() {
             coreCourseId={coreCourseId}
             placement={assistantPlacementFor(pathname, CHAT_SCREEN_PREFIXES)}
           />
+          <GettingStartedButton
+            platform="ai-tutor"
+            userId={user.id}
+            role={user.role}
+            pathname={pathname}
+            navigate={navigate}
+          />
           <PageTourButton platform="ai-tutor" pathname={pathname} role={user.role} />
           {/* Last, so it sits in the header's top-right corner (#1754). The
               bug report moved into the rail's Help tray. */}
@@ -300,15 +343,19 @@ function AppLayoutInner() {
         </>
       }
     >
-      {pathname === "/dashboard" && (
+      {/* The admin dashboard places its own Getting started card in its grid. */}
+      {pathname === "/dashboard" && user.role !== "ADMIN" ? (
         <OnboardingChecklist
           platform="ai-tutor"
           userId={user.id}
           role={user.role}
           navigate={navigate}
-        />
+        >
+          <Outlet />
+        </OnboardingChecklist>
+      ) : (
+        <Outlet />
       )}
-      <Outlet />
     </NavShell>
   );
 }

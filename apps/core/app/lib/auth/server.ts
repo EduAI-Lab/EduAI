@@ -9,7 +9,7 @@ import { z } from "zod";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
-import { resolveAuthCookieDomain } from "./cookie-domain";
+import { resolveAuthCookieDomain, resolveAuthCookiePrefix } from "./cookie-domain";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import {
   extractPolicyPassword,
@@ -25,6 +25,7 @@ import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 import { getApiKeyRateLimitConfig } from "../api-keys/rate-limit";
 import { asJsonObject, asText } from "~/lib/json-value";
 import { fireAndForget } from "~/lib/logging.server";
+import { lastSignInSessionHooks } from "./last-sign-in.server";
 import { recordAuthEvent } from "./auth-events.server";
 import { redeemPendingSelfEnrollments } from "~/lib/courses/pending-self-enrollment.server";
 import { isSmtpConfigured, sendEmail } from "../email/mailer.server";
@@ -39,6 +40,7 @@ export const authBaseURL =
   "http://localhost:3000";
 
 const cookieDomain = resolveAuthCookieDomain();
+const cookiePrefix = resolveAuthCookiePrefix();
 const useSecureCookies = authBaseURL.startsWith("https://");
 
 /** A key's requested lifetime in seconds, as the api-key plugin takes it. */
@@ -578,6 +580,8 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
+    // Feeds the admin dashboard's "Accounts that never signed in".
+    session: lastSignInSessionHooks,
     account: {
       create: {
         // #339: stamp passwordChangedAt on the same write as the password so
@@ -672,6 +676,9 @@ export const auth = betterAuth({
   },
   advanced: {
     useSecureCookies,
+    // Dev uses its own prefix so its session cookie doesn't overwrite prod's
+    // on the shared .eduai.ok.ubc.ca domain (#2129).
+    cookiePrefix,
     // Only enable for a real public suffix (e.g. ".eduai.ok.ubc.ca"). Loopback
     // COOKIE_DOMAIN values are ignored — Domain=localhost plus the host-only
     // expiry on login deletes the session that was just issued.

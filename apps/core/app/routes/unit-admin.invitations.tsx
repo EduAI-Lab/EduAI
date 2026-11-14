@@ -34,10 +34,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuWithTooltip,
   Select,
   SelectContent,
   SelectItem,
@@ -56,11 +55,15 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { asPresentText } from "~/lib/json-value";
+import { formatDate, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 // Unit admins may invite instructors and students only.
 type InviteRole = "INSTRUCTOR" | "STUDENT";
@@ -97,12 +100,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return { user: session.user };
 }
 
-const formatDate = (s: string) =>
-  new Date(s).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+const formatInviteDate = (s: string, scope: FormatScope) =>
+  formatDate(
+    s,
+    { ...scope, locale: "en-US" },
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+  );
 
 function StatusBadge({ invite }: { invite: Invitation }) {
   if (invite.status === "PENDING" && invite.isExpired) {
@@ -144,6 +151,7 @@ export default function UnitAdminInvitationsPage() {
   // Invite form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const formatScope = useFormatScope();
   const [role, setRole] = useState<InviteRole>("STUDENT");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -209,7 +217,7 @@ export default function UnitAdminInvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status, data?.details));
+        setFormError(errorMessage(data?.error, res.status, data?.fields ?? data?.details));
         return;
       }
       setDialogOpen(false);
@@ -280,7 +288,7 @@ export default function UnitAdminInvitationsPage() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to="/dashboard">Home</Link>
+                <Link to="/dashboard">Core</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -324,13 +332,18 @@ export default function UnitAdminInvitationsPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span>{notice.message}</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => setNotice(null)}
-                      aria-label="Dismiss"
-                    >
-                      ✕
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setNotice(null)}
+                          aria-label="Dismiss"
+                        >
+                          ✕
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Dismiss</TooltipContent>
+                    </Tooltip>
                   </div>
                   {notice.link && (
                     <div className="mt-2 flex items-center gap-2">
@@ -403,15 +416,16 @@ export default function UnitAdminInvitationsPage() {
                                   <StatusBadge invite={invite} />
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  {formatDate(invite.createdAt)}
+                                  {formatInviteDate(invite.createdAt, formatScope)}
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  {formatDate(invite.expiresAt)}
+                                  {formatInviteDate(invite.expiresAt, formatScope)}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {invite.status === "PENDING" && (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
+                                    <DropdownMenuWithTooltip
+                                      tooltip="Invitation actions"
+                                      trigger={
                                         <Button
                                           size="sm"
                                           variant="ghost"
@@ -420,7 +434,8 @@ export default function UnitAdminInvitationsPage() {
                                         >
                                           <IconDots className="h-4 w-4" />
                                         </Button>
-                                      </DropdownMenuTrigger>
+                                      }
+                                    >
                                       <DropdownMenuContent align="end">
                                         <DropdownMenuItem
                                           onClick={() => handleResend(invite)}
@@ -437,7 +452,7 @@ export default function UnitAdminInvitationsPage() {
                                           Cancel invitation
                                         </DropdownMenuItem>
                                       </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    </DropdownMenuWithTooltip>
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -548,6 +563,7 @@ function errorMessage(code: JsonValue, status: number, details?: JsonValue): str
       return "A user with that email already exists.";
     case "FORBIDDEN_ROLE":
       return "You can only invite instructors and students.";
+    case "VALIDATION_ERROR":
     case "Invalid input":
       // Surface the specific field reason (e.g. the UBC-email gate) when present.
       return firstFieldError(details) ?? "Please check the fields and try again.";

@@ -61,6 +61,7 @@ import {
 } from "~/lib/courses/pending-self-enrollment.server";
 
 const originalCookieDomain = process.env.COOKIE_DOMAIN;
+const originalCookiePrefix = process.env.COOKIE_PREFIX;
 
 function makeLoaderArgs(url = "http://localhost/auth/login") {
   return {
@@ -89,12 +90,15 @@ beforeEach(() => {
   vi.mocked(redeemPendingSelfEnrollments).mockResolvedValue([]);
   vi.mocked(devQuickLoginOptions).mockReturnValue(null);
   delete process.env.COOKIE_DOMAIN;
+  delete process.env.COOKIE_PREFIX;
   authServerMocks.authBaseURL = "http://localhost:3000";
 });
 
 afterEach(() => {
   if (originalCookieDomain === undefined) delete process.env.COOKIE_DOMAIN;
   else process.env.COOKIE_DOMAIN = originalCookieDomain;
+  if (originalCookiePrefix === undefined) delete process.env.COOKIE_PREFIX;
+  else process.env.COOKIE_PREFIX = originalCookiePrefix;
 });
 
 describe("auth/login loader", () => {
@@ -365,6 +369,38 @@ describe("auth/login action", () => {
     expect(cookies).not.toContain(
       "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.eduai.ok.ubc.ca",
     );
+  });
+
+  it("expires only dev's own cookie names when COOKIE_PREFIX is set (#2129)", async () => {
+    process.env.COOKIE_DOMAIN = ".eduai.ok.ubc.ca";
+    process.env.COOKIE_PREFIX = "eduai-dev";
+    authServerMocks.authBaseURL = "https://dev.eduai.ok.ubc.ca";
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+        status: 200,
+        headers: {
+          "Set-Cookie": "__Secure-eduai-dev.session_token=fresh; Domain=.eduai.ok.ubc.ca; Path=/",
+        },
+      }),
+    );
+
+    const res = (await action(
+      makeActionArgs({
+        email: "a@ubc.ca",
+        password: "correct-password-123",
+        redirectTo: "/dashboard",
+      }),
+    )) as Response;
+    const cookies = res.headers.getSetCookie();
+
+    expect(cookies).toContain(
+      "__Secure-eduai-dev.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+    expect(cookies).toContain(
+      "__Secure-eduai-dev.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.ok.ubc.ca",
+    );
+    // Prod's cookie on the shared domain must survive a dev sign-in.
+    expect(cookies.some((c) => c.startsWith("__Secure-better-auth.session_token="))).toBe(false);
   });
 
   it("does not expire the session cookie for loopback COOKIE_DOMAIN", async () => {

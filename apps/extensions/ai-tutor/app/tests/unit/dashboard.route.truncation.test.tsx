@@ -39,8 +39,8 @@ function renderDashboard(role: string, courseTotal: number, courseList = courses
       courses: courseList,
       courseTotal,
       submissions: [],
-      adminUsers: null,
-      adminBugReports: [],
+      adminDashboard: null,
+      adminRecentTraces: null,
       dashboardStats: null,
     },
   } as unknown as Route.ComponentProps;
@@ -82,9 +82,8 @@ describe("DashboardHome — truncation disclosure (#1208)", () => {
   });
 
   it("discloses the bounded page to an ADMIN", () => {
-    // Admin's right panel is bug-report triage, not a course panel, so the
-    // disclosure has to ride on the course list itself — it was the one role
-    // that got a silently partial list.
+    // Admin's courses are a short preview card, so the disclosure has to ride
+    // on that card — it was the one role that got a silently partial list.
     renderDashboard("ADMIN", 4312);
 
     expect(screen.getByTestId("truncated-list-notice")).toHaveTextContent(
@@ -93,22 +92,22 @@ describe("DashboardHome — truncation disclosure (#1208)", () => {
   });
 
   it("counts the ADMIN list's rendered rows, not the page it was given", () => {
-    // The list renders a 5-row preview of the page. Reporting the page length
-    // here would claim 40 rows are on screen when 5 are.
+    // The Courses card renders a 4-row preview of the page. Reporting the page
+    // length here would claim 40 rows are on screen when 4 are.
     renderDashboard("ADMIN", 4312, pageOf(40));
 
     expect(screen.getByTestId("truncated-list-notice")).toHaveTextContent(
-      "Showing 5 of 4,312 courses",
+      "Showing 4 of 4,312 courses",
     );
   });
 
   it("still discloses to an ADMIN whose page holds every course", () => {
     // The regression this pins: with total === page length there is nothing
-    // "past the page", but the 5-row preview still hides the rest, so counting
+    // "past the page", but the 4-row preview still hides the rest, so counting
     // the page would suppress the notice and truncate silently again.
     renderDashboard("ADMIN", 8, pageOf(8));
 
-    expect(screen.getByTestId("truncated-list-notice")).toHaveTextContent("Showing 5 of 8 courses");
+    expect(screen.getByTestId("truncated-list-notice")).toHaveTextContent("Showing 4 of 8 courses");
   });
 
   it("says nothing when the page already holds every course", () => {

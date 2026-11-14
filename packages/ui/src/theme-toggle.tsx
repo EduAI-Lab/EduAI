@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { IconSun, IconMoon } from "@tabler/icons-react";
 import { useTheme } from "./theme-provider";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "./utils";
 
 export interface ThemeToggleProps {
@@ -22,21 +23,27 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
   function toggleTheme() {
     setTheme(isDark ? "light" : "dark");
   }
+  const label = isDark ? "Switch to light mode" : "Switch to dark mode";
   return (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      className={cn(
-        "flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors cursor-pointer hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
-    >
-      {isDark ? (
-        <IconSun size={18} aria-hidden="true" />
-      ) : (
-        <IconMoon size={18} aria-hidden="true" />
-      )}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={label}
+          className={cn(
+            "flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors cursor-pointer hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            className,
+          )}
+        >
+          {isDark ? (
+            <IconSun size={18} aria-hidden="true" />
+          ) : (
+            <IconMoon size={18} aria-hidden="true" />
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }

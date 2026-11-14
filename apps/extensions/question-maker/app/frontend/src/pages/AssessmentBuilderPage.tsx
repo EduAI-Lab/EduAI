@@ -159,6 +159,9 @@ const AssessmentBuilderPage = () => {
   const [isWordExporting, setIsWordExporting] = useState(false);
   const [isDeletingAssessment, setIsDeletingAssessment] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  // Ids snapshotted when the confirm opens; null while closed.
+  const [bulkReviewIds, setBulkReviewIds] = useState<number[] | null>(null);
+  const [isBulkReviewing, setIsBulkReviewing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -252,15 +255,24 @@ const AssessmentBuilderPage = () => {
     [questionVariantEntries, assessmentTopicIds],
   );
 
-  const hasDraftQuestions = useMemo(() => {
-    if (!assessment?.sections) return false;
+  /** Unique draft variant ids placed in this assessment's sections. */
+  const draftVariantIds = useMemo(() => {
+    if (!assessment?.sections) return [];
     const variantIdsInSections = new Set(
       assessment.sections.flatMap((s) => (s.sectionVariants ?? []).map((l) => l.variantId)),
     );
-    return questionVariantEntries.some(
-      (e) => variantIdsInSections.has(e.variant.id) && (e.isDraft ?? e.variant.isDraft === true),
-    );
+    return [
+      ...new Set(
+        questionVariantEntries
+          .filter(
+            (e) =>
+              variantIdsInSections.has(e.variant.id) && (e.isDraft ?? e.variant.isDraft === true),
+          )
+          .map((e) => e.variant.id),
+      ),
+    ];
   }, [assessment?.sections, questionVariantEntries]);
+  const hasDraftQuestions = draftVariantIds.length > 0;
 
   const hasQuestions = useMemo(() => {
     if (!assessment?.sections) return false;
@@ -419,6 +431,32 @@ const AssessmentBuilderPage = () => {
 
   const handleViewQuestion = (entry: QuestionVariantEntry) => {
     setViewEntry(entry);
+  };
+
+  // Sequential so sibling-variant review pushes to Core don't race.
+  const handleMarkAllReviewed = async () => {
+    const ids = bulkReviewIds ?? [];
+    setIsBulkReviewing(true);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await questionService.updateVariant(id, { isDraft: false });
+      } catch {
+        failed += 1;
+      }
+    }
+    await refreshQuestionsAndAssessment();
+    setIsBulkReviewing(false);
+    setBulkReviewIds(null);
+    if (failed === 0) {
+      toast("Drafts reviewed", {
+        description: `${ids.length} question${ids.length === 1 ? "" : "s"} marked as reviewed.`,
+      });
+    } else {
+      toast.error("Some drafts were not reviewed", {
+        description: `${ids.length - failed} of ${ids.length} marked as reviewed; ${failed} failed. Please try again.`,
+      });
+    }
   };
 
   const handleToggleDraft = async (entry: QuestionVariantEntry, nextDraft: boolean) => {
@@ -801,6 +839,30 @@ const AssessmentBuilderPage = () => {
           )}
         </div>
 
+        {hasDraftQuestions && !readOnly && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning-500/30 bg-warning-100 px-4 py-3 text-sm text-warning-800"
+          >
+            <span className="flex items-center gap-2">
+              <IconAlertTriangle className="size-4 shrink-0" aria-hidden />
+              Review all draft questions before exporting.
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={isBulkReviewing}
+              onClick={() => setBulkReviewIds(draftVariantIds)}
+            >
+              <IconCircleCheck className="size-4" />
+              Mark all {draftVariantIds.length} draft{draftVariantIds.length === 1 ? "" : "s"}{" "}
+              reviewed
+            </Button>
+          </div>
+        )}
+
         {/* Summary — at-a-glance stats + difficulty mix */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
@@ -1040,6 +1102,19 @@ const AssessmentBuilderPage = () => {
         description="This action cannot be undone. All sections and questions in this assessment will be removed."
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
+        closeOnConfirm={false}
+      />
+
+      <ConfirmDialog
+        open={bulkReviewIds !== null}
+        onOpenChange={(open) => {
+          if (!open && !isBulkReviewing) setBulkReviewIds(null);
+        }}
+        onConfirm={handleMarkAllReviewed}
+        title={`Mark ${bulkReviewIds?.length ?? 0} draft question${bulkReviewIds?.length === 1 ? "" : "s"} as reviewed?`}
+        description="Reviewed questions can be exported and used in assessments."
+        confirmLabel="Mark as reviewed"
+        isLoading={isBulkReviewing}
         closeOnConfirm={false}
       />
     </>

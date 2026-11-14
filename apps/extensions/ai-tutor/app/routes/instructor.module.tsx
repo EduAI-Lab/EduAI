@@ -20,14 +20,13 @@
  */
 import type { FormEvent } from "react";
 import { useOptimistic, useRef, useState } from "react";
-import { useNavigate, useNavigation, useParams, useSearchParams } from "react-router";
+import { useNavigation, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { IconNotebook, IconPlus, IconUpload } from "@tabler/icons-react";
 import {
   Button,
   Card,
   CardContent,
-  ConfirmDialog,
   DetailPageScaffold,
   Dialog,
   DialogContent,
@@ -48,10 +47,18 @@ import {
   DragHandle,
   Textarea,
 } from "@eduai/ui";
-import { LessonCard } from "../components/lessons/LessonCard";
-import { ModuleHero } from "../components/lessons/ModuleHero";
+import { contentExcerpt } from "../components/lessons/LessonCard";
+import { ContentList, ContentListRow } from "../components/courses/ContentListRow";
+import {
+  BANNER_PRIMARY_ACTION_CLASS,
+  BANNER_SECONDARY_ACTION_CLASS,
+  BannerBadge,
+  CourseHeader,
+} from "../components/layout/CourseHeader";
 import { PublishMenu } from "../components/PublishMenu";
-import { accentForCourse } from "../lib/course-display";
+import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { lessonPublishBlockedReason } from "~/lib/publish-cascade";
+import { accentForCourse, courseCode } from "../lib/course-display";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
 import type { Course, Lesson, Module, ModuleDetail } from "../lib/types";
 import type { Route } from "./+types/instructor.module";
@@ -60,7 +67,7 @@ import { useAtPermissions } from "../hooks/useAtPermissions";
 import { requireClientUser } from "~/lib/client-auth";
 import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
-import { splitTitle } from "~/lib/course-title";
+import { splitTitle, titleName } from "~/lib/course-title";
 import { PaginationControls } from "~/components/common/PaginationControls";
 import { ListSearchInput } from "~/components/common/ListSearchInput";
 import { MoveToPositionDialog } from "~/components/common/MoveToPositionDialog";
@@ -71,6 +78,7 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { publishedCount, treeCounts } from "~/lib/tree-counts";
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -113,6 +121,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     module,
     lessons: lessonsPage.data,
     lessonsTotal: lessonsPage.total,
+    lessonCounts: treeCounts(lessonsPage),
     moduleOrder: moduleContext.moduleOrdinal,
     page: lessonsPage.page,
     pageSize: lessonsPage.pageSize,
@@ -126,7 +135,6 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
  * on both the course and module being published.
  */
 export default function InstructorModuleLessons({ loaderData }: Route.ComponentProps) {
-  const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
   const { moduleId } = useParams();
@@ -137,6 +145,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     module,
     lessons: initialLessons,
     lessonsTotal: initialLessonsTotal,
+    lessonCounts: initialLessonCounts,
     moduleOrder,
     page,
     pageSize,
@@ -147,6 +156,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   // `total` is state, not a loader constant — refresh/create/import replace
   // `lessons`, and the pager reads this.
   const [lessonsTotal, setLessonsTotal] = useState(initialLessonsTotal);
+  // `lessonsTotal` counts search matches; the banner and heading need the module's.
+  const [lessonCounts, setLessonCounts] = useState(initialLessonCounts);
   // #1207: reorder works across pages now via `PATCH /lessons/:id/position`;
   // it is only disabled while a search is active, because a filtered list hides
   // the rows between two visible matches.
@@ -196,6 +207,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     setPrevInitialLessons(initialLessons);
     setLessons(initialLessons);
     setLessonsTotal(initialLessonsTotal);
+    setLessonCounts(initialLessonCounts);
   }
 
   const goToPage = (nextPage: number) => {
@@ -228,6 +240,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       const lessonData = await api.lessonsForModule(numericModuleId, { page, search });
       setLessons(lessonData.data);
       setLessonsTotal(lessonData.total);
+      setLessonCounts(treeCounts(lessonData));
     } catch (error) {
       console.error("Failed to refresh lessons", error);
     }
@@ -531,31 +544,42 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       : { label: "Module" },
   ]);
 
-  const publishedCount = oLessons.filter((lesson) => lesson.isPublished).length;
-  const heroStats = [
-    { label: oLessons.length === 1 ? "Lesson" : "Lessons", value: oLessons.length, accent: true },
-    { label: "Published", value: publishedCount },
-    { label: "Unpublished", value: oLessons.length - publishedCount },
-  ];
+  const moduleLabel = moduleOrder > 0 ? `Module ${String(moduleOrder).padStart(2, "0")}` : "Module";
+  const lessonMeta =
+    lessonCounts.all === 0
+      ? null
+      : `${lessonCounts.all} ${lessonCounts.all === 1 ? "lesson" : "lessons"} · ` +
+        `${publishedCount(lessonCounts, oLessons)} published`;
 
   return (
     <DetailPageScaffold
       padding="app"
       hero={
-        <ModuleHero
-          order={moduleOrder > 0 ? moduleOrder : undefined}
-          title={module?.title || "Module"}
-          description={module?.description}
-          accentColor={accentColor}
-          isPublished={module?.isPublished}
-          stats={heroStats}
+        <CourseHeader
+          eyebrow={course ? `${moduleLabel} · ${courseCode(course)}` : moduleLabel}
+          title={titleName(module?.title || "Module")}
+          accentColor={accentColor ?? "var(--primary)"}
+          badges={
+            module ? (
+              <BannerBadge>{module.isPublished ? "Published" : "Unpublished"}</BannerBadge>
+            ) : undefined
+          }
+          meta={
+            <>
+              {module?.description ? (
+                <span className="line-clamp-2">{module.description}</span>
+              ) : null}
+              {lessonMeta && <span className="mt-0.5 block text-xs opacity-90">{lessonMeta}</span>}
+            </>
+          }
           actions={
             <PermissionGate allow={perms.canManageContent}>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                className={BANNER_SECONDARY_ACTION_CLASS}
+                aria-expanded={showImport}
                 onClick={() => {
                   if (!showImport) {
                     ensureSourceCoursesLoaded();
@@ -571,7 +595,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               <Button
                 type="button"
                 size="sm"
-                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+                className={BANNER_PRIMARY_ACTION_CLASS}
                 onClick={() => setCreateOpen(true)}
               >
                 <IconPlus size={15} aria-hidden="true" />
@@ -855,17 +879,23 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </Dialog>
       </PermissionGate>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-foreground">
+          Lessons
+          <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+            ({lessonCounts.all})
+          </span>
+        </h2>
         <ListSearchInput
           value={search}
           label="Search lessons"
           placeholder="Search lessons…"
           onSearchChange={setLessonSearch}
         />
-        {searching && perms.canManageContent ? (
-          <p className="text-sm text-muted-foreground">Clear the search to reorder lessons.</p>
-        ) : null}
       </div>
+      {searching && perms.canManageContent ? (
+        <p className="text-sm text-muted-foreground">Clear the search to reorder lessons.</p>
+      ) : null}
 
       {oLessons.length === 0 ? (
         <Card>
@@ -883,37 +913,33 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         <SortableProvider
           ids={oLessons.map((l) => l.id)}
           onReorder={reorderLessonsList}
-          strategy="grid"
+          strategy="list"
           disabled={!perms.canManageContent || lessonsTotal < 2 || reorderingLessons || searching}
         >
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <ContentList label="Lessons">
             {oLessons.map((lesson, idx) => {
-              const canPublish = course?.isPublished && module?.isPublished;
-              const blocked = !lesson.isPublished && !canPublish;
-              const parentName = !course?.isPublished
-                ? course?.title || "the parent course"
-                : !module?.isPublished
-                  ? module?.title || "the parent module"
-                  : null;
-              const tooltipMessage =
-                blocked && parentName
-                  ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
-                  : null;
+              const tooltipMessage = lessonPublishBlockedReason(lesson, course, module);
+              const blocked = tooltipMessage !== null;
               const busy = publishingId === lesson.id;
               const canReorder = perms.canManageContent && lessonsTotal > 1 && !searching;
               // Absolute 1-based ordinal, so numbering and the "3.2" order text
               // stay correct on page 2 instead of restarting at 1 (#1207).
               const ordinal = absoluteOrdinal(page, pageSize, idx) + 1;
+              const preview = lesson.contentMd?.trim() ? contentExcerpt(lesson.contentMd) : null;
               return (
                 <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
                   {({ handleProps }) => (
-                    <LessonCard
-                      index={ordinal}
-                      orderText={moduleOrder > 0 ? `${moduleOrder}.${ordinal}` : undefined}
-                      title={lesson.title}
-                      content={lesson.contentMd}
-                      accentColor={accentColor}
-                      onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
+                    <ContentListRow
+                      kind="Lesson"
+                      orderLabel={
+                        moduleOrder > 0
+                          ? `${moduleOrder}.${ordinal}`
+                          : String(ordinal).padStart(2, "0")
+                      }
+                      title={titleName(lesson.title)}
+                      summary={preview}
+                      href={`/instructor/lesson/${lesson.id}`}
+                      accentColor={accentColor ?? "var(--primary)"}
                       isPublished={lesson.isPublished}
                       leading={
                         canReorder ? (
@@ -923,13 +949,14 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                           />
                         ) : undefined
                       }
-                      menuSlot={
+                      menu={
                         perms.canPublishContent || perms.canManageContent ? (
                           <PublishMenu
                             isPublished={lesson.isPublished}
                             pending={busy}
                             blockedReason={tooltipMessage}
                             itemLabel="lesson"
+                            itemTitle={titleName(lesson.title)}
                             onToggle={
                               perms.canPublishContent
                                 ? () => {
@@ -963,19 +990,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 </SortableItem>
               );
             })}
-            <PermissionGate allow={perms.canManageContent}>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="group flex min-h-[8rem] flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <span className="flex size-9 items-center justify-center rounded-full bg-muted transition-colors group-hover:bg-primary/10">
-                  <IconPlus size={18} aria-hidden="true" />
-                </span>
-                <span className="text-sm font-semibold">Add lesson</span>
-              </button>
-            </PermissionGate>
-          </div>
+          </ContentList>
         </SortableProvider>
       )}
 
@@ -1009,27 +1024,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           if (movingLesson) return moveLesson(movingLesson.id, position);
         }}
       />
-      <ConfirmDialog
-        open={pendingPublish !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingPublish(null);
-        }}
-        title={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? `Unpublish "${pendingPublish.title}"?`
-              : `Publish "${pendingPublish.title}"?`
-            : ""
-        }
-        description={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? "Students will lose access to this content."
-              : "Students will be able to see this content."
-            : ""
-        }
-        confirmLabel={pendingPublish?.isPublished ? "Unpublish" : "Publish"}
-        variant={pendingPublish?.isPublished ? "destructive" : "default"}
+      <PublishConfirmDialog
+        target={pendingPublish}
+        onCancel={() => setPendingPublish(null)}
         onConfirm={() => {
           if (!pendingPublish) return;
           void togglePublish(pendingPublish.id, pendingPublish.isPublished);

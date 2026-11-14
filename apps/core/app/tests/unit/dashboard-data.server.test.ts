@@ -1,14 +1,14 @@
 /**
  * The dashboard resolves its data in the route's SSR loader (#1220). This pins
  * the per-role query gating that used to live in the client bodies (#1041):
- *   - ADMIN reads a `countOnly` active-course total and the platform user
- *     total; it never fetches a page of course rows it wouldn't render.
  *   - UNIT_ADMIN resolves its access-scoped course list exactly once and derives
  *     the stats, the visible total and the active total from it — one
  *     `buildCourseListFilter` + one course read, not three — and never reads the
  *     platform user total.
  *   - The course-card roles (INSTRUCTOR/TA/STUDENT) fetch exactly one small
  *     page and expose `courseTotal`, with no admin-only aggregates.
+ *
+ * ADMIN has its own loader, pinned in `admin-dashboard-data.server.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,19 +49,6 @@ beforeEach(() => {
 });
 
 describe("loadDashboardData query gating", () => {
-  it("ADMIN takes one active-course total read and a platform user total", async () => {
-    const data = await loadDashboardData(userWith("ADMIN"));
-
-    expect(mockListCourses).toHaveBeenCalledTimes(1);
-    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), {
-      countOnly: true,
-      isActive: true,
-    });
-    expect(data.userTotal).toEqual(expect.any(Number));
-    expect(data.activeCourseTotal).toEqual(expect.any(Number));
-    expect(data.courses).toEqual([]);
-  });
-
   it("UNIT_ADMIN resolves its course scope once and derives both totals from it", async () => {
     const courseFindMany = vi.mocked(prisma.course.findMany);
     courseFindMany.mockResolvedValue([
@@ -77,7 +64,6 @@ describe("loadDashboardData query gating", () => {
     expect(mockListCourses).not.toHaveBeenCalled();
     expect(data.courseTotal).toBe(2);
     expect(data.activeCourseTotal).toBe(1);
-    expect(data.userTotal).toBeUndefined();
     expect(data.courses).toEqual([]);
   });
 
@@ -90,10 +76,9 @@ describe("loadDashboardData query gating", () => {
     const data = await loadDashboardData(userWith("STUDENT"));
 
     expect(mockListCourses).toHaveBeenCalledTimes(1);
-    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), { pageSize: 5 });
+    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), { pageSize: 24 });
     expect(data.courseTotal).toBe(3);
     expect(data.courses).toHaveLength(1);
-    expect(data.userTotal).toBeUndefined();
     expect(data.activeCourseTotal).toBeUndefined();
   });
 

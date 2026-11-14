@@ -33,8 +33,7 @@ import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-r
 import {
   Button,
   Card,
-  ConfirmDialog,
-  CourseHeroCard,
+  Checkbox,
   DetailPageScaffold,
   Dialog,
   DialogContent,
@@ -60,7 +59,19 @@ import {
   Textarea,
 } from "@eduai/ui";
 import { PublishMenu } from "../components/PublishMenu";
-import { ModuleCard } from "../components/courses/ModuleCard";
+import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { publishLessons, unpublishedLessons } from "~/lib/publish-cascade";
+import { ContentList, ContentListRow } from "../components/courses/ContentListRow";
+import { CourseNextSteps } from "../components/courses/CourseNextSteps";
+import { CourseBannerMenu } from "../components/courses/CourseBannerMenu";
+import { useCoursePublishToggle } from "../components/courses/useCoursePublishToggle";
+import {
+  BANNER_PRIMARY_ACTION_CLASS,
+  BANNER_SECONDARY_ACTION_CLASS,
+  BannerBadge,
+  CourseHeader,
+} from "../components/layout/CourseHeader";
+import { titleName } from "~/lib/course-title";
 import {
   accentForCourse,
   courseCode,
@@ -70,7 +81,7 @@ import {
 } from "../lib/course-display";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
 import type { ModuleCreatePayload } from "../lib/api";
-import type { Course, Module } from "../lib/types";
+import type { Course, Lesson, Module } from "../lib/types";
 import type { Route } from "./+types/instructor.course";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "../hooks/useLocalUser";
@@ -95,6 +106,7 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
+import { publishedCount, treeCounts } from "~/lib/tree-counts";
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -127,6 +139,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     course,
     modules: modulesPage.data,
     modulesTotal: modulesPage.total,
+    moduleCounts: treeCounts(modulesPage),
     page: modulesPage.page,
     pageSize: modulesPage.pageSize,
     search,
@@ -177,6 +190,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     course,
     modules: initialModules,
     modulesTotal: initialModulesTotal,
+    moduleCounts: initialModuleCounts,
     page,
     pageSize,
     search,
@@ -228,6 +242,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   // `total` is state, not a loader constant — refresh/create/import all replace
   // `modules`, and the pager reads this.
   const [modulesTotal, setModulesTotal] = useState(initialModulesTotal);
+  // `modulesTotal` counts search matches; the banner and steps need the course's.
+  const [moduleCounts, setModuleCounts] = useState(initialModuleCounts);
   // #1207: reorder is no longer disabled past the page bound — a drag persists
   // an absolute ordinal via `PATCH /modules/:id/position`, so the rows this
   // page never loaded get shifted server-side. It IS disabled while a search is
@@ -261,7 +277,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     isPublished: boolean;
     title: string;
   } | null>(null);
+  // Unpublished lessons of the module being published; null until loaded.
+  const [cascadeLessons, setCascadeLessons] = useState<Lesson[] | null>(null);
+  const [alsoPublishLessons, setAlsoPublishLessons] = useState(true);
+  const cascadeRequestIdRef = useRef(0);
   const [reorderingModules, setReorderingModules] = useState(false);
+  const { requestToggle: requestCoursePublish, dialog: coursePublishDialog } =
+    useCoursePublishToggle();
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -278,6 +300,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     setPrevInitialModules(initialModules);
     setModules(initialModules);
     setModulesTotal(initialModulesTotal);
+    setModuleCounts(initialModuleCounts);
   }
 
   const goToPage = (nextPage: number) => {
@@ -312,6 +335,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       const modulesData = await api.modulesForCourse(numericCourseId, { page, search });
       setModules(modulesData.data);
       setModulesTotal(modulesData.total);
+      setModuleCounts(treeCounts(modulesData));
     } catch (error) {
       console.error("Failed to refresh modules", error);
     }
@@ -463,7 +487,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
-  const togglePublish = async (moduleId: number, currentlyPublished: boolean) => {
+  const togglePublish = async (moduleId: number, currentlyPublished: boolean): Promise<boolean> => {
     // Optimistic update via useOptimistic
     addModuleOpt((items) =>
       items.map((m) => (m.id === moduleId ? { ...m, isPublished: !currentlyPublished } : m)),
@@ -476,14 +500,56 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         : await api.publishModule(moduleId);
       // Confirm with server response
       setModules((prev) => prev.map((m) => (m.id === moduleId ? updated : m)));
+      return true;
     } catch (error) {
       console.error("Failed to toggle publish status", error);
       // Rollback on error to clear optimistic change
       setModules((prev) =>
         prev.map((m) => (m.id === moduleId ? { ...m, isPublished: currentlyPublished } : m)),
       );
+      return false;
     } finally {
       setPublishingId((current) => (current === moduleId ? null : current));
+    }
+  };
+
+  const requestModulePublish = (m: Module) => {
+    setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
+    setAlsoPublishLessons(true);
+    setCascadeLessons(null);
+    if (m.isPublished) return;
+    const requestId = ++cascadeRequestIdRef.current;
+    unpublishedLessons(m.id)
+      .then((lessons) => {
+        if (cascadeRequestIdRef.current === requestId) setCascadeLessons(lessons);
+      })
+      .catch((error) => console.error("Failed to load module lessons", error));
+  };
+
+  // #2157: publish the module first, then its lessons (the server needs that order).
+  const confirmModulePublish = async (
+    target: { id: number; isPublished: boolean; title: string },
+    withLessons: boolean,
+    knownLessons: Lesson[] | null,
+  ) => {
+    const ok = await togglePublish(target.id, target.isPublished);
+    if (!ok || target.isPublished || !withLessons) return;
+    try {
+      const lessons = knownLessons ?? (await unpublishedLessons(target.id));
+      if (lessons.length === 0) return;
+      const { published, failed } = await publishLessons(lessons);
+      if (failed > 0) {
+        toast.error(
+          `Published "${target.title}", but ${failed} of ${lessons.length} lessons couldn't be published.`,
+        );
+      } else {
+        toast.success(
+          `Published "${target.title}" and its ${published} ${published === 1 ? "lesson" : "lessons"}.`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to publish module lessons", error);
+      toast.error(`Published "${target.title}", but its lessons couldn't be published.`);
     }
   };
 
@@ -577,27 +643,75 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
+  const firstUnpublishedModule = oModules.find((m) => !m.isPublished);
+
   return (
     <DetailPageScaffold
       padding="app"
       hero={
-        <CourseHeroCard
-          code={courseCode(course)}
-          term={courseTerm(course)}
-          year={courseYear(course)}
-          name={courseName(course)}
-          description={course.description}
-          accentColor={accentForCourse(course)}
-          // #1207: the chip row shows a page of topics; append a "+N more" chip
-          // rather than ending silently at the page bound.
-          topics={[
-            ...courseTopics.topics.map((topic) => topic.name),
-            ...(courseTopics.total > courseTopics.topics.length
-              ? [`+${courseTopics.total - courseTopics.topics.length} more`]
-              : []),
-          ]}
-          topRightBadges={[course.isPublished ? "Published" : "Unpublished"]}
-          topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
+        <CourseHeader
+          eyebrow={`${courseCode(course)} · ${termLabel(courseTerm(course), courseYear(course))}`}
+          title={courseName(course)}
+          accentColor={accentColor}
+          badges={<BannerBadge>{course.isPublished ? "Published" : "Unpublished"}</BannerBadge>}
+          meta={
+            activeTab === "content" && course.description ? (
+              <span className="line-clamp-2">{course.description}</span>
+            ) : undefined
+          }
+          // Topics only on Content, so the other sections keep a slim banner.
+          // #1207: the chips show a page of topics; "+N more" says so.
+          topics={
+            activeTab === "content"
+              ? [
+                  ...courseTopics.topics.map((topic) => topic.name),
+                  ...(courseTopics.total > courseTopics.topics.length
+                    ? [`+${courseTopics.total - courseTopics.topics.length} more`]
+                    : []),
+                ]
+              : []
+          }
+          topicsAction={
+            activeTab === "content" ? (
+              <CourseTopicsHeroAction course={course} courseTopics={courseTopics} />
+            ) : undefined
+          }
+          actions={
+            <>
+              {/* #1660: TA excluded — a TA already has a real (non-preview)
+                  view of this course via /student. */}
+              {perms.canPreviewAsStudent && numericCourseId != null ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={BANNER_SECONDARY_ACTION_CLASS}
+                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
+                >
+                  <IconEye className="size-4" aria-hidden="true" />
+                  Preview as student
+                </Button>
+              ) : null}
+              <PermissionGate allow={perms.canManageContent}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className={BANNER_PRIMARY_ACTION_CLASS}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  <IconPlus className="size-4" aria-hidden="true" />
+                  Add module
+                </Button>
+              </PermissionGate>
+            </>
+          }
+          menu={
+            <CourseBannerMenu
+              course={course}
+              canPublish={perms.canPublishContent}
+              onTogglePublish={() => requestCoursePublish(course)}
+            />
+          }
         />
       }
     >
@@ -612,45 +726,75 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           aria-labelledby={undefined}
           aria-label="Content"
         >
-          <div className="flex items-center justify-between gap-3">
+          {perms.canManageContent && (
+            <CourseNextSteps
+              steps={[
+                {
+                  key: "module",
+                  label: "Add a module",
+                  done: moduleCounts.all > 0,
+                  detail:
+                    "Modules hold your lessons and activities. Add one, or import one from another course.",
+                  onSelect: () => setCreateOpen(true),
+                },
+                {
+                  key: "course",
+                  label: "Publish the course",
+                  done: course.isPublished,
+                  detail: course.isPublished
+                    ? "Students can see this course."
+                    : "Students can't see this course yet. Modules can only be published after it is.",
+                  onSelect: perms.canPublishContent
+                    ? () => requestCoursePublish(course)
+                    : undefined,
+                },
+                {
+                  key: "publish-module",
+                  label: "Publish a module",
+                  done: publishedCount(moduleCounts, oModules) > 0,
+                  detail: "Unpublished modules stay hidden. Publish one together with its lessons.",
+                  onSelect:
+                    perms.canPublishContent && course.isPublished && firstUnpublishedModule
+                      ? () => requestModulePublish(firstUnpublishedModule)
+                      : undefined,
+                },
+              ]}
+            />
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
-              <h2 className="text-lg font-semibold text-foreground">Modules</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                Modules
+                <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                  ({moduleCounts.all})
+                </span>
+              </h2>
               <HelpHint {...AI_TUTOR_HELP.publishingHierarchy} LinkComponent={Link} />
             </div>
-            <div className="flex items-center gap-2">
-              {/* #1660: TA excluded — a TA already has a real (non-preview)
-                  view of this course via /student, not a preview of someone
-                  else's. */}
-              {perms.canPreviewAsStudent && numericCourseId != null ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <ListSearchInput
+                value={search}
+                label="Search modules"
+                placeholder="Search modules…"
+                onSearchChange={setModuleSearch}
+              />
+              <PermissionGate allow={perms.canManageContent}>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => navigate(`/student/courses/${numericCourseId}`)}
+                  onClick={() => handleImportOpenChange(true)}
                 >
-                  <IconEye className="size-4" aria-hidden="true" />
-                  Preview as student
+                  <IconDownload className="size-4" aria-hidden="true" />
+                  Import
                 </Button>
-              ) : null}
-              <PermissionGate allow={perms.canManageContent}>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleImportOpenChange(true)}
-                  >
-                    <IconDownload className="size-4" aria-hidden="true" />
-                    Import
-                  </Button>
-                  <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-                    <IconPlus className="size-4" aria-hidden="true" />
-                    Add module
-                  </Button>
-                </div>
               </PermissionGate>
             </div>
           </div>
+          {searching && perms.canManageContent ? (
+            <p className="text-sm text-muted-foreground">Clear the search to reorder modules.</p>
+          ) : null}
 
           <PermissionGate allow={perms.canManageContent}>
             <Dialog
@@ -910,38 +1054,30 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </Dialog>
           </PermissionGate>
 
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <ListSearchInput
-              value={search}
-              label="Search modules"
-              placeholder="Search modules…"
-              onSearchChange={setModuleSearch}
-            />
-            {searching && perms.canManageContent ? (
-              <p className="text-sm text-muted-foreground">Clear the search to reorder modules.</p>
-            ) : null}
-          </div>
-
           {oModules.length === 0 ? (
             <Card>
               <EmptyState
                 icon={<IconLayoutGrid size={22} aria-hidden="true" />}
                 title={searching ? "No modules match your search." : "No modules yet."}
+                description={
+                  searching || !perms.canManageContent
+                    ? undefined
+                    : "Add a module, or import one from another course to get started."
+                }
               />
             </Card>
           ) : (
             <SortableProvider
               ids={oModules.map((m) => m.id)}
               onReorder={reorderModulesList}
-              strategy="grid"
+              strategy="list"
               disabled={
                 !perms.canManageContent || modulesTotal < 2 || reorderingModules || searching
               }
             >
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <ContentList label="Modules">
                 {oModules.map((m, idx) => {
-                  const canPublish = course?.isPublished;
-                  const blocked = !m.isPublished && !canPublish;
+                  const blocked = !m.isPublished && !course?.isPublished;
                   const tooltipMessage = blocked
                     ? `Publish ${m.title} after publishing ${course?.title ?? "the parent course"}.`
                     : null;
@@ -950,15 +1086,19 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   return (
                     <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
                       {({ handleProps }) => (
-                        <ModuleCard
+                        <ContentListRow
+                          kind="Module"
                           // Absolute ordinal, so numbering continues across
                           // pages instead of restarting at 1 on page 2.
-                          index={absoluteOrdinal(page, pageSize, idx)}
-                          title={m.title}
-                          description={m.description}
+                          orderLabel={String(absoluteOrdinal(page, pageSize, idx) + 1).padStart(
+                            2,
+                            "0",
+                          )}
+                          title={titleName(m.title)}
+                          summary={m.description}
+                          href={`/instructor/module/${m.id}`}
                           accentColor={accentColor}
                           isPublished={m.isPublished}
-                          onClick={() => navigate(`/instructor/module/${m.id}`)}
                           leading={
                             canReorder ? (
                               <DragHandle
@@ -967,22 +1107,19 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                               />
                             ) : undefined
                           }
-                          actions={
+                          menu={
                             perms.canPublishContent || perms.canManageContent ? (
                               <PublishMenu
                                 isPublished={m.isPublished}
                                 pending={busy}
                                 blockedReason={tooltipMessage}
                                 itemLabel="module"
+                                itemTitle={titleName(m.title)}
                                 onToggle={
                                   perms.canPublishContent
                                     ? () => {
                                         if (busy || blocked) return;
-                                        setPendingPublish({
-                                          id: m.id,
-                                          isPublished: m.isPublished,
-                                          title: m.title,
-                                        });
+                                        requestModulePublish(m);
                                       }
                                     : undefined
                                 }
@@ -992,9 +1129,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                                 onDelete={
                                   perms.canManageContent ? () => setDeletingModule(m) : undefined
                                 }
-                                // Cross-page move: drag can only reach rows
-                                // on this page, so anything further needs an
-                                // explicit destination (#1207).
+                                // Cross-page move: drag can only reach rows on
+                                // this page (#1207).
                                 onMove={
                                   perms.canManageContent && modulesTotal > 1 && !searching
                                     ? () => setMovingModule(m)
@@ -1008,7 +1144,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     </SortableItem>
                   );
                 })}
-              </div>
+              </ContentList>
             </SortableProvider>
           )}
 
@@ -1077,33 +1213,28 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           if (movingModule) return moveModule(movingModule.id, position);
         }}
       />
-      <ConfirmDialog
-        open={pendingPublish !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingPublish(null);
-        }}
-        title={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? `Unpublish "${pendingPublish.title}"?`
-              : `Publish "${pendingPublish.title}"?`
-            : ""
-        }
-        description={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? "Students will lose access to this content."
-              : "Students will be able to see this content."
-            : ""
-        }
-        confirmLabel={pendingPublish?.isPublished ? "Unpublish" : "Publish"}
-        variant={pendingPublish?.isPublished ? "destructive" : "default"}
+      <PublishConfirmDialog
+        target={pendingPublish}
+        onCancel={() => setPendingPublish(null)}
         onConfirm={() => {
           if (!pendingPublish) return;
-          void togglePublish(pendingPublish.id, pendingPublish.isPublished);
+          void confirmModulePublish(pendingPublish, alsoPublishLessons, cascadeLessons);
           setPendingPublish(null);
         }}
-      />
+      >
+        {cascadeLessons?.length === 0 ? null : (
+          <Label className="flex items-center gap-2 text-sm font-normal">
+            <Checkbox
+              checked={alsoPublishLessons}
+              onCheckedChange={(checked) => setAlsoPublishLessons(checked === true)}
+            />
+            {cascadeLessons
+              ? `Also publish its ${cascadeLessons.length} ${cascadeLessons.length === 1 ? "lesson" : "lessons"}`
+              : "Also publish its lessons"}
+          </Label>
+        )}
+      </PublishConfirmDialog>
+      {coursePublishDialog}
     </DetailPageScaffold>
   );
 }

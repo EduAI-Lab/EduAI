@@ -34,7 +34,19 @@ export type NavShellLink = {
 
 export type NavShellEntry =
   | { kind: "link"; link: NavShellLink }
-  | { kind: "tray"; tray: Exclude<NavTrayKey, "account" | "apps">; label: string; icon: Icon }
+  | {
+      kind: "tray";
+      tray: Exclude<NavTrayKey, "account" | "apps">;
+      label: string;
+      icon: Icon;
+      /**
+       * Makes the rail tile a link here instead of opening the tray, for a
+       * section whose pages carry their own menu (`sectionNav`), e.g.
+       * Administration → User Management. The tile stays active on all the
+       * tray's pages, and the mobile drawer still expands it as an accordion.
+       */
+      href?: string;
+    }
   /**
    * A tray whose contents the app draws (e.g. Course Chat's History). `render`
    * gets a `close` to call once its content has done its job.
@@ -132,6 +144,23 @@ export type CourseNavConfig = {
    * other course pages also carry in their breadcrumb).
    */
   courseCrumb?: React.ReactNode;
+};
+
+/**
+ * A section's own menu (e.g. Administration): drawn in the course menu's
+ * column beside every page of the section, so moving between its pages never
+ * needs a trip back through the rail's tray. On phones the drawer's matching
+ * accordion already lists the same links, so it is not drawn there.
+ */
+export type SectionNavConfig = {
+  /** Heading above the links, and the menu's accessible name. */
+  title: string;
+  links: NavShellLink[];
+  /**
+   * The current link's `key`, for a section whose pages share one path and
+   * differ by query (`/admin?tab=…`). Without it the path decides.
+   */
+  activeKey?: string;
 };
 
 /**

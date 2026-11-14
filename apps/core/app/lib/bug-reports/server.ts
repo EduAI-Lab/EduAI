@@ -3,6 +3,8 @@ import { z } from "zod";
 import { jsonObjectSchema } from "~/lib/json-value";
 import { Prisma, BugReportType } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import { sendEmail } from "~/lib/email/mailer.server";
+import { buildBugReportUpdateEmail } from "~/lib/email/templates/bug-report-update";
 import { redactDiagnosticLogString, sanitizeSensitiveData } from "~/lib/redact.server";
 
 const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
@@ -273,7 +275,32 @@ type ListBugReportRow = {
   hasScreenshot: boolean;
   userEmail: string | null;
   userName: string | null;
+  reporterNoteSubject: string | null;
+  reporterNote: string | null;
+  reporterNoteUpdatedAt: Date | null;
+  reporterNoteEmailedAt: Date | null;
 };
+
+/**
+ * The admin's status note, as the triage view shows it. `reporterReachable`
+ * says whether a note can be emailed at all (the reporter's account still
+ * exists and has an address) without revealing an anonymous reporter's email.
+ */
+function reporterNoteFields(r: {
+  reporterNoteSubject: string | null;
+  reporterNote: string | null;
+  reporterNoteUpdatedAt: Date | null;
+  reporterNoteEmailedAt: Date | null;
+  reporterEmail: string | null;
+}) {
+  return {
+    reporterNoteSubject: r.reporterNoteSubject,
+    reporterNote: r.reporterNote,
+    reporterNoteUpdatedAt: r.reporterNoteUpdatedAt,
+    reporterNoteEmailedAt: r.reporterNoteEmailedAt,
+    reporterReachable: Boolean(r.reporterEmail),
+  };
+}
 
 /**
  * GET /api/admin/bug-reports (#304, §11) — admin listing with source/status
@@ -327,7 +354,11 @@ export async function listBugReports(params: {
         (br."networkLogs" IS NOT NULL AND br."networkLogs" <> '') AS "hasNetworkLogs",
         (br.screenshot IS NOT NULL AND br.screenshot <> '') AS "hasScreenshot",
         u.email AS "userEmail",
-        u.name AS "userName"
+        u.name AS "userName",
+        br."reporterNoteSubject",
+        br."reporterNote",
+        br."reporterNoteUpdatedAt",
+        br."reporterNoteEmailedAt"
       FROM bug_reports br
       LEFT JOIN "user" u ON u.id = br."userId"
       ${whereSql}
@@ -359,6 +390,7 @@ export async function listBugReports(params: {
       context: r.context,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      ...reporterNoteFields({ ...r, reporterEmail: r.userEmail }),
     })),
     total,
     limit: clampedLimit,
@@ -395,6 +427,89 @@ export async function getBugReportById(id: string) {
     context: r.context,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
+    ...reporterNoteFields({ ...r, reporterEmail: r.user?.email ?? null }),
+  };
+}
+
+/** Limits on the admin's note, matching the columns. */
+export const REPORTER_NOTE_LIMITS = { subject: 200, body: 5000 } as const;
+
+export const reporterNoteSchema = z.object({
+  subject: z.string().trim().min(1, "required").max(REPORTER_NOTE_LIMITS.subject),
+  body: z.string().trim().min(1, "required").max(REPORTER_NOTE_LIMITS.body),
+});
+
+/**
+ * - `sent`: the reporter was emailed.
+ * - `no-recipient`: saved, but there is no one to email (the account was
+ *   deleted or has no address).
+ * - `not-sent`: saved, but the email didn't go out (SMTP unset or failing).
+ */
+export type ReporterNoteDelivery = "sent" | "no-recipient" | "not-sent";
+
+/**
+ * PATCH /api/admin/bug-reports/:id with `reporterNote` — saves the admin's one
+ * status note on the report (replacing the last one) and emails it to the
+ * reporter from the server's address, the same sender as the disk-usage
+ * alerts. The note is kept even when the email can't be sent.
+ *
+ * Anonymous reporters are emailed too: anonymity hides who they are from the
+ * admin, and the address never leaves the server.
+ */
+export async function saveReporterNote(
+  id: string,
+  note: z.infer<typeof reporterNoteSchema>,
+  now: Date = new Date(),
+) {
+  const report = await prisma.bugReport.findUnique({
+    where: { id },
+    select: { description: true, createdAt: true, user: { select: { email: true } } },
+  });
+  if (!report) return null;
+
+  await prisma.bugReport.update({
+    where: { id },
+    data: {
+      reporterNoteSubject: note.subject,
+      reporterNote: note.body,
+      reporterNoteUpdatedAt: now,
+      reporterNoteEmailedAt: null,
+    },
+  });
+
+  const to = report.user?.email ?? null;
+  let delivery: ReporterNoteDelivery = "no-recipient";
+  if (to) {
+    delivery = "not-sent";
+    try {
+      const { delivered } = await sendEmail(
+        buildBugReportUpdateEmail({
+          to,
+          subject: note.subject,
+          body: note.body,
+          reportDescription: report.description,
+          reportedAt: report.createdAt,
+        }),
+      );
+      if (delivered) delivery = "sent";
+    } catch {
+      // sendEmail already records the failure in Admin → Logs; the note stays saved.
+    }
+  }
+
+  const emailedAt = delivery === "sent" ? now : null;
+  if (emailedAt) {
+    await prisma.bugReport.update({ where: { id }, data: { reporterNoteEmailedAt: emailedAt } });
+  }
+
+  return {
+    id,
+    delivery,
+    reporterNoteSubject: note.subject,
+    reporterNote: note.body,
+    reporterNoteUpdatedAt: now,
+    reporterNoteEmailedAt: emailedAt,
+    reporterReachable: Boolean(to),
   };
 }
 

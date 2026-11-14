@@ -54,12 +54,21 @@ import {
   IconSchool,
   IconRoute,
   IconWand,
+  IconWorldOff,
+  IconWorldUpload,
 } from "@tabler/icons-react";
 import AddActivityPanel from "../components/AddActivityPanel";
 import ActivityDetailsCard from "../components/ActivityDetailsCard";
 import EditActivityPanel from "../components/EditActivityPanel";
 import { LessonReading } from "../components/lessons/LessonReading";
-import { ModuleHero } from "../components/lessons/ModuleHero";
+import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { lessonPublishBlockedReason } from "~/lib/publish-cascade";
+import {
+  BANNER_PRIMARY_ACTION_CLASS,
+  BANNER_SECONDARY_ACTION_CLASS,
+  BannerBadge,
+  CourseHeader,
+} from "../components/layout/CourseHeader";
 import { accentForCourse } from "~/lib/course-display";
 import api from "../lib/api";
 import type { ActivityUpdateBody, ImportableActivity } from "../lib/api";
@@ -100,7 +109,7 @@ import {
   DragHandle,
   courseThemeVars,
 } from "@eduai/ui";
-import { splitTitle } from "~/lib/course-title";
+import { splitTitle, titleName } from "~/lib/course-title";
 import { cn } from "~/lib/utils";
 import { useBugReport } from "~/components/bug-report/useBugReport";
 import { PermissionGate } from "@eduai/ui";
@@ -150,6 +159,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
+    activityCount: activitiesPage.unfilteredTotal ?? activitiesPage.total,
     page: activitiesPage.page,
     pageSize: activitiesPage.pageSize,
     search,
@@ -166,6 +176,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     lesson,
     activities: initialActivities,
     activitiesTotal: initialActivitiesTotal,
+    activityCount: initialActivityCount,
     page,
     pageSize,
     search,
@@ -179,6 +190,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // duplicate all change the list, so the truncation flag has to move with them
   // or it goes stale and re-enables reorder once the list crosses the bound.
   const [activitiesTotal, setActivitiesTotal] = useState(initialActivitiesTotal);
+  // `activitiesTotal` counts search matches; the banner and heading need the lesson's.
+  const [activityCount, setActivityCount] = useState(initialActivityCount);
   // #1207: reorder works across pages via `PATCH /activities/:id/position`; it
   // is disabled only while a search is active, because a filtered list hides
   // the rows between two visible matches.
@@ -301,12 +314,46 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
+  // #2157: publish from the lesson page, same confirm as the module's lesson row.
+  const [lessonPublished, setLessonPublished] = useState(lesson.isPublished);
+  const [prevLesson, setPrevLesson] = useState(lesson);
+  if (lesson !== prevLesson) {
+    setPrevLesson(lesson);
+    setLessonPublished(lesson.isPublished);
+  }
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
+  const [publishingLesson, setPublishingLesson] = useState(false);
+
+  const toggleLessonPublish = async () => {
+    const wasPublished = lessonPublished;
+    setLessonPublished(!wasPublished);
+    setPublishingLesson(true);
+    try {
+      const updated = wasPublished
+        ? await api.unpublishLesson(lesson.id)
+        : await api.publishLesson(lesson.id);
+      setLessonPublished(updated?.isPublished ?? !wasPublished);
+      toast.success(
+        wasPublished
+          ? `"${lesson.title}" is now hidden from students.`
+          : `"${lesson.title}" is now visible to students.`,
+      );
+    } catch (error) {
+      console.error("Failed to toggle lesson publish status", error);
+      setLessonPublished(wasPublished);
+      toast.error(`Could not update "${lesson.title}". Try again.`);
+    } finally {
+      setPublishingLesson(false);
+    }
+  };
+
   // Adjust state during render when loader data changes
   const [prevInitialActivities, setPrevInitialActivities] = useState(initialActivities);
   if (initialActivities !== prevInitialActivities) {
     setPrevInitialActivities(initialActivities);
     setActivities(initialActivities);
     setActivitiesTotal(initialActivitiesTotal);
+    setActivityCount(initialActivityCount);
   }
 
   const beginEditingActivity = (activity: Activity) => {
@@ -377,6 +424,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       const activityData = await api.activitiesForLesson(numericLessonId, { page, search });
       setActivities(activityData.data);
       setActivitiesTotal(activityData.total);
+      setActivityCount(activityData.unfilteredTotal ?? activityData.total);
     } catch (error) {
       console.error("Failed to refresh activities", error);
     }
@@ -479,6 +527,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       // Keep `total` in step with the local removal so the pager stays accurate
       // without a refetch.
       setActivitiesTotal((prev) => Math.max(0, prev - 1));
+      setActivityCount((prev) => Math.max(0, prev - 1));
       if (editingActivityId === activityId) {
         cancelEditingActivity();
       }
@@ -882,62 +931,112 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
   useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
+  // Ancestry unknown (still loading or failed) leaves the gate to the server.
+  const publishBlockedReason =
+    course && module
+      ? lessonPublishBlockedReason(
+          { title: lesson.title, isPublished: lessonPublished },
+          course,
+          module,
+        )
+      : null;
+  const publishButton = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={BANNER_SECONDARY_ACTION_CLASS}
+      disabled={!crumbsReady || publishingLesson || publishBlockedReason !== null}
+      onClick={() => setConfirmingPublish(true)}
+    >
+      {lessonPublished ? (
+        <IconWorldOff className="size-4" aria-hidden="true" />
+      ) : (
+        <IconWorldUpload className="size-4" aria-hidden="true" />
+      )}
+      {publishingLesson ? "Saving…" : lessonPublished ? "Unpublish lesson" : "Publish lesson"}
+    </Button>
+  );
+
   return (
     <CourseTopicsProvider value={courseTopics}>
       <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-        <ModuleHero
-          eyebrow="Lesson"
-          orderText={orderText}
-          title={lesson?.title || "Lesson"}
-          // The lesson body renders in full below, as students see it (#2026).
-          description={module?.title || "Activity editor"}
-          accentColor={accentColor}
-          stats={
-            oActivities.length > 0
-              ? [
-                  {
-                    label: oActivities.length === 1 ? "activity" : "activities",
-                    value: oActivities.length,
-                  },
-                ]
-              : undefined
+        <CourseHeader
+          eyebrow={[
+            orderText ? `Lesson ${orderText}` : "Lesson",
+            module?.title && titleName(module.title),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          title={titleName(lesson?.title || "Lesson")}
+          accentColor={accentColor ?? "var(--primary)"}
+          badges={
+            lesson ? (
+              <BannerBadge>{lessonPublished ? "Published" : "Unpublished"}</BannerBadge>
+            ) : undefined
           }
+          meta={`${activityCount} ${activityCount === 1 ? "activity" : "activities"}`}
           actions={
-            <PermissionGate allow={perms.canManageContent}>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                onClick={openImportDialog}
-              >
-                <IconFileImport className="size-4" aria-hidden="true" />
-                Import
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
-                onClick={() => setShowAddPanel((open) => !open)}
-              >
-                <IconPlus className="size-4" aria-hidden="true" />
-                {showAddPanel ? "Hide" : "Add activity"}
-              </Button>
-            </PermissionGate>
+            <>
+              <PermissionGate allow={perms.canPublishContent}>
+                {publishBlockedReason ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* A disabled button gets no pointer events; the span carries the hint. */}
+                      <span tabIndex={0}>{publishButton}</span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-64">{publishBlockedReason}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  publishButton
+                )}
+              </PermissionGate>
+              <PermissionGate allow={perms.canManageContent}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={BANNER_SECONDARY_ACTION_CLASS}
+                  onClick={openImportDialog}
+                >
+                  <IconFileImport className="size-4" aria-hidden="true" />
+                  Import
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className={BANNER_PRIMARY_ACTION_CLASS}
+                  aria-expanded={showAddPanel}
+                  onClick={() => setShowAddPanel((open) => !open)}
+                >
+                  <IconPlus className="size-4" aria-hidden="true" />
+                  {showAddPanel ? "Hide" : "Add activity"}
+                </Button>
+              </PermissionGate>
+            </>
           }
         />
 
         {lesson?.contentMd?.trim() && <LessonReading contentMd={lesson.contentMd} />}
 
         <div className="space-y-4">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-lg font-semibold text-foreground">Activities</h2>
-            {oActivities.length > 0 && (
-              <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-muted px-2 text-xs font-semibold text-muted-foreground">
-                {oActivities.length}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-foreground">
+              Activities
+              <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                ({activityCount})
               </span>
-            )}
+            </h2>
+            <ListSearchInput
+              value={search}
+              label="Search activities"
+              placeholder="Search activities…"
+              onSearchChange={setActivitySearch}
+            />
           </div>
+          {searching && perms.canManageContent ? (
+            <p className="text-sm text-muted-foreground">Clear the search to reorder activities.</p>
+          ) : null}
 
           <PermissionGate allow={perms.canManageContent}>
             <Dialog open={showAddPanel} onOpenChange={(open) => setShowAddPanel(open)}>
@@ -956,20 +1055,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </DialogContent>
             </Dialog>
           </PermissionGate>
-
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <ListSearchInput
-              value={search}
-              label="Search activities"
-              placeholder="Search activities…"
-              onSearchChange={setActivitySearch}
-            />
-            {searching && perms.canManageContent ? (
-              <p className="text-sm text-muted-foreground">
-                Clear the search to reorder activities.
-              </p>
-            ) : null}
-          </div>
 
           {oActivities.length === 0 ? (
             <Card>
@@ -1593,6 +1678,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PublishConfirmDialog
+        target={confirmingPublish ? { title: lesson.title, isPublished: lessonPublished } : null}
+        onCancel={() => setConfirmingPublish(false)}
+        onConfirm={() => {
+          setConfirmingPublish(false);
+          void toggleLessonPublish();
+        }}
+      />
       <ConfirmDialog
         open={pendingDeleteId !== null}
         onOpenChange={(open) => {

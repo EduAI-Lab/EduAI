@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { courseLink, courseMenuLink } from "../helpers/at-ui";
+import { courseLink, courseMenuLink, openMenuItem } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 
@@ -167,22 +167,23 @@ test.describe("UNIT_ADMIN course list", () => {
     await page.waitForURL(`${AI_TUTOR_URL}/instructor/courses/${ua.course.atCourseId}`);
     // Content is the landing section of the course detail page.
     await expect(courseMenuLink(page, "Content")).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("heading", { name: "Modules", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Modules\s*\(\d+\)$/ })).toBeVisible();
   });
 
-  test("a course mirrored from Core is badged as such", async ({ page }) => {
+  test("a course mirrored from Core links back to it", async ({ page }) => {
     await signInThroughPage(page, ua, `${AI_TUTOR_URL}/instructor`);
     await searchFor(page, ua.course.code);
 
-    // The card's clickable <a> is a transparent overlay carrying only an
-    // aria-label, so the badges have to be read from the card body around it.
-    await expect(courseLink(page, ua.course.atCourseId)).toHaveAttribute(
-      "aria-label",
-      new RegExp(ua.course.code),
+    const title = page.getByRole("link", { name: new RegExp(`^${ua.course.code} · `) });
+    const card = page.getByRole("article").filter({ has: title });
+    await expect(title).toHaveAttribute("href", `/instructor/courses/${ua.course.atCourseId}`);
+    // Search has narrowed the list to this one card, and this one is a draft.
+    await expect(card.getByText("Unpublished", { exact: true })).toBeVisible();
+
+    // Every course a unit admin can see arrived from Core; the ⋯ menu links back.
+    await openMenuItem(
+      card.getByRole("button", { name: `${ua.course.code} actions` }),
+      page.getByRole("menuitem", { name: "Open in EduAI" }),
     );
-    // Search has narrowed the list to this one card, so these are unambiguous:
-    // every course a unit admin can see arrived from Core, and this one is a draft.
-    await expect(page.getByText("EduAI", { exact: true })).toBeVisible();
-    await expect(page.getByText("Unpublished", { exact: true })).toBeVisible();
   });
 });

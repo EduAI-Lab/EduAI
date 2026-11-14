@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Outlet } from "react-router";
 import {
+  GettingStartedButton,
   NavShell,
   OnboardingChecklist,
   PageTourButton,
@@ -77,6 +78,19 @@ function resolveTitle(pathname: string): string {
   return ROUTE_TITLES.get(pathname) ?? "Question Maker";
 }
 
+/** The trail's first crumb, so it's always clear you're in Question Maker. */
+function QmAppCrumb() {
+  return (
+    <BreadcrumbItem>
+      <BreadcrumbLink asChild>
+        <Link to="/dashboard" className="font-medium">
+          Question Maker
+        </Link>
+      </BreadcrumbLink>
+    </BreadcrumbItem>
+  );
+}
+
 /**
  * The breadcrumb off the course workspace, and on a course page while its
  * course is still loading — once it has loaded, the shell's course menu draws
@@ -87,6 +101,8 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
     return (
       <Breadcrumb>
         <BreadcrumbList>
+          <QmAppCrumb />
+          <BreadcrumbSeparator />
           <BreadcrumbItem>
             <BreadcrumbPage>{resolveTitle(pathname)}</BreadcrumbPage>
           </BreadcrumbItem>
@@ -98,6 +114,8 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   return (
     <Breadcrumb>
       <BreadcrumbList>
+        <QmAppCrumb />
+        <BreadcrumbSeparator />
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
             <Link to="/courses">Courses</Link>
@@ -350,6 +368,13 @@ function QmAppLayoutInner() {
             coreCourseId={coreCourseId ?? null}
             placement="floating"
           />
+          <GettingStartedButton
+            platform="question-maker"
+            userId={user ? String(user.id) : ""}
+            role={questionMakerRole}
+            pathname={pathname}
+            navigate={navigate}
+          />
           <PageTourButton
             platform="question-maker"
             pathname={pathname}
@@ -374,15 +399,19 @@ function QmAppLayoutInner() {
         </>
       }
     >
-      {pathname === "/dashboard" && user && (
+      {/* The admin dashboard places its own Getting started card in its grid. */}
+      {pathname === "/dashboard" && user && user.role !== "ADMIN" ? (
         <OnboardingChecklist
           platform="question-maker"
           userId={String(user.id)}
           role={questionMakerRole}
           navigate={navigate}
-        />
+        >
+          <Outlet />
+        </OnboardingChecklist>
+      ) : (
+        <Outlet />
       )}
-      <Outlet />
     </NavShell>
   );
 }
@@ -415,6 +444,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
         model={model}
         LinkComponent={Link}
         locationKey={location.key ?? location.pathname}
+        appName="Question Maker"
         title="Question Maker"
         headerActions={
           <PageHelpButton content={QM_ACCESS_HELP} helpHref={`${getCoreUrl()}/help`} />

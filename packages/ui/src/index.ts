@@ -73,6 +73,11 @@ export { Avatar } from "./avatar";
 export type { AvatarProps } from "./avatar";
 export { PageHeading } from "./page-heading";
 export type { PageHeadingProps } from "./page-heading";
+export { useMenuTooltip } from "./use-menu-tooltip";
+export { DropdownMenuWithTooltip } from "./dropdown-menu-with-tooltip";
+export type { DropdownMenuWithTooltipProps } from "./dropdown-menu-with-tooltip";
+export { CollapsibleSection } from "./collapsible-section";
+export type { CollapsibleSectionProps } from "./collapsible-section";
 export { Spinner } from "./spinner";
 export type { SpinnerProps } from "./spinner";
 export { PageLoader } from "./page-loader";
@@ -89,6 +94,8 @@ export { HeroShell, HERO_GLASS_STYLE } from "./hero-shell";
 export type { HeroShellProps } from "./hero-shell";
 export { CourseCard } from "./course-card";
 export type { CourseCardProps, CourseCardAction } from "./course-card";
+export { CourseTile, CourseTileLinkButton } from "./course-tile";
+export type { CourseTileLink, CourseTileLinkComponent, CourseTileProps } from "./course-tile";
 export {
   CourseListView,
   buildStatusFilterGroup,
@@ -201,7 +208,13 @@ export type {
 } from "./settings/accessibility-settings";
 export { BugReportsAdminView } from "./bug-reports/bug-reports-admin-view";
 export type { BugReportsAdminViewProps } from "./bug-reports/bug-reports-admin-view";
-export type { AdminBugReportRow, BugReportStatus, BugReportContext } from "./bug-reports/types";
+export type {
+  AdminBugReportRow,
+  BugReportStatus,
+  BugReportContext,
+  ReporterNoteDelivery,
+  ReporterNoteInput,
+} from "./bug-reports/types";
 export {
   BUG_TYPE_LABELS,
   STATUS_LABELS,
@@ -338,5 +351,6 @@ export type { ComboboxOption, ComboboxProps, MultiSelectProps } from "./ui/combo
 export { DetailPageScaffold } from "./detail-page-scaffold";
 export type { DetailPageScaffoldProps } from "./detail-page-scaffold";
 
-export { OnboardingChecklist, PageTourButton } from "./onboarding/onboarding";
+export { GettingStartedButton, OnboardingChecklist, PageTourButton } from "./onboarding/onboarding";
+export type { OnboardingTask } from "./onboarding/onboarding";
 export type { OnboardingPlatform } from "./onboarding/catalog";

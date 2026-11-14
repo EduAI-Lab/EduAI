@@ -57,7 +57,7 @@ describe("AssessmentSectionCard review-status confirmation", () => {
     const onToggleDraft = vi.fn();
     renderCard(true, onToggleDraft);
 
-    await openToggleItem("Mark reviewed");
+    await openToggleItem("Mark as reviewed");
 
     expect(onToggleDraft).not.toHaveBeenCalled();
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("AssessmentSectionCard review-status confirmation", () => {
     const onToggleDraft = vi.fn();
     renderCard(true, onToggleDraft);
 
-    await openToggleItem("Mark reviewed");
+    await openToggleItem("Mark as reviewed");
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as reviewed" }));
 
@@ -80,7 +80,7 @@ describe("AssessmentSectionCard review-status confirmation", () => {
     const onToggleDraft = vi.fn();
     renderCard(true, onToggleDraft);
 
-    await openToggleItem("Mark reviewed");
+    await openToggleItem("Mark as reviewed");
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 

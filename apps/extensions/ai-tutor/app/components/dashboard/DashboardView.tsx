@@ -80,20 +80,24 @@ function CourseListSkeleton() {
   );
 }
 
-function CourseListPanel({
+export function CourseListPanel({
   courses,
   loading,
   coursesHref,
+  framed = true,
 }: {
   courses: DashboardCourseRow[];
   loading: boolean;
   coursesHref: string;
+  /** `false` drops the list's own card frame, for a list placed inside another card. */
+  framed?: boolean;
 }) {
   if (loading) return <CourseListSkeleton />;
+  const frame = framed ? "rounded-xl border border-border bg-card shadow-2xs" : "";
 
   if (courses.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card px-5 py-8 text-center shadow-2xs">
+      <div className={`${frame} px-5 py-8 text-center`}>
         <p className="text-sm text-muted-foreground">No courses found.</p>
         <Link
           to={coursesHref}
@@ -106,7 +110,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
+    <div className={`overflow-hidden ${frame}`}>
       {courses.slice(0, COURSE_PREVIEW_ROWS).map((course) => (
         <Link
           key={course.id}
@@ -155,7 +159,7 @@ export function DashboardView({
   return (
     <div className="flex flex-col gap-6">
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-tour="dashboard-stats">
+      <div className="grid grid-cols-2 gap-3 @xl/dashboard:grid-cols-4" data-tour="dashboard-stats">
         {stats.map((s) => (
           <StatCard key={s.label} label={s.label} value={s.value} />
         ))}
@@ -165,7 +169,7 @@ export function DashboardView({
       {analytics}
 
       {/* 2-column body */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
+      <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_360px] @3xl/dashboard:items-start">
         {/* Left — your courses + quick actions */}
         <div className="flex flex-col gap-6">
           <div>

@@ -24,6 +24,17 @@ function mockFetchJson(body: ParsedJsonBody, ok = true) {
   });
 }
 
+/** Edit schedule opens from the row's schedule text; Edit settings from the History dialog. */
+async function chooseRowAction(_jobName: string, item: "Edit schedule" | "Edit settings") {
+  if (item === "Edit schedule") {
+    fireEvent.click(screen.getByRole("button", { name: /\(edit schedule\)$/ }));
+    return;
+  }
+  fireEvent.click(screen.getByRole("button", { name: /history/i }));
+  const history = await screen.findByRole("dialog");
+  fireEvent.click(within(history).getByRole("button", { name: "Edit settings" }));
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
@@ -35,13 +46,16 @@ afterEach(() => {
 });
 
 describe("CronJobsAdminView", () => {
-  it("renders a row per job with name, schedule, script and 'never run' status", () => {
+  it("renders a row per job with name, plain-English schedule and 'never run' status", () => {
     vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
     render(<CronJobsAdminView jobs={[job()]} />);
 
     expect(screen.getByText("backup-nightly")).toBeInTheDocument();
-    expect(screen.getByText("0 2 * * *")).toBeInTheDocument();
-    expect(screen.getByText("backup-nightly.sh")).toBeInTheDocument();
+    expect(screen.getByText("Daily at 02:00 UTC")).toBeInTheDocument();
+    // The cron expression and script moved to the run history dialog.
+    expect(screen.queryByText("0 2 * * *")).not.toBeInTheDocument();
+    expect(screen.queryByText("backup-nightly.sh")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Script" })).not.toBeInTheDocument();
     expect(screen.getByText("Never run")).toBeInTheDocument();
     expect(screen.getByText("Total jobs")).toBeInTheDocument();
     // total jobs stat card
@@ -115,8 +129,8 @@ describe("CronJobsAdminView", () => {
 
     expect(screen.getByText("External")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /run now/i })).not.toBeInTheDocument();
-    // no inline "Edit" schedule link for extension-managed jobs
-    expect(screen.queryByText("Edit")).not.toBeInTheDocument();
+    // no schedule edit for extension-managed jobs
+    expect(screen.queryByRole("button", { name: /edit schedule/ })).not.toBeInTheDocument();
   });
 
   it("shows the running count with a currently-running indicator when a job is RUNNING", () => {
@@ -328,6 +342,43 @@ describe("CronJobsAdminView", () => {
     expect(await screen.findByText(/Run output — backup-nightly/)).toBeInTheDocument();
   });
 
+  it("heads the run history dialog with the cron expression and script", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
+    render(<CronJobsAdminView jobs={[job({ scheduleOverridden: true })]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("0 2 * * *")).toBeInTheDocument();
+    expect(within(dialog).getByText("custom")).toBeInTheDocument();
+    expect(within(dialog).getByText("backup-nightly.sh")).toBeInTheDocument();
+  });
+
+  it("shows the last run as relative time, with the full time on hover", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    const startedAt = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    render(
+      <CronJobsAdminView
+        jobs={[
+          job({
+            lastRun: {
+              id: "r1",
+              jobName: "backup-nightly",
+              status: "SUCCESS",
+              startedAt,
+              finishedAt: startedAt,
+              message: null,
+              exitCode: 0,
+              triggerSource: "SCHEDULE",
+              triggeredByUserId: null,
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("3h ago")).toHaveAttribute("title");
+  });
+
   it("shows an empty state in the run history dialog when there are no runs", async () => {
     vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
     render(<CronJobsAdminView jobs={[job()]} />);
@@ -351,7 +402,7 @@ describe("CronJobsAdminView", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByText("Edit"));
+    await chooseRowAction("backup-nightly", "Edit schedule");
 
     const exprInput = await screen.findByLabelText("Cron expression");
     expect((exprInput as HTMLInputElement).value).toBe("0 2 * * *");
@@ -388,7 +439,7 @@ describe("CronJobsAdminView", () => {
 
     render(<CronJobsAdminView jobs={[job()]} />);
 
-    fireEvent.click(screen.getByText("Edit"));
+    await chooseRowAction("backup-nightly", "Edit schedule");
     const exprInput = await screen.findByLabelText("Cron expression");
     fireEvent.change(exprInput, { target: { value: "not-a-cron" } });
 
@@ -407,7 +458,7 @@ describe("CronJobsAdminView", () => {
 
     render(<CronJobsAdminView jobs={[job()]} />);
 
-    fireEvent.click(screen.getByText("Edit"));
+    await chooseRowAction("backup-nightly", "Edit schedule");
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByText("Schedule conflict")).toBeInTheDocument();
@@ -422,7 +473,7 @@ describe("CronJobsAdminView", () => {
 
     render(<CronJobsAdminView jobs={[job({ scheduleOverridden: true })]} />);
 
-    fireEvent.click(screen.getByText("Edit"));
+    await chooseRowAction("backup-nightly", "Edit schedule");
     const resetButton = await screen.findByRole("button", { name: /reset to default/i });
     fireEvent.click(resetButton);
 
@@ -441,17 +492,16 @@ describe("CronJobsAdminView", () => {
     vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
     render(<CronJobsAdminView jobs={[job({ scheduleOverridden: false })]} />);
 
-    fireEvent.click(screen.getByText("Edit"));
+    await chooseRowAction("backup-nightly", "Edit schedule");
     await screen.findByLabelText("Cron expression");
     expect(screen.queryByRole("button", { name: /reset to default/i })).not.toBeInTheDocument();
   });
 
-  it("shows the extension-managed notice in the edit dialog when triggerEnabled is false but schedule is still editable via history/edit not shown", () => {
-    // triggerEnabled === false hides the inline Edit link entirely, so the dialog notice
-    // path is exercised indirectly; this asserts that guard directly on the row.
+  it("leaves an extension-managed job's schedule as plain text, not an edit button", () => {
     vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
     render(<CronJobsAdminView jobs={[job({ triggerEnabled: false })]} />);
-    expect(screen.queryByText("Edit")).not.toBeInTheDocument();
+    expect(screen.getByText("Daily at 02:00 UTC")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit schedule/ })).not.toBeInTheDocument();
   });
 
   const RETAIN = {
@@ -479,22 +529,29 @@ describe("CronJobsAdminView", () => {
     });
   }
 
-  it("shows each setting's current value and whether it is the default", () => {
-    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+  it("shows each setting's current value and whether it is the default in run history", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
     render(<CronJobsAdminView jobs={[purgeJob()]} />);
-    expect(screen.getByText("Delete after (days): 90 (default)")).toBeInTheDocument();
+    expect(screen.queryByText(/Delete after \(days\):/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Delete after (days): 90 (default)")).toBeInTheDocument();
   });
 
-  it("marks an overridden setting", () => {
-    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+  it("marks an overridden setting in run history", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
     render(<CronJobsAdminView jobs={[purgeJob({ value: 30, overridden: true })]} />);
-    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
   });
 
-  it("shows no Edit settings button for a job without settings", () => {
-    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+  it("offers no Edit settings for a job without settings", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
     render(<CronJobsAdminView jobs={[job()]} />);
-    expect(screen.queryByRole("button", { name: "Edit settings" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: "Edit settings" })).not.toBeInTheDocument();
   });
 
   it("edits a setting, posts update-setting with a number, and closes on success", async () => {
@@ -513,9 +570,8 @@ describe("CronJobsAdminView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CronJobsAdminView jobs={[purgeJob()]} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Delete after (days): 90 (default)")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
     const input = (await screen.findByLabelText("Delete after (days)")) as HTMLInputElement;
     expect(input.value).toBe("90");
     expect(screen.getByText(RETAIN.description)).toBeInTheDocument();
@@ -541,9 +597,14 @@ describe("CronJobsAdminView", () => {
     await waitFor(() =>
       expect(screen.queryByLabelText("Delete after (days)")).not.toBeInTheDocument(),
     );
-    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
-    // Mount fetch plus the save; nothing else refetched the status list.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Mount fetch plus the save; nothing else refetched the status list (the
+    // History dialog's `?job=` run fetch, which led to Edit settings, aside).
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/cron-jobs")).toHaveLength(2);
+    // The saved value reached the job: reopening the dialog shows it.
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
+    expect(((await screen.findByLabelText("Delete after (days)")) as HTMLInputElement).value).toBe(
+      "30",
+    );
   });
 
   it("does not post when Save is pressed without changes", async () => {
@@ -557,14 +618,15 @@ describe("CronJobsAdminView", () => {
     render(<CronJobsAdminView jobs={[purgeJob()]} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
     await screen.findByLabelText("Delete after (days)");
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
       expect(screen.queryByLabelText("Delete after (days)")).not.toBeInTheDocument(),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Only the mount fetch; the `?job=` run fetch is the History dialog's.
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/cron-jobs")).toHaveLength(1);
   });
 
   it("shows the server's validation error and keeps the dialog open", async () => {
@@ -575,7 +637,7 @@ describe("CronJobsAdminView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CronJobsAdminView jobs={[purgeJob()]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
     const input = await screen.findByLabelText("Delete after (days)");
     fireEvent.change(input, { target: { value: "0" } });
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
@@ -611,7 +673,7 @@ describe("CronJobsAdminView", () => {
     render(<CronJobsAdminView jobs={[twoSettings({})]} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
     fireEvent.change(await screen.findByLabelText("Delete after (days)"), {
       target: { value: "30" },
     });
@@ -619,9 +681,8 @@ describe("CronJobsAdminView", () => {
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByText('"Batch size" must be between 1 and 3650')).toBeInTheDocument();
-    // The dialog stays open on the failure while the row reflects what persisted.
+    // The dialog stays open on the failure.
     expect(screen.getByLabelText("Batch size")).toBeInTheDocument();
-    expect(screen.getByText("Delete after (days): 30 (overridden)")).toBeInTheDocument();
   });
 
   it("offers Reset to default only for an overridden setting and posts reset-setting", async () => {
@@ -632,7 +693,7 @@ describe("CronJobsAdminView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CronJobsAdminView jobs={[purgeJob({ value: 30, overridden: true })]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
     fireEvent.click(await screen.findByRole("button", { name: /reset to default/i }));
 
     await waitFor(() =>
@@ -650,10 +711,72 @@ describe("CronJobsAdminView", () => {
   });
 
   it("hides Reset to default for a setting at its default", async () => {
-    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ jobs: [purgeJob()] }) }),
+    );
     render(<CronJobsAdminView jobs={[purgeJob()]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    await chooseRowAction("purge-deleted-materials", "Edit settings");
     await screen.findByLabelText("Delete after (days)");
     expect(screen.queryByRole("button", { name: /reset to default/i })).not.toBeInTheDocument();
+  });
+});
+
+/** A finished run for the detail-panel tests. */
+function lastRun(status: "SUCCESS" | "ERROR", message: string | null) {
+  return {
+    id: "run-1",
+    jobName: "backup-nightly",
+    status,
+    startedAt: "2026-01-01T00:00:00.000Z",
+    finishedAt: "2026-01-01T00:00:01.000Z",
+    message,
+    exitCode: status === "ERROR" ? 1 : 0,
+    triggerSource: "SCHEDULE" as const,
+    triggeredByUserId: null,
+  };
+}
+
+describe("CronJobsAdminView — job detail panel", () => {
+  it("opens from the row and shows a failed run's reason", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job({ lastRun: lastRun("ERROR", "pg_dump: disk full") })]} />);
+
+    fireEvent.click(screen.getByRole("row", { name: "Open job: backup-nightly" }));
+
+    const panel = screen.getByRole("dialog");
+    expect(panel).toHaveTextContent("The last run failed.");
+    expect(within(panel).getByLabelText("Failure reason")).toHaveTextContent("pg_dump: disk full");
+  });
+
+  it("says a successful run completed, and opens from the keyboard", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job({ lastRun: lastRun("SUCCESS", "done") })]} />);
+
+    fireEvent.keyDown(screen.getByRole("row", { name: "Open job: backup-nightly" }), {
+      key: "Enter",
+    });
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("The last run completed successfully.");
+  });
+
+  it("says a job that never ran hasn't run yet", () => {
+    vi.stubGlobal("fetch", mockFetchJson({ jobs: [] }));
+    render(<CronJobsAdminView jobs={[job()]} />);
+
+    fireEvent.click(screen.getByRole("row", { name: "Open job: backup-nightly" }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("This job hasn't run yet.");
+  });
+
+  it("does not open from the row's own buttons", async () => {
+    vi.stubGlobal("fetch", mockFetchJson({ runs: [] }));
+    render(<CronJobsAdminView jobs={[job()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Run history — backup-nightly");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 });

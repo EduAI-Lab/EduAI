@@ -10,19 +10,13 @@
  * `EffectiveRole` alongside the 4 real roles ("TA" replacing "STUDENT" when
  * `isTA` is true).
  */
-import {
-  IconUsers,
-  IconBook2,
-  IconBrain,
-  IconBug,
-  IconMessageCircle,
-  IconSettings,
-} from "@tabler/icons-react";
+import { IconBook2, IconMessageCircle, IconSettings } from "@tabler/icons-react";
 
 import type { DashboardStats } from "~/types/dashboard";
 import type { DashboardData } from "~/lib/dashboard/dashboard-data.server";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
 import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
+import { CourseDashboard } from "~/components/dashboard/course-dashboard";
 import type {
   DashboardCourse,
   DashboardStatDef,
@@ -38,6 +32,9 @@ import type {
  */
 export type EffectiveRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT" | "TA";
 
+/** ADMIN renders its own `AdminDashboard`; every other role is driven by `DASHBOARD_CONFIG`. */
+export type ConfiguredRole = Exclude<EffectiveRole, "ADMIN">;
+
 export type DashboardHeroCopy = {
   heading: string;
   subheading: string;
@@ -50,8 +47,8 @@ export type DashboardHeroCopy = {
  * must come from the server's `total`/`stats`, never from `.length` on the
  * loaded page (which would only ever count the first page). `courses` is still
  * the loaded page — the course-card panel renders it — but every *count* below
- * reads a total. `userTotal`/`activeCourseTotal` are only populated for the
- * roles that show them (ADMIN, UNIT_ADMIN).
+ * reads a total. `activeCourseTotal` is only populated for UNIT_ADMIN, the one
+ * role that shows it.
  */
 export type DashboardStatContext = {
   courses: DashboardCourse[];
@@ -60,10 +57,7 @@ export type DashboardStatContext = {
   courseTotal: number;
   stats: DashboardStats | null;
   statsLoading: boolean;
-  /** Platform-wide user count from `/api/users` stats — ADMIN only (#1041). */
-  userTotal?: number;
-  usersLoading?: boolean;
-  /** Server-side count of active courses — ADMIN and UNIT_ADMIN only (#1041). */
+  /** Server-side count of active courses — UNIT_ADMIN only (#1041). */
   activeCourseTotal?: number;
   activeCoursesLoading?: boolean;
 };
@@ -92,33 +86,6 @@ export type DashboardRoleConfig = {
   emptyCoursesMessage?: string;
 };
 
-const ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
-  {
-    label: "User management",
-    description: "Create, edit, and deactivate platform accounts.",
-    href: "/admin/users",
-    icon: <IconUsers size={16} stroke={1.75} />,
-  },
-  {
-    label: "AI management",
-    description: "Configure providers and models for the platform.",
-    href: "/admin/ai-models",
-    icon: <IconBrain size={16} stroke={1.75} />,
-  },
-  {
-    label: "Courses",
-    description: "View and manage courses across the platform.",
-    href: "/courses",
-    icon: <IconBook2 size={16} stroke={1.75} />,
-  },
-  {
-    label: "Bug reports",
-    description: "Review and triage reports from all EduAI apps.",
-    href: "/admin/bug-reports",
-    icon: <IconBug size={16} stroke={1.75} />,
-  },
-];
-
 const UNIT_ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
   {
     label: "Courses",
@@ -141,36 +108,6 @@ const UNIT_ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
 ];
 
 export const DASHBOARD_CONFIG = {
-  ADMIN: {
-    statBuilder: ({
-      userTotal,
-      usersLoading,
-      activeCourseTotal,
-      activeCoursesLoading,
-      stats,
-      statsLoading,
-    }) => [
-      { label: "Total users", value: usersLoading ? "—" : String(userTotal ?? 0) },
-      {
-        label: "Active courses",
-        value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0),
-      },
-      { label: "AI sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
-      {
-        label: "Materials uploaded",
-        value: statsLoading ? "—" : String(stats?.materialCount ?? 0),
-      },
-    ],
-    leftPanel: "quickActions",
-    quickActions: ADMIN_QUICK_ACTIONS,
-    leftPanelTitle: "Quick actions",
-    heroCopy: () => ({
-      heading: "Platform overview",
-      subheading: "EduAI platform health and usage at a glance.",
-    }),
-    chatHref: undefined,
-    emptyCoursesMessage: undefined,
-  },
   UNIT_ADMIN: {
     statBuilder: ({
       courseTotal,
@@ -259,23 +196,26 @@ export const DASHBOARD_CONFIG = {
     emptyCoursesMessage:
       "Your professor hasn't added you to their course yet. Contact them to add you to it.",
   },
-} satisfies Record<EffectiveRole, DashboardRoleConfig>;
+} satisfies Record<ConfiguredRole, DashboardRoleConfig>;
 
 /**
  * Renders the dashboard for any role from the route loader's `DashboardData`
  * (#1220). Because the data is already resolved server-side, nothing is loading
  * at first paint — every `*Loading` flag is `false` — and the per-role
  * course/user aggregates the config's `statBuilder` reads come straight off the
- * loader (ADMIN gets `userTotal`; ADMIN/UNIT_ADMIN get `activeCourseTotal`; the
+ * loader (UNIT_ADMIN gets `activeCourseTotal`; the
  * course-card roles get `courses` + `courseTotal`). The loader only queries what
  * each role shows, so the per-role gating (#1041) is preserved upstream.
  */
 export function DashboardBody({
   effectiveRole,
   data,
+  userRole,
 }: {
-  effectiveRole: EffectiveRole;
+  effectiveRole: ConfiguredRole;
   data: DashboardData;
+  /** Platform role; picks which extensions the course cards link to. */
+  userRole?: string | null;
 }) {
   const config = DASHBOARD_CONFIG[effectiveRole];
   const ctx: DashboardStatContext = {
@@ -284,11 +224,23 @@ export function DashboardBody({
     courseTotal: data.courseTotal,
     stats: data.stats,
     statsLoading: false,
-    userTotal: data.userTotal,
-    usersLoading: false,
     activeCourseTotal: data.activeCourseTotal,
     activeCoursesLoading: false,
   };
+
+  // #2105: learners and teaching staff get the course-first dashboard.
+  if (effectiveRole === "INSTRUCTOR" || effectiveRole === "TA" || effectiveRole === "STUDENT") {
+    return (
+      <CourseDashboard
+        role={effectiveRole}
+        userRole={userRole}
+        launcherRole={effectiveRole === "TA" ? "TA" : (userRole ?? "STUDENT")}
+        data={data}
+        stats={config.statBuilder(ctx)}
+        emptyMessage={config.emptyCoursesMessage}
+      />
+    );
+  }
 
   return (
     <DashboardView

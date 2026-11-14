@@ -21,6 +21,7 @@ import assessmentVariantRoutes from "./routes/assessmentVariant.js";
 import topicRoutes from "./routes/topics.js";
 import authRoutes from "./routes/auth.js";
 import bugReportRoutes from "./routes/bug-reports.js";
+import adminDashboardRoutes from "./routes/admin-dashboard.js";
 import internalRoutes from "./routes/internal.js";
 import { config } from "./config/settings.js";
 import { checkDatabaseReadiness } from "./config/database.js";
@@ -167,6 +168,7 @@ app.use("/api/assessment-variant", assessmentVariantRoutes);
 app.use("/api/topics", topicRoutes);
 app.use("/api", authRoutes);
 app.use("/api", bugReportRoutes);
+app.use("/api", adminDashboardRoutes);
 app.use("/api/internal", internalRoutes);
 
 app.use(notFound);

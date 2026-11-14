@@ -2,12 +2,18 @@ import * as React from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import {
+  GettingStartedButton,
   CommandSearchButton,
+  isNavHrefActive,
   NavShell,
   OnboardingChecklist,
   PageTourButton,
   ThemeToggle,
+  TRAY_TITLES,
   type CourseNavConfig,
+  type SectionNavConfig,
+  type NavShellEntry,
+  type NavShellModel,
 } from "@eduai/ui";
 
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
@@ -15,8 +21,9 @@ import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dia
 import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette";
 import { CorePageHelp } from "~/components/help/core-page-help";
 import { AssistantHeaderButton, HelpAssistant } from "~/components/assistant/help-assistant";
-import { useCoreNavModel } from "~/components/layout/core-nav-model";
+import { ADMIN_ROLES, useCoreNavModel } from "~/components/layout/core-nav-model";
 import {
+  chatHistoryEntry,
   isCourseChatPath,
   useCourseChatNavModel,
   type CourseChatNavOptions,
@@ -95,6 +102,33 @@ export function CoreHeaderActions({
   );
 }
 
+/**
+ * #2105: on Course Chat pages a non-admin keeps Core's rail; the Course Chat
+ * entry starts a new chat in place and History sits right after it.
+ */
+function withChatEntries(
+  model: NavShellModel,
+  { history, onNewChat }: CourseChatNavOptions,
+): NavShellModel {
+  const entries = model.entries.flatMap((entry): NavShellEntry[] => {
+    if (entry.kind !== "link" || entry.link.key !== "chat") return [entry];
+    const chat: NavShellEntry = {
+      kind: "link",
+      link: {
+        ...entry.link,
+        onClick: onNewChat
+          ? (event) => {
+              event.preventDefault();
+              onNewChat();
+            }
+          : undefined,
+      },
+    };
+    return history ? [chat, chatHistoryEntry(history)] : [chat];
+  });
+  return { ...model, entries };
+}
+
 export interface CoreAppShellProps {
   user: User;
   /** Explicit header title override. Omit to use the route-derived fallback (see `ROUTE_TITLES`). */
@@ -153,8 +187,20 @@ export function CoreAppShell({
   // which app the shell presents.
   const coreModel = useCoreNavModel(user, openBugReport);
   const chatModel = useCourseChatNavModel(user, openBugReport, chatApp ?? {});
-  const model = isCourseChatPath(pathname) ? chatModel : coreModel;
+  const inCourseChat = isCourseChatPath(pathname);
+  const model = !inCourseChat
+    ? coreModel
+    : ADMIN_ROLES.has(user.role ?? "")
+      ? chatModel
+      : withChatEntries(coreModel, chatApp ?? {});
   const navigate = useNavigate();
+  // Every Administration page keeps its menu beside the page, so moving
+  // between them never needs the rail's tray.
+  const adminNav: SectionNavConfig | undefined = coreModel.adminLinks.some((link) =>
+    isNavHrefActive(pathname, link.href),
+  )
+    ? { title: TRAY_TITLES.admin, links: coreModel.adminLinks }
+    : undefined;
 
   return (
     <CurrentUserIdProvider userId={user.id}>
@@ -164,13 +210,22 @@ export function CoreAppShell({
         locationKey={location.key}
         title={resolveCoreHeaderTitle(pathname, title)}
         breadcrumbs={breadcrumbs}
+        appHomeHref={inCourseChat ? "/chat" : "/dashboard"}
         courseNav={courseNav}
+        sectionNav={adminNav}
         headerActions={
           <CoreHeaderActions
             extraActions={actions}
             assistant={<AssistantHeaderButton />}
             help={
               <>
+                <GettingStartedButton
+                  platform="core"
+                  userId={user.id}
+                  role={user.role}
+                  pathname={pathname}
+                  navigate={navigate}
+                />
                 <PageTourButton
                   platform="core"
                   pathname={pathname}
@@ -192,15 +247,19 @@ export function CoreAppShell({
         mainClassName={mainClassName}
         providerClassName={providerClassName}
       >
-        {pathname === "/dashboard" && (
+        {/* The admin dashboard places its own Getting started card in its grid. */}
+        {pathname === "/dashboard" && user.role !== "ADMIN" ? (
           <OnboardingChecklist
             platform="core"
             userId={user.id}
             role={user.role}
             navigate={navigate}
-          />
+          >
+            {children}
+          </OnboardingChecklist>
+        ) : (
+          children
         )}
-        {children}
       </NavShell>
       {/* #1822: the one mount point for the help assistant. It renders nothing
           unless the root loader's gate says it could answer for this user. */}

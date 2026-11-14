@@ -556,6 +556,40 @@ export const importableActivitySchema = z
   })
   .passthrough();
 
+/** `GET /api/admin/dashboard` — the ADMIN dashboard's AI Tutor rollup. */
+export const adminDashboardSchema = z.object({
+  content: z.object({ activities: z.number() }),
+  tutoring: z.object({
+    sessions: z.number(),
+    sessionsThisWeek: z.number(),
+    learnersThisWeek: z.number(),
+  }),
+  submissions: z.object({ total: z.number(), toReview: z.number() }),
+  ratings: z.object({ average: z.number().nullable(), count: z.number() }),
+  attention: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      description: z.string(),
+      count: z.number(),
+      severity: z.enum(["warning", "destructive"]),
+      href: z.string(),
+    }),
+  ),
+  health: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      status: z.enum(["ok", "failed", "not-set"]),
+      detail: z.string().nullable(),
+    }),
+  ),
+  weeklySessions: z.array(z.object({ weekStart: z.string(), count: z.number() })),
+});
+export type AdminDashboardData = z.infer<typeof adminDashboardSchema>;
+export type AdminAttentionItem = AdminDashboardData["attention"][number];
+export type AdminHealthItem = AdminDashboardData["health"][number];
+
 export const dashboardStatsSchema = z
   .object({
     enrolledCourses: z.number().optional(),
@@ -718,4 +752,12 @@ export function paginatedSchema<Row extends z.ZodTypeAny>(row: Row) {
       pageSize: z.number(),
     })
     .passthrough();
+}
+
+/** Staff tree lists also carry counts that a search or page never narrows. */
+export function treePageSchema<Row extends z.ZodTypeAny>(row: Row) {
+  return paginatedSchema(row).extend({
+    unfilteredTotal: z.number().optional(),
+    publishedTotal: z.number().optional(),
+  });
 }

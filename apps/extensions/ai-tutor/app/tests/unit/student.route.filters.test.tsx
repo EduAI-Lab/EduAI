@@ -86,7 +86,7 @@ describe("StudentHome — server-side filters (#1208)", () => {
       },
     });
 
-    expect(screen.getByText("Linear Algebra")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /· Linear Algebra$/ })).toBeInTheDocument();
   });
 
   it("does not re-filter on a search the page rows do not match", () => {
@@ -98,7 +98,7 @@ describe("StudentHome — server-side filters (#1208)", () => {
       },
     });
 
-    expect(screen.getByText("Linear Algebra")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /· Linear Algebra$/ })).toBeInTheDocument();
   });
 
   it("seeds the search box from the URL selection", () => {

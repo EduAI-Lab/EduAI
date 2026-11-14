@@ -2,7 +2,7 @@ import type { JsonValue } from "~/lib/json-value";
 import { useEffect, useState } from "react";
 import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
+import { IconPlus, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
 import {
   INVITE_NETWORK_ERROR,
@@ -37,10 +37,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   Select,
   SelectContent,
   SelectItem,
@@ -59,11 +55,15 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import { notFound } from "~/lib/not-found.server";
 import { asPresentText } from "~/lib/json-value";
+import { formatDate, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
@@ -107,12 +107,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
-const formatDate = (s: string) =>
-  new Date(s).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+const formatInviteDate = (s: string, scope: FormatScope) =>
+  formatDate(
+    s,
+    { ...scope, locale: "en-US" },
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+  );
 
 function StatusBadge({ invite }: { invite: Invitation }) {
   if (invite.status === "PENDING" && invite.isExpired) {
@@ -156,6 +160,7 @@ export default function InvitationsPage() {
   const defaultRole: InviteRole = defaultInviteRoleFor(user.role) ?? "STUDENT";
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const formatScope = useFormatScope();
   const [role, setRole] = useState<InviteRole>(defaultRole);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -211,7 +216,7 @@ export default function InvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status, role, data?.details));
+        setFormError(errorMessage(data?.error, res.status, role, data?.fields ?? data?.details));
         return;
       }
       setDialogOpen(false);
@@ -265,7 +270,7 @@ export default function InvitationsPage() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to="/dashboard">Home</Link>
+                <Link to="/dashboard">Core</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -284,21 +289,21 @@ export default function InvitationsPage() {
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
             <div className="px-4 lg:px-6">
-              <div className="flex items-start justify-between gap-4">
-                <PageHeading
-                  heading="Invitations"
-                  subheading="Invite administrators, unit admins, instructors, and students to the platform"
-                />
-                <Button
-                  onClick={() => {
-                    resetForm();
-                    setDialogOpen(true);
-                  }}
-                >
-                  <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
-                  Invite User
-                </Button>
-              </div>
+              <PageHeading
+                heading="Invitations"
+                subheading="Invite administrators, unit admins, instructors, and students to the platform"
+                actions={
+                  <Button
+                    onClick={() => {
+                      resetForm();
+                      setDialogOpen(true);
+                    }}
+                  >
+                    <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
+                    Invite User
+                  </Button>
+                }
+              />
             </div>
 
             {notice && (
@@ -313,13 +318,18 @@ export default function InvitationsPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span>{notice.message}</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => setNotice(null)}
-                      aria-label="Dismiss"
-                    >
-                      ✕
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setNotice(null)}
+                          aria-label="Dismiss"
+                        >
+                          ✕
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Dismiss</TooltipContent>
+                    </Tooltip>
                   </div>
                   {notice.link && (
                     <div className="mt-2 flex items-center gap-2">
@@ -344,20 +354,30 @@ export default function InvitationsPage() {
                     Resend to issue a fresh link, or cancel to disable a pending invite
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="border-t p-0">
                   {loading ? (
-                    <p className="text-sm text-muted-foreground">Loading…</p>
+                    <p className="px-6 py-4 text-sm text-muted-foreground">Loading…</p>
                   ) : (
-                    <div className="overflow-hidden rounded-md border">
-                      <Table>
+                    <div>
+                      {/* Fixed columns with wrapping cells keep it inside the card at laptop
+                          widths, so there is no horizontal scrollbar. */}
+                      <Table className="table-fixed">
+                        <colgroup>
+                          <col className="w-[28%]" />
+                          <col className="w-[14%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[22%]" />
+                        </colgroup>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Email</TableHead>
+                            <TableHead className="pl-6">Email</TableHead>
                             <TableHead>Role</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Invited</TableHead>
                             <TableHead>Expires</TableHead>
-                            <TableHead className="w-10 text-right sr-only">Actions</TableHead>
+                            <TableHead className="pr-6 text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -373,7 +393,7 @@ export default function InvitationsPage() {
                           ) : (
                             invites.map((invite) => (
                               <TableRow key={invite.id}>
-                                <TableCell>
+                                <TableCell className="whitespace-normal break-words pl-6">
                                   <div className="font-medium">{invite.email}</div>
                                   {invite.name && (
                                     <div className="text-sm text-muted-foreground">
@@ -381,7 +401,7 @@ export default function InvitationsPage() {
                                     </div>
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="whitespace-normal">
                                   <Badge variant="outline">
                                     {ROLE_LABEL[invite.role] ?? invite.role}
                                   </Badge>
@@ -396,38 +416,32 @@ export default function InvitationsPage() {
                                   <StatusBadge invite={invite} />
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  {formatDate(invite.createdAt)}
+                                  {formatInviteDate(invite.createdAt, formatScope)}
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  {formatDate(invite.expiresAt)}
+                                  {formatInviteDate(invite.expiresAt, formatScope)}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell className="whitespace-normal pr-6 text-right">
                                   {invite.status === "PENDING" && (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-8 w-8 p-0"
-                                          aria-label="Open menu"
-                                        >
-                                          <IconDots className="h-4 w-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={() => handleResend(invite)}>
-                                          <IconMailForward className="mr-2 h-4 w-4" />
-                                          Resend / copy link
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={() => setCancelTarget(invite)}
-                                          className="text-destructive focus:text-destructive"
-                                        >
-                                          <IconBan className="mr-2 h-4 w-4" />
-                                          Cancel invitation
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleResend(invite)}
+                                      >
+                                        <IconMailForward className="h-4 w-4" aria-hidden="true" />
+                                        Resend / copy link
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setCancelTarget(invite)}
+                                        className="text-destructive hover:text-destructive"
+                                      >
+                                        <IconBan className="h-4 w-4" aria-hidden="true" />
+                                        Cancel invitation
+                                      </Button>
+                                    </div>
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -559,6 +573,7 @@ function errorMessage(code: JsonValue, status: number, role?: string, details?: 
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
+    case "VALIDATION_ERROR":
     case "Invalid input": {
       // Surface the specific field reason (e.g. the UBC-email gate) when the
       // API returns one, instead of a generic "check the fields" message.

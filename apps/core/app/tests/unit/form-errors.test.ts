@@ -19,6 +19,14 @@ describe("firstFieldError", () => {
     expect(firstFieldError(details)).toBe("Bad email");
   });
 
+  it("reads the flat `fields` map from a VALIDATION_ERROR envelope", () => {
+    // validationErrorFromZod returns { error: "VALIDATION_ERROR", fields: { email: "..." } }
+    expect(firstFieldError({ email: "Email must be a UBC address (e.g. you@ubc.ca)" })).toMatch(
+      /UBC address/,
+    );
+    expect(firstFieldError({ name: "", email: "Bad email" })).toBe("Bad email");
+  });
+
   it("returns null when there are no field errors", () => {
     expect(firstFieldError({ formErrors: ["x"], fieldErrors: {} })).toBeNull();
   });

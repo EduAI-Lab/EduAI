@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { Spinner } from "@eduai/ui";
+import { CollapsibleSection, Spinner } from "@eduai/ui";
 import { Link, useNavigate } from "react-router";
 import { IconMessageCircle, IconChevronRight, IconBook, IconUser } from "@tabler/icons-react";
 
@@ -13,10 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { formatRelativeTime, useFormatScope } from "~/lib/hydration-format";
 
 // Only ever rendered inside the transcript dialog, and it pulls the heavy
 // chat-message chunk (streamdown + shiki). Load it on open so the dashboard's
@@ -106,31 +110,15 @@ export type DashboardViewProps = {
   emptyCoursesMessage?: string;
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-function CourseListPanel({
+export function CourseListPanel({
   courses,
   loading,
   title,
   chatHref = "/chat",
   emptyMessage,
+  framed = true,
 }: {
   courses: DashboardCourse[];
   loading: boolean;
@@ -138,8 +126,14 @@ function CourseListPanel({
   chatHref?: string;
   /** Role-specific copy for the no-courses state (see `emptyCoursesMessage`). */
   emptyMessage?: string;
+  /**
+   * False when a parent card already supplies the border (the admin dashboard's
+   * Courses card), so the rows are not boxed twice.
+   */
+  framed?: boolean;
 }) {
   const navigate = useNavigate();
+  const frame = framed ? "rounded-xl border border-border shadow-2xs bg-card" : "";
   if (loading) {
     return (
       <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
@@ -173,7 +167,7 @@ function CourseListPanel({
     }
 
     return (
-      <div className="rounded-xl border border-border bg-card shadow-2xs px-5 py-8 text-center">
+      <div className={`px-5 py-8 text-center ${frame}`}>
         <p className="text-sm text-muted-foreground">No courses found.</p>
         <Link
           to="/courses"
@@ -186,7 +180,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="rounded-xl border border-border overflow-hidden shadow-2xs bg-card">
+    <div className={`overflow-hidden ${frame}`}>
       {courses.slice(0, 5).map((course, i) => (
         <Link
           key={course.id}
@@ -251,28 +245,37 @@ function CourseListPanel({
               );
             }
             return (
-              <button
-                type="button"
-                onClick={(e) => {
-                  // Nested inside the row's <Link>; a nested <a> is invalid
-                  // markup and hydration-mismatches, so navigate
-                  // imperatively instead.
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // #1659 review: /instructor/chat keys its selector by
-                  // course id (Course.code isn't globally unique); every
-                  // other chat surface still keys by ?courseCode=.
-                  const param =
-                    rowChatHref === "/instructor/chat"
-                      ? `courseId=${encodeURIComponent(course.id)}`
-                      : `courseCode=${encodeURIComponent(course.code)}`;
-                  navigate(`${rowChatHref}?${param}`);
-                }}
-                className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
-                style={{ background: "var(--primary)" }}
-              >
-                Chat
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      // Nested inside the row's <Link>; a nested <a> is invalid
+                      // markup and hydration-mismatches, so navigate
+                      // imperatively instead.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // #1659 review: /instructor/chat keys its selector by
+                      // course id (Course.code isn't globally unique); every
+                      // other chat surface still keys by ?courseCode=.
+                      const param =
+                        rowChatHref === "/instructor/chat"
+                          ? `courseId=${encodeURIComponent(course.id)}`
+                          : `courseCode=${encodeURIComponent(course.code)}`;
+                      navigate(`${rowChatHref}?${param}`);
+                    }}
+                    className="shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-md whitespace-nowrap"
+                    style={{ background: "var(--primary)" }}
+                  >
+                    Chat
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {routesToInstructorChat
+                    ? `Open the course assistant for ${course.code}`
+                    : `Chat about ${course.code}`}
+                </TooltipContent>
+              </Tooltip>
             );
           })()}
         </Link>
@@ -281,10 +284,17 @@ function CourseListPanel({
   );
 }
 
-function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; loading: boolean }) {
+export function RecentChatsPanel({
+  chats,
+  loading,
+}: {
+  chats: DashboardRecentChat[];
+  loading: boolean;
+}) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<DashboardRecentChat | null>(null);
   const [transcript, setTranscript] = useState<ChatTranscript | null>(null);
+  const formatScope = useFormatScope();
   const [transcriptLoading, setTranscriptLoading] = useState(false);
 
   const handleOpen = async (chat: DashboardRecentChat) => {
@@ -361,16 +371,15 @@ function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; lo
                       </span>
                     )}
                   </div>
-                  {/* Recent chats are SSR'd now (#1220), so this relative
-                      timestamp renders on the server too; its value depends on
-                      the wall clock and timezone, so suppress the expected
-                      server/client hydration diff (React's canonical timestamp
-                      case) rather than mismatch-warn on every dashboard load. */}
+                  {/* Recent chats are SSR'd (#1220). The scope pins the zone of
+                      the older-than-a-week date (#1941); the suppress covers only
+                      the wall-clock race at a minute boundary, and the scope's
+                      post-hydration re-render corrects the text either way. */}
                   <span
                     suppressHydrationWarning
                     className="text-[11px] text-muted-foreground shrink-0 ml-2"
                   >
-                    {relativeTime(chat.updatedAt)}
+                    {formatRelativeTime(chat.updatedAt, formatScope)}
                   </span>
                 </div>
                 <p className="text-[13px] text-foreground leading-snug line-clamp-2">
@@ -445,9 +454,9 @@ export function DashboardView({
   const newChatHref = hasTaughtCourse ? "/instructor/chat" : chatHref;
 
   return (
-    <div className="flex flex-col gap-6 px-4 lg:px-6 pb-8">
+    <div className="@container/dashboard flex flex-col gap-6 px-4 lg:px-6 pb-8">
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 @xl/dashboard:grid-cols-4">
         {stats.map((s, index) => (
           <ScrollReveal key={s.label} index={index} parallax={false}>
             <StatCard label={s.label} value={s.value} trend={s.trend} trendLabel={s.trendLabel} />
@@ -458,17 +467,20 @@ export function DashboardView({
       {/* Analytics charts */}
       {analytics && (
         <ScrollReveal index={3} parallax={false}>
-          <div data-tour="dashboard-analytics">{analytics}</div>
+          <CollapsibleSection title="At a glance" storageKey="eduai.dashboard.analyticsCollapsed">
+            {/* On the charts, not the header: collapsed, the tour step has no target and is skipped. */}
+            <div data-tour="dashboard-analytics">{analytics}</div>
+          </CollapsibleSection>
         </ScrollReveal>
       )}
 
       {/* 2-column body */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
+      <div className="grid gap-5 @3xl/dashboard:grid-cols-[1fr_360px] @3xl/dashboard:items-stretch">
         {/* Left — courses or quick actions */}
         <ScrollReveal index={4} parallax={false}>
           <div>
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
+              <h2 className="text-lg font-semibold text-foreground">{panelTitle}</h2>
               {!showQuickActions && (
                 <Link
                   to="/courses"
@@ -496,7 +508,7 @@ export function DashboardView({
         <ScrollReveal index={5} parallax={false}>
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
+              <h2 className="text-lg font-semibold text-foreground">Recent conversations</h2>
               <Link
                 to={newChatHref}
                 className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"

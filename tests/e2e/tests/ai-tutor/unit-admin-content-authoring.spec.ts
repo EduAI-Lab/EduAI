@@ -8,10 +8,8 @@
  *
  * The fixture course is published in Core up front. AI Tutor enforces a
  * publish cascade (a module can only be published under a published course, a
- * lesson only under a published module), and the course-detail page carries no
- * course-level publish control of its own — the only one in the app is on the
- * dashboard's "Needs attention" panel (unit-admin-dashboard.spec.ts). Without
- * `publishCourse` here the very first publish step would be blocked.
+ * lesson only under a published module). Without `publishCourse` here the very
+ * first publish step would be blocked.
  *
  * Each test builds its own module so the file can run in any order; the
  * fixture itself is shared because provisioning it is expensive.
@@ -20,6 +18,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
+import { contentRow, contentRowLink, contentRowMenu } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 let coursePath: string;
@@ -47,39 +46,24 @@ function uniqueTitle(prefix: string): string {
   return `${prefix} ${Math.floor(Math.random() * 1e6)}`;
 }
 
-/** The module card for `title` — a role=button card, not a link. */
+/** The module row for `title` (a `ContentListRow`; its title is a real link). */
 function moduleCard(page: Page, title: string) {
-  return page.getByRole("button", { name: new RegExp(title) }).first();
+  return contentRow(page, title);
 }
 
-/**
- * Every "More options" kebab on the page, and *only* the kebabs.
- *
- * Module and lesson cards are themselves `role="button"`, and an accessible
- * name computed from contents swallows the nested kebab's label — so the plain
- * `getByRole("button", { name: "More options" })` matches the card as well as
- * the button inside it (Playwright's `name` is a substring match by default).
- * That doubles every count, and `.first()` resolves to the *card*, so clicking
- * it navigates away instead of opening the menu. `exact` is what separates them.
- */
+/** Every row kebab on the page ("More options for <title>"), and only those. */
 function kebabs(page: Page) {
-  return page.getByRole("button", { name: "More options", exact: true });
+  return page.getByRole("button", { name: /^More options for / });
 }
 
-/**
- * The lesson card for `title`.
- *
- * `LessonCard` sets no `aria-label`, so like `ModuleCard` its accessible name is
- * computed from its contents ("01 LESSON Draft More options <title> ...") — there
- * is no "Lesson: <title>" name to match on.
- */
+/** The lesson row for `title`. */
 function lessonCard(page: Page, title: string) {
-  return page.getByRole("button", { name: new RegExp(title) }).first();
+  return contentRow(page, title);
 }
 
-/** The kebab belonging to `title`'s lesson card. */
+/** The kebab belonging to `title`'s lesson row. */
 function lessonKebab(page: Page, title: string) {
-  return lessonCard(page, title).getByRole("button", { name: "More options", exact: true });
+  return contentRowMenu(page, title);
 }
 
 /**
@@ -109,21 +93,20 @@ async function addModule(page: Page, title: string) {
   await expect(kebabs(page)).toHaveCount(1);
 }
 
-/** The kebab menu trigger belonging to `title`'s card. */
+/** The kebab menu trigger belonging to `title`'s row. */
 function moduleKebab(page: Page, title: string) {
-  return moduleCard(page, title).getByRole("button", { name: "More options", exact: true });
+  return contentRowMenu(page, title);
 }
 
 /**
  * Open the module a test just created.
  *
- * The card is a role=button div whose onClick navigates. It is re-rendered as
- * the debounced module search settles, which can swallow the first click, so
- * the click is retried until the route actually changes.
+ * The row re-renders as the debounced module search settles, which can swallow
+ * the first click, so the click is retried until the route actually changes.
  */
 async function openModule(page: Page, title: string) {
   await expect(async () => {
-    await moduleCard(page, title).click({ timeout: 3_000 });
+    await contentRowLink(page, title).click({ timeout: 3_000 });
     await expect(page).toHaveURL(/\/instructor\/module\/\d+/, { timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: title, level: 1 })).toBeVisible();
@@ -147,7 +130,7 @@ async function openNewLessonPage(page: Page, prefix: string): Promise<number> {
 
   const lessonTitle = uniqueTitle(`${prefix} Lesson`);
   await addLesson(page, lessonTitle);
-  await lessonCard(page, lessonTitle).click();
+  await contentRowLink(page, lessonTitle).click();
   await expect(page).toHaveURL(/\/instructor\/lesson\/\d+/, { timeout: 15_000 });
   return Number(page.url().split("/").pop());
 }
@@ -287,7 +270,7 @@ test.describe("UNIT_ADMIN content authoring", () => {
 
     const lessonTitle = uniqueTitle("Doomed Lesson");
     await addLesson(page, lessonTitle);
-    await expect(page.getByText("1 Lesson", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Lessons\s*\(1\)$/ })).toBeVisible();
 
     await lessonKebab(page, lessonTitle).click();
     await page.getByRole("menu").getByRole("menuitem", { name: "Delete lesson" }).click();
@@ -337,7 +320,7 @@ test.describe("UNIT_ADMIN content authoring", () => {
 
     await expect(dialog).toHaveCount(0);
     await expect(lessonCard(page, lessonTitle)).toBeVisible();
-    await expect(page.getByText("1 Lesson", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Lessons\s*\(1\)$/ })).toBeVisible();
   });
 
   test("the publish cascade blocks a lesson under an unpublished module", async ({ page }) => {
@@ -365,8 +348,8 @@ test.describe("UNIT_ADMIN content authoring", () => {
 
     await expect(page.getByRole("button", { name: "Import lessons" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add lesson" }).first()).toBeVisible();
-    // Counts come from the module's own rollup.
-    await expect(page.getByText("0 Lessons", { exact: true })).toBeVisible();
+    // The count comes from the module's own total.
+    await expect(page.getByRole("heading", { name: /^Lessons\s*\(0\)$/ })).toBeVisible();
   });
 
   test("a unit admin reaches the activity authoring form on a lesson", async ({ page }) => {

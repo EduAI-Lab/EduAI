@@ -1,6 +1,5 @@
 /**
- * @file ModuleHero — the banner atop a module's lesson list (instructor +
- * student module views).
+ * @file ModuleHero — the banner atop the student module and lesson views.
  *
  * Composes the shared `@eduai/ui` `HeroShell` — the same solid course-accent
  * surface, white text, `radius-xl`, `p-6`, glow shadow — and its
@@ -14,12 +13,8 @@
  * left, a progress bar on the right. That combination is unique to the module
  * tier.
  *
- * Each view supplies its own numbers:
- *   - instructor → total / published / draft lesson counts as glass badges + a
- *     Unpublished/Published badge, and drops its "Add lesson" / "Import" buttons into
- *     `actions`.
- *   - student → total lessons + a progress bar (real, derived from each
- *     lesson's progress — never fabricated).
+ * Each view supplies its own numbers as glass stat badges plus a progress bar
+ * (real, derived from each lesson's progress — never fabricated).
  *
  * Data honesty: `order`, `stats`, and `progress` are optional and simply omit
  * their block when not supplied. `order` must be the module's real index among
@@ -27,7 +22,6 @@
  * from the raw `position` field, which is 1-based from the seed but 0-based via
  * UI create. When it can't be resolved, omit it and the watermark hides.
  */
-import type { ReactNode } from "react";
 import { HERO_GLASS_STYLE, HeroShell, type CourseAccentColor } from "@eduai/ui";
 import { titleName } from "~/lib/course-title";
 
@@ -61,14 +55,10 @@ export interface ModuleHeroProps {
   accentColor?: CourseAccentColor;
   /** Eyebrow kicker. Defaults to "Module". */
   eyebrow?: string;
-  /** Renders a read-only Unpublished/Published badge when provided (instructor). */
-  isPublished?: boolean;
   /** Summary counts shown as glass badges. */
   stats?: ModuleHeroStat[];
   /** Overall progress bar (student). Rendered only when total > 0. */
   progress?: { completed: number; total: number } | null;
-  /** Trailing action slot, e.g. the instructor "Add lesson" / "Import" buttons. */
-  actions?: ReactNode;
 }
 
 export function ModuleHero({
@@ -78,16 +68,14 @@ export function ModuleHero({
   description,
   accentColor,
   eyebrow = "Module",
-  isPublished,
   stats,
   progress,
-  actions,
 }: ModuleHeroProps) {
   const accent = (accentColor ?? "var(--primary)") as CourseAccentColor;
   const pct =
     progress && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
   const hasProgress = Boolean(progress && progress.total > 0);
-  const hasBadges = Boolean(stats?.length) || isPublished != null;
+  const hasBadges = Boolean(stats?.length);
   // `orderText` (authored, e.g. "1.1") wins; else pad the numeric index.
   const orderLabel =
     orderText ?? (order != null && order > 0 ? String(order).padStart(2, "0") : null);
@@ -123,34 +111,20 @@ export function ModuleHero({
           )}
         </div>
 
-        {(actions || hasBadges || hasProgress) && (
+        {(hasBadges || hasProgress) && (
           <div className="flex shrink-0 flex-col gap-4 sm:items-end">
-            {/* Top-right cluster: actions, then the stat badges. */}
-            {(actions || hasBadges) && (
-              <div className="flex flex-col gap-2.5 sm:items-end">
-                {actions && <div className="flex items-center gap-2">{actions}</div>}
-                {hasBadges && (
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    {isPublished != null && (
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold backdrop-blur-sm"
-                        style={HERO_GLASS_STYLE}
-                      >
-                        <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
-                        {isPublished ? "Published" : "Unpublished"}
-                      </span>
-                    )}
-                    {stats?.map((stat) => (
-                      <span
-                        key={stat.label}
-                        className="rounded-full px-3 py-1.5 text-xs font-medium backdrop-blur-sm"
-                        style={HERO_GLASS_STYLE}
-                      >
-                        <span className="font-bold tabular-nums">{stat.value}</span> {stat.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
+            {/* Top-right: the stat badges. */}
+            {hasBadges && (
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                {stats?.map((stat) => (
+                  <span
+                    key={stat.label}
+                    className="rounded-full px-3 py-1.5 text-xs font-medium backdrop-blur-sm"
+                    style={HERO_GLASS_STYLE}
+                  >
+                    <span className="font-bold tabular-nums">{stat.value}</span> {stat.label}
+                  </span>
+                ))}
               </div>
             )}
 

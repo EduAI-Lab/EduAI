@@ -10,23 +10,32 @@ import {
   BreadcrumbSeparator,
 } from "../ui/breadcrumb";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "../ui/sheet";
-import { TooltipProvider } from "../ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../utils";
-import { CourseNavMenu } from "./course-nav-menu";
+import { CourseNavMenu, SectionNavMenu } from "./course-nav-menu";
 import { GlobalNavRail } from "./global-nav-rail";
 import { MobileNav } from "./mobile-nav";
-import { NavAnchor, NavLinkProvider } from "./nav-shared";
+import { currentLauncherApp, launcherShortName, NavAnchor, NavLinkProvider } from "./nav-shared";
 import { RAIL_WIDTH } from "./nav-trays";
-import type { CourseNavConfig, NavLinkComponent, NavOpenTray, NavShellModel } from "./types";
+import type {
+  CourseNavConfig,
+  NavLinkComponent,
+  NavOpenTray,
+  NavShellModel,
+  SectionNavConfig,
+} from "./types";
 import {
   COURSE_MENU_OPEN_KEY,
   RAIL_COLLAPSED_KEY,
+  SECTION_MENU_OPEN_KEY,
   useNavBreakpoint,
   usePersistedFlag,
 } from "./use-nav-layout";
 
 /** Width of the course menu column (and of its tablet overlay drawer). */
 const COURSE_MENU_WIDTH = 180;
+/** Width of a section menu, which also fits each link's icon and count badge. */
+const SECTION_MENU_WIDTH = 200;
 /** Height of the top bar (`h-12`), which the course menu sits beneath. */
 const HEADER_HEIGHT = 48;
 
@@ -41,8 +50,19 @@ export interface NavShellProps {
   locationKey: string;
   /** The page title: the header's heading (sr-only beside a breadcrumb) and the mobile header's text. */
   title: string;
-  /** Breadcrumb trail rendered in place of the plain title. */
+  /**
+   * Breadcrumb trail rendered in place of the plain title. It should open with
+   * the app's name, as the course and title-only headers the shell draws
+   * itself do, so it is always clear which app you're in.
+   */
   breadcrumbs?: React.ReactNode;
+  /** Where the app-name crumb links (the app's landing page). Defaults to `/dashboard`. */
+  appHomeHref?: string;
+  /**
+   * The app-name crumb's text. Defaults to the current app's launcher name,
+   * which a user the launcher hides the app from (an access-denied page) lacks.
+   */
+  appName?: string;
   /**
    * The app's pages draw their own `<h1>` (AI Tutor's do), so the header's
    * title must not be a second one: it is left out beside a breadcrumb and
@@ -55,6 +75,12 @@ export interface NavShellProps {
    * `breadcrumbs`).
    */
   courseNav?: CourseNavConfig;
+  /**
+   * A section's own menu (e.g. Administration), drawn in the course menu's
+   * column with the same hamburger and tablet drawer. Ignored when
+   * `courseNav` is set.
+   */
+  sectionNav?: SectionNavConfig;
   /** Right-aligned header controls. */
   headerActions?: React.ReactNode;
   /** Dialogs and floating pieces that live beside the layout (command palette, bug report, …). */
@@ -95,8 +121,11 @@ export function NavShell({
   locationKey,
   title,
   breadcrumbs,
+  appHomeHref = "/dashboard",
+  appName: appNameProp,
   headingInPage = false,
   courseNav,
+  sectionNav,
   headerActions,
   overlays,
   insetClassName,
@@ -106,7 +135,15 @@ export function NavShell({
 }: NavShellProps) {
   const breakpoint = useNavBreakpoint();
   const [railCollapsed, setRailCollapsed] = usePersistedFlag(RAIL_COLLAPSED_KEY, false);
-  const [courseMenuOpen, setCourseMenuOpen] = usePersistedFlag(COURSE_MENU_OPEN_KEY, true);
+  const hasCourseMenu = Boolean(courseNav && courseNav.items.length > 0);
+  const activeSectionNav =
+    !hasCourseMenu && sectionNav && sectionNav.links.length > 0 ? sectionNav : undefined;
+  // The course menu and a section menu remember their open state separately:
+  // hiding one should not hide the other on the next page that has it.
+  const [courseMenuOpen, setCourseMenuOpen] = usePersistedFlag(
+    activeSectionNav ? SECTION_MENU_OPEN_KEY : COURSE_MENU_OPEN_KEY,
+    true,
+  );
   const [openTray, setOpenTray] = React.useState<NavOpenTray | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [courseDrawerOpen, setCourseDrawerOpen] = React.useState(false);
@@ -119,8 +156,11 @@ export function NavShell({
   }, [breakpoint, locationKey]);
 
   const TitleTag = headingInPage ? "p" : "h1";
+  const appName = appNameProp ?? launcherShortName(currentLauncherApp(model));
   const iconOnly = railCollapsed || breakpoint === "tablet";
-  const hasCourseMenu = Boolean(courseNav && courseNav.items.length > 0);
+  const hasSideMenu = hasCourseMenu || Boolean(activeSectionNav);
+  const sideMenuName = activeSectionNav ? `${activeSectionNav.title} menu` : "course menu";
+  const sideMenuWidth = activeSectionNav ? SECTION_MENU_WIDTH : COURSE_MENU_WIDTH;
   const courseMenuShown = breakpoint === "tablet" ? courseDrawerOpen : courseMenuOpen;
 
   const { onReportBug } = model;
@@ -164,23 +204,32 @@ export function NavShell({
           >
             <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center border-b bg-background max-md:top-14">
               <div className="flex h-full w-full min-w-0 items-center gap-2 px-4 lg:px-6">
-                {hasCourseMenu && (
-                  <button
-                    ref={hamburgerRef}
-                    type="button"
-                    onClick={toggleCourseMenu}
-                    aria-expanded={courseMenuShown}
-                    aria-controls={breakpoint === "tablet" ? "course-menu-drawer" : "course-menu"}
-                    aria-label={courseMenuShown ? "Hide course menu" : "Show course menu"}
-                    className="-ml-2 hidden size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex"
-                  >
-                    <IconMenu2 size={20} aria-hidden="true" />
-                  </button>
+                {hasSideMenu && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        ref={hamburgerRef}
+                        type="button"
+                        onClick={toggleCourseMenu}
+                        aria-expanded={courseMenuShown}
+                        aria-controls={
+                          breakpoint === "tablet" ? "course-menu-drawer" : "course-menu"
+                        }
+                        aria-label={`${courseMenuShown ? "Hide" : "Show"} ${sideMenuName}`}
+                        className="-ml-2 hidden size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex"
+                      >
+                        <IconMenu2 size={20} aria-hidden="true" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {`${courseMenuShown ? "Hide" : "Show"} ${sideMenuName}`}
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {courseNav ? (
                   <>
                     {!headingInPage && <h1 className="sr-only">{title}</h1>}
-                    <CourseBreadcrumb config={courseNav} />
+                    <CourseBreadcrumb config={courseNav} appName={appName} appHref={appHomeHref} />
                   </>
                 ) : breadcrumbs ? (
                   <>
@@ -196,9 +245,22 @@ export function NavShell({
                     </div>
                   </>
                 ) : (
-                  <TitleTag className="min-w-0 flex-1 truncate text-sm font-normal text-foreground">
-                    {title}
-                  </TitleTag>
+                  <Breadcrumb className="min-w-0 flex-1">
+                    <BreadcrumbList className="flex-nowrap">
+                      {/* A page titled with the app's own name needs no second crumb. */}
+                      {title !== appName && (
+                        <>
+                          <AppBreadcrumbItem label={appName} href={appHomeHref} />
+                          <BreadcrumbSeparator />
+                        </>
+                      )}
+                      <BreadcrumbItem className="min-w-0">
+                        <TitleTag className="truncate text-sm font-normal text-foreground">
+                          {title}
+                        </TitleTag>
+                      </BreadcrumbItem>
+                    </BreadcrumbList>
+                  </Breadcrumb>
                 )}
                 <div className="ml-auto flex h-full shrink-0 items-center gap-3 overflow-x-auto sm:gap-4">
                   {headerActions}
@@ -208,18 +270,28 @@ export function NavShell({
             {/* The header spans the whole content area; the course menu sits
                 under it, beside the page. */}
             <div className="flex min-h-0 min-w-0 flex-1">
-              {hasCourseMenu && courseNav && (
+              {hasSideMenu && (
                 <aside
                   id="course-menu"
-                  aria-label="Course menu"
+                  aria-label={activeSectionNav ? sideMenuName : "Course menu"}
                   // Collapsed to zero width rather than unmounted, so the width
                   // can animate; `inert` keeps the hidden links out of the tab
                   // order. Sticky just below the header, like Canvas.
                   inert={!courseMenuOpen}
                   className="sticky top-12 hidden h-[calc(100svh-3rem)] shrink-0 self-start overflow-y-auto overflow-x-hidden bg-background transition-[width] duration-200 motion-reduce:transition-none lg:block"
-                  style={{ width: courseMenuOpen ? COURSE_MENU_WIDTH : 0 }}
+                  style={{ width: courseMenuOpen ? sideMenuWidth : 0 }}
                 >
-                  <CourseNavMenu config={courseNav} className="w-[180px]" />
+                  {courseNav && hasCourseMenu ? (
+                    <CourseNavMenu config={courseNav} className="w-[180px]" />
+                  ) : (
+                    activeSectionNav && (
+                      <SectionNavMenu
+                        config={activeSectionNav}
+                        pathname={model.pathname}
+                        className="w-[200px]"
+                      />
+                    )
+                  )}
                 </aside>
               )}
               <main className={cn("min-w-0", mainClassName ?? "flex-1 overflow-auto")}>
@@ -229,7 +301,7 @@ export function NavShell({
           </div>
         </div>
 
-        {hasCourseMenu && courseNav && breakpoint === "tablet" && (
+        {hasSideMenu && breakpoint === "tablet" && (
           <Sheet open={courseDrawerOpen} onOpenChange={setCourseDrawerOpen} modal={false}>
             <SheetContent
               id="course-menu-drawer"
@@ -239,7 +311,7 @@ export function NavShell({
                 left: RAIL_WIDTH.iconOnly,
                 top: HEADER_HEIGHT,
                 height: `calc(100% - ${HEADER_HEIGHT}px)`,
-                width: COURSE_MENU_WIDTH + 40,
+                width: sideMenuWidth + 40,
               }}
               className="z-30 gap-0 overflow-y-auto p-0 shadow-xl sm:max-w-none data-[state=closed]:duration-200 data-[state=open]:duration-200 motion-reduce:!animate-none [&>button:last-child]:hidden"
               onInteractOutside={(event) => {
@@ -252,9 +324,25 @@ export function NavShell({
                 hamburgerRef.current?.focus();
               }}
             >
-              <SheetTitle className="sr-only">Course menu</SheetTitle>
-              <SheetDescription className="sr-only">{courseNav.code} sections</SheetDescription>
-              <CourseNavMenu config={courseNav} onNavigate={() => setCourseDrawerOpen(false)} />
+              <SheetTitle className="sr-only">
+                {activeSectionNav ? sideMenuName : "Course menu"}
+              </SheetTitle>
+              <SheetDescription className="sr-only">
+                {activeSectionNav
+                  ? `${activeSectionNav.title} pages`
+                  : `${courseNav?.code} sections`}
+              </SheetDescription>
+              {courseNav && hasCourseMenu ? (
+                <CourseNavMenu config={courseNav} onNavigate={() => setCourseDrawerOpen(false)} />
+              ) : (
+                activeSectionNav && (
+                  <SectionNavMenu
+                    config={activeSectionNav}
+                    pathname={model.pathname}
+                    onNavigate={() => setCourseDrawerOpen(false)}
+                  />
+                )
+              )}
             </SheetContent>
           </Sheet>
         )}
@@ -274,13 +362,39 @@ export function NavShell({
 }
 
 /** `BIOL 116 · 2026-27W1 › Materials` — the course part links to the course's landing section. */
-function CourseBreadcrumb({ config }: { config: CourseNavConfig }) {
+/**
+ * The trail's first crumb: the app's name ("Core", "AI Tutor", …), linking to
+ * its landing page. Apps that pass their own `breadcrumbs` open with the same crumb.
+ */
+function AppBreadcrumbItem({ label, href }: { label: string; href: string }) {
+  return (
+    <BreadcrumbItem className="shrink-0">
+      <BreadcrumbLink asChild>
+        <NavAnchor href={href} className="font-medium">
+          {label}
+        </NavAnchor>
+      </BreadcrumbLink>
+    </BreadcrumbItem>
+  );
+}
+
+function CourseBreadcrumb({
+  config,
+  appName,
+  appHref,
+}: {
+  config: CourseNavConfig;
+  appName: string;
+  appHref: string;
+}) {
   const courseLabel = config.term ? `${config.code} · ${config.term}` : config.code;
   const active = config.items.find((item) => item.key === config.activeKey);
 
   return (
     <Breadcrumb className="min-w-0 flex-1">
       <BreadcrumbList className="flex-nowrap">
+        <AppBreadcrumbItem label={appName} href={appHref} />
+        <BreadcrumbSeparator>›</BreadcrumbSeparator>
         <BreadcrumbItem className="min-w-0">
           {config.courseCrumb ? (
             config.courseCrumb

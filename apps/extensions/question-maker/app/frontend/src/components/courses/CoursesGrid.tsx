@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 import {
-  CourseCard,
+  CourseTile,
+  paletteColorAtIndex,
+  type CourseTileLink,
   CourseListView,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
@@ -8,10 +11,53 @@ import {
   type CourseFilterGroup,
   EmptyState,
 } from "@eduai/ui";
-import { IconBooks, IconSearch } from "@tabler/icons-react";
+import {
+  IconBooks,
+  IconClipboardList,
+  IconFolders,
+  IconLayoutDashboard,
+  IconSearch,
+  IconStack2,
+  type Icon,
+} from "@tabler/icons-react";
 import { Course } from "@/types/question";
 import { getDepartmentLabel } from "@/lib/units";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
+import { QM_COURSE_SECTIONS } from "@/components/layout/qmCourseNav";
+import type { ActiveTab } from "@/pages/course-detail/courseTabs";
+
+/** Icons for the course sections, matching the command palette's. */
+const SECTION_ICONS = {
+  overview: IconLayoutDashboard,
+  questions: IconStack2,
+  banks: IconFolders,
+  assessments: IconClipboardList,
+} satisfies Partial<Record<ActiveTab, Icon>>;
+
+type CardSection = keyof typeof SECTION_ICONS;
+
+function isCardSection(key: ActiveTab): key is CardSection {
+  return key in SECTION_ICONS;
+}
+
+/**
+ * A card's links: the course sections. Canvas is left out because whether a
+ * course is linked to Canvas is only known once its page loads.
+ */
+function sectionLinks(courseId: number): CourseTileLink[] {
+  return QM_COURSE_SECTIONS.flatMap((section) =>
+    isCardSection(section.key)
+      ? [
+          {
+            key: section.key,
+            label: section.label,
+            icon: SECTION_ICONS[section.key],
+            href: `/courses/${courseId}?tab=${section.key}`,
+          },
+        ]
+      : [],
+  );
+}
 
 /** Short "last synced" label from a course's Core metadata timestamp. */
 function syncedLabel(updatedAt?: string): string | undefined {
@@ -29,7 +75,6 @@ function syncedLabel(updatedAt?: string): string | undefined {
 export type CoursesGridProps = {
   courses: Course[];
   isLoading: boolean;
-  onSelectCourse: (course: Course) => void;
   emptyHint?: string;
   showDepartment?: boolean;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
@@ -41,12 +86,11 @@ export type CoursesGridProps = {
 /**
  * QM's course list. Thin wrapper over the shared `CourseListView` so search,
  * term grouping, and layout read identically to Core and AI Tutor; QM only
- * supplies its click-to-select card and any role-specific filter.
+ * supplies the course sections on each card and any role-specific filter.
  */
 export function CoursesGrid({
   courses,
   isLoading,
-  onSelectCourse,
   emptyHint,
   showDepartment = false,
   filters,
@@ -70,47 +114,32 @@ export function CoursesGrid({
     // for legacy unlinked rows.
     const colorIndex = defaultColorIndexForCourse(course.coreCourseId ?? String(course.id));
     const synced = syncedLabel(course.updatedAt);
-    const extraBadges = [course.coreCourseId ? "EduAI Core" : "Local", synced].filter(
-      (b): b is string => Boolean(b),
-    );
+    const extraBadges = [
+      showDepartment && course.department ? getDepartmentLabel(course.department) : undefined,
+      course.coreCourseId ? "EduAI Core" : "Local",
+      synced,
+    ].filter((b): b is string => Boolean(b));
 
     return (
+      // Every card is a tour target: the guided tour (#1754) spotlights the
+      // first one on screen and follows it into its workspace, so it matches
+      // CourseListView's ordering (current term first) and any active filter.
       <div
-        onClick={(e) => {
-          e.preventDefault();
-          onSelectCourse(course);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onSelectCourse(course);
-          }
-        }}
-        role="button"
-        tabIndex={0}
-        // Every card is a tour target: the guided tour (#1754) spotlights the
-        // first one on screen and follows it into its workspace, so it matches
-        // CourseListView's ordering (current term first) and any active filter.
         data-tour="course-select"
         data-tour-route={`/courses/${course.id}`}
         data-course-id={course.id}
-        className="cursor-pointer rounded-[var(--radius-xl)] focus:outline-none focus:ring-2 focus:ring-primary"
       >
-        <CourseCard
-          id={String(course.id)}
-          code={course.code || course.name}
-          name={course.code ? course.name : ""}
-          description={course.description ?? undefined}
+        <CourseTile
+          code={course.code ?? ""}
+          title={course.name}
           term={course.term || ""}
-          year={course.year}
-          isPublished={course.isPublished ?? false}
-          department={showDepartment ? course.department : undefined}
-          departmentLabel={
-            showDepartment && course.department ? getDepartmentLabel(course.department) : undefined
-          }
+          year={course.year ?? null}
+          accent={paletteColorAtIndex(colorIndex)}
+          href={`/courses/${course.id}?tab=overview`}
+          LinkComponent={Link}
+          links={sectionLinks(course.id)}
+          publishState={course.isPublished ?? undefined}
           extraBadges={extraBadges}
-          colorIndex={colorIndex}
-          href="#"
         />
       </div>
     );

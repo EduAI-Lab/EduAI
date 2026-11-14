@@ -2036,7 +2036,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                   title="Toggle review status"
                 >
                   <IconFilePencil className="h-3 w-3" />
-                  <span>{viewEntry.isDraft ? "Mark as Reviewed" : "Mark as Draft"}</span>
+                  <span>{viewEntry.isDraft ? "Mark as reviewed" : "Mark as draft"}</span>
                 </Button>
               </PermissionGate>
             </div>

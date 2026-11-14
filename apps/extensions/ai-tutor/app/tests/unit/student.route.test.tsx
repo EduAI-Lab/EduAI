@@ -56,12 +56,12 @@ describe("StudentHome (#746 review: TA preview must stay student-shaped)", () =>
 
   it("renders the student course grid for a STUDENT", () => {
     renderStudentHome("STUDENT", courses as Course[]);
-    expect(screen.getByText("Course 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /· Course 1$/ })).toBeInTheDocument();
   });
 
   it("renders the same student course grid for a TA previewing /student", () => {
     renderStudentHome("TA", courses as Course[]);
-    expect(screen.getByText("Course 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /· Course 1$/ })).toBeInTheDocument();
   });
 });
 

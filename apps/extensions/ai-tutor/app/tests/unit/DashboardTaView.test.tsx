@@ -1,17 +1,27 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
 import { DashboardTaView } from "~/components/dashboard/DashboardTaView";
 import type { Course } from "~/lib/types";
 
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({ user: { id: "ta1", name: "TA", role: "TA", authorizedUnits: [] } }),
+}));
+vi.mock("~/hooks/useAtPermissions", () => ({
+  useAtPermissions: () => ({ canPublishContent: false, canPreviewAsStudent: false }),
+}));
+// Publishing revalidates through a data router this test doesn't mount.
+vi.mock("~/components/courses/useCoursePublishToggle", () => ({
+  useCoursePublishToggle: () => ({ requestToggle: () => {}, dialog: null }),
+}));
+
 /**
  * #1644: a TA's `courses` prop mixes TA-assigned courses (no progress) with
  * courses the same account is separately enrolled in as a student (with
- * progress). These pin that "Assigned courses" lists only the assisted ones
- * (linking into /instructor), while the enrolled-as-student course surfaces
- * only in the learner-facing "Continue learning" surface (linking into
- * /student).
+ * progress). These pin that "Courses you assist" lists only the assisted ones
+ * (linking into /instructor), while the enrolled-as-student course sits under
+ * "Courses you're taking" (linking into /student).
  */
 const assisted: Course = { id: 1, code: "TA 101", title: "Course I Assist", isPublished: true };
 const enrolled: Course = {
@@ -31,7 +41,7 @@ function renderView() {
 }
 
 describe("DashboardTaView", () => {
-  it("lists only assisted courses under 'Assigned courses' (#1644)", () => {
+  it("lists only assisted courses under 'Courses you assist' (#1644)", () => {
     renderView();
     // The assisted course is an assigned row (links into /instructor)…
     expect(screen.getByRole("link", { name: /Course I Assist/ })).toHaveAttribute(
@@ -44,20 +54,21 @@ describe("DashboardTaView", () => {
     }
   });
 
-  it("surfaces the enrolled-as-student course only in the learner surface (#1644)", () => {
+  it("surfaces the enrolled-as-student course only under 'Courses you're taking' (#1644)", () => {
     renderView();
-    // It shows up as a /student link (Continue learning), not a staff /instructor one.
-    expect(
-      screen.getAllByRole("link").some((l) => l.getAttribute("href") === "/student/courses/2"),
-    ).toBe(true);
+    const taking = screen.getByRole("region", { name: "Courses you're taking" });
+    expect(within(taking).getByRole("link", { name: /Course I Learn/ })).toHaveAttribute(
+      "href",
+      "/student/courses/2",
+    );
+    const assisting = screen.getByRole("region", { name: "Courses you assist" });
+    expect(within(assisting).queryByText(/Course I Learn/)).not.toBeInTheDocument();
   });
 
   it("counts only assisted courses in the 'Courses assisting' stat", () => {
     renderView();
-    const label = screen.getByText("Courses assisting");
-    // Label and value share a stat card; walk up to the card and read its value.
-    const card = label.closest("[class]")?.parentElement ?? label.parentElement;
-    expect(card?.textContent).toContain("1");
-    expect(card?.textContent).not.toContain("2");
+    // The <dt> and its <dd> share a wrapper in the "At a glance" list.
+    const stat = screen.getByText("Courses assisting").parentElement;
+    expect(stat?.querySelector("dd")?.textContent).toBe("1");
   });
 });

@@ -28,9 +28,9 @@ Closes #
 - [ ] Full applicable test suite passes with no inappropriate skipped tests
 - [ ] `TESTS.md` updated for added or changed test files
 - [ ] `README.md` updated, or no README changes were needed
-- [ ] `.claude/memory/MEMORY.md` updated, or no memory update was needed
+- [ ] `MEMORY.md` updated, or no memory update was needed
 - [ ] PR assignees include everyone who contributed
-- [ ] Two reviewers assigned: one dev team reviewer and one project lead
+- [ ] Reviewer assigned
 
 <!--
 Items a reviewer verifies by reading the code -- naming, structure, comment quality,

@@ -27,6 +27,7 @@ import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-saf
 import type { UserProviderSettings } from "~/lib/ai/provider-types";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
+import { completionPlatformKey } from "~/lib/assistant/user-ai-keys.server";
 
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 8192;
@@ -636,6 +637,21 @@ export async function runCompletion(request: CompletionRequest) {
       mergedSettings.isEnabled = rawRequestSettings.isEnabled;
     }
     mergedApiKeys[provider] = mergedSettings;
+  }
+
+  // #1899: with no key in the request or saved for the user, fall back to the
+  // deployment's own key, the same last tier as `resolveProviderKey`. Only a
+  // request-sent `false` disables it: a keyless stored row defaults to disabled.
+  const selectedSettings = mergedApiKeys[parsedModel.providerId];
+  if (!selectedSettings?.apiKey) {
+    const platformKey = completionPlatformKey(parsedModel.providerId);
+    if (platformKey) {
+      mergedApiKeys[parsedModel.providerId] = {
+        ...selectedSettings,
+        apiKey: platformKey,
+        isEnabled: apiKeysParsed.data[parsedModel.providerId]?.isEnabled !== false,
+      };
+    }
   }
 
   const validatedApiKeys = mergeLocalInferenceFromEnv(

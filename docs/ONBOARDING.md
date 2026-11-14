@@ -88,9 +88,9 @@ Staff task: Review a lesson
 
 Task: Submit an answer and try guided help
 
-Staff task: Review an activity and its tutoring modes
+Staff task: Review an activity's question and hints
 
-1. **Read the activity** — Read the question and the instructions before answering. Staff can review the configured activity and available guidance modes.
+1. **Read the activity** — Read the question and the instructions before answering. Staff can review the configured activity; instructors also choose its tutoring modes.
 2. **Use guided help** — The tutor supports learning; it is not an answer key. Available modes depend on the activity and platform settings.
 3. **Check your submission** — Submit your answer and check its status. Short answers without an answer key need staff review; an ungraded answer is not evidence that your response was wrong.
 
@@ -118,7 +118,7 @@ Task: Review the course workspace
 
 Staff task: Review the course workspace
 
-1. **Choose a workspace tab** — Overview summarizes the course. Questions contains its question bank, Assessments groups questions, and Canvas offers supported import and export flows.
+1. **Choose a workspace tab** — Overview summarizes the course. Questions and Banks hold its questions, Assessments groups them, and Canvas, shown when the course is linked to Canvas, offers supported import and export flows.
 2. **Keep topics aligned** — Use course topics when organizing questions. If approval fails after a topic changes, refresh the course data and check the mapping.
 
 ## question-maker.question: Create a question

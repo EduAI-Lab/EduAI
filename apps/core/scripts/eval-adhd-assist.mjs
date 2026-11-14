@@ -132,7 +132,7 @@ Phase 3 after-capture (oversight ON on server):
   npm run eval:adhd -- --only S1,S2,S3,S5 --mode on --label phase3-after-oversight
 
 Then record Form A:
-  npx tsx ../../eduai-summer-2026/reports/scripts/record-form-a-phase3.mjs \\
+  npx tsx ../../docs/research/adhd-phase3/scripts/record-form-a-phase3.mjs \\
     --baseline ../../eval-runs/2026-06-09T21-14-53-136Z \\
     --after ../../eval-runs/<AFTER_STAMP>
 `;
