@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import BugReportsTab from "~/components/admin/BugReportsTab";
 import type { AdminBugReportRow } from "~/lib/types";
@@ -104,6 +105,33 @@ const anonymousReportWithPopulatedIdentityFields: AdminBugReportRow = {
   },
 };
 
+/** Shows the current query string, so tests can read `?report=`. */
+function LocationProbe() {
+  return <output data-testid="location-search">{useLocation().search}</output>;
+}
+
+function renderTab(reports: AdminBugReportRow[], path = "/admin?tab=bug-reports") {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <BugReportsTab initialReports={reports} />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
+/** Clicks a report's row and returns its side panel. */
+async function openReport(description: string) {
+  fireEvent.click(screen.getByRole("row", { name: `Open report: ${description}` }));
+  return screen.findByRole("dialog", { name: "Report Description" });
+}
+
+/** Closes a viewer dialog by its own X (the panel behind it has one too). */
+function closeViewer(title: string) {
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: title })).getByRole("button", { name: "Close" }),
+  );
+}
+
 describe("BugReportsTab", () => {
   beforeEach(() => {
     mockUpdateAdminBugReportStatus.mockReset();
@@ -124,17 +152,33 @@ describe("BugReportsTab", () => {
     });
   });
 
-  it("renders bug report rows and anonymous reporter label", () => {
-    render(<BugReportsTab initialReports={[baseReport, anonymousReport]} />);
+  it("renders compact rows, with context and page moved into the report's panel", async () => {
+    renderTab([baseReport, anonymousReport]);
 
-    expect(screen.getByText("Bug reports")).toBeInTheDocument();
     expect(screen.getByText(baseReport.description)).toBeInTheDocument();
     expect(screen.getByText(anonymousReport.description)).toBeInTheDocument();
     expect(screen.getByText("Anonymous")).toBeInTheDocument();
-    expect(screen.getAllByText("Math 101 / Week 1 / Linear Equations / Solve for x")).toHaveLength(
-      2,
+    expect(screen.queryByText("/student/list/42?step=1")).not.toBeInTheDocument();
+
+    const panel = await openReport(baseReport.description);
+    expect(
+      within(panel).getByText("Math 101 / Week 1 / Linear Equations / Solve for x"),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText(baseReport.pageUrl as string)).toBeInTheDocument();
+  });
+
+  it("keeps the open report in ?report= and opens it from the URL", async () => {
+    renderTab([baseReport]);
+    await openReport(baseReport.description);
+    expect(screen.getByTestId("location-search")).toHaveTextContent(
+      `?tab=bug-reports&report=${baseReport.id}`,
     );
-    expect(screen.getAllByText("/student/list/42?step=1")).toHaveLength(2);
+  });
+
+  it("opens the report named in the URL on load", async () => {
+    renderTab([baseReport], `/admin?tab=bug-reports&report=${baseReport.id}`);
+    const panel = await screen.findByRole("dialog", { name: "Report Description" });
+    expect(within(panel).getByText(baseReport.description)).toBeInTheDocument();
   });
 
   it("updates status after a successful API response", async () => {
@@ -143,8 +187,9 @@ describe("BugReportsTab", () => {
       status: "resolved",
     });
 
-    render(<BugReportsTab initialReports={[baseReport]} />);
+    renderTab([baseReport]);
 
+    // The row's own status control: no need to open the report.
     const trigger = screen.getByLabelText(`Update status for report ${baseReport.id}`);
     fireEvent.click(trigger);
     fireEvent.click(await screen.findByRole("option", { name: "Resolved" }));
@@ -158,32 +203,24 @@ describe("BugReportsTab", () => {
     expect(trigger).toHaveTextContent("Resolved");
   });
 
-  it("opens description, console, network, and screenshot viewers", async () => {
-    render(<BugReportsTab initialReports={[baseReport]} />);
+  it("shows the description and screenshot in the panel and opens console and network", async () => {
+    renderTab([baseReport]);
 
-    fireEvent.click(screen.getByText(baseReport.description));
-    expect(await screen.findByText("Report Description")).toBeInTheDocument();
-    expect(screen.getByText(/Reported by/)).toBeInTheDocument();
+    const panel = await openReport(baseReport.description);
+    expect(within(panel).getByText(baseReport.description)).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: "Open in new tab" })).toBeInTheDocument();
     // This row already carries the blobs, so the shared view skips the detail
     // fetch (#979) — see the flag-only case below for the fetching path.
     expect(mockGetAdminBugReport).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Console" }));
-    expect(await screen.findByText("Console Logs")).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole("button", { name: "Console" }));
+    expect(await screen.findByRole("dialog", { name: "Console Logs" })).toBeInTheDocument();
     expect(screen.getByText("Show stack trace")).toBeInTheDocument();
+    closeViewer("Console Logs");
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Network" }));
-    expect(await screen.findByText("Network Logs")).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole("button", { name: "Network" }));
+    expect(await screen.findByRole("dialog", { name: "Network Logs" })).toBeInTheDocument();
     expect(screen.getByText("Request")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Screenshot" }));
-    expect(await screen.findByRole("link", { name: "Open in new tab" })).toBeInTheDocument();
   });
 
   it("fetches the detail payload when the list row only carries has* flags", async () => {
@@ -197,14 +234,17 @@ describe("BugReportsTab", () => {
     };
     mockGetAdminBugReport.mockResolvedValue(baseReport);
 
-    render(<BugReportsTab initialReports={[listRow]} />);
+    renderTab([listRow]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Console" }));
-
+    // Opening the panel pulls the bodies, so the screenshot can show inline.
+    const panel = await openReport(listRow.description);
     await waitFor(() => {
       expect(mockGetAdminBugReport).toHaveBeenCalledWith(baseReport.id);
     });
-    expect(await screen.findByText("Console Logs")).toBeInTheDocument();
+    expect(await within(panel).findByAltText("Bug report screenshot")).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Console" }));
+    expect(await screen.findByRole("dialog", { name: "Console Logs" })).toBeInTheDocument();
     expect(screen.getByText("Show stack trace")).toBeInTheDocument();
   });
 
@@ -213,7 +253,8 @@ describe("BugReportsTab", () => {
     vi.useFakeTimers();
 
     try {
-      render(<BugReportsTab initialReports={[baseReport]} />);
+      renderTab([baseReport]);
+      fireEvent.click(screen.getByRole("row", { name: `Open report: ${baseReport.description}` }));
 
       fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
@@ -249,9 +290,10 @@ describe("BugReportsTab", () => {
   it("copies masked anonymous reporter details while still including internal user id", async () => {
     mockClipboardWriteText.mockResolvedValue(undefined);
 
-    render(<BugReportsTab initialReports={[anonymousReport]} />);
+    renderTab([anonymousReport]);
+    const panel = await openReport(anonymousReport.description);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Copy" }));
 
     await act(async () => {
       await Promise.resolve();
@@ -268,9 +310,10 @@ describe("BugReportsTab", () => {
   it("does not leak identity fields when copying anonymous reports even if row includes them", async () => {
     mockClipboardWriteText.mockResolvedValue(undefined);
 
-    render(<BugReportsTab initialReports={[anonymousReportWithPopulatedIdentityFields]} />);
+    renderTab([anonymousReportWithPopulatedIdentityFields]);
+    const panel = await openReport(anonymousReportWithPopulatedIdentityFields.description);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Copy" }));
 
     await act(async () => {
       await Promise.resolve();

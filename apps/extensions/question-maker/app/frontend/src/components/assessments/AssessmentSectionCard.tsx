@@ -250,7 +250,7 @@ export function AssessmentSectionCard({
                           onSelect={() => setPendingDraftToggle({ entry, nextDraft: !isDraft })}
                         >
                           <IconCircleCheck className="size-4" />{" "}
-                          {isDraft ? "Mark reviewed" : "Mark as draft"}
+                          {isDraft ? "Mark as reviewed" : "Mark as draft"}
                         </DropdownMenuItem>
                       )}
                       {onCreateVariant && !readOnly && (

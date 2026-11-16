@@ -1145,6 +1145,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/admin/nav-counts",
+    readiness: "excluded",
+    reason: "UI Administration-menu badge counts; not an agent operation",
+    routeFile: "routes/api/admin.nav-counts.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/admin/api-access",
     readiness: "excluded",
     reason:

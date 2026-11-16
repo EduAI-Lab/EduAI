@@ -33,7 +33,7 @@ import { IconDownload, IconEye, IconLayoutGrid, IconPlus } from "@tabler/icons-r
 import {
   Button,
   Card,
-  ConfirmDialog,
+  Checkbox,
   DetailPageScaffold,
   Dialog,
   DialogContent,
@@ -59,6 +59,8 @@ import {
   Textarea,
 } from "@eduai/ui";
 import { PublishMenu } from "../components/PublishMenu";
+import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { publishLessons, unpublishedLessons } from "~/lib/publish-cascade";
 import { ContentList, ContentListRow } from "../components/courses/ContentListRow";
 import { CourseNextSteps } from "../components/courses/CourseNextSteps";
 import { CourseBannerMenu } from "../components/courses/CourseBannerMenu";
@@ -79,7 +81,7 @@ import {
 } from "../lib/course-display";
 import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
 import type { ModuleCreatePayload } from "../lib/api";
-import type { Course, Module } from "../lib/types";
+import type { Course, Lesson, Module } from "../lib/types";
 import type { Route } from "./+types/instructor.course";
 import { requireClientUser } from "~/lib/client-auth";
 import { useLocalUser } from "../hooks/useLocalUser";
@@ -275,6 +277,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     isPublished: boolean;
     title: string;
   } | null>(null);
+  // Unpublished lessons of the module being published; null until loaded.
+  const [cascadeLessons, setCascadeLessons] = useState<Lesson[] | null>(null);
+  const [alsoPublishLessons, setAlsoPublishLessons] = useState(true);
+  const cascadeRequestIdRef = useRef(0);
   const [reorderingModules, setReorderingModules] = useState(false);
   const { requestToggle: requestCoursePublish, dialog: coursePublishDialog } =
     useCoursePublishToggle();
@@ -481,7 +487,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
-  const togglePublish = async (moduleId: number, currentlyPublished: boolean) => {
+  const togglePublish = async (moduleId: number, currentlyPublished: boolean): Promise<boolean> => {
     // Optimistic update via useOptimistic
     addModuleOpt((items) =>
       items.map((m) => (m.id === moduleId ? { ...m, isPublished: !currentlyPublished } : m)),
@@ -494,14 +500,56 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         : await api.publishModule(moduleId);
       // Confirm with server response
       setModules((prev) => prev.map((m) => (m.id === moduleId ? updated : m)));
+      return true;
     } catch (error) {
       console.error("Failed to toggle publish status", error);
       // Rollback on error to clear optimistic change
       setModules((prev) =>
         prev.map((m) => (m.id === moduleId ? { ...m, isPublished: currentlyPublished } : m)),
       );
+      return false;
     } finally {
       setPublishingId((current) => (current === moduleId ? null : current));
+    }
+  };
+
+  const requestModulePublish = (m: Module) => {
+    setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
+    setAlsoPublishLessons(true);
+    setCascadeLessons(null);
+    if (m.isPublished) return;
+    const requestId = ++cascadeRequestIdRef.current;
+    unpublishedLessons(m.id)
+      .then((lessons) => {
+        if (cascadeRequestIdRef.current === requestId) setCascadeLessons(lessons);
+      })
+      .catch((error) => console.error("Failed to load module lessons", error));
+  };
+
+  // #2157: publish the module first, then its lessons (the server needs that order).
+  const confirmModulePublish = async (
+    target: { id: number; isPublished: boolean; title: string },
+    withLessons: boolean,
+    knownLessons: Lesson[] | null,
+  ) => {
+    const ok = await togglePublish(target.id, target.isPublished);
+    if (!ok || target.isPublished || !withLessons) return;
+    try {
+      const lessons = knownLessons ?? (await unpublishedLessons(target.id));
+      if (lessons.length === 0) return;
+      const { published, failed } = await publishLessons(lessons);
+      if (failed > 0) {
+        toast.error(
+          `Published "${target.title}", but ${failed} of ${lessons.length} lessons couldn't be published.`,
+        );
+      } else {
+        toast.success(
+          `Published "${target.title}" and its ${published} ${published === 1 ? "lesson" : "lessons"}.`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to publish module lessons", error);
+      toast.error(`Published "${target.title}", but its lessons couldn't be published.`);
     }
   };
 
@@ -594,6 +642,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       setDeleting(false);
     }
   };
+
+  const firstUnpublishedModule = oModules.find((m) => !m.isPublished);
 
   return (
     <DetailPageScaffold
@@ -702,8 +752,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   key: "publish-module",
                   label: "Publish a module",
                   done: publishedCount(moduleCounts, oModules) > 0,
-                  detail:
-                    "Unpublished modules stay hidden. Use a module's ⋯ menu to publish it, then publish its lessons.",
+                  detail: "Unpublished modules stay hidden. Publish one together with its lessons.",
+                  onSelect:
+                    perms.canPublishContent && course.isPublished && firstUnpublishedModule
+                      ? () => requestModulePublish(firstUnpublishedModule)
+                      : undefined,
                 },
               ]}
             />
@@ -1066,11 +1119,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                                   perms.canPublishContent
                                     ? () => {
                                         if (busy || blocked) return;
-                                        setPendingPublish({
-                                          id: m.id,
-                                          isPublished: m.isPublished,
-                                          title: m.title,
-                                        });
+                                        requestModulePublish(m);
                                       }
                                     : undefined
                                 }
@@ -1164,33 +1213,27 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           if (movingModule) return moveModule(movingModule.id, position);
         }}
       />
-      <ConfirmDialog
-        open={pendingPublish !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingPublish(null);
-        }}
-        title={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? `Unpublish "${pendingPublish.title}"?`
-              : `Publish "${pendingPublish.title}"?`
-            : ""
-        }
-        description={
-          pendingPublish
-            ? pendingPublish.isPublished
-              ? "Students will lose access to this content."
-              : "Students will be able to see this content."
-            : ""
-        }
-        confirmLabel={pendingPublish?.isPublished ? "Unpublish" : "Publish"}
-        variant={pendingPublish?.isPublished ? "destructive" : "default"}
+      <PublishConfirmDialog
+        target={pendingPublish}
+        onCancel={() => setPendingPublish(null)}
         onConfirm={() => {
           if (!pendingPublish) return;
-          void togglePublish(pendingPublish.id, pendingPublish.isPublished);
+          void confirmModulePublish(pendingPublish, alsoPublishLessons, cascadeLessons);
           setPendingPublish(null);
         }}
-      />
+      >
+        {cascadeLessons?.length === 0 ? null : (
+          <Label className="flex items-center gap-2 text-sm font-normal">
+            <Checkbox
+              checked={alsoPublishLessons}
+              onCheckedChange={(checked) => setAlsoPublishLessons(checked === true)}
+            />
+            {cascadeLessons
+              ? `Also publish its ${cascadeLessons.length} ${cascadeLessons.length === 1 ? "lesson" : "lessons"}`
+              : "Also publish its lessons"}
+          </Label>
+        )}
+      </PublishConfirmDialog>
       {coursePublishDialog}
     </DetailPageScaffold>
   );

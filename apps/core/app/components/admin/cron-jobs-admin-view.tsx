@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
@@ -9,12 +9,18 @@ import {
   CardTitle,
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   Input,
   Label,
   PageHeading,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
   Table,
   TableBody,
   TableCell,
@@ -27,7 +33,7 @@ import {
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
 import { useCronJobStatuses } from "~/hooks/api/use-cron-job-status";
-import { useFormatScope, type FormatScope } from "~/lib/hydration-format";
+import { formatRelativeTime, useFormatScope, type FormatScope } from "~/lib/hydration-format";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -148,12 +154,16 @@ function formatDuration(startedAt: string, finishedAt: string | null) {
 // ── Run history dialog ────────────────────────────────────────────────────────
 
 interface RunHistoryDialogProps {
-  jobName: string;
+  /** The job's schedule expression, script and settings, which the jobs table no longer shows, head the dialog. */
+  job: CronJobEntry | null;
   open: boolean;
   onClose: () => void;
+  /** Opens Edit settings for the job; shown under its settings when it has any. */
+  onEditSettings: (job: CronJobEntry) => void;
 }
 
-function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
+function RunHistoryDialog({ job, open, onClose, onEditSettings }: RunHistoryDialogProps) {
+  const jobName = job?.name ?? "";
   const [runs, setRuns] = useState<CronJobRunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
@@ -164,7 +174,7 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
     setLoading(true);
     fetch(`/api/admin/cron-jobs?job=${encodeURIComponent(jobName)}`)
       .then((r) => r.json())
-      .then((body: { runs: CronJobRunRow[] }) => setRuns(body.runs))
+      .then((body: { runs?: CronJobRunRow[] }) => setRuns(body.runs ?? []))
       .catch(() => setRuns([]))
       .finally(() => setLoading(false));
   }, [open, jobName]);
@@ -180,6 +190,43 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Run history — {jobName}</DialogTitle>
+            {job && (
+              <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="flex items-center gap-1.5">
+                  Schedule:
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {job.schedule}
+                  </Badge>
+                  {job.scheduleOverridden && (
+                    <span
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: "var(--color-warning-100)",
+                        color: "var(--color-warning-700)",
+                      }}
+                    >
+                      custom
+                    </span>
+                  )}
+                </span>
+                <span>
+                  Script: <span className="font-mono text-xs">{job.script}</span>
+                </span>
+              </DialogDescription>
+            )}
+            {job?.settings?.map((setting) => (
+              <p key={setting.key} className="text-xs text-muted-foreground">
+                {`${setting.label}: ${setting.value} (${setting.overridden ? "overridden" : "default"})`}
+              </p>
+            ))}
+            {job && job.triggerEnabled !== false && (job.settings?.length ?? 0) > 0 && (
+              <button
+                onClick={() => onEditSettings(job)}
+                className="self-start text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
+              >
+                Edit settings
+              </button>
+            )}
           </DialogHeader>
           {loading ? (
             <div className="flex items-center justify-center py-8">
@@ -262,6 +309,113 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// ── Job detail panel ─────────────────────────────────────────────────────────
+
+function Detail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 wrap-break-word">{children}</dd>
+    </div>
+  );
+}
+
+/** What the job's last run came to, in a sentence: an error shows its reason. */
+function LastRunOutcome({ job }: { job: CronJobEntry }) {
+  const run = job.lastRun;
+  const box = "rounded-xl border border-border/70 bg-background/60 p-4 text-sm";
+  if (!run) {
+    return (
+      <div className={`${box} text-muted-foreground`}>
+        {job.triggerEnabled === false
+          ? "This job runs on an extension server; no run has been reported here yet."
+          : "This job hasn't run yet."}
+      </div>
+    );
+  }
+  if (run.status === "RUNNING") {
+    return <div className={`${box} text-muted-foreground`}>This job is running now.</div>;
+  }
+  if (run.status === "ERROR") {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-medium" style={{ color: "var(--destructive)" }}>
+          The last run failed.
+        </p>
+        <pre
+          aria-label="Failure reason"
+          className={`${box} max-h-[50vh] overflow-y-auto whitespace-pre-wrap wrap-break-word font-mono text-xs`}
+        >
+          {run.message || "No reason was recorded."}
+        </pre>
+      </div>
+    );
+  }
+  return (
+    <div className={box} style={{ color: "var(--color-success-700)" }}>
+      The last run completed successfully.
+    </div>
+  );
+}
+
+interface JobDetailPanelProps {
+  job: CronJobEntry | null;
+  onClose: () => void;
+  onOpenHistory: (job: CronJobEntry) => void;
+}
+
+function JobDetailPanel({ job, onClose, onOpenHistory }: JobDetailPanelProps) {
+  const run = job?.lastRun ?? null;
+  const formatScope = useFormatScope();
+  return (
+    <Sheet
+      open={job !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-xl">
+        <SheetHeader className="border-b pr-12">
+          <SheetTitle>{job?.name ?? ""}</SheetTitle>
+          <SheetDescription>{job?.description ?? ""}</SheetDescription>
+        </SheetHeader>
+        {job && (
+          <div className="flex flex-col gap-6 p-4">
+            <LastRunOutcome job={job} />
+            <dl className="flex flex-col gap-3">
+              <Detail label="Status">
+                <CronStatusBadge
+                  status={run?.status ?? null}
+                  external={job.triggerEnabled === false}
+                />
+              </Detail>
+              <Detail label="Schedule">{job.scheduleLabel}</Detail>
+              <Detail label="Last run">
+                {run ? formatDateTime(run.startedAt, formatScope) : "—"}
+              </Detail>
+              <Detail label="Duration">
+                {run
+                  ? run.status === "RUNNING"
+                    ? "running…"
+                    : formatDuration(run.startedAt, run.finishedAt)
+                  : "—"}
+              </Detail>
+              <Detail label="Script">
+                <span className="font-mono text-xs">{job.script}</span>
+              </Detail>
+            </dl>
+            <div>
+              <Button size="sm" variant="outline" onClick={() => onOpenHistory(job)}>
+                View run history
+              </Button>
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -634,7 +788,10 @@ export interface CronJobsAdminViewProps {
 export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps) {
   const { jobs, refresh: fetchStatuses, setJobs } = useCronJobStatuses(true, initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
-  const [historyJob, setHistoryJob] = useState<string | null>(null);
+  const [historyJob, setHistoryJob] = useState<CronJobEntry | null>(null);
+  // The panel follows the live list, so a run that finishes updates it in place.
+  const [detailJobName, setDetailJobName] = useState<string | null>(null);
+  const detailJob = jobs.find((job) => job.name === detailJobName) ?? null;
   const formatScope = useFormatScope();
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
   const [editSettingsJob, setEditSettingsJob] = useState<CronJobEntry | null>(null);
@@ -665,13 +822,13 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const successCount = jobs.filter((j) => j.lastRun?.status === "SUCCESS").length;
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">
       <PageHeading
         heading="Cron Jobs"
         subheading="Registered server cron jobs and their current status"
       />
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total jobs</CardDescription>
@@ -724,62 +881,63 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
               <TableRow>
                 <TableHead>Job</TableHead>
                 <TableHead>Schedule</TableHead>
-                <TableHead>Script</TableHead>
                 <TableHead>Last run</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.map((job) => {
                 const isRunning = job.lastRun?.status === "RUNNING";
                 const isTriggeringThis = triggering.has(job.name);
+                const openDetail = () => setDetailJobName(job.name);
                 return (
-                  <TableRow key={job.name}>
+                  <TableRow
+                    key={job.name}
+                    tabIndex={0}
+                    aria-label={`Open job: ${job.name}`}
+                    onClick={openDetail}
+                    onKeyDown={(event) => {
+                      // Only the row itself: Enter on a button inside is that button's.
+                      if (event.key === "Enter" && event.target === event.currentTarget) {
+                        event.preventDefault();
+                        openDetail();
+                      }
+                    }}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
                     <TableCell>
                       <div className="font-medium text-sm">{job.name}</div>
                       <div className="text-xs text-muted-foreground">{job.description}</div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {job.schedule}
-                        </Badge>
-                        {job.scheduleOverridden && (
-                          <span
-                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                            style={{
-                              background: "var(--color-warning-100)",
-                              color: "var(--color-warning-700)",
-                            }}
-                          >
-                            custom
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-muted-foreground">{job.scheduleLabel}</span>
-                        {job.triggerEnabled !== false && (
-                          <button
-                            onClick={() => setEditScheduleJob(job)}
-                            className="text-[11px] text-primary-text underline-offset-2 hover:underline cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </div>
-                      {job.settings?.map((setting) => (
-                        <div key={setting.key} className="text-xs text-muted-foreground mt-1">
-                          {`${setting.label}: ${setting.value} (${setting.overridden ? "overridden" : "default"})`}
-                        </div>
-                      ))}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {job.script}
+                    <TableCell className="text-sm">
+                      {/* The schedule itself opens Edit schedule. */}
+                      {job.triggerEnabled !== false ? (
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setEditScheduleJob(job);
+                          }}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          title="Edit schedule"
+                          aria-label={`${job.scheduleLabel} (edit schedule)`}
+                          className="text-left text-primary-text underline-offset-2 hover:underline cursor-pointer"
+                        >
+                          {job.scheduleLabel}
+                        </button>
+                      ) : (
+                        job.scheduleLabel
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {formatDateTime(job.lastRun?.startedAt ?? null, formatScope)}
+                      {job.lastRun ? (
+                        <span title={formatDateTime(job.lastRun.startedAt, formatScope)}>
+                          {formatRelativeTime(job.lastRun.startedAt, formatScope)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {job.lastRun
@@ -795,22 +953,17 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         message={job.lastRun?.message}
                       />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <TableCell
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => setHistoryJob(job.name)}
+                          onClick={() => setHistoryJob(job)}
                           className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
                         >
                           History
                         </button>
-                        {job.triggerEnabled !== false && (job.settings?.length ?? 0) > 0 && (
-                          <button
-                            onClick={() => setEditSettingsJob(job)}
-                            className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
-                          >
-                            Edit settings
-                          </button>
-                        )}
                         {job.triggerEnabled !== false && (
                           <Button
                             size="sm"
@@ -831,10 +984,23 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
         </CardContent>
       </Card>
 
+      <JobDetailPanel
+        job={detailJob}
+        onClose={() => setDetailJobName(null)}
+        onOpenHistory={(job) => {
+          setDetailJobName(null);
+          setHistoryJob(job);
+        }}
+      />
+
       <RunHistoryDialog
-        jobName={historyJob ?? ""}
+        job={historyJob}
         open={historyJob !== null}
         onClose={() => setHistoryJob(null)}
+        onEditSettings={(job) => {
+          setHistoryJob(null);
+          setEditSettingsJob(job);
+        }}
       />
 
       <EditScheduleDialog

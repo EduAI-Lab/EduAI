@@ -129,6 +129,32 @@ export function getReporterLabel(report: AdminBugReportRow) {
   return name ?? email ?? report.userId;
 }
 
+/** The reporter's name alone (email as a fallback), for a narrow column. */
+export function getReporterName(report: AdminBugReportRow) {
+  if (report.isAnonymous) return "Anonymous";
+  return (
+    report.reporterName ??
+    report.userName ??
+    report.user?.name ??
+    report.reporterEmail ??
+    report.userEmail ??
+    report.user?.email ??
+    report.userId
+  );
+}
+
+export function getReporterEmail(report: AdminBugReportRow) {
+  if (report.isAnonymous) return null;
+  return report.reporterEmail ?? report.userEmail ?? report.user?.email ?? null;
+}
+
+/** "Sep 16": month and day only, for the compact table (the panel shows the full time). */
+export function formatShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function getReporterRole(report: AdminBugReportRow) {
   return report.reporterRole ?? report.role ?? report.user?.role ?? null;
 }
@@ -404,6 +430,11 @@ export type RawAdminBugReport = {
   createdAt?: JsonValue;
   updatedAt?: JsonValue;
   context?: JsonValue;
+  reporterNoteSubject?: JsonValue;
+  reporterNote?: JsonValue;
+  reporterNoteUpdatedAt?: JsonValue;
+  reporterNoteEmailedAt?: JsonValue;
+  reporterReachable?: JsonValue;
 };
 
 /**
@@ -516,5 +547,10 @@ export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugRepo
     moduleTitle: optionalString(context.moduleTitle),
     lessonTitle: optionalString(context.lessonTitle),
     activityTitle: optionalString(context.activityTitle),
+    reporterNoteSubject: optionalString(raw.reporterNoteSubject),
+    reporterNote: optionalString(raw.reporterNote),
+    reporterNoteUpdatedAt: optionalIsoString(raw.reporterNoteUpdatedAt),
+    reporterNoteEmailedAt: optionalIsoString(raw.reporterNoteEmailedAt),
+    reporterReachable: optionalBoolean(raw.reporterReachable),
   };
 }

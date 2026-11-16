@@ -168,13 +168,14 @@ describe("UsersTable — row actions", () => {
     expect(onEdit).toHaveBeenCalledWith(baseUser);
   });
 
-  it("calls onToggleActive with the user when the status badge is clicked via row menu", () => {
+  it("calls onToggleActive with the user once Deactivate is confirmed in the row menu", () => {
     const onToggleActive = vi.fn();
     render(<UsersTable {...defaultProps} onToggleActive={onToggleActive} />);
-    // Open the row actions menu
     openRowMenu();
-    // Click the deactivate/activate menu item
-    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate|activate/i }));
+    // Deactivating asks first; nothing changes until the dialog is confirmed.
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate/i }));
+    expect(onToggleActive).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
     expect(onToggleActive).toHaveBeenCalledWith(baseUser);
   });
 

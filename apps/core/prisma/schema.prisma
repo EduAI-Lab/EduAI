@@ -26,6 +26,9 @@ model User {
   // sync corroborates it.
   studentIdVerifiedAt       DateTime?
   isActive                  Boolean                @default(true)
+  /// Stamped on every sign-in by the better-auth session.create hook. Null means
+  /// the account has never signed in (admin dashboard attention list).
+  lastSignInAt              DateTime?
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
   emailVerified             Boolean                @default(false)
@@ -812,6 +815,13 @@ model BugReport {
   context     Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  /// The admin's one status note to the reporter ("working on it", later "fixed").
+  /// Each save overwrites it and emails the reporter; past notes live in the audit log.
+  reporterNoteSubject   String?   @db.VarChar(200)
+  reporterNote          String?   @db.VarChar(5000)
+  reporterNoteUpdatedAt DateTime?
+  /// When the current note last reached the reporter's inbox; null when it was saved but not delivered.
+  reporterNoteEmailedAt DateTime?
   user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])

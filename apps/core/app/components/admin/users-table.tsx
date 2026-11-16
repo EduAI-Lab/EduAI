@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type {
   ColumnDef,
@@ -6,6 +6,7 @@ import type {
   FilterFn,
   PaginationState,
   Row,
+  RowSelectionState,
   SortingState,
   VisibilityState,
 } from "@tanstack/react-table";
@@ -57,6 +58,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuWithTooltip,
 } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
@@ -65,6 +67,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@eduai/ui";
 import type { PlatformUser } from "~/hooks/api/types";
 import { DEFAULT_PAGE_SIZE } from "~/hooks/api/pagination";
 import type { UsersQuery, UserSortField } from "~/hooks/api/use-users";
@@ -99,6 +102,11 @@ export interface UsersTableProps {
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
   onCreateUser?: () => void;
+  /**
+   * Deletes the selected users (your own account already left out). The bulk
+   * bar waits on it and clears the selection once it settles.
+   */
+  onDeleteMany?: (users: User[]) => Promise<void>;
 }
 
 const formatCreatedDate = (dateString: string, scope: FormatScope) =>
@@ -132,11 +140,53 @@ const statusFilterFn: FilterFn<User> = (row, columnId, filterValue: string[]) =>
   return filterValue.includes(statusString);
 };
 
+/**
+ * Why the row menu won't delete or deactivate this user, or null when it will:
+ * nobody can remove their own account. Other admins can be removed (the server
+ * keeps at least one active admin).
+ */
+function blockedReason(
+  user: User,
+  currentUserId: string,
+  action: "delete" | "deactivate",
+): string | null {
+  if (user.id === currentUserId) return `You can't ${action} your own account`;
+  return null;
+}
+
+/** Explains a disabled menu item on hover; renders the item bare when nothing blocks it. */
+/** Names an icon-only control on hover. */
+function IconTip({ label, children }: { label: string; children: ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function BlockedActionTooltip({
+  reason,
+  children,
+}: {
+  reason: string | null;
+  children: ReactElement;
+}) {
+  if (!reason) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="left">{reason}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function RowActions({
   row,
   currentUserId,
   onEdit,
   onRequestDelete,
+  onRequestDeactivate,
   onToggleActive,
   onViewChatHistory,
 }: {
@@ -144,22 +194,28 @@ function RowActions({
   currentUserId: string;
   onEdit: (user: User) => void;
   onRequestDelete: (user: User) => void;
+  onRequestDeactivate: (user: User) => void;
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
 }) {
   const user = row.original;
   const isCurrentUser = user.id === currentUserId;
+  const deleteBlockedReason = blockedReason(user, currentUserId, "delete");
+  const deactivateBlockedReason = blockedReason(user, currentUserId, "deactivate");
 
   return (
     // modal={false} so Radix does not lock `body { pointer-events: none }` while
     // the menu is open. Without it, opening the table-level AlertDialog as this
     // menu closes leaves the body pointer-events lock stuck → page unclickable.
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
+    <DropdownMenuWithTooltip
+      modal={false}
+      tooltip="User actions"
+      trigger={
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Open menu">
           <IconDots className="h-4 w-4" />
         </Button>
-      </DropdownMenuTrigger>
+      }
+    >
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => onEdit(user)}>
           <IconEdit className="mr-2 h-4 w-4" />
@@ -181,25 +237,33 @@ function RowActions({
               </a>
             </DropdownMenuItem>
           )}
-        <DropdownMenuItem onClick={() => onToggleActive(user)} disabled={isCurrentUser}>
-          {user.isActive ? (
-            <IconUserOff className="mr-2 h-4 w-4" />
-          ) : (
-            <IconUserCheck className="mr-2 h-4 w-4" />
-          )}
-          {user.isActive ? "Deactivate" : "Activate"}
-        </DropdownMenuItem>
+        <BlockedActionTooltip reason={user.isActive ? deactivateBlockedReason : null}>
+          <DropdownMenuItem
+            // Deactivating asks first (see the table's dialog); activating doesn't.
+            onClick={() => (user.isActive ? onRequestDeactivate(user) : onToggleActive(user))}
+            disabled={user.isActive ? deactivateBlockedReason !== null : isCurrentUser}
+          >
+            {user.isActive ? (
+              <IconUserOff className="mr-2 h-4 w-4" />
+            ) : (
+              <IconUserCheck className="mr-2 h-4 w-4" />
+            )}
+            {user.isActive ? "Deactivate" : "Activate"}
+          </DropdownMenuItem>
+        </BlockedActionTooltip>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => onRequestDelete(user)}
-          disabled={isCurrentUser}
-          className="text-destructive focus:text-destructive"
-        >
-          <IconTrash className="mr-2 h-4 w-4" />
-          Delete
-        </DropdownMenuItem>
+        <BlockedActionTooltip reason={deleteBlockedReason}>
+          <DropdownMenuItem
+            onClick={() => onRequestDelete(user)}
+            disabled={deleteBlockedReason !== null}
+            className="text-destructive focus:text-destructive"
+          >
+            <IconTrash className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </BlockedActionTooltip>
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenuWithTooltip>
   );
 }
 
@@ -213,10 +277,15 @@ export function UsersTable({
   onToggleActive,
   onViewChatHistory,
   onCreateUser,
+  onDeleteMany,
 }: UsersTableProps) {
   const id = useId();
+  // Keyed by user id (see `getRowId`), so a selection names people, not row positions.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const formatScope = useFormatScope();
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [userToDeactivate, setUserToDeactivate] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -347,6 +416,7 @@ export function UsersTable({
             currentUserId={currentUserId}
             onEdit={onEdit}
             onRequestDelete={setUserToDelete}
+            onRequestDeactivate={setUserToDeactivate}
             onToggleActive={onToggleActive}
             onViewChatHistory={onViewChatHistory}
           />
@@ -374,7 +444,10 @@ export function UsersTable({
     onPaginationChange: setPagination,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id,
     state: {
+      rowSelection,
       sorting,
       pagination,
       columnFilters,
@@ -403,6 +476,12 @@ export function UsersTable({
 
   const filterKey = `${nameFilter}|${roleFilter.join(",")}|${String(isActiveFilter)}`;
   const previousFilterKey = useRef(filterKey);
+
+  // "Select all" covers the current page, so a selection never outlives the
+  // rows it was made on: new filters, search, or page clear it.
+  useEffect(() => {
+    setRowSelection({});
+  }, [filterKey, pagination.pageIndex, pagination.pageSize]);
 
   useEffect(() => {
     // A changed filter invalidates the current offset — reset before fetching so
@@ -477,14 +556,22 @@ export function UsersTable({
     table.getColumn("isActive")?.setFilterValue(newFilterValue.length ? newFilterValue : undefined);
   };
 
-  const handleDeleteSelected = () => {
-    const selectedRows = table.getSelectedRowModel().rows;
-    selectedRows.forEach((row) => {
-      if (row.original.id !== currentUserId) {
-        onDelete(row.original.id);
-      }
-    });
-    table.resetRowSelection();
+  const selectedRows = table.getSelectedRowModel().rows;
+  // Your own account can be swept up by "Select all" but is never deleted.
+  const selfSelected = selectedRows.some((row) => row.original.id === currentUserId);
+  const deletable = selectedRows
+    .map((row) => row.original)
+    .filter((user) => user.id !== currentUserId);
+
+  const handleDeleteSelected = async () => {
+    setBulkDeleting(true);
+    try {
+      if (onDeleteMany) await onDeleteMany(deletable);
+      else for (const user of deletable) onDelete(user.id);
+    } finally {
+      setBulkDeleting(false);
+      setRowSelection({});
+    }
   };
 
   return (
@@ -511,18 +598,20 @@ export function UsersTable({
               <IconSearch size={16} aria-hidden="true" />
             </div>
             {Boolean(table.getColumn("name")?.getFilterValue()) && (
-              <button
-                className="text-muted-foreground/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 absolute inset-y-0 end-0 flex h-full w-9 items-center justify-center rounded-e-md transition-[color,box-shadow] outline-none focus:z-10 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="Clear filter"
-                onClick={() => {
-                  table.getColumn("name")?.setFilterValue("");
-                  if (inputRef.current) {
-                    inputRef.current.focus();
-                  }
-                }}
-              >
-                <IconX size={16} aria-hidden="true" />
-              </button>
+              <IconTip label="Clear filter">
+                <button
+                  className="text-muted-foreground/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 absolute inset-y-0 end-0 flex h-full w-9 items-center justify-center rounded-e-md transition-[color,box-shadow] outline-none focus:z-10 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Clear filter"
+                  onClick={() => {
+                    table.getColumn("name")?.setFilterValue("");
+                    if (inputRef.current) {
+                      inputRef.current.focus();
+                    }
+                  }}
+                >
+                  <IconX size={16} aria-hidden="true" />
+                </button>
+              </IconTip>
             )}
           </div>
 
@@ -631,49 +720,6 @@ export function UsersTable({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Delete selected button */}
-          {table.getSelectedRowModel().rows.length > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline">
-                  <IconTrash className="-ms-1 opacity-60" size={16} aria-hidden="true" />
-                  Delete
-                  <span className="bg-background text-muted-foreground/70 -me-1 inline-flex h-5 max-h-full items-center rounded border px-1 font-[inherit] text-[0.625rem] font-medium">
-                    {
-                      table
-                        .getSelectedRowModel()
-                        .rows.filter((row) => row.original.id !== currentUserId).length
-                    }
-                  </span>
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete{" "}
-                    {
-                      table
-                        .getSelectedRowModel()
-                        .rows.filter((row) => row.original.id !== currentUserId).length
-                    }{" "}
-                    selected{" "}
-                    {table
-                      .getSelectedRowModel()
-                      .rows.filter((row) => row.original.id !== currentUserId).length === 1
-                      ? "user"
-                      : "users"}
-                    .
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDeleteSelected}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-
           {/* Add user button */}
           {onCreateUser && (
             <Button onClick={onCreateUser}>
@@ -683,6 +729,46 @@ export function UsersTable({
           )}
         </div>
       </div>
+
+      {selectedRows.length > 0 && (
+        <div
+          role="region"
+          aria-label="Bulk actions"
+          className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"
+        >
+          <span className="font-medium">{selectedRows.length} selected</span>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={bulkDeleting || deletable.length === 0}>
+                <IconTrash className="-ms-1 opacity-60" size={16} aria-hidden="true" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete {deletable.length}{" "}
+                  selected {deletable.length === 1 ? "user" : "users"}.
+                  {selfSelected && " Your own account is selected and will be skipped."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteSelected}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setRowSelection({})}
+            disabled={bulkDeleting}
+          >
+            Clear selection
+          </Button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-background overflow-hidden rounded-md border">
@@ -814,55 +900,63 @@ export function UsersTable({
             <PaginationContent>
               {/* First page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.firstPage()}
-                  disabled={!table.getCanPreviousPage()}
-                  aria-label="Go to first page"
-                >
-                  <IconChevronsLeft size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="First page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.firstPage()}
+                    disabled={!table.getCanPreviousPage()}
+                    aria-label="Go to first page"
+                  >
+                    <IconChevronsLeft size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
               {/* Previous page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.previousPage()}
-                  disabled={!table.getCanPreviousPage()}
-                  aria-label="Go to previous page"
-                >
-                  <IconChevronLeft size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="Previous page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                    aria-label="Go to previous page"
+                  >
+                    <IconChevronLeft size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
               {/* Next page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.nextPage()}
-                  disabled={!table.getCanNextPage()}
-                  aria-label="Go to next page"
-                >
-                  <IconChevronRight size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="Next page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                    aria-label="Go to next page"
+                  >
+                    <IconChevronRight size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
               {/* Last page button */}
               <PaginationItem>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => table.lastPage()}
-                  disabled={!table.getCanNextPage()}
-                  aria-label="Go to last page"
-                >
-                  <IconChevronsRight size={16} aria-hidden="true" />
-                </Button>
+                <IconTip label="Last page">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => table.lastPage()}
+                    disabled={!table.getCanNextPage()}
+                    aria-label="Go to last page"
+                  >
+                    <IconChevronsRight size={16} aria-hidden="true" />
+                  </Button>
+                </IconTip>
               </PaginationItem>
             </PaginationContent>
           </Pagination>
@@ -896,6 +990,37 @@ export function UsersTable({
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Single-user deactivate dialog, beside the delete one for the same reason. */}
+      <AlertDialog
+        open={!!userToDeactivate}
+        onOpenChange={(open) => {
+          if (!open) setUserToDeactivate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {userToDeactivate?.name || userToDeactivate?.email} won't be able to sign in until
+              their account is activated again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (userToDeactivate) {
+                  onToggleActive(userToDeactivate);
+                  setUserToDeactivate(null);
+                }
+              }}
+            >
+              Deactivate
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

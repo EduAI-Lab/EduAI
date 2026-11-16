@@ -48,7 +48,7 @@ describe("GenerateAssessmentModal", () => {
     fireEvent.change(screen.getByLabelText(/Assessment name/), {
       target: { value: "Final Exam" },
     });
-    const btn = screen.getByText("Create Blueprint");
+    const btn = screen.getByText("Create assessment");
     expect(btn).not.toBeDisabled();
     fireEvent.click(btn);
     await waitFor(() =>
@@ -72,7 +72,7 @@ describe("GenerateAssessmentModal", () => {
       />,
     );
     expect(screen.getByText("Edit assessment details")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Save Changes"));
+    fireEvent.click(screen.getByText("Save changes"));
     await waitFor(() =>
       expect(onUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ courseId: 7, name: "Midterm", type: "Quiz" }),
@@ -104,7 +104,7 @@ describe("GenerateAssessmentModal", () => {
     fireEvent.change(screen.getByLabelText(/Assessment name/), { target: { value: "Quiz" } });
     fireEvent.click(screen.getByRole("combobox", { name: /Topics covered/i }));
     fireEvent.click(await screen.findByText("Beta"));
-    fireEvent.click(screen.getByText("Create Blueprint"));
+    fireEvent.click(screen.getByText("Create assessment"));
     await waitFor(() =>
       expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ primaryTopicIds: ["t2"] })),
     );
@@ -123,7 +123,7 @@ describe("GenerateAssessmentModal", () => {
       />,
     );
     await waitFor(() => expect(getCourseTopics).toHaveBeenCalled());
-    fireEvent.click(screen.getByText("Save Changes"));
+    fireEvent.click(screen.getByText("Save changes"));
     await waitFor(() =>
       expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ primaryTopicIds: ["t1"] })),
     );
@@ -150,7 +150,7 @@ describe("GenerateAssessmentModal", () => {
         initialValues={{ name: "Midterm", type: "Quiz", primaryTopicIds: ["t1"] }}
       />,
     );
-    fireEvent.click(screen.getByText("Save Changes"));
+    fireEvent.click(screen.getByText("Save changes"));
     expect(await screen.findByText(/outside the selected topics/)).toBeInTheDocument();
     expect(screen.getByText("Bayes rule")).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe("GenerateAssessmentModal", () => {
     const onGenerate = vi.fn().mockResolvedValue(undefined);
     render(<GenerateAssessmentModal open onClose={vi.fn()} onGenerate={onGenerate} courseId={7} />);
     fireEvent.change(screen.getByLabelText(/Assessment name/), { target: { value: "Quiz" } });
-    fireEvent.click(screen.getByText("Create Blueprint"));
+    fireEvent.click(screen.getByText("Create assessment"));
     await waitFor(() =>
       expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ primaryTopicIds: [] })),
     );
@@ -183,11 +183,11 @@ describe("GenerateAssessmentModal", () => {
     await waitFor(() => expect(getCourseTopics).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("combobox", { name: /Topics covered/i }));
     fireEvent.click(await screen.findByText("Beta"));
-    fireEvent.click(screen.getByText("Save Changes"));
+    fireEvent.click(screen.getByText("Save changes"));
     expect(await screen.findByText("refused")).toBeInTheDocument();
     rerender(ui());
     expect(screen.getByText("refused")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Save Changes"));
+    fireEvent.click(screen.getByText("Save changes"));
     await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ primaryTopicIds: ["t2"] }));
   });

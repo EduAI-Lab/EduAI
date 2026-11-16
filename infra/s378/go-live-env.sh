@@ -63,6 +63,10 @@ set_or_replace "$CORE" VITE_COOKIE_DOMAIN ".eduai.ok.ubc.ca"
 # Core → extension cascade-delete targets (#802)
 set_or_replace "$CORE" QM_BACKEND_URL "http://127.0.0.1:8000"
 set_or_replace "$CORE" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
+# Fleet model map (#2092): which models each CMPS server serves. Without it,
+# every VLLM_FLEET_CHAT_URLS server is assumed to serve VLLM_FLEET_DEFAULT_MODELS,
+# so 9B requests can land on cmps02. The file itself is host-local (GO-LIVE.md).
+set_or_replace "$CORE" FLEET_CONFIG_PATH "/etc/eduai/fleet/fleet.config.json"
 
 # AI Tutor server — Core session + service-key API
 set_or_replace "$AT_SRV" CORE_URL "https://dev.eduai.ok.ubc.ca"

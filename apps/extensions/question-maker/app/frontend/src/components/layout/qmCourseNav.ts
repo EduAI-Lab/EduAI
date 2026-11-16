@@ -3,7 +3,8 @@ import { termLabel, type CourseNavConfig } from "@eduai/ui";
 import { resolveCourseTab, type ActiveTab } from "@/pages/course-detail/courseTabs";
 import type { Course } from "@/types/question";
 
-const SECTIONS = [
+/** The course workspace's sections, in menu order (also the course cards' links). */
+export const QM_COURSE_SECTIONS = [
   { key: "overview", label: "Overview" },
   { key: "questions", label: "Questions" },
   { key: "banks", label: "Banks" },
@@ -70,9 +71,11 @@ export function buildQmCourseNav({
     term: termLabel(course.term, course.year),
     activeKey,
     subPage: subPage?.label,
-    items: SECTIONS.filter((section) => section.key !== "canvas" || showCanvas).map((section) => ({
-      ...section,
-      href: `${href}?tab=${section.key}`,
-    })),
+    items: QM_COURSE_SECTIONS.filter((section) => section.key !== "canvas" || showCanvas).map(
+      (section) => ({
+        ...section,
+        href: `${href}?tab=${section.key}`,
+      }),
+    ),
   };
 }

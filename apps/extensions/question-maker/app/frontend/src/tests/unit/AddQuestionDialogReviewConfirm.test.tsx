@@ -1,6 +1,6 @@
 /**
  * #1120 — the second surface that toggles review status. The view-mode footer's
- * "Mark as Reviewed" / "Mark as Draft" button must confirm before it writes:
+ * "Mark as reviewed" / "Mark as draft" button must confirm before it writes:
  * cancelling issues no `updateVariant` request, confirming issues exactly one,
  * and the copy comes from the same shared helper as the assessment-card kebab
  * (see `AssessmentSectionCardReviewConfirm.test.tsx`) so the two cannot drift.
@@ -125,7 +125,7 @@ describe("AddQuestionDialog review-status confirmation", () => {
   it("does not write on the footer click alone", async () => {
     renderDialog(true);
 
-    clickReviewToggle("Mark as Reviewed");
+    clickReviewToggle("Mark as reviewed");
 
     expect(updateVariant).not.toHaveBeenCalled();
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("AddQuestionDialog review-status confirmation", () => {
   it("fires exactly one updateVariant request when confirmed", async () => {
     const { onUpdateVariant } = renderDialog(true);
 
-    clickReviewToggle("Mark as Reviewed");
+    clickReviewToggle("Mark as reviewed");
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark as reviewed" }));
 
@@ -147,7 +147,7 @@ describe("AddQuestionDialog review-status confirmation", () => {
   it("fires no request when cancelled", async () => {
     const { onUpdateVariant } = renderDialog(true);
 
-    clickReviewToggle("Mark as Reviewed");
+    clickReviewToggle("Mark as reviewed");
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
@@ -159,7 +159,7 @@ describe("AddQuestionDialog review-status confirmation", () => {
     updateVariant.mockResolvedValue({ isDraft: true });
     renderDialog(false);
 
-    clickReviewToggle("Mark as Draft");
+    clickReviewToggle("Mark as draft");
     const dialog = await screen.findByRole("alertdialog");
     // Direction-specific copy from the shared `reviewStatusConfirm` helper.
     expect(within(dialog).getByText(/excluded from export/i)).toBeInTheDocument();

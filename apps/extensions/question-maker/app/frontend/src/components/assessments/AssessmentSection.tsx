@@ -61,6 +61,9 @@ interface AssessmentSectionProps {
   onExportToWord?: (assessmentId: number, assessmentName: string) => void | Promise<void>;
   onDeleteAssessment?: (assessmentId: number, assessmentName: string) => void;
   onImportFromCanvas?: () => void;
+  /** Controlled create-modal state, so the Overview quick action can open it directly (#2161). */
+  createModalOpen?: boolean;
+  onCreateModalOpenChange?: (open: boolean) => void;
 }
 
 /** The classes and glyph one assessment type renders with. */
@@ -183,6 +186,8 @@ export const AssessmentSection = ({
   onExportToWord,
   onDeleteAssessment,
   onImportFromCanvas,
+  createModalOpen,
+  onCreateModalOpenChange,
 }: AssessmentSectionProps) => {
   const navigate = useNavigate();
   const {
@@ -193,7 +198,9 @@ export const AssessmentSection = ({
     hasCourseAccess,
   } = useQmPermissionsForCourse(selectedCourseId ?? null);
   const canWriteInCourse = hasCourseAccess && !accessLoading;
-  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [internalModalOpen, setInternalModalOpen] = useState(false);
+  const isGenerateModalOpen = createModalOpen ?? internalModalOpen;
+  const setIsGenerateModalOpen = onCreateModalOpenChange ?? setInternalModalOpen;
   const [isSavingBlueprint, setIsSavingBlueprint] = useState(false);
   const [exportDialogAssessment, setExportDialogAssessment] = useState<Assessment | null>(null);
 

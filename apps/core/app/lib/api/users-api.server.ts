@@ -375,6 +375,15 @@ export async function handleUsersApiRequest(request: Request) {
         if (!target) {
           return apiError(404, "USER_NOT_FOUND");
         }
+        // An admin's role is fixed: no admin can demote another (and their
+        // own is guarded above), so admin accounts only change by deletion.
+        if (
+          target.role === "ADMIN" &&
+          result.data.role !== undefined &&
+          result.data.role !== "ADMIN"
+        ) {
+          return apiError(403, "CANNOT_CHANGE_ADMIN_ROLE");
+        }
         previousRole = target.role;
         effectiveRole = result.data.role ?? target.role;
         targetWasActiveAdmin = target.role === "ADMIN" && target.isActive === true;
@@ -385,11 +394,8 @@ export async function handleUsersApiRequest(request: Request) {
       const platformRoleChanged = result.data.role !== undefined && previousRole !== effectiveRole;
 
       // AUTH-04: this update would take the target out of the active-ADMIN
-      // pool — either a role change away from ADMIN, or a deactivation.
-      const removesAdminStatus =
-        targetWasActiveAdmin &&
-        ((result.data.role !== undefined && result.data.role !== "ADMIN") ||
-          result.data.isActive === false);
+      // pool. An admin's role can't change (above), so only a deactivation can.
+      const removesAdminStatus = targetWasActiveAdmin && result.data.isActive === false;
 
       try {
         const { studentId: studentIdInput, taCourseIds, ...userUpdateFields } = result.data;

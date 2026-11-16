@@ -113,6 +113,7 @@ export const GenerateAssessmentModal = ({
   };
 
   const disabledReason = getDisabledReason();
+  const submitLabel = isEdit ? "Save changes" : "Create assessment";
 
   const handleGenerate = async () => {
     const difficultyDistribution = { easy: 0, medium: 0, hard: 0 };
@@ -253,13 +254,13 @@ export const GenerateAssessmentModal = ({
             <Tooltip content={disabledReason} multiline>
               <span className="inline-block">
                 <Button onClick={handleGenerate} disabled={!canGenerate || isSaving}>
-                  {isEdit ? "Save changes" : "Create assessment"}
+                  {submitLabel}
                 </Button>
               </span>
             </Tooltip>
           ) : (
             <Button onClick={handleGenerate} disabled={!canGenerate || isSaving}>
-              {isEdit ? "Save Changes" : "Create Blueprint"}
+              {submitLabel}
             </Button>
           )}
         </DialogFooter>

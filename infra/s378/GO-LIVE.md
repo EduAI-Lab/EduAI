@@ -235,6 +235,30 @@ At minimum, verify these configuration classes without printing values:
 - inference fleet URLs, served model IDs, and the embedding endpoint;
 - CORS/origin settings for the three development vhosts.
 
+### Fleet model map (#2092)
+
+Core reads which models each CMPS server serves from
+`/etc/eduai/fleet/fleet.config.json` (`FLEET_CONFIG_PATH`, set by
+`go-live-env.sh`). Dev uses the same servers as prod, so the file is a copy of
+prod's (`/etc/eduai/fleet/fleet.config.json` on s348): root-owned, mode 644,
+directory 755. Without it, Core falls back to `VLLM_FLEET_CHAT_URLS` /
+`VLLM_FLEET_DEFAULT_MODELS` and treats every server as serving the 2B and 9B, so
+9B requests can be sent to cmps02, which doesn't serve it. When a server's models
+change, update the file on both hosts and restart Core. Check routing with
+`SELECT "serverId", "modelUsed", count(*) FROM ai_interactions WHERE "createdAt" >
+now() - interval '30 minutes' GROUP BY 1,2;`.
+
+### Old standalone Question Maker cron jobs (#2093)
+
+The `service_eduai` crontab used to run four jobs from the retired standalone
+deployment under `/srv/www/questionmaker.ok.ubc.ca/scripts/` (daily deploy,
+database backup, disk monitor, health check). Their logs
+(`/var/log/question-maker/cron-*.log`) show only `Permission denied` failures and
+stop on 2026-09-25, and `questionmaker.ok.ubc.ca` no longer answers. They were
+removed on 2026-11-13; a copy of the old crontab is in
+`~soumilcs/service_eduai-crontab-before-2093.txt` on s378. Don't add them back:
+dev's updates come from `eduai-dev-update.timer` (#2050).
+
 The current s378 deployment has queue enqueueing disabled. The cron worker remains a
 separate scheduled-maintenance service; it is not evidence that the AI job queue is
 enabled.

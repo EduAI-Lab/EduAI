@@ -15,7 +15,9 @@ import {
 import {
   searchGrantableUsers,
   type ApiAccessDefaults,
+  type ApiAccessGrantRow,
   type CreateApiAccessGrantInput,
+  type UpdateApiAccessGrantInput,
 } from "~/hooks/api/use-api-access";
 import type { PlatformUser } from "~/hooks/api/types";
 import { defaultGrantEndDate, endOfDayIso, toDateInputValue } from "~/lib/api-keys/api-access";
@@ -29,6 +31,12 @@ type GrantApiAccessDialogProps = {
   /** Preselected person, e.g. from the users table's "Give API access". */
   initialPerson?: GrantPerson | null;
   onSubmit: (input: CreateApiAccessGrantInput) => Promise<void>;
+  /**
+   * Edit this active grant's end date and limits instead of creating one
+   * (#2095). The person and purpose are fixed; only changed fields are sent.
+   */
+  editing?: ApiAccessGrantRow | null;
+  onUpdate?: (grantId: string, input: Partial<UpdateApiAccessGrantInput>) => Promise<void>;
 };
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -40,7 +48,10 @@ export function GrantApiAccessDialog({
   defaults,
   initialPerson = null,
   onSubmit,
+  editing = null,
+  onUpdate,
 }: GrantApiAccessDialogProps) {
+  const isEdit = editing !== null;
   const [person, setPerson] = useState<GrantPerson | null>(initialPerson);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<GrantPerson[]>([]);
@@ -54,19 +65,28 @@ export function GrantApiAccessDialog({
   // Start fresh each time the dialog opens.
   useEffect(() => {
     if (!open) return;
-    setPerson(initialPerson);
     setSearch("");
     setResults([]);
+    setError(null);
+    if (editing) {
+      // The row's role is a plain string; the person is shown, never re-sent.
+      setPerson({ ...editing.user, role: editing.user.role as GrantPerson["role"] });
+      setPurpose(editing.purpose);
+      setEndDate(toDateInputValue(new Date(editing.expiresAt)));
+      setRequestLimit(String(editing.dailyRequestLimit));
+      setTokenLimit(String(editing.dailyTokenLimit));
+      return;
+    }
+    setPerson(initialPerson);
     setPurpose("");
     setEndDate(defaultGrantEndDate());
     setRequestLimit(String(defaults.dailyRequestLimit));
     setTokenLimit(String(defaults.dailyTokenLimit));
-    setError(null);
-  }, [open, initialPerson, defaults.dailyRequestLimit, defaults.dailyTokenLimit]);
+  }, [open, editing, initialPerson, defaults.dailyRequestLimit, defaults.dailyTokenLimit]);
 
   useEffect(() => {
     const term = search.trim();
-    if (person || term.length < 2) {
+    if (isEdit || person || term.length < 2) {
       setResults([]);
       return;
     }
@@ -84,7 +104,7 @@ export function GrantApiAccessDialog({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, person]);
+  }, [search, person, isEdit]);
 
   const expiresAt = endOfDayIso(endDate);
   const requests = Number(requestLimit);
@@ -94,7 +114,16 @@ export function GrantApiAccessDialog({
     Number.isInteger(requests) && requests > 0 && requests <= defaults.maxDailyRequestLimit;
   const tokensValid =
     Number.isInteger(tokens) && tokens > 0 && tokens <= defaults.maxDailyTokenLimit;
+  // Only the fields the admin changed, so an untouched end date isn't rewritten.
+  const changes: Partial<UpdateApiAccessGrantInput> = {};
+  if (editing && expiresAt) {
+    if (endDate !== toDateInputValue(new Date(editing.expiresAt))) changes.expiresAt = expiresAt;
+    if (requests !== editing.dailyRequestLimit) changes.dailyRequestLimit = requests;
+    if (tokens !== editing.dailyTokenLimit) changes.dailyTokenLimit = tokens;
+  }
+  const hasChanges = Object.keys(changes).length > 0;
   const canSubmit =
+    (!isEdit || hasChanges) &&
     person !== null &&
     purpose.trim().length > 0 &&
     expiresAt !== null &&
@@ -107,6 +136,11 @@ export function GrantApiAccessDialog({
     setSubmitting(true);
     setError(null);
     try {
+      if (editing) {
+        await onUpdate?.(editing.id, changes);
+        onOpenChange(false);
+        return;
+      }
       await onSubmit({
         userId: person.id,
         purpose: purpose.trim(),
@@ -116,7 +150,13 @@ export function GrantApiAccessDialog({
       });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not grant API access");
+      setError(
+        err instanceof Error
+          ? err.message
+          : isEdit
+            ? "Could not save the new limits"
+            : "Could not grant API access",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -126,10 +166,11 @@ export function GrantApiAccessDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Give API access</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit API access" : "Give API access"}</DialogTitle>
           <DialogDescription>
-            The person can then create their own API key for the campus models. Access ends on the
-            date you choose, or when you revoke it.
+            {isEdit
+              ? "Change the end date or daily limits. Their keys keep working, and the new limits apply from their next request."
+              : "The person can then create their own API key for the campus models. Access ends on the date you choose, or when you revoke it."}
           </DialogDescription>
         </DialogHeader>
 
@@ -142,9 +183,11 @@ export function GrantApiAccessDialog({
                   <div className="truncate text-sm font-medium">{person.name}</div>
                   <div className="truncate text-xs text-muted-foreground">{person.email}</div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setPerson(null)}>
-                  Change
-                </Button>
+                {!isEdit && (
+                  <Button variant="ghost" size="sm" onClick={() => setPerson(null)}>
+                    Change
+                  </Button>
+                )}
               </div>
             ) : (
               <>
@@ -180,6 +223,7 @@ export function GrantApiAccessDialog({
           <div className="space-y-2">
             <Label htmlFor="grant-purpose">Purpose</Label>
             <Textarea
+              readOnly={isEdit}
               id="grant-purpose"
               placeholder="e.g. Honours project: LLM judge evaluation"
               value={purpose}
@@ -246,7 +290,13 @@ export function GrantApiAccessDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit}>
-            {submitting ? "Granting…" : "Give access"}
+            {isEdit
+              ? submitting
+                ? "Saving…"
+                : "Save changes"
+              : submitting
+                ? "Granting…"
+                : "Give access"}
           </Button>
         </DialogFooter>
       </DialogContent>

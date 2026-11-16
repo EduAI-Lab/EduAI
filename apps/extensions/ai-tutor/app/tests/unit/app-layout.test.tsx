@@ -8,7 +8,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
-import type { BugReportSubmitData, NavShellModel } from "@eduai/ui";
+import type { BugReportSubmitData, NavShellModel, SectionNavConfig } from "@eduai/ui";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router", async (importActual) => {
@@ -61,6 +61,7 @@ vi.mock("~/components/layout/ShellBreadcrumbs", () => ({
 const mockStartTour = vi.fn();
 let capturedModel: NavShellModel | null = null;
 let capturedHeadingInPage: boolean | undefined;
+let capturedSectionNav: SectionNavConfig | undefined;
 
 vi.mock("@eduai/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@eduai/ui")>();
@@ -108,18 +109,21 @@ vi.mock("@eduai/ui", async (importOriginal) => {
     NavShell: ({
       model,
       headingInPage,
+      sectionNav,
       headerActions,
       overlays,
       children,
     }: {
       model: NavShellModel;
       headingInPage?: boolean;
+      sectionNav?: SectionNavConfig;
       headerActions: React.ReactNode;
       overlays: React.ReactNode;
       children: React.ReactNode;
     }) => {
       capturedModel = model;
       capturedHeadingInPage = headingInPage;
+      capturedSectionNav = sectionNav;
       return (
         <div>
           <button type="button" onClick={model.onLogout}>
@@ -267,6 +271,29 @@ describe("_app layout — authenticated shell", () => {
 
     expect(mockLogout).toHaveBeenCalled();
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+  });
+
+  it("puts the admin console's sections in an Administration menu on /admin, marking ?tab=", () => {
+    mockUser = { id: "a1", name: "Ada", role: "ADMIN" };
+    render(
+      <MemoryRouter initialEntries={["/admin?tab=ai-oversight"]}>
+        <AppLayout />
+      </MemoryRouter>,
+    );
+
+    expect(capturedSectionNav?.title).toBe("Administration");
+    expect(capturedSectionNav?.links.map((link) => [link.label, link.href])).toEqual([
+      ["Bug reports", "/admin?tab=bug-reports"],
+      ["AI settings", "/admin?tab=ai-settings"],
+      ["AI oversight", "/admin?tab=ai-oversight"],
+    ]);
+    expect(capturedSectionNav?.activeKey).toBe("ai-oversight");
+  });
+
+  it("draws no Administration menu off /admin", () => {
+    mockUser = { id: "a1", name: "Ada", role: "ADMIN" };
+    wrap();
+    expect(capturedSectionNav).toBeUndefined();
   });
 
   it("tells the shell its pages draw their own h1, so the header adds no second one", () => {

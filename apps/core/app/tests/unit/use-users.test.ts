@@ -1,11 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/hooks/api/config", () => ({
+vi.mock("~/hooks/api/config", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("~/hooks/api/config")>()).ApiError,
   apiFetch: vi.fn(),
 }));
 
-import { apiFetch } from "~/hooks/api/config";
+import { ApiError, apiFetch } from "~/hooks/api/config";
 import type { PlatformUser } from "~/hooks/api/types";
 import { fetchUsersByIds, useUsers } from "~/hooks/api/use-users";
 
@@ -147,6 +148,35 @@ describe("useUsers", () => {
 
     expect(apiFetch).toHaveBeenNthCalledWith(2, "/api/users/" + user.id, { method: "DELETE" });
     expect(result.current.users).toEqual([]);
+  });
+
+  it("deleteUsers deletes each user, keeps going past a failure, and refetches once", async () => {
+    const page = (rows: PlatformUser[]) => ({
+      data: rows,
+      total: rows.length,
+      page: 1,
+      pageSize: 25,
+      stats: { total: rows.length, active: rows.length },
+    });
+
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(page([user]))
+      .mockRejectedValueOnce(new ApiError(400, "CANNOT_DELETE_USER_WITH_DATA"))
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(page([]));
+
+    const { result } = renderHook(() => useUsers());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    let failures: Awaited<ReturnType<typeof result.current.deleteUsers>> = [];
+    await act(async () => {
+      failures = await result.current.deleteUsers(["a", "b"]);
+    });
+
+    expect(apiFetch).toHaveBeenNthCalledWith(2, "/api/users/a", { method: "DELETE" });
+    expect(apiFetch).toHaveBeenNthCalledWith(3, "/api/users/b", { method: "DELETE" });
+    expect(apiFetch).toHaveBeenCalledTimes(4);
+    expect(failures).toEqual([{ id: "a", code: "CANNOT_DELETE_USER_WITH_DATA" }]);
   });
 
   it("toggleUserActive flips isActive via updateUser", async () => {

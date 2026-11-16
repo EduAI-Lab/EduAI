@@ -319,5 +319,8 @@ test.describe("Question Maker authoring and AI workflows", () => {
     await expect(rail.getByRole("button", { name: "Courses", exact: true })).toBeVisible();
     await expect(rail.getByRole("link", { name: "Question Library" })).toBeVisible();
     await expect(rail.getByRole("link", { name: "Bug reports" })).toBeVisible();
+    // Admins land on the Question Maker overview, not the authoring dashboard.
+    await expect(page.getByRole("heading", { name: "Question Maker overview" })).toBeVisible();
+    await expect(page.getByText("Needs your attention")).toBeVisible();
   });
 });

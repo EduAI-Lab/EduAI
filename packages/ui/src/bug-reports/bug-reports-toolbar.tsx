@@ -21,6 +21,7 @@ import {
 } from "./bug-reports-utils";
 
 export function BugReportsToolbar({
+  compact = false,
   statusFilter,
   onStatusFilterChange,
   typeFilter,
@@ -34,6 +35,8 @@ export function BugReportsToolbar({
   totalCount,
   onResetFilters,
 }: {
+  /** One row: the selects on the left, search on the right, no "Filters" label. */
+  compact?: boolean;
   statusFilter: StatusFilter;
   onStatusFilterChange: (value: StatusFilter) => void;
   typeFilter: TypeFilter;
@@ -49,12 +52,20 @@ export function BugReportsToolbar({
 }) {
   return (
     <div className="flex flex-col gap-3 pb-4">
-      <div className="flex items-center gap-2">
-        <IconFilter className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-muted-foreground">Filters</span>
-      </div>
+      {!compact && (
+        <div className="flex items-center gap-2">
+          <IconFilter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">Filters</span>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+      <div
+        className={
+          compact
+            ? "flex flex-wrap items-center gap-3 [&>button]:w-[160px]"
+            : "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4"
+        }
+      >
         <Select value={statusFilter} onValueChange={(v) => onStatusFilterChange(v as StatusFilter)}>
           <SelectTrigger>
             <SelectValue placeholder="Status" />
@@ -99,7 +110,7 @@ export function BugReportsToolbar({
           </SelectContent>
         </Select>
 
-        <div className="relative">
+        <div className={compact ? "relative w-full sm:ml-auto sm:w-64" : "relative"}>
           <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search description…"

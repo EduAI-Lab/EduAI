@@ -36,6 +36,10 @@ export default defineConfig({
         "../../../packages/ui/src/assistant/shared.ts",
       ),
       "@eduai/ui/assistant": path.resolve(__dirname, "../../../packages/ui/src/assistant/index.ts"),
+      "@eduai/ui/weekly-usage-chart": path.resolve(
+        __dirname,
+        "../../../packages/ui/src/charts/weekly-usage-chart.tsx",
+      ),
       "@eduai/ui": path.resolve(__dirname, "../../../packages/ui/src/index.ts"),
     },
   },

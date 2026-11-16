@@ -20,6 +20,7 @@ import { useForm, useWatch } from "react-hook-form";
 // client bundle (#1223); the types are erased, so this import is free.
 import type { CreateUserInput, UpdateUserInput } from "~/lib/auth/schemas";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
+import { useCurrentUserId } from "~/contexts/current-user";
 
 import type { User } from "~/components/admin/users-table";
 import type { Course } from "~/hooks/api/use-courses";
@@ -91,6 +92,10 @@ export function UserFormDialog({
   onSubmit,
 }: UserFormDialogProps) {
   const isEditing = !!user;
+  const currentUserId = useCurrentUserId();
+  // Mirrors the API (CANNOT_CHANGE_OWN_ROLE / CANNOT_CHANGE_ADMIN_ROLE): an
+  // admin's role, yours included, is fixed.
+  const roleLocked = isEditing && (user.id === currentUserId || user.role === "ADMIN");
 
   // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
@@ -240,7 +245,7 @@ export function UserFormDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Role</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={roleLocked}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a role" />
@@ -254,6 +259,13 @@ export function UserFormDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  {roleLocked && (
+                    <FormDescription>
+                      {user?.id === currentUserId
+                        ? "You can't change your own role."
+                        : "An admin's role can't be changed."}
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

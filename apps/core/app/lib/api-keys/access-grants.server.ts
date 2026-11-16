@@ -200,6 +200,57 @@ export async function createApiAccessGrant(
   });
 }
 
+export type UpdateApiAccessGrantInput = Partial<
+  Pick<ApiAccessGrant, "expiresAt" | "dailyRequestLimit" | "dailyTokenLimit">
+>;
+
+/**
+ * Change an active grant's limits or end date without revoking it (#2095), so
+ * the person's keys keep working and the new limits apply from their next
+ * request. Revoked and ended grants can't be edited: grant access anew instead.
+ * The end date follows the same rules as a new grant (future, within a year).
+ *
+ * The update is conditional on the grant still being active, so a revoke that
+ * lands between the read and the write can't be undone by an edit.
+ */
+export async function updateApiAccessGrant(
+  grantId: string,
+  input: UpdateApiAccessGrantInput,
+  now: Date = new Date(),
+): Promise<{ before: ApiAccessGrant; after: ApiAccessGrant }> {
+  if (input.expiresAt) {
+    if (input.expiresAt.getTime() <= now.getTime()) {
+      throw new ApiAccessGrantError("The end date must be in the future", 400);
+    }
+    if (input.expiresAt.getTime() > now.getTime() + MAX_API_ACCESS_GRANT_DAYS * DAY_MS) {
+      throw new ApiAccessGrantError(
+        `API access can last at most ${MAX_API_ACCESS_GRANT_DAYS} days`,
+        400,
+      );
+    }
+  }
+
+  const before = await prisma.apiAccessGrant.findUnique({ where: { id: grantId } });
+  if (!before) throw new ApiAccessGrantError("Grant not found", 404);
+
+  const data: UpdateApiAccessGrantInput = {};
+  if (input.expiresAt !== undefined) data.expiresAt = input.expiresAt;
+  if (input.dailyRequestLimit !== undefined) data.dailyRequestLimit = input.dailyRequestLimit;
+  if (input.dailyTokenLimit !== undefined) data.dailyTokenLimit = input.dailyTokenLimit;
+
+  const { count } = await prisma.apiAccessGrant.updateMany({
+    where: { id: grantId, revokedAt: null, expiresAt: { gt: now } },
+    data,
+  });
+  if (count === 0) {
+    throw new ApiAccessGrantError(
+      "Only active access can be edited. Give access again instead.",
+      409,
+    );
+  }
+  return { before, after: { ...before, ...data } };
+}
+
 /**
  * End a grant now. Any other active grant the user holds ends too, so revoking
  * always leaves them without access, and their keys are disabled, so a later
