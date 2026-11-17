@@ -28,6 +28,7 @@ jobs:
       shared: ${{ steps.filter.outputs.shared }}
       cross_service: ${{ steps.filter.outputs.cross_service }}
       unit_matrix: ${{ steps.filter.outputs.unit_matrix }}
+      e2e_matrix: ${{ steps.filter.outputs.e2e_matrix }}
     steps:
       - name: Classify changed paths
         id: filter
@@ -182,6 +183,28 @@ jobs:
           fi
           matrix+=']}'
           echo "unit_matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          # One runner per affected E2E suite, each with its own isolated stack,
+          # because CI runs Playwright with a single worker. AI Tutor holds about
+          # two thirds of all E2E time (482 of 740 tests, ~13 of ~18 minutes on
+          # one worker), so it is split further with Playwright's --shard.
+          ai_tutor_shards=3
+          e2e='{"include":['
+          separator=''
+          add_e2e() {
+            e2e+="${separator}{\"id\":\"$1\",\"suite\":\"$2\",\"shard\":\"$3\",\"label\":\"$4\"}"
+            separator=','
+          }
+          [ "$core" = true ] && add_e2e core core "" "Core"
+          if [ "$ai_tutor" = true ]; then
+            for i in $(seq 1 "$ai_tutor_shards"); do
+              add_e2e "ai-tutor-$i" ai-tutor "$i/$ai_tutor_shards" "AI Tutor $i/$ai_tutor_shards"
+            done
+          fi
+          [ "$question_maker" = true ] && add_e2e question-maker question-maker "" "Question Maker"
+          [ "$cross_service" = true ] && add_e2e cross-service cross-service "" "Cross-service"
+          e2e+=']}'
+          echo "e2e_matrix=$e2e" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Affected applications"
@@ -462,10 +485,13 @@ jobs:
           fi
 
   e2e-run:
-    name: E2E tests — affected stacks
+    name: E2E tests — ${{ matrix.label }}
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.e2e_matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -475,34 +501,20 @@ jobs:
       - name: Select suites and images
         id: select
         env:
-          CORE: ${{ needs.changes.outputs.core }}
-          AI_TUTOR: ${{ needs.changes.outputs.ai_tutor }}
-          QUESTION_MAKER: ${{ needs.changes.outputs.question_maker }}
-          CROSS_SERVICE: ${{ needs.changes.outputs.cross_service }}
+          SUITE: ${{ matrix.suite }}
         run: |
           set -euo pipefail
-          suites=()
           targets=(e2e-eduai-app e2e-runner)
-          [ "$CORE" = true ] && suites+=(core)
-          if [ "$AI_TUTOR" = true ]; then
-            suites+=(ai-tutor)
-            targets+=(e2e-ai-tutor-server e2e-ai-tutor-app)
-          fi
-          if [ "$QUESTION_MAKER" = true ]; then
-            suites+=(question-maker)
-            targets+=(e2e-qm-server e2e-qm-app)
-          fi
-          if [ "$CROSS_SERVICE" = true ]; then
-            suites+=(cross-service)
-            targets+=(
-              e2e-ai-tutor-server e2e-ai-tutor-app
-              e2e-qm-server e2e-qm-app
-            )
-          fi
-          suites_csv=$(IFS=,; echo "${suites[*]}")
-          targets_csv=$(printf '%s\n' "${targets[@]}" | awk '!seen[$0]++' | paste -sd, -)
-          echo "suites=$suites_csv" >> "$GITHUB_OUTPUT"
-          echo "targets=$targets_csv" >> "$GITHUB_OUTPUT"
+          case "$SUITE" in
+            ai-tutor)
+              targets+=(e2e-ai-tutor-server e2e-ai-tutor-app) ;;
+            question-maker)
+              targets+=(e2e-qm-server e2e-qm-app) ;;
+            cross-service)
+              targets+=(e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app) ;;
+          esac
+          echo "suites=$SUITE" >> "$GITHUB_OUTPUT"
+          echo "targets=$(IFS=,; echo "${targets[*]}")" >> "$GITHUB_OUTPUT"
 
       - name: Check runner disk space
         id: disk
@@ -559,6 +571,7 @@ jobs:
         env:
           E2E_SKIP_BUILD: "1"
           E2E_SUITES: ${{ steps.select.outputs.suites }}
+          E2E_SHARD: ${{ matrix.shard }}
           E2E_OLLAMA_MODELS_DIR: ${{ runner.temp }}/e2e-ollama-models
         run: bash scripts/e2e-in-docker.sh
 
@@ -588,6 +601,12 @@ jobs:
       - name: Warm affected E2E caches
         # Cache export is intentionally separate from the loaded test build:
         # exporting inline makes the critical path wait for a mode=max upload.
+        # Only the cross-service entry warms: it builds every image, and its
+        # tests take seconds, so the upload fits inside the slower entries'
+        # run time instead of every entry racing to write the same scopes.
+        # Skipped in the merge queue: caches written under its temporary
+        # gh-readonly-queue ref can never be restored by any later run.
+        if: matrix.suite == 'cross-service' && github.event_name != 'merge_group'
         continue-on-error: true
         env:
           TARGETS: ${{ steps.select.outputs.targets }}
@@ -608,7 +627,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.id }}
           path: playwright-report/
           retention-days: 7
 
@@ -618,9 +637,9 @@ jobs:
           started_at=${CI_JOB_STARTED:-$(date +%s)}
           elapsed=$(($(date +%s) - started_at))
           {
-            echo "### Affected E2E"
+            echo "### E2E — ${{ matrix.label }}"
             echo
-            echo "- Suites: \`${{ steps.select.outputs.suites }}\`"
+            echo "- Suite: \`${{ steps.select.outputs.suites }}\` shard \`${{ matrix.shard || 'all' }}\`"
             echo "- Images: \`${{ steps.select.outputs.targets }}\`"
             echo "- Conditional disk cleanup: \`${{ steps.disk.outputs.cleanup }}\`"
             echo "- Job time: ${elapsed}s"
