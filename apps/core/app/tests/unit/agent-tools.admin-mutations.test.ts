@@ -235,6 +235,13 @@ describe("updateAdminUser", () => {
     expect(result).toEqual({ error: "CANNOT_CHANGE_OWN_ROLE" });
   });
 
+  it("blocks changing another ADMIN's role", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ role: "ADMIN" });
+    const result = await updateAdminUser(ADMIN, "admin-2", { role: "INSTRUCTOR" });
+    expect(result).toEqual({ error: "CANNOT_CHANGE_ADMIN_ROLE" });
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
   it("rejects empty update payload", async () => {
     const result = await updateAdminUser(ADMIN, "u2", {});
     expect(result).toMatchObject({

@@ -78,4 +78,21 @@ export type AdminBugReportRow = {
   moduleTitle?: string | null;
   lessonTitle?: string | null;
   activityTitle?: string | null;
+  /** The admin's one status note to the reporter (Core only), replaced on each save. */
+  reporterNoteSubject?: string | null;
+  reporterNote?: string | null;
+  reporterNoteUpdatedAt?: string | null;
+  /** When the current note reached the reporter's inbox; null when it was saved but not emailed. */
+  reporterNoteEmailedAt?: string | null;
+  /** Whether a note can be emailed: the reporter's account exists and has an address. */
+  reporterReachable?: boolean;
 };
+
+/** The admin's note as typed: the email's subject and message. */
+export type ReporterNoteInput = { subject: string; body: string };
+
+/**
+ * What saving a note came to. `sent`: emailed; `no-recipient`: saved, nobody
+ * to email; `not-sent`: saved, but the email didn't go out.
+ */
+export type ReporterNoteDelivery = "sent" | "no-recipient" | "not-sent";

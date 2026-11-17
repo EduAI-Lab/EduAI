@@ -402,7 +402,7 @@ export async function updateAdminUser(
     };
   }
 
-  if (parsed.data.authorizedUnits !== undefined) {
+  if (parsed.data.authorizedUnits !== undefined || parsed.data.role !== undefined) {
     const target = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -410,8 +410,12 @@ export async function updateAdminUser(
     if (!target) {
       return { error: "USER_NOT_FOUND" };
     }
+    // Same rule as PATCH /api/users: an admin's role is never changed.
+    if (target.role === "ADMIN" && parsed.data.role !== undefined && parsed.data.role !== "ADMIN") {
+      return { error: "CANNOT_CHANGE_ADMIN_ROLE" };
+    }
     const effectiveRole = parsed.data.role ?? target.role;
-    if (effectiveRole !== "UNIT_ADMIN") {
+    if (parsed.data.authorizedUnits !== undefined && effectiveRole !== "UNIT_ADMIN") {
       return { error: "ROLE_MISMATCH" };
     }
   }

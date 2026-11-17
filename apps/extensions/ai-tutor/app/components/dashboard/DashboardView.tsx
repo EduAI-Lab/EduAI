@@ -80,20 +80,24 @@ function CourseListSkeleton() {
   );
 }
 
-function CourseListPanel({
+export function CourseListPanel({
   courses,
   loading,
   coursesHref,
+  framed = true,
 }: {
   courses: DashboardCourseRow[];
   loading: boolean;
   coursesHref: string;
+  /** `false` drops the list's own card frame, for a list placed inside another card. */
+  framed?: boolean;
 }) {
   if (loading) return <CourseListSkeleton />;
+  const frame = framed ? "rounded-xl border border-border bg-card shadow-2xs" : "";
 
   if (courses.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card px-5 py-8 text-center shadow-2xs">
+      <div className={`${frame} px-5 py-8 text-center`}>
         <p className="text-sm text-muted-foreground">No courses found.</p>
         <Link
           to={coursesHref}
@@ -106,7 +110,7 @@ function CourseListPanel({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xs">
+    <div className={`overflow-hidden ${frame}`}>
       {courses.slice(0, COURSE_PREVIEW_ROWS).map((course) => (
         <Link
           key={course.id}

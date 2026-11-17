@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createApiAccessGrant: vi.fn(),
   listApiAccessGrants: vi.fn(),
   revokeApiAccessGrant: vi.fn(),
+  updateApiAccessGrant: vi.fn(),
   fireAndForget: vi.fn(),
   logAuditAction: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock("~/lib/api-keys/access-grants.server", async (importOriginal) => {
     createApiAccessGrant: mocks.createApiAccessGrant,
     listApiAccessGrants: mocks.listApiAccessGrants,
     revokeApiAccessGrant: mocks.revokeApiAccessGrant,
+    updateApiAccessGrant: mocks.updateApiAccessGrant,
   };
 });
 
@@ -74,6 +76,10 @@ beforeEach(() => {
   mocks.listApiAccessGrants.mockResolvedValue([]);
   mocks.createApiAccessGrant.mockResolvedValue(grant);
   mocks.revokeApiAccessGrant.mockResolvedValue({ ...grant, revokedAt: new Date() });
+  mocks.updateApiAccessGrant.mockResolvedValue({
+    before: grant,
+    after: { ...grant, dailyTokenLimit: 1_000_000 },
+  });
 });
 
 describe("admin API access API", () => {
@@ -151,8 +157,67 @@ describe("admin API access API", () => {
     );
   });
 
+  // #2095: limits change without revoking, so the person's keys keep working.
+  it("edits an active grant's limits and audits the old and new values", async () => {
+    const res = await action(makeArgs("PATCH", { id: "g1", body: { dailyTokenLimit: 1_000_000 } }));
+    expect(res.status).toBe(200);
+    expect(mocks.updateApiAccessGrant).toHaveBeenCalledWith("g1", { dailyTokenLimit: 1_000_000 });
+    expect(mocks.revokeApiAccessGrant).not.toHaveBeenCalled();
+    expect(mocks.logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "API_ACCESS_UPDATED",
+        category: "SECURITY",
+        entityId: "g1",
+        details: {
+          userId: "s1",
+          before: {
+            expiresAt: "2026-12-31T00:00:00.000Z",
+            dailyRequestLimit: 200,
+            dailyTokenLimit: 200_000,
+          },
+          after: {
+            expiresAt: "2026-12-31T00:00:00.000Z",
+            dailyRequestLimit: 200,
+            dailyTokenLimit: 1_000_000,
+          },
+        },
+      }),
+    );
+  });
+
+  it.each([
+    ["nothing to change", {}],
+    ["a limit over the cap", { dailyTokenLimit: 99_000_000 }],
+    ["a zero limit", { dailyRequestLimit: 0 }],
+    ["a field that can't be edited", { purpose: "new purpose" }],
+  ])("rejects an edit with %s", async (_label, body) => {
+    const res = await action(makeArgs("PATCH", { id: "g1", body }));
+    expect(res.status).toBe(400);
+    expect(mocks.updateApiAccessGrant).not.toHaveBeenCalled();
+  });
+
+  it("passes on an edit refusal with its status", async () => {
+    mocks.updateApiAccessGrant.mockRejectedValue(
+      new ApiAccessGrantError("Only active access can be edited. Give access again instead.", 409),
+    );
+    const res = await action(makeArgs("PATCH", { id: "g1", body: { dailyRequestLimit: 300 } }));
+    expect(res.status).toBe(409);
+    expect(mocks.logAuditAction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-admin edit", async () => {
+    mocks.requireAdmin.mockResolvedValue({
+      response: new Response(null, { status: 403 }),
+      session: null,
+    });
+    const res = await action(makeArgs("PATCH", { id: "g1", body: { dailyRequestLimit: 300 } }));
+    expect(res.status).toBe(403);
+    expect(mocks.updateApiAccessGrant).not.toHaveBeenCalled();
+  });
+
   it("answers 405 for other methods", async () => {
     expect((await action(makeArgs("PUT", { body: {} }))).status).toBe(405);
     expect((await action(makeArgs("DELETE"))).status).toBe(405);
+    expect((await action(makeArgs("PATCH", { body: { dailyRequestLimit: 1 } }))).status).toBe(405);
   });
 });

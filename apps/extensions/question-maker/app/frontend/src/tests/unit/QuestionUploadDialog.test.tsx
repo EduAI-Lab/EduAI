@@ -305,6 +305,70 @@ describe("QuestionUploadDialog", () => {
     expect(saveExtractedQuestions.mock.calls[0][0].assessment).toBeUndefined();
   });
 
+  it("hides the create-assessment checkbox in bank mode unless allowAssessmentOption is set", async () => {
+    renderDialog({ saveTarget: "bank" });
+    await screen.findByText("Question bank only");
+    expect(
+      screen.queryByRole("checkbox", { name: /also create an assessment/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves to the bank by default when the assessment option is offered but left unchecked", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    saveExtractedQuestions.mockResolvedValue({ questions: [{ id: 3 }], assessmentId: null });
+    const { onQuestionsSaved } = renderDialog({ saveTarget: "bank", allowAssessmentOption: true });
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    expect(screen.getByRole("checkbox", { name: /also create an assessment/i })).not.toBeChecked();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /save questions/i }));
+
+    await waitFor(() => expect(saveExtractedQuestions).toHaveBeenCalledTimes(1));
+    expect(saveExtractedQuestions.mock.calls[0][0].assessment).toBeUndefined();
+    await waitFor(() =>
+      expect(onQuestionsSaved).toHaveBeenCalledWith([{ id: 3 }], { assessmentId: null }),
+    );
+  });
+
+  it("creates an assessment from a bank upload when the opt-in checkbox is checked", async () => {
+    extractQuestionsFromText.mockResolvedValue([
+      { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },
+    ]);
+    saveExtractedQuestions.mockResolvedValue({ questions: [{ id: 4 }], assessmentId: 77 });
+    const { onQuestionsSaved } = renderDialog({ saveTarget: "bank", allowAssessmentOption: true });
+
+    fireEvent.change(document.getElementById("question-upload") as HTMLInputElement, {
+      target: { files: [makeTxtFile("Q1 text")] },
+    });
+    await screen.findByText("Review extracted questions (1)");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /also create an assessment/i }));
+    const nameInput = screen.getByLabelText("Name");
+    const saveButton = screen.getByRole("button", { name: /save questions/i });
+
+    fireEvent.change(nameInput, { target: { value: "  " } });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(nameInput, { target: { value: "Quiz 2" } });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(saveExtractedQuestions).toHaveBeenCalledTimes(1));
+    expect(saveExtractedQuestions.mock.calls[0][0].assessment).toEqual({
+      type: "Assignment",
+      name: "Quiz 2",
+    });
+    await waitFor(() =>
+      expect(onQuestionsSaved).toHaveBeenCalledWith([{ id: 4 }], { assessmentId: 77 }),
+    );
+  });
+
   it("shows an unsaved-changes confirmation when closing mid-review, and discarding closes the dialog", async () => {
     extractQuestionsFromText.mockResolvedValue([
       { question: "Q1", summary: "S1", type: "SA", difficulty: "easy", answer: "A1" },

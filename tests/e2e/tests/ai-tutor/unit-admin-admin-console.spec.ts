@@ -52,7 +52,7 @@ test.describe("UNIT_ADMIN and the admin console", () => {
 
     // Nothing from the console leaks through the boundary — not the heading,
     // not the tab set, not the copy that used to be narrowed for this role.
-    await expect(page.getByRole("heading", { name: "Admin console" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Administration" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "AI oversight" })).toHaveCount(0);
     await expect(page.getByText("Review AI tutoring activity in your unit.")).toHaveCount(0);
     await expect(page.getByRole("tab")).toHaveCount(0);

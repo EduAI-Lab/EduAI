@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { Link, redirect, useNavigation } from "react-router";
 import type { ReactNode } from "react";
-import { IconBooks, IconSearch } from "@tabler/icons-react";
+import { IconBooks, IconPlayerPlay, IconSearch } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
-  CourseCard,
+  CourseTile,
   CourseListView,
   PageHeading,
   buildTermFilterGroup,
@@ -240,18 +240,25 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
         }
         renderCard={(course) => {
           const card = (
-            <CourseCard
-              id={String(course.id)}
+            // The shared card (Core's #2105 design), as on the dashboard's
+            // "Courses you're taking" cards.
+            <CourseTile
               code={courseCode(course)}
-              name={courseName(course)}
-              description={course.description}
+              title={courseName(course)}
               term={courseTerm(course)}
               year={courseYear(course)}
-              isPublished={course.isPublished}
-              accentColor={accentForCourse(course)}
-              extraBadges={progressBadges(course)}
+              accent={accentForCourse(course)}
               href={`/student/courses/${course.id}`}
               LinkComponent={Link}
+              links={[
+                {
+                  key: "open",
+                  label: "Continue",
+                  icon: IconPlayerPlay,
+                  href: `/student/courses/${course.id}`,
+                },
+              ]}
+              extraBadges={progressBadges(course)}
             />
           );
           // Preserve the guided-tour target the old first-card carried.

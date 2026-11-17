@@ -368,6 +368,91 @@ describe("AssessmentBuilderPage", () => {
     expect(exportButtons[0].closest("button")).toBeDisabled();
   });
 
+  describe("bulk review (#2161)", () => {
+    const twoDrafts = {
+      ...draftQuestionWithVariant,
+      variants: [
+        { id: 200, isDraft: true, isAiGenerated: false, difficulty: "easy" },
+        { id: 201, isDraft: true, isAiGenerated: false, difficulty: "easy" },
+      ],
+    };
+    const assessmentWithTwoDrafts = {
+      ...baseAssessment,
+      sections: [
+        { id: 10, name: "S1", position: 1, sectionVariants: [{ variantId: 200 }] },
+        // The same variant in two sections is reviewed once.
+        {
+          id: 11,
+          name: "S2",
+          position: 2,
+          sectionVariants: [{ variantId: 201 }, { variantId: 200 }],
+        },
+      ],
+    };
+
+    it("marks every draft reviewed after one confirm and refreshes", async () => {
+      assessmentService.getAssessment.mockResolvedValue(assessmentWithTwoDrafts);
+      questionService.getQuestions.mockResolvedValue([twoDrafts]);
+      questionService.updateVariant.mockResolvedValue({});
+      renderPage();
+      fireEvent.click(await screen.findByRole("button", { name: /Mark all 2 drafts reviewed/ }));
+      expect(screen.getByText("Mark 2 draft questions as reviewed?")).toBeInTheDocument();
+      questionService.updateVariant.mockClear();
+      assessmentService.getAssessment.mockClear();
+      fireEvent.click(screen.getByText("confirm-delete"));
+
+      await waitFor(() =>
+        expect(toastFn).toHaveBeenCalledWith("Drafts reviewed", {
+          description: "2 questions marked as reviewed.",
+        }),
+      );
+      expect(questionService.updateVariant).toHaveBeenCalledTimes(2);
+      expect(questionService.updateVariant).toHaveBeenCalledWith(200, { isDraft: false });
+      expect(questionService.updateVariant).toHaveBeenCalledWith(201, { isDraft: false });
+      expect(assessmentService.getAssessment).toHaveBeenCalledWith(1);
+    });
+
+    it("reports partial failures", async () => {
+      assessmentService.getAssessment.mockResolvedValue(assessmentWithTwoDrafts);
+      questionService.getQuestions.mockResolvedValue([twoDrafts]);
+      questionService.updateVariant
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error("locked"));
+      renderPage();
+      fireEvent.click(await screen.findByRole("button", { name: /Mark all 2 drafts reviewed/ }));
+      fireEvent.click(screen.getByText("confirm-delete"));
+
+      await waitFor(() =>
+        expect(toastFn.error).toHaveBeenCalledWith("Some drafts were not reviewed", {
+          description: "1 of 2 marked as reviewed; 1 failed. Please try again.",
+        }),
+      );
+    });
+
+    it("hides the bulk action from users who cannot review", async () => {
+      useQmPermissionsForCourseMock.mockReturnValue({
+        canManageAssessment: false,
+        canExportAssessment: true,
+        canUseVariantWorkflow: false,
+        hasCourseAccess: true,
+        accessLoading: false,
+      });
+      assessmentService.getAssessment.mockResolvedValue(assessmentWithTwoDrafts);
+      questionService.getQuestions.mockResolvedValue([twoDrafts]);
+      renderPage();
+      await waitFor(() => expect(screen.getByText("Midterm")).toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: /Mark all/ })).not.toBeInTheDocument();
+    });
+
+    it("hides the bulk action when there are no drafts", async () => {
+      assessmentService.getAssessment.mockResolvedValue(assessmentWithReviewedQuestion);
+      questionService.getQuestions.mockResolvedValue([questionWithVariant]);
+      renderPage();
+      await waitFor(() => expect(screen.getByText("Midterm")).toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: /Mark all/ })).not.toBeInTheDocument();
+    });
+  });
+
   it("exports as TXT successfully", async () => {
     assessmentService.getAssessment.mockResolvedValue(assessmentWithReviewedQuestion);
     questionService.getQuestions.mockResolvedValue([questionWithVariant]);

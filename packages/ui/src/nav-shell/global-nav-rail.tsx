@@ -157,6 +157,23 @@ export function GlobalNavRail({
                 </li>
               );
             }
+            if (entry.kind === "tray" && entry.href) {
+              return (
+                <li key={entry.tray}>
+                  <RailLink
+                    link={{
+                      key: entry.tray,
+                      label: entry.label,
+                      href: entry.href,
+                      icon: entry.icon,
+                    }}
+                    pathname={model.pathname}
+                    iconOnly={iconOnly}
+                    active={activeTray === entry.tray}
+                  />
+                </li>
+              );
+            }
             const icon = <entry.icon size={26} strokeWidth={1.6} aria-hidden="true" />;
             if (entry.kind === "panel") {
               const tray = `panel:${entry.key}` as const;
@@ -190,19 +207,21 @@ export function GlobalNavRail({
           })}
         </ul>
 
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(!collapsed)}
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-          className="mx-auto mb-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground hover:bg-[var(--color-sidebar-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring max-lg:hidden"
-        >
-          {collapsed ? (
-            <IconChevronsRight size={20} aria-hidden="true" />
-          ) : (
-            <IconChevronsLeft size={20} aria-hidden="true" />
-          )}
-        </button>
+        <RailTooltip label={collapsed ? "Expand navigation" : "Collapse navigation"} enabled>
+          <button
+            type="button"
+            onClick={() => onCollapsedChange(!collapsed)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            className="mx-auto mb-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground hover:bg-[var(--color-sidebar-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring max-lg:hidden"
+          >
+            {collapsed ? (
+              <IconChevronsRight size={20} aria-hidden="true" />
+            ) : (
+              <IconChevronsLeft size={20} aria-hidden="true" />
+            )}
+          </button>
+        </RailTooltip>
       </nav>
     </TooltipProvider>
   );
@@ -212,12 +231,15 @@ function RailLink({
   link,
   pathname,
   iconOnly,
+  active: activeOverride,
 }: {
   link: NavShellLink;
   pathname: string;
   iconOnly: boolean;
+  /** Overrides the href match, for a tile that stands for a whole section. */
+  active?: boolean;
 }) {
-  const active = !link.external && isNavHrefActive(pathname, link.href);
+  const active = activeOverride ?? (!link.external && isNavHrefActive(pathname, link.href));
   const body = (
     <>
       {link.icon && <link.icon size={26} strokeWidth={1.6} aria-hidden="true" />}

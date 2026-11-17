@@ -286,6 +286,7 @@ export default function CoursesPage() {
         ) : (
           <CoursesView
             role="mixed"
+            launcherRole={isTA ? "TA" : (user.role ?? "STUDENT")}
             courses={courses}
             taCourseIds={taCourseIds}
             instructorCourseIds={instructorCourseIds}
@@ -352,7 +353,7 @@ function Layout({ user, children }: { user: any; children: React.ReactNode }) {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to="/dashboard">Home</Link>
+                <Link to="/dashboard">Core</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />

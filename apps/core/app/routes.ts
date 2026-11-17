@@ -126,6 +126,7 @@ export default [
     id: "routes/api/admin.bug-reports:id",
   }),
   route("/api/admin/cron-jobs", "routes/api/admin.cron-jobs.ts"),
+  route("/api/admin/nav-counts", "routes/api/admin.nav-counts.ts"),
   route("/api/admin/api-access", "routes/api/admin.api-access.ts"),
   route("/api/admin/api-access/:id", "routes/api/admin.api-access.ts", {
     id: "routes/api/admin.api-access:id",

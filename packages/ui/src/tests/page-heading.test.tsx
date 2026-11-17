@@ -52,4 +52,17 @@ describe("PageHeading", () => {
     expect(container.firstElementChild).not.toHaveClass("bg-muted/50");
     expect(container.firstElementChild).toHaveClass("mb-4");
   });
+
+  it("puts the page's actions on the title row beside the heading", () => {
+    render(
+      <PageHeading
+        heading="Invitations"
+        className="page-header"
+        actions={<button type="button">Invite User</button>}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Invite User" });
+    const row = button.closest(".page-header");
+    expect(row).toContainElement(screen.getByRole("heading", { name: "Invitations" }));
+  });
 });

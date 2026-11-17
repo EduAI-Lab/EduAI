@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Link } from "react-router";
 import { IconPlus, IconBook } from "@tabler/icons-react";
 import {
   Button,
   Card,
   CardContent,
-  CourseCard,
   CourseListView,
   Dialog,
   DialogContent,
@@ -26,7 +24,6 @@ import {
   buildStatusFilterGroup,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
-  defaultColorIndexForCourse,
 } from "@eduai/ui";
 import { DatePickerField, termInfoFromDateInput, termLabelLong } from "@eduai/ui";
 import type { CourseListSection } from "@eduai/ui";
@@ -39,12 +36,13 @@ import type {
   UpdateCourseInput,
   CourseFilters,
 } from "~/hooks/api/use-courses";
-import { CourseCardCustomizePopover } from "~/components/courses/course-card-customize-popover";
-import { useCourseCardPreferences } from "~/hooks/use-course-card-preferences";
 import {
-  getCourseDisplayName,
-  resolveCourseAccentColor,
-} from "~/lib/courses/course-card-preferences";
+  CourseGridCard,
+  courseExtensions,
+  courseLinks,
+  managedCourseLinks,
+  type CourseKind,
+} from "~/components/dashboard/course-dashboard";
 import {
   PolicyTooltip,
   usePolicyGate,
@@ -86,6 +84,8 @@ interface InstructorViewProps extends MutableRoleProps {
 
 interface MixedViewProps extends ControlledListProps {
   role: "mixed";
+  /** The role the app switcher gates by ("TA" for a TA-enrolled student), as on the dashboard. */
+  launcherRole?: string;
   courses: Course[];
   taCourseIds: string[];
   instructorCourseIds: string[];
@@ -166,6 +166,40 @@ export const COURSES_ROLE_CONFIG = {
 } satisfies Record<"admin" | "unit-admin" | "instructor", RoleListConfig>;
 
 const NO_RESULTS_TEXT = "No courses match your search.";
+
+/**
+ * The dashboard's card (#2105) for admins and unit admins, who manage every
+ * course they see: the teaching menu with Edit and Delete, and the department
+ * pill the older card showed.
+ */
+function ManagedCourseCard({
+  course,
+  launcherRole,
+  departmentLabel,
+  onPublishToggle,
+  onEdit,
+  onDelete,
+  deleteDisabledReason,
+}: {
+  course: Course;
+  launcherRole: "ADMIN" | "UNIT_ADMIN";
+  departmentLabel?: string;
+  onPublishToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  deleteDisabledReason?: string;
+}) {
+  return (
+    <CourseGridCard
+      course={{ ...course, callerEnrollmentRole: course.callerEnrollmentRole ?? null }}
+      kind="teaching"
+      canPublish
+      links={managedCourseLinks(course.id, launcherRole)}
+      extraBadges={departmentLabel ? [departmentLabel] : undefined}
+      menuActions={{ onPublishToggle, onEdit, onDelete, deleteDisabledReason }}
+    />
+  );
+}
 
 function NoResultsCard() {
   return (
@@ -427,28 +461,13 @@ function AdminCoursesBody({
         }
         noResultsState={<NoResultsCard />}
         renderCard={(course) => (
-          <CourseCard
-            id={course.id}
-            code={course.code}
-            name={course.name}
-            description={course.description}
-            term={course.term}
-            year={course.year}
-            isPublished={course.isPublished}
-            department={course.department}
+          <ManagedCourseCard
+            course={course}
+            launcherRole="ADMIN"
             departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-            colorIndex={defaultColorIndexForCourse(course.id)}
-            href={`/courses/${course.id}`}
-            LinkComponent={Link}
-            actions={{
-              showPublish: config.cardActions.showPublish,
-              isPublished: course.isPublished,
-              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-              showEdit: config.cardActions.showEdit,
-              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-              showDelete: config.cardActions.showDelete,
-              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-            }}
+            onPublishToggle={() => onPublishToggle(course.id, !course.isPublished)}
+            onEdit={() => setTimeout(() => setEditingCourse(course), 0)}
+            onDelete={() => setTimeout(() => setDeletingCourse(course), 0)}
           />
         )}
       />
@@ -826,31 +845,15 @@ function UnitAdminCoursesBody({
         }
         noResultsState={<NoResultsCard />}
         renderCard={(course) => (
-          <CourseCard
-            id={course.id}
-            code={course.code}
-            name={course.name}
-            description={course.description}
-            term={course.term}
-            year={course.year}
-            isPublished={course.isPublished}
-            department={course.department}
+          <ManagedCourseCard
+            course={course}
+            launcherRole="UNIT_ADMIN"
             departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-            colorIndex={defaultColorIndexForCourse(course.id)}
-            href={`/courses/${course.id}`}
-            LinkComponent={Link}
-            actions={{
-              showPublish: config.cardActions.showPublish,
-              isPublished: course.isPublished,
-              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-              showEdit: config.cardActions.showEdit,
-              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-              // §2 / issue #807: delete stays visible, greyed when the policy is off.
-              showDelete: config.cardActions.showDelete,
-              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-              deleteDisabled: !canDelete,
-              deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
-            }}
+            onPublishToggle={() => onPublishToggle(course.id, !course.isPublished)}
+            onEdit={() => setTimeout(() => setEditingCourse(course), 0)}
+            onDelete={() => setTimeout(() => setDeletingCourse(course), 0)}
+            // §2 / issue #807: delete stays visible, greyed when the policy is off.
+            deleteDisabledReason={canDelete ? undefined : DEFAULT_POLICY_DISABLED_MESSAGE}
           />
         )}
       />
@@ -1165,34 +1168,36 @@ function InstructorCoursesBody({
           </Card>
         }
         noResultsState={<NoResultsCard />}
-        renderCard={(course) => (
-          <CourseCard
-            id={course.id}
-            code={course.code}
-            name={course.name}
-            description={course.description}
-            term={course.term}
-            year={course.year}
-            isPublished={course.isPublished}
-            department={course.department}
-            colorIndex={defaultColorIndexForCourse(course.id)}
-            href={`/courses/${course.id}`}
-            LinkComponent={Link}
-            actions={{
-              showPublish: config.cardActions.showPublish,
-              isPublished: course.isPublished,
-              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-              publishDisabled: !canPublish,
-              publishDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
-              showEdit: config.cardActions.showEdit,
-              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-              showDelete: config.cardActions.showDelete,
-              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-              deleteDisabled: !canDelete,
-              deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
-            }}
-          />
-        )}
+        renderCard={(course) => {
+          // The dashboard's card (#2105). Every course here kept Edit/Delete
+          // before, so only a course this instructor merely assists or takes
+          // gets the learner card.
+          const kind: CourseKind =
+            course.callerEnrollmentRole === "TA"
+              ? "assisting"
+              : course.callerEnrollmentRole === "STUDENT"
+                ? "taking"
+                : "teaching";
+          const dashboardCourse = {
+            ...course,
+            callerEnrollmentRole: course.callerEnrollmentRole ?? null,
+          };
+          return (
+            <CourseGridCard
+              course={dashboardCourse}
+              kind={kind}
+              canPublish={canPublish}
+              links={courseLinks(dashboardCourse, kind, courseExtensions(course.id, "INSTRUCTOR"))}
+              menuActions={{
+                onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+                publishDisabledReason: canPublish ? undefined : DEFAULT_POLICY_DISABLED_MESSAGE,
+                onEdit: () => setTimeout(() => setEditingCourse(course), 0),
+                onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+                deleteDisabledReason: canDelete ? undefined : DEFAULT_POLICY_DISABLED_MESSAGE,
+              }}
+            />
+          );
+        }}
       />
 
       <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
@@ -1269,6 +1274,7 @@ function MixedCoursesBody({
   taCourseIds,
   instructorCourseIds,
   enrolledCourseIds,
+  launcherRole = "STUDENT",
   search,
   onSearchChange,
   selectedFilters,
@@ -1277,8 +1283,6 @@ function MixedCoursesBody({
   total,
   onClearAll,
 }: MixedViewProps) {
-  const { getCoursePreference, setCoursePreference } = useCourseCardPreferences();
-
   // Presentation-only split: the backend already scoped `courses` to what the
   // caller may see. Every visible course must land in exactly one section:
   //   - `teaching` — active INSTRUCTOR enrollment (e.g. a non-platform-instructor
@@ -1376,9 +1380,11 @@ function MixedCoursesBody({
       }
       noResultsState={<NoResultsCard />}
       renderCard={(course) => {
-        const preference = getCoursePreference(course.id);
-        const accentColor = resolveCourseAccentColor(course.id, preference);
-        const displayName = getCourseDisplayName(course.name, preference);
+        const kind: CourseKind = instructorCourseIds.includes(course.id)
+          ? "teaching"
+          : taCourseIds.includes(course.id)
+            ? "assisting"
+            : "taking";
         const roleBadge = instructorCourseIds.includes(course.id)
           ? "Instructor"
           : taCourseIds.includes(course.id)
@@ -1388,30 +1394,18 @@ function MixedCoursesBody({
         // instructors reads "3 instructors" rather than silently showing one.
         const instructorsBadge = instructorsBadgeLabel(course.instructors ?? []);
         const extraBadges = instructorsBadge ? [roleBadge, instructorsBadge] : [roleBadge];
+        const dashboardCourse = {
+          ...course,
+          callerEnrollmentRole: course.callerEnrollmentRole ?? null,
+        };
+        // The dashboard's card (#2105); its menu carries the customise popover.
         return (
-          <CourseCard
-            id={course.id}
-            code={course.code}
-            name={course.name}
-            displayName={displayName}
-            description={course.description}
-            term={course.term}
-            year={course.year}
-            isPublished={course.isPublished}
-            department={course.department}
+          <CourseGridCard
+            course={dashboardCourse}
+            kind={kind}
+            canPublish={false}
+            links={courseLinks(dashboardCourse, kind, courseExtensions(course.id, launcherRole))}
             extraBadges={extraBadges}
-            colorIndex={defaultColorIndexForCourse(course.id)}
-            accentColor={accentColor}
-            heroAction={
-              <CourseCardCustomizePopover
-                courseName={course.name}
-                courseCode={course.code}
-                preference={preference}
-                onApply={(update) => setCoursePreference(course.id, update)}
-              />
-            }
-            href={`/courses/${course.id}`}
-            LinkComponent={Link}
           />
         );
       }}

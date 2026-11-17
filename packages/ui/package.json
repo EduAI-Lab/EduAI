@@ -20,7 +20,8 @@
     "./math-markdown": "./src/lib/math-markdown.ts",
     "./bug-report-capture": "./src/bug-report-capture.ts",
     "./assistant/shared": "./src/assistant/shared.ts",
-    "./assistant": "./src/assistant/index.ts"
+    "./assistant": "./src/assistant/index.ts",
+    "./weekly-usage-chart": "./src/charts/weekly-usage-chart.tsx"
   },
   "scripts": {
     "test": "vitest run",

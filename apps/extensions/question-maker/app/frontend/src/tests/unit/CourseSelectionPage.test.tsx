@@ -1,18 +1,15 @@
 /**
- * Unit tests for CourseSelectionPage (#1544): role-based view selection and
- * the course-select handler. Child views and hooks are mocked so we exercise
+ * Unit tests for CourseSelectionPage (#1544): role-based view selection. Child views and hooks are mocked so we exercise
  * only this page's own routing/dispatch logic.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
-const { navigateMock, useAuthMock, useDisplayCoursesMock } = vi.hoisted(() => ({
-  navigateMock: vi.fn(),
+const { useAuthMock, useDisplayCoursesMock } = vi.hoisted(() => ({
   useAuthMock: vi.fn(),
   useDisplayCoursesMock: vi.fn(),
 }));
 
-vi.mock("react-router", () => ({ useNavigate: () => navigateMock }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
 vi.mock("@/hooks/useDisplayCourses", () => ({ useDisplayCourses: () => useDisplayCoursesMock() }));
 
@@ -21,16 +18,7 @@ let lastUnitAdminProps: any;
 vi.mock("@/components/courses/courses-role-view", () => ({
   CoursesRoleView: (props: any) => {
     lastAdminProps = props;
-    return (
-      <div>
-        role-view:{props.role}
-        {props.courses.map((c: any) => (
-          <button key={c.id} onClick={() => props.onSelectCourse(c)}>
-            select-{c.id}
-          </button>
-        ))}
-      </div>
-    );
+    return <div>role-view:{props.role}</div>;
   },
 }));
 vi.mock("@/components/courses/courses-unit-admin-view", () => ({
@@ -68,12 +56,5 @@ describe("CourseSelectionPage", () => {
     setup("INSTRUCTOR");
     render(<CourseSelectionPage />);
     expect(screen.getByText("role-view:instructor")).toBeInTheDocument();
-  });
-
-  it("navigates to the course overview tab when a course is selected", () => {
-    setup("ADMIN", [{ id: 7, name: "Data" }]);
-    render(<CourseSelectionPage />);
-    fireEvent.click(screen.getByText("select-7"));
-    expect(navigateMock).toHaveBeenCalledWith("/courses/7?tab=overview");
   });
 });

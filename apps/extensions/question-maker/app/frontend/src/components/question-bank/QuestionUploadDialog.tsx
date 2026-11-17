@@ -198,6 +198,8 @@ interface QuestionUploadDialogProps {
   initialDraftQuestions?: DraftQuestion[] | null;
   /** `bank` = save questions to the question bank only (no assessment). `assessment` = default behavior. */
   saveTarget?: "bank" | "assessment";
+  /** With `saveTarget="bank"`, offers an opt-in checkbox to also create an assessment. */
+  allowAssessmentOption?: boolean;
 }
 
 const generateId = () => randomId();
@@ -344,6 +346,7 @@ export const QuestionUploadDialog = ({
   onExtractInBackground,
   initialDraftQuestions,
   saveTarget = "assessment",
+  allowAssessmentOption = false,
 }: QuestionUploadDialogProps) => {
   const [topics, setTopics] = useState<Topic[]>(providedTopics);
   const [primaryTopicId, setPrimaryTopicId] = useState<string>("");
@@ -358,6 +361,9 @@ export const QuestionUploadDialog = ({
   const [assessmentType, setAssessmentType] =
     useState<(typeof assessmentTypes)[number]>("Assignment");
   const [assessmentName, setAssessmentName] = useState("Uploaded Assessment");
+  const [alsoCreateAssessment, setAlsoCreateAssessment] = useState(false);
+  const createsAssessment =
+    saveTarget === "assessment" || (allowAssessmentOption && alsoCreateAssessment);
   const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
   const [aiModel, setAiModel] = useState(FALLBACK_GENERATION_MODEL);
   const [providerApiKey, setProviderApiKey] = useState("");
@@ -759,16 +765,16 @@ export const QuestionUploadDialog = ({
     if (processingStage === "saving") return false;
     if (!courseId) return false;
     if (includedDrafts.length === 0) return false;
-    if (saveTarget === "bank") return true;
+    if (!createsAssessment) return true;
     if (!assessmentType || !assessmentName.trim()) return false;
     return true;
   }, [
     assessmentName,
     assessmentType,
     courseId,
+    createsAssessment,
     includedDrafts.length,
     processingStage,
-    saveTarget,
   ]);
 
   const getDisabledReason = (): string | null => {
@@ -777,7 +783,7 @@ export const QuestionUploadDialog = ({
       const reasons: string[] = [];
       if (!courseId) reasons.push("course");
       if (includedDrafts.length === 0) reasons.push("at least one question selected");
-      if (saveTarget === "assessment") {
+      if (createsAssessment) {
         if (!assessmentType) reasons.push("assessment type");
         if (!assessmentName.trim()) reasons.push("assessment name");
       }
@@ -1005,7 +1011,7 @@ export const QuestionUploadDialog = ({
       setError("Each question must include the AI-generated summary before saving.");
       return;
     }
-    if (saveTarget === "assessment" && (!assessmentType || !assessmentName.trim())) {
+    if (createsAssessment && (!assessmentType || !assessmentName.trim())) {
       setError("Assessment type and name are required.");
       return;
     }
@@ -1025,10 +1031,9 @@ export const QuestionUploadDialog = ({
         topicName: fallbackTopicName,
         questions: payloadQuestions,
         // Saving straight to the bank sends no assessment at all.
-        assessment:
-          saveTarget === "assessment"
-            ? { type: assessmentType, name: assessmentName.trim() }
-            : undefined,
+        assessment: createsAssessment
+          ? { type: assessmentType, name: assessmentName.trim() }
+          : undefined,
       });
 
       onQuestionsSaved(result.questions, { assessmentId: result.assessmentId ?? null });
@@ -1056,7 +1061,7 @@ export const QuestionUploadDialog = ({
     primaryTopicId,
     toast,
     topics.length,
-    saveTarget,
+    createsAssessment,
   ]);
 
   const handleReset = useCallback(() => {
@@ -1069,7 +1074,43 @@ export const QuestionUploadDialog = ({
     setNewTopicName(topics.length > 0 ? "" : "Uploaded Questions");
     setAssessmentType("Assignment");
     setAssessmentName("Assignment 1");
+    setAlsoCreateAssessment(false);
   }, [topics]);
+
+  const assessmentFields = (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="assessment-type">Type</Label>
+        <Select
+          value={assessmentType}
+          onValueChange={(value) => {
+            const nextType = assessmentTypes.find((type) => type === value);
+            if (nextType) setAssessmentType(nextType);
+          }}
+        >
+          <SelectTrigger id="assessment-type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {assessmentTypes.map((type) => (
+              <SelectItem key={type} value={type}>
+                {type}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="assessment-name">Name</Label>
+        <Input
+          id="assessment-name"
+          placeholder="e.g. Midterm Review Set"
+          value={assessmentName}
+          onChange={(event) => setAssessmentName(event.target.value)}
+        />
+      </div>
+    </>
+  );
 
   if (!courseId) {
     return (
@@ -1154,9 +1195,25 @@ export const QuestionUploadDialog = ({
                   <CardHeader className="space-y-1">
                     <CardTitle className="text-base font-semibold">Question bank only</CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      Questions are saved to the course bank. No assessment is created.
+                      {createsAssessment
+                        ? "Questions are saved to the course bank and a new assessment is created."
+                        : "Questions are saved to the course bank. No assessment is created."}
                     </p>
                   </CardHeader>
+                  {allowAssessmentOption && (
+                    <CardContent className="space-y-4">
+                      <label className="flex items-start gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4"
+                          checked={alsoCreateAssessment}
+                          onChange={(event) => setAlsoCreateAssessment(event.target.checked)}
+                        />
+                        <span>Also create an assessment from these questions</span>
+                      </label>
+                      {alsoCreateAssessment && assessmentFields}
+                    </CardContent>
+                  )}
                 </Card>
               ) : (
                 <Card data-tour="upload-assessment-meta" className="shrink-0 w-full md:w-[280px]">
@@ -1166,38 +1223,7 @@ export const QuestionUploadDialog = ({
                       A new assessment will be created for these questions.
                     </p>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="assessment-type">Type</Label>
-                      <Select
-                        value={assessmentType}
-                        onValueChange={(value) => {
-                          const nextType = assessmentTypes.find((type) => type === value);
-                          if (nextType) setAssessmentType(nextType);
-                        }}
-                      >
-                        <SelectTrigger id="assessment-type">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {assessmentTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="assessment-name">Name</Label>
-                      <Input
-                        id="assessment-name"
-                        placeholder="e.g. Midterm Review Set"
-                        value={assessmentName}
-                        onChange={(event) => setAssessmentName(event.target.value)}
-                      />
-                    </div>
-                  </CardContent>
+                  <CardContent className="space-y-4">{assessmentFields}</CardContent>
                 </Card>
               )}
 
@@ -1851,10 +1877,12 @@ export const QuestionUploadDialog = ({
                 <Tooltip
                   content={
                     canSave
-                      ? saveTarget === "bank"
-                        ? "Save selected questions to the question bank only."
-                        : "Save selected questions and create a new assessment."
-                      : "Select at least one question and fill assessment details to save."
+                      ? createsAssessment
+                        ? "Save selected questions and create a new assessment."
+                        : "Save selected questions to the question bank only."
+                      : createsAssessment
+                        ? "Select at least one question and fill assessment details to save."
+                        : "Select at least one question to save."
                   }
                 >
                   <span className="inline-block">

@@ -31,6 +31,7 @@ import {
   getActiveApiAccessGrant,
   listApiAccessGrants,
   revokeApiAccessGrant,
+  updateApiAccessGrant,
 } from "~/lib/api-keys/access-grants.server";
 
 const NOW = new Date("2026-10-21T12:00:00Z");
@@ -331,6 +332,58 @@ describe("revokeApiAccessGrant", () => {
   it("404s an unknown grant", async () => {
     vi.mocked(prisma.apiAccessGrant.findUnique).mockResolvedValue(null);
     await expect(revokeApiAccessGrant("nope", "a1", NOW)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("updateApiAccessGrant", () => {
+  const stored = { ...grant, revokedAt: null, purpose: "Thesis" };
+
+  beforeEach(() => {
+    vi.mocked(prisma.apiAccessGrant.findUnique).mockResolvedValue(stored as never);
+    vi.mocked(prisma.apiAccessGrant.updateMany).mockResolvedValue({ count: 1 } as never);
+  });
+
+  it("changes only the given limits, only while the grant is active, and keeps keys working", async () => {
+    const result = await updateApiAccessGrant("g1", { dailyTokenLimit: 1_000_000 }, NOW);
+    expect(prisma.apiAccessGrant.updateMany).toHaveBeenCalledWith({
+      where: { id: "g1", revokedAt: null, expiresAt: { gt: NOW } },
+      data: { dailyTokenLimit: 1_000_000 },
+    });
+    expect(result.before.dailyTokenLimit).toBe(200_000);
+    expect(result.after).toMatchObject({ dailyTokenLimit: 1_000_000, dailyRequestLimit: 200 });
+    expect(prisma.apikey.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("moves the end date within a year", async () => {
+    const later = new Date("2027-03-31T23:59:59Z");
+    await updateApiAccessGrant("g1", { expiresAt: later }, NOW);
+    expect(prisma.apiAccessGrant.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { expiresAt: later } }),
+    );
+  });
+
+  it("refuses an end date in the past or more than a year away", async () => {
+    await expect(
+      updateApiAccessGrant("g1", { expiresAt: new Date("2026-10-01T00:00:00Z") }, NOW),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      updateApiAccessGrant("g1", { expiresAt: new Date("2028-01-01T00:00:00Z") }, NOW),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(prisma.apiAccessGrant.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("404s an unknown grant", async () => {
+    vi.mocked(prisma.apiAccessGrant.findUnique).mockResolvedValue(null);
+    await expect(
+      updateApiAccessGrant("nope", { dailyRequestLimit: 300 }, NOW),
+    ).rejects.toBeInstanceOf(ApiAccessGrantError);
+  });
+
+  it("refuses a revoked or ended grant with 409", async () => {
+    vi.mocked(prisma.apiAccessGrant.updateMany).mockResolvedValue({ count: 0 } as never);
+    await expect(updateApiAccessGrant("g1", { dailyRequestLimit: 300 }, NOW)).rejects.toMatchObject(
+      { status: 409 },
+    );
   });
 });
 

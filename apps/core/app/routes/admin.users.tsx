@@ -43,6 +43,7 @@ export default function UsersPage() {
     createUser,
     updateUser,
     deleteUser,
+    deleteUsers,
     toggleUserActive,
   } = useUsers();
 
@@ -54,7 +55,7 @@ export default function UsersPage() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to="/dashboard">Home</Link>
+                <Link to="/dashboard">Core</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -80,6 +81,7 @@ export default function UsersPage() {
         onCreateUser={createUser}
         onUpdateUser={updateUser}
         onDeleteUser={deleteUser}
+        onDeleteUsers={deleteUsers}
         onToggleUserActive={toggleUserActive}
       />
     </CoreAppShell>

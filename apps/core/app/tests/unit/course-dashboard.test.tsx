@@ -104,7 +104,7 @@ describe("CourseDashboard", () => {
     renderDashboard({ data: data([course()]) });
     expect(screen.getByRole("heading", { name: "Your courses" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /Courses you're taking/ })).toBeNull();
-    expect(screen.getByRole("link", { name: "BIOL 116 Intro Biology" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "BIOL 116 · Intro Biology" })).toHaveAttribute(
       "href",
       "/courses/c1",
     );
