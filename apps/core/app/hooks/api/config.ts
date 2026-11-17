@@ -6,20 +6,28 @@ export const STUB_ONLY = {
 
 export class ApiError extends Error {
   readonly status: number;
+  /** Per-field detail from the error envelope, e.g. the courses behind a 409. */
+  readonly fields?: Record<string, string>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, fields?: Record<string, string>) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.fields = fields;
   }
 }
 
-function parseErrorMessage(text: string): string {
+interface ParsedErrorBody {
+  message: string;
+  fields?: Record<string, string>;
+}
+
+function parseErrorBody(text: string): ParsedErrorBody {
   try {
-    const json = JSON.parse(text) as { error?: string };
-    return json.error ?? text;
+    const json = JSON.parse(text) as { error?: string; fields?: Record<string, string> };
+    return { message: json.error ?? text, fields: json.fields };
   } catch {
-    return text || "Request failed";
+    return { message: text || "Request failed" };
   }
 }
 
@@ -34,7 +42,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!response.ok) {
     const text = await response.text();
-    throw new ApiError(response.status, parseErrorMessage(text));
+    const { message, fields } = parseErrorBody(text);
+    throw new ApiError(response.status, message, fields);
   }
 
   if (response.status === 204) {
