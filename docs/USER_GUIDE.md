@@ -312,6 +312,10 @@ For a guided tour, open the **(?)** help button in the page header and choose **
 4. Preview the material.
 5. Publish the required content so students can see it.
 
+A **Next steps** bar on the course, module and lesson pages shows the same path: **Add a module → Add a lesson → Add an activity → Publish for students**. A module is a unit of the course (for example "Intro to Python"); a lesson is one topic inside it (for example "Variables" or "Loops"). Each step opens or links to the place you finish it, and publishing stays the last step until a module, a lesson and an activity exist. **Hide** tucks the bar away; this browser remembers the choice.
+
+The **Add activity** window has its own steps (write the question, mark the answer, pick a main topic, add it). Secondary topics, the AI study buddy modes and the hint are under **More options**.
+
 On a course page, staff may also see:
 
 - **Content** — modules, lessons, activities, cloning, and publishing.
