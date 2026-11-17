@@ -39,6 +39,8 @@ import {
   IconListCheck,
   IconTag,
   IconPencil,
+  IconChevronDown,
+  IconChevronUp,
 } from "@tabler/icons-react";
 import {
   Button,
@@ -60,6 +62,7 @@ import {
 } from "@eduai/ui";
 import { Link } from "react-router";
 import { cn } from "~/lib/utils";
+import { StepList } from "~/components/courses/CourseNextSteps";
 import { AI_TUTOR_HELP } from "~/lib/help/help-hints";
 import api, { ApiHttpError } from "../lib/api";
 import { useCourseTopicsContext } from "../hooks/useCourseTopics";
@@ -154,6 +157,8 @@ export default function AddActivityPanel({
   const [answerError, setAnswerError] = useState<string | null>(null);
 
   const [enableTeachMode, setEnableTeachMode] = useState(true);
+  // #2170: optional settings start folded so the required fields stand out.
+  const [showMore, setShowMore] = useState(false);
   const [enableGuideMode, setEnableGuideMode] = useState(true);
 
   // Derived-state-during-render pattern (intentional): when the topics prop
@@ -380,6 +385,9 @@ export default function AddActivityPanel({
     }
   };
 
+  // An AI-mode error lives in the fold, so it must never sit hidden there.
+  const moreOpen = showMore || aiModeError !== null;
+
   const handleAddActivity = async (event: FormEvent) => {
     event.preventDefault();
     if (!question.trim()) return;
@@ -479,6 +487,38 @@ export default function AddActivityPanel({
         <DialogTitle>Add activity</DialogTitle>
         <DialogDescription>Author a new question for this lesson.</DialogDescription>
       </DialogHeader>
+      <StepList
+        className="rounded-lg border border-border bg-muted/40 px-3 py-2.5"
+        steps={[
+          {
+            key: "question",
+            label: source === "bank" ? "Pick a bank question" : "Write the question",
+            done: question.trim() !== "",
+            detail: "What students should answer.",
+          },
+          {
+            key: "answer",
+            label: type === "MCQ" ? "Mark the answer" : "Add a model answer",
+            done: type === "MCQ" ? hasSelectedCorrect : question.trim() !== "",
+            detail:
+              type === "MCQ"
+                ? "Click the letter beside the right choice."
+                : "Optional for short answers: staff compare against it when grading.",
+          },
+          {
+            key: "topic",
+            label: "Pick a main topic",
+            done: selectedMainTopicId !== "",
+            detail: "The topic this question practises. Add one if the course has none yet.",
+          },
+          {
+            key: "save",
+            label: "Add the activity",
+            done: false,
+            detail: "Choose Add activity at the bottom. Extra settings are under More options.",
+          },
+        ]}
+      />
       <form onSubmit={handleAddActivity} className="space-y-6">
         {courseOfferingId != null && (
           <div className="space-y-2">
@@ -623,6 +663,8 @@ export default function AddActivityPanel({
               </Label>
               <Textarea
                 id="new-activity-question"
+                // Step 1 of the dialog; also keeps first focus off the step tooltips.
+                autoFocus
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
                 placeholder="Write the question learners should answer…"
@@ -859,105 +901,130 @@ export default function AddActivityPanel({
               )}
             </div>
 
-            <div className="space-y-2">
-              <span className="flex items-center gap-1.5 text-sm font-medium">
-                <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
-                Secondary topics{" "}
-                <span className="font-normal text-muted-foreground">(optional)</span>
-              </span>
-              <MultiSelect
-                options={availableSecondaryTopics.map((topic) => ({
-                  value: String(topic.id),
-                  label: topic.name,
-                }))}
-                value={selectedSecondaryTopicIds}
-                onValueChange={setSelectedSecondaryTopicIds}
-                disabled={loadingTopics || availableSecondaryTopics.length === 0}
-                placeholder="Add secondary topics…"
-                searchPlaceholder="Search topics…"
-                emptyText="No other topics available."
-                className="w-full"
-              />
-            </div>
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-2 text-muted-foreground"
+                aria-expanded={moreOpen}
+                aria-controls="new-activity-more-options"
+                onClick={() => setShowMore((open) => !open)}
+              >
+                {moreOpen ? (
+                  <IconChevronUp className="size-4" aria-hidden="true" />
+                ) : (
+                  <IconChevronDown className="size-4" aria-hidden="true" />
+                )}
+                More options
+                <span className="font-normal">(secondary topics, AI study buddy, hint)</span>
+              </Button>
+              {moreOpen && (
+                <div id="new-activity-more-options" className="space-y-5">
+                  <div className="space-y-2">
+                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                      <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+                      Secondary topics{" "}
+                      <span className="font-normal text-muted-foreground">(optional)</span>
+                    </span>
+                    <MultiSelect
+                      options={availableSecondaryTopics.map((topic) => ({
+                        value: String(topic.id),
+                        label: topic.name,
+                      }))}
+                      value={selectedSecondaryTopicIds}
+                      onValueChange={setSelectedSecondaryTopicIds}
+                      disabled={loadingTopics || availableSecondaryTopics.length === 0}
+                      placeholder="Add secondary topics…"
+                      searchPlaceholder="Search topics…"
+                      emptyText="No other topics available."
+                      className="w-full"
+                    />
+                  </div>
 
-            <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-              <div className="flex items-center gap-2">
-                <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
-                  <IconSparkles className="size-3.5" aria-hidden="true" />
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  AI study buddy
-                </span>
-                <HelpHint {...AI_TUTOR_HELP.authoringModes} LinkComponent={Link} />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Choose which AI assistance modes students can use for this activity.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  {
-                    key: "teach" as const,
-                    label: "Teach me",
-                    icon: IconSchool,
-                    enabled: enableTeachMode,
-                    other: enableGuideMode,
-                    set: setEnableTeachMode,
-                  },
-                  {
-                    key: "guide" as const,
-                    label: "Guide me",
-                    icon: IconRoute,
-                    enabled: enableGuideMode,
-                    other: enableTeachMode,
-                    set: setEnableGuideMode,
-                  },
-                ].map((mode) => {
-                  const ModeIcon = mode.icon;
-                  return (
-                    <button
-                      key={mode.key}
-                      type="button"
-                      aria-pressed={mode.enabled}
-                      onClick={() => {
-                        if (mode.enabled && !mode.other) {
-                          setAiModeError(AI_MODE_REQUIRED);
-                          return;
-                        }
-                        setAiModeError(null);
-                        mode.set(!mode.enabled);
-                      }}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                        mode.enabled
-                          ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
-                          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                      )}
-                    >
-                      <ModeIcon className="size-3.5" aria-hidden="true" />
-                      {mode.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {aiModeError && (
-                <p role="alert" className="text-xs text-destructive">
-                  {aiModeError}
-                </p>
+                  <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                        <IconSparkles className="size-3.5" aria-hidden="true" />
+                      </span>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        AI study buddy
+                      </span>
+                      <HelpHint {...AI_TUTOR_HELP.authoringModes} LinkComponent={Link} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Choose which AI assistance modes students can use for this activity.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        {
+                          key: "teach" as const,
+                          label: "Teach me",
+                          icon: IconSchool,
+                          enabled: enableTeachMode,
+                          other: enableGuideMode,
+                          set: setEnableTeachMode,
+                        },
+                        {
+                          key: "guide" as const,
+                          label: "Guide me",
+                          icon: IconRoute,
+                          enabled: enableGuideMode,
+                          other: enableTeachMode,
+                          set: setEnableGuideMode,
+                        },
+                      ].map((mode) => {
+                        const ModeIcon = mode.icon;
+                        return (
+                          <button
+                            key={mode.key}
+                            type="button"
+                            aria-pressed={mode.enabled}
+                            onClick={() => {
+                              if (mode.enabled && !mode.other) {
+                                setAiModeError(AI_MODE_REQUIRED);
+                                return;
+                              }
+                              setAiModeError(null);
+                              mode.set(!mode.enabled);
+                            }}
+                            className={cn(
+                              "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                              mode.enabled
+                                ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                                : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                            )}
+                          >
+                            <ModeIcon className="size-3.5" aria-hidden="true" />
+                            {mode.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {aiModeError && (
+                      <p role="alert" className="text-xs text-destructive">
+                        {aiModeError}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="new-activity-hint" className="flex items-center gap-1.5">
+                      <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
+                      Hint{" "}
+                      <span className="font-normal normal-case text-muted-foreground">
+                        (optional)
+                      </span>
+                    </Label>
+                    <Input
+                      id="new-activity-hint"
+                      value={hint}
+                      onChange={(event) => setHint(event.target.value)}
+                      placeholder="Optional hint…"
+                    />
+                  </div>
+                </div>
               )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="new-activity-hint" className="flex items-center gap-1.5">
-                <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
-                Hint{" "}
-                <span className="font-normal normal-case text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="new-activity-hint"
-                value={hint}
-                onChange={(event) => setHint(event.target.value)}
-                placeholder="Optional hint…"
-              />
             </div>
           </div>
         </div>
