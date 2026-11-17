@@ -170,16 +170,23 @@ jobs:
 
           matrix='{"include":['
           separator=''
+          # Core's 606 unit files took ~7 minutes on one runner, mostly module
+          # import time, so they are split across runners with vitest --shard.
+          # Shard 1 also runs the shared UI and integration tests (~2.5 min),
+          # which roughly matches one third of the unit files.
+          core_shards=3
           if [ "$core" = true ]; then
-            matrix+="${separator}"'{"scope":"core","label":"Core and shared UI","db_image":"pgvector/pgvector:pg16","db_user":"postgres","db_password":"postgres","db_name":"postgres"}'
-            separator=','
+            for i in $(seq 1 "$core_shards"); do
+              matrix+="${separator}"'{"scope":"core","id":"core-'"$i"'","shard":"'"$i/$core_shards"'","label":"Core and shared UI '"$i/$core_shards"'","db_image":"pgvector/pgvector:pg16","db_user":"postgres","db_password":"postgres","db_name":"postgres"}'
+              separator=','
+            done
           fi
           if [ "$ai_tutor" = true ]; then
-            matrix+="${separator}"'{"scope":"ai_tutor","label":"AI Tutor","db_image":"postgres:16-alpine","db_user":"postgres","db_password":"postgres","db_name":"aitutor_test"}'
+            matrix+="${separator}"'{"scope":"ai_tutor","id":"ai_tutor","shard":"","label":"AI Tutor","db_image":"postgres:16-alpine","db_user":"postgres","db_password":"postgres","db_name":"aitutor_test"}'
             separator=','
           fi
           if [ "$question_maker" = true ]; then
-            matrix+="${separator}"'{"scope":"question_maker","label":"Question Maker","db_image":"postgres:15-alpine","db_user":"postgres","db_password":"password","db_name":"question_maker_test"}'
+            matrix+="${separator}"'{"scope":"question_maker","id":"question_maker","shard":"","label":"Question Maker","db_image":"postgres:15-alpine","db_user":"postgres","db_password":"password","db_name":"question_maker_test"}'
           fi
           matrix+=']}'
           echo "unit_matrix=$matrix" >> "$GITHUB_OUTPUT"
@@ -311,9 +318,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .turbo/cache
-          key: turbo-test-${{ runner.os }}-${{ matrix.scope }}-${{ github.sha }}
+          key: turbo-test-${{ runner.os }}-${{ matrix.id }}-${{ github.sha }}
           restore-keys: |
-            turbo-test-${{ runner.os }}-${{ matrix.scope }}-
+            turbo-test-${{ runner.os }}-${{ matrix.id }}-
 
       - name: Run workspace tests
         env:
@@ -322,18 +329,26 @@ jobs:
           REDIS_URL: redis://127.0.0.1:6379
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
+          SHARD: ${{ matrix.shard }}
         run: |
           case "${{ matrix.scope }}" in
             core)
               status=0
-              npx turbo run test --continue --env-mode=loose \
-                --filter=@eduai/ui &
-              ui_pid=$!
-              npx turbo run test:unit test:integration --continue --env-mode=loose \
-                --filter=edu-ai &
-              core_pid=$!
-              wait "$ui_pid" || status=1
-              wait "$core_pid" || status=1
+              pids=()
+              if [ "${SHARD%%/*}" = 1 ]; then
+                npx turbo run test --continue --env-mode=loose \
+                  --filter=@eduai/ui &
+                pids+=($!)
+                npx turbo run test:integration --continue --env-mode=loose \
+                  --filter=edu-ai &
+                pids+=($!)
+              fi
+              npx turbo run test:unit --continue --env-mode=loose \
+                --filter=edu-ai -- --shard="$SHARD" &
+              pids+=($!)
+              for pid in "${pids[@]}"; do
+                wait "$pid" || status=1
+              done
               exit "$status"
               ;;
             ai_tutor)
