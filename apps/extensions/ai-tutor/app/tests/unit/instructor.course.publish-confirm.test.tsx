@@ -102,7 +102,14 @@ vi.mock("~/components/PublishMenu", () => ({
 
 import InstructorCourseModules from "~/routes/instructor.course";
 
-const course = { id: 42, title: "Test Course", code: "COSC 101", isPublished: true };
+const course = {
+  id: 42,
+  title: "Test Course",
+  code: "COSC 101",
+  isPublished: true,
+  // Publishing is the setup path's last step, offered once content exists (#2170).
+  contentCounts: { lessons: 1, activities: 1 },
+};
 const module_ = { id: 10, title: "Module 1", description: "", position: 0, isPublished: false };
 
 function wrap(modules = [module_]) {
@@ -265,12 +272,12 @@ describe("instructor.course — publish/unpublish module confirmation dialog", (
     expect(mockLessonsForModule).not.toHaveBeenCalled();
   });
 
-  it("the checklist's Publish a module step opens the first unpublished module's confirm", async () => {
+  it("the checklist's publish step opens the first unpublished module's confirm", async () => {
     mockPerms.canManageContent = true;
     wrap([{ ...module_, id: 9, title: "Module 0", isPublished: false }, module_]);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^\d*publish a module\(to do\)/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^\d*publish for students\(to do\)/i }));
     });
 
     expect(screen.getByRole("alertdialog")).toHaveTextContent('Publish "Module 0"?');

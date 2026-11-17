@@ -107,6 +107,7 @@ import {
 } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 import { publishedCount, treeCounts } from "~/lib/tree-counts";
+import { setupSteps } from "~/lib/setup-steps";
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -644,6 +645,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   };
 
   const firstUnpublishedModule = oModules.find((m) => !m.isPublished);
+  const publishedModules = publishedCount(moduleCounts, oModules);
+  const firstModuleHref = oModules[0] ? `/instructor/module/${oModules[0].id}` : undefined;
 
   return (
     <DetailPageScaffold
@@ -728,37 +731,30 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         >
           {perms.canManageContent && (
             <CourseNextSteps
-              steps={[
-                {
-                  key: "module",
-                  label: "Add a module",
-                  done: moduleCounts.all > 0,
-                  detail:
-                    "Modules hold your lessons and activities. Add one, or import one from another course.",
-                  onSelect: () => setCreateOpen(true),
+              steps={setupSteps({
+                hasModule: moduleCounts.all > 0,
+                hasLesson: (course.contentCounts?.lessons ?? 0) > 0,
+                hasActivity: (course.contentCounts?.activities ?? 0) > 0,
+                published: course.isPublished && publishedModules > 0,
+                publishDetail: !course.isPublished
+                  ? "Publish the course, then a module with its lessons. Students only see what is published."
+                  : publishedModules > 0
+                    ? "Students can see this course and its published modules."
+                    : "The course is published. Publish a module with its lessons so students see it.",
+                actions: {
+                  module: { onSelect: () => setCreateOpen(true) },
+                  // A lesson or activity is added from inside a module.
+                  lesson: firstModuleHref ? { href: firstModuleHref } : undefined,
+                  activity: firstModuleHref ? { href: firstModuleHref } : undefined,
+                  publish: !perms.canPublishContent
+                    ? undefined
+                    : !course.isPublished
+                      ? { onSelect: () => requestCoursePublish(course) }
+                      : firstUnpublishedModule
+                        ? { onSelect: () => requestModulePublish(firstUnpublishedModule) }
+                        : undefined,
                 },
-                {
-                  key: "course",
-                  label: "Publish the course",
-                  done: course.isPublished,
-                  detail: course.isPublished
-                    ? "Students can see this course."
-                    : "Students can't see this course yet. Modules can only be published after it is.",
-                  onSelect: perms.canPublishContent
-                    ? () => requestCoursePublish(course)
-                    : undefined,
-                },
-                {
-                  key: "publish-module",
-                  label: "Publish a module",
-                  done: publishedCount(moduleCounts, oModules) > 0,
-                  detail: "Unpublished modules stay hidden. Publish one together with its lessons.",
-                  onSelect:
-                    perms.canPublishContent && course.isPublished && firstUnpublishedModule
-                      ? () => requestModulePublish(firstUnpublishedModule)
-                      : undefined,
-                },
-              ]}
+              })}
             />
           )}
 
@@ -807,8 +803,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 <DialogHeader>
                   <DialogTitle>Add module</DialogTitle>
                   <DialogDescription>
-                    Create a new module in {course.title}. Add lessons and activities to it once it
-                    exists.
+                    A module is a unit of {course.title}, like "Intro to Python". Its lessons are
+                    the topics inside it, like "Variables" and "Loops".
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={onCreateModule} className="grid gap-4 py-2">
@@ -818,7 +814,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                       id="new-module-title"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Getting started"
+                      placeholder="e.g. Intro to Python"
                       autoFocus
                       required
                     />

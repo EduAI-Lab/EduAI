@@ -79,6 +79,8 @@ import {
 } from "~/lib/list-params";
 import { RouteErrorState } from "~/components/common/RouteErrorState";
 import { publishedCount, treeCounts } from "~/lib/tree-counts";
+import { setupSteps } from "~/lib/setup-steps";
+import { CourseNextSteps } from "~/components/courses/CourseNextSteps";
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -606,6 +608,27 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         />
       }
     >
+      {perms.canManageContent && module && (
+        <CourseNextSteps
+          doneTitle="Module is set up"
+          steps={setupSteps({
+            hasModule: true,
+            hasLesson: lessonCounts.all > 0,
+            hasActivity: (module.contentCounts?.activities ?? 0) > 0,
+            published: module.isPublished,
+            publishDetail: module.isPublished
+              ? "Students can see this module and its published lessons."
+              : "Publish this module from the course page, using the menu on its card.",
+            actions: {
+              lesson: { onSelect: () => setCreateOpen(true) },
+              // An activity is added from inside a lesson.
+              activity: oLessons[0] ? { href: `/instructor/lesson/${oLessons[0].id}` } : undefined,
+              publish: { href: `/instructor/courses/${module.courseOfferingId}` },
+            },
+          })}
+        />
+      )}
+
       <PermissionGate allow={perms.canManageContent}>
         {showImport && (
           <Card>
@@ -737,8 +760,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             <DialogHeader>
               <DialogTitle>Add lesson</DialogTitle>
               <DialogDescription>
-                Create a new lesson in {module?.title || "this module"}. It starts as a draft — you
-                can add activities and publish it afterwards.
+                A lesson is one topic inside {module?.title || "this module"}, like "Variables" or
+                "Loops". It starts as a draft: add activities, then publish it.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={onCreateLesson} className="grid gap-4 py-2">
@@ -748,7 +771,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   id="new-lesson-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Introduction"
+                  placeholder="e.g. Variables"
                   autoFocus
                   required
                 />

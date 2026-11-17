@@ -166,10 +166,8 @@ describe("instructor.lesson — add-activity panel toggle", () => {
     });
 
     expect(screen.getByTestId("add-activity-panel")).toBeInTheDocument();
-    // The toggle button sits outside the (Radix) dialog; while the dialog is
-    // open Radix marks background siblings aria-hidden for a11y, so it must
-    // be looked up with `hidden: true` rather than the default role query.
-    expect(screen.getByRole("button", { name: /^hide$/i, hidden: true })).toBeInTheDocument();
+    // The same button flips its label; the setup steps carry their own "Hide".
+    expect(toggle).toHaveTextContent(/^Hide$/);
   });
 });
 
