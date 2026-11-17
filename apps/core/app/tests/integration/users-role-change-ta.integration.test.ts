@@ -214,7 +214,8 @@ describe("PATCH /api/users/:id — instructor enrollments on a change to STUDENT
   });
 
   it("leaves INSTRUCTOR enrollments alone on a change to a non-STUDENT role", async () => {
-    const { targetId, courseA, courseB } = await setup("ADMIN");
+    // An ADMIN's role can't be changed at all (403), so start from STUDENT.
+    const { targetId, courseA, courseB } = await setup("STUDENT");
 
     const res = await patchUser(targetId, { role: "INSTRUCTOR" });
 
