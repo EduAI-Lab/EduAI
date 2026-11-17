@@ -376,6 +376,8 @@ describe("Modules routes", () => {
       expect(res.body.id).toBe(seed.module.id);
       expect(res.body.title).toBe("Test Module");
       expect(res.body.courseOfferingId).toBe(seed.course.id);
+      // #2170: the setup steps read these; the seed has one lesson, no activity.
+      expect(res.body.contentCounts).toEqual({ lessons: 1, activities: 0 });
     });
 
     it("TA sees unpublished module", async () => {

@@ -359,6 +359,8 @@ describe("Courses routes", () => {
       expect(res.body.isPublished).toBe(true);
       // #1644: the caller's role on THIS course, so the client can gate staff tabs.
       expect(res.body.viewerRole).toBe("INSTRUCTOR");
+      // #2170: staff get the counts the setup steps read; the seed has one lesson.
+      expect(res.body.contentCounts).toEqual({ lessons: 1, activities: 0 });
     });
 
     it("TA enrolled in course can access course details", async () => {
@@ -393,6 +395,8 @@ describe("Courses routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.viewerRole).toBe("STUDENT");
+      // Learners never get the staff-only setup counts.
+      expect(res.body.contentCounts).toBeUndefined();
     });
 
     it("TA enrolled in course sees it even when unpublished", async () => {

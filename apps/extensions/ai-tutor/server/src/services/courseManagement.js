@@ -249,3 +249,15 @@ export async function unpublishCourseForUser({ courseId, user, cookie }) {
   });
   return result;
 }
+
+/**
+ * How many lessons match `lessonWhere`, and how many activities sit in them.
+ * Feeds the staff setup steps (#2170), which only need "is there any".
+ */
+export async function countContent(lessonWhere) {
+  const [lessons, activities] = await Promise.all([
+    prisma.lesson.count({ where: lessonWhere }),
+    prisma.activity.count({ where: { lesson: lessonWhere } }),
+  ]);
+  return { lessons, activities };
+}

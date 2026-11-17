@@ -186,8 +186,10 @@ export const courseSchema = z
 // Decode it at the boundary so a wrong-typed value from a version mismatch is
 // caught, rather than the raw cast silently passing a bad field through and
 // recreating the dead-staff-tab behavior.
+const contentCountsSchema = z.object({ lessons: z.number(), activities: z.number() });
+
 export const courseDetailSchema = courseSchema
-  .extend({ viewerRole: roleSchema.nullish() })
+  .extend({ viewerRole: roleSchema.nullish(), contentCounts: contentCountsSchema.optional() })
   .passthrough() satisfies z.ZodType<Course>;
 
 export const moduleSchema = z
