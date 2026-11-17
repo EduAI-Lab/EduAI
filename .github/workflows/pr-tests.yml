@@ -45,11 +45,56 @@ jobs:
           changed=$RUNNER_TEMP/changed-files.txt
           all=false
 
+          verified=false
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             gh api \
               "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
               --paginate --jq '.[].filename' > "$changed"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            repo=${{ github.repository }}
+            base=${{ github.event.merge_group.base_sha }}
+            head=${{ github.event.merge_group.head_sha }}
+            head_ref=${{ github.event.merge_group.head_ref }}
+
+            # When the PR branch already contains the queue's base, the queue
+            # commit's tree is byte-identical to the PR head's tree, and the
+            # PR's required checks already passed on exactly this code.
+            # Re-running them would only repeat that result, so reuse it.
+            # Any difference (a stale branch, or an earlier entry in the same
+            # group) falls through to testing what changed against the base.
+            pr=$(sed -nE 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-[0-9a-f]+$#\1#p' <<< "$head_ref")
+            if [ -n "$pr" ]; then
+              pr_head=$(gh api "repos/$repo/pulls/$pr" --jq '.head.sha')
+              group_tree=$(gh api "repos/$repo/git/commits/$head" --jq '.tree.sha')
+              pr_tree=$(gh api "repos/$repo/git/commits/$pr_head" --jq '.tree.sha')
+              pr_green=$(gh api "repos/$repo/commits/$pr_head/check-runs?per_page=100" --jq '
+                [.check_runs[]
+                  | select(.app.slug == "github-actions"
+                      and (.name == "Unit & Integration Tests" or .name == "E2E Tests"))]
+                | (map(.name) | unique | length) == 2 and all(.conclusion == "success")')
+              echo "PR #$pr head $pr_head: tree $pr_tree, required checks green: $pr_green"
+              echo "Queue commit $head: tree $group_tree"
+              if [ "$group_tree" = "$pr_tree" ] && [ "$pr_green" = true ]; then
+                verified=true
+                : > "$changed"
+              fi
+            fi
+
+            if [ "$verified" = false ]; then
+              # git, not the compare API: the API stops listing files at 300,
+              # which would silently under-test a large change. Name-only
+              # diffs need trees but no blobs, so the fetch stays small.
+              git init -q "$RUNNER_TEMP/mg"
+              git -C "$RUNNER_TEMP/mg" \
+                -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
+                fetch -q --no-tags --depth=1 --filter=blob:none \
+                "https://github.com/$repo.git" "$base" "$head"
+              git -C "$RUNNER_TEMP/mg" diff --name-only "$base" "$head" > "$changed"
+            fi
           else
+            # Post-merge push to development: full regression run, off the
+            # merge path, so it costs no queue time.
             all=true
             : > "$changed"
           fi
@@ -61,7 +106,9 @@ jobs:
           question_maker=false
           shared=false
 
-          if [ "$all" = true ]; then
+          if [ "$verified" = true ]; then
+            echo "Queue commit is identical to the PR head that already passed; reusing that result."
+          elif [ "$all" = true ]; then
             code=true
             core=true
             ai_tutor=true
@@ -401,7 +448,7 @@ jobs:
             exit 1
           fi
           if [ "$CODE_CHANGED" != "true" ]; then
-            echo "Docs-only change; unit tests were not required."
+            echo "Unit tests not required: docs-only, or this exact tree already passed on the PR."
             exit 0
           fi
           if [ "$UNIT_RESULT" != "success" ] || \
@@ -598,7 +645,7 @@ jobs:
             exit 1
           fi
           if [ "$CODE_CHANGED" != "true" ]; then
-            echo "Docs-only change; E2E was not required."
+            echo "E2E not required: docs-only, or this exact tree already passed on the PR."
             exit 0
           fi
           if [ "$E2E_RESULT" != "success" ]; then
