@@ -251,6 +251,7 @@ services:
     network_mode: host
     environment:
       E2E_SUITES: ${E2E_SUITES:-all}
+      E2E_WORKERS: ${E2E_WORKERS:-1}
       CORE_URL: http://localhost:3000
       AI_TUTOR_URL: http://localhost:3001
       AI_TUTOR_SERVER_URL: http://localhost:4000

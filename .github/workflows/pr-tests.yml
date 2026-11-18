@@ -587,6 +587,7 @@ jobs:
           E2E_SKIP_BUILD: "1"
           E2E_SUITES: ${{ steps.select.outputs.suites }}
           E2E_SHARD: ${{ matrix.shard }}
+          E2E_WORKERS: "3"
           E2E_OLLAMA_MODELS_DIR: ${{ runner.temp }}/e2e-ollama-models
         run: bash scripts/e2e-in-docker.sh
 
