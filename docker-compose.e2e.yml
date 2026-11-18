@@ -106,10 +106,12 @@ services:
       # Core's own /api/sessions/validate limiter (rate-limit.server.ts,
       # default 300 req/60s per IP) — three extension servers validating every
       # authenticated request from one compose network IP exceed that in a
-      # full-suite run, cascading 429→401s. Raised for e2e only, and high
-      # enough for several Playwright workers per runner (#2180): at 5000, three
-      # workers tripped it while seeding fixtures.
+      # full-suite run, cascading 429→401s. Raised for e2e only.
+      # Both this and the pre-auth limit below count per client IP, and every
+      # Playwright worker shares one. With several workers per runner (#2180)
+      # the pre-auth default (1200 req/60s) returned 429s during fixture setup.
       SESSION_VALIDATE_RATE_LIMIT: "50000"
+      SESSION_VALIDATE_PREAUTH_RATE_LIMIT: "50000"
       GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
       # Local (Ollama) embeddings, as in prod. Without a provider every upload goes
       # FAILED instantly. No depends_on: the app must still boot for suites that skip
