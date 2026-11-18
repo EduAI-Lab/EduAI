@@ -128,6 +128,8 @@ test.describe("INSTRUCTOR activity authoring", () => {
     await dialog.getByRole("combobox").first().click();
     await page.getByRole("option", { name: fx.seededTopic! }).click();
 
+    // The hint sits under the dialog's More options fold (#2170).
+    await dialog.getByRole("button", { name: /^More options/ }).click();
     await dialog.getByLabel(/^Hint/).fill("Think about what stops the calls.");
     await dialog.getByRole("button", { name: "Add activity" }).click();
 

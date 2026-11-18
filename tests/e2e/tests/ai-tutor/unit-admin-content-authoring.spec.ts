@@ -313,7 +313,7 @@ test.describe("UNIT_ADMIN content authoring", () => {
     await page.getByRole("button", { name: "Add lesson" }).first().click();
 
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(`Create a new lesson in ${moduleTitle}`);
+    await expect(dialog).toContainText(`A lesson is one topic inside ${moduleTitle}`);
     const lessonTitle = uniqueTitle("Unit Lesson");
     await dialog.getByRole("textbox").first().fill(lessonTitle);
     await dialog.getByRole("button", { name: "Add lesson" }).click();
@@ -367,7 +367,8 @@ test.describe("UNIT_ADMIN content authoring", () => {
     // The MCQ choice grid, with a correct-answer picker on each letter.
     await expect(dialog.getByRole("button", { name: "Mark option A correct" })).toBeVisible();
     await expect(dialog.getByRole("textbox", { name: "Question prompt *" })).toBeVisible();
-    // Per-activity AI mode toggles, both on by default.
+    // Per-activity AI mode toggles, both on by default, under More options (#2170).
+    await dialog.getByRole("button", { name: /^More options/ }).click();
     await expect(dialog.getByRole("button", { name: "Teach me" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -399,7 +400,8 @@ test.describe("UNIT_ADMIN content authoring", () => {
 
     await expect(dialog.getByRole("button", { name: "Mark option A correct" })).toHaveCount(0);
     await expect(dialog.getByLabel("Reference answer (for graders)")).toBeVisible();
-    // The hint field is shared by both question types.
+    // The hint field is shared by both question types, under More options (#2170).
+    await dialog.getByRole("button", { name: /^More options/ }).click();
     await expect(dialog.getByLabel(/^Hint/)).toBeVisible();
   });
 
@@ -417,6 +419,7 @@ test.describe("UNIT_ADMIN content authoring", () => {
     await dialog.getByRole("textbox", { name: "Option A" }).fill("4");
     await dialog.getByRole("textbox", { name: "Option B" }).fill("5");
     await dialog.getByRole("button", { name: "Mark option A correct" }).click();
+    await dialog.getByRole("button", { name: /^More options/ }).click();
     await dialog.getByLabel(/^Hint/).fill("Count on your fingers.");
 
     // `handleAddActivity` returns early without a main topic, so this is the
