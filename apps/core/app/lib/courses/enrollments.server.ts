@@ -92,14 +92,14 @@ export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit
   return { page, nextCursor, total };
 }
 
-type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+export type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /**
  * Serialize enrollment mutations that can affect the instructor floor. A row
  * lock on the parent course makes the subsequent count-and-write decision
  * observe any earlier concurrent mutation before it proceeds.
  */
-async function lockCourseEnrollmentMutations(tx: TxClient, courseId: string) {
+export async function lockCourseEnrollmentMutations(tx: TxClient, courseId: string) {
   await tx.$queryRaw`
     SELECT "id"
     FROM "courses"
@@ -115,7 +115,7 @@ async function lockCourseEnrollmentMutations(tx: TxClient, courseId: string) {
  * EVERY caller including ADMIN — there is no override. Runs inside the
  * mutation's transaction so the check-then-write is atomic.
  */
-async function instructorFloorViolation(
+export async function instructorFloorViolation(
   tx: TxClient,
   enrollment: {
     courseId: string;
@@ -150,7 +150,7 @@ async function instructorFloorViolation(
  * a successor on both call paths; `?? null` is the honest fallback rather than
  * leaving the column pointing at a non-instructor.
  */
-async function reassignPrimaryIfNeeded(tx: TxClient, courseId: string, userId: string) {
+export async function reassignPrimaryIfNeeded(tx: TxClient, courseId: string, userId: string) {
   const course = await tx.course.findUnique({
     where: { id: courseId },
     select: { instructorId: true },
