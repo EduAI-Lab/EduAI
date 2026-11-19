@@ -249,6 +249,7 @@ function AdminCoursesBody({
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
   const [createDept, setCreateDept] = useState<string>("");
+  const [createSuffix, setCreateSuffix] = useState("");
   const [startDate, setStartDate] = useState<string>("");
   // Sep–Dec W1, Jan–Apr W2, May–Jun S1, Jul–Aug S2 — null until a date is picked.
   const termInfo = termInfoFromDateInput(startDate);
@@ -301,6 +302,7 @@ function AdminCoursesBody({
       return;
     }
     setCreateDept("");
+    setCreateSuffix("");
     setStartDate("");
     setSelectedInstructor("");
     setCreateOpen(false);
@@ -368,12 +370,17 @@ function AdminCoursesBody({
                     name="codeSuffix"
                     placeholder="101"
                     className="font-mono"
+                    value={createSuffix}
+                    onChange={(e) => setCreateSuffix(e.target.value)}
                     required
                   />
                 </div>
-                {createDept && (
+                {createDept && createSuffix.trim() && (
                   <p className="text-xs text-muted-foreground">
-                    Full code: <span className="font-mono">{createDept} 101</span>
+                    Full code:{" "}
+                    <span className="font-mono">
+                      {createDept} {createSuffix.trim()}
+                    </span>
                   </p>
                 )}
               </div>
@@ -482,7 +489,8 @@ function AdminCoursesBody({
               <strong>
                 {deletingCourse?.code} — {deletingCourse?.name}
               </strong>
-              ? This cannot be undone.
+              ? You can restore it later by creating a course with the same code, section and term.
+              Its Question Maker and AI Tutor content is deleted for good.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -868,7 +876,8 @@ function UnitAdminCoursesBody({
               <strong>
                 {deletingCourse?.code} — {deletingCourse?.name}
               </strong>
-              ? This cannot be undone.
+              ? You can restore it later by creating a course with the same code, section and term.
+              Its Question Maker and AI Tutor content is deleted for good.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1209,7 +1218,8 @@ function InstructorCoursesBody({
               <strong>
                 {deletingCourse?.code} — {deletingCourse?.name}
               </strong>
-              ? This cannot be undone.
+              ? You can restore it later by creating a course with the same code, section and term.
+              Its Question Maker and AI Tutor content is deleted for good.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

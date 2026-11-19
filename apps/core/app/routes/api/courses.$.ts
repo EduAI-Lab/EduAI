@@ -22,7 +22,8 @@ export async function action({ request }: ActionFunctionArgs) {
         const response = await createCourse(request);
 
         // Emit on the success path only; the service owns auth/validation responses.
-        if (response.status === 201) {
+        // 200 means an existing soft-deleted course was restored instead of created.
+        if (response.status === 201 || response.status === 200) {
           const session = await getRequestSession(request);
           const created = await response
             .clone()
@@ -33,7 +34,7 @@ export async function action({ request }: ActionFunctionArgs) {
               logAuditAction({
                 ...getActorContext(session?.user ?? null),
                 ...requestContext,
-                actionCode: "COURSE_CREATED",
+                actionCode: response.status === 200 ? "COURSE_RESTORED" : "COURSE_CREATED",
                 category: "COURSE",
                 entityType: "Course",
                 entityId: created.id,

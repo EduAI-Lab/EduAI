@@ -223,6 +223,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
           const response = await deleteCourse(request, courseId);
 
           if (response.status === 204) {
+            // Soft delete keeps the row, so the code is still there to label the entry.
+            const deleted = await prisma.course.findUnique({
+              where: { id: courseId },
+              select: { code: true, name: true },
+            });
             fireAndForget(
               logAuditAction({
                 ...getActorContext(session?.user ?? null),
@@ -231,6 +236,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
                 category: "COURSE",
                 entityType: "Course",
                 entityId: courseId,
+                entityLabel: deleted?.code ?? deleted?.name ?? null,
               }),
             );
           }

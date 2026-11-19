@@ -679,6 +679,18 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
     expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(3);
   });
 
+  it("logs USER_UPDATED, not a TA change, when the TA course list is sent unchanged", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "UNIT_ADMIN" } as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
+
+    const res = await action(makePatch("unit-admin-1", { name: "Renamed", taCourseIds: [] }));
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "USER_UPDATED" }),
+    );
+  });
+
   it("audit-logs the previous and new platform roles plus TA courses cleared by demotion", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([

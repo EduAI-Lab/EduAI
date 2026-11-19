@@ -611,7 +611,8 @@ export async function handleUsersApiRequest(request: Request) {
         let actionCode = "USER_UPDATED";
         if (platformRoleChanged) {
           actionCode = "USER_ROLE_CHANGED";
-        } else if (taCourseIds !== undefined) {
+        } else if (taCourseIdsAdded.length > 0 || taCourseIdsRemoved.length > 0) {
+          // The edit form always sends taCourseIds, so only a real change counts.
           actionCode = "USER_TA_COURSES_CHANGED";
         } else if (result.data.isActive === false) {
           actionCode = "USER_DEACTIVATED";

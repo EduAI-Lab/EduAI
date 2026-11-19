@@ -39,7 +39,7 @@ vi.mock("~/lib/logging.server", () => ({
 // #1841: when no enrolled row is the course head, the loader falls back to
 // `Course.instructorId` and reads that user directly.
 vi.mock("~/lib/prisma.server", () => ({
-  default: { user: { findUnique: vi.fn() } },
+  default: { user: { findUnique: vi.fn() }, course: { findUnique: vi.fn() } },
 }));
 
 import { loader, action } from "~/routes/api/courses.id";
@@ -319,10 +319,14 @@ describe("/api/courses/:id action", () => {
 
   it("logs COURSE_DELETED on a successful DELETE", async () => {
     vi.mocked(deleteCourse).mockResolvedValue(new Response(null, { status: 204 }));
+    vi.mocked(prisma.course.findUnique).mockResolvedValue({
+      code: "COSC 999",
+      name: "Admin test",
+    } as never);
     const res = await action(makeActionArgs("DELETE"));
     expect(res.status).toBe(204);
     expect(logAuditAction).toHaveBeenCalledWith(
-      expect.objectContaining({ actionCode: "COURSE_DELETED" }),
+      expect.objectContaining({ actionCode: "COURSE_DELETED", entityLabel: "COSC 999" }),
     );
   });
 });
