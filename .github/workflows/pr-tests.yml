@@ -608,7 +608,8 @@ jobs:
 
   visual:
     name: Diagram Visual Regression (Core)
-    runs-on: ubuntu-latest
+    # Playwright can't install Chromium on ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     needs: changes
     if: needs.changes.outputs.core == 'true'
     steps:
