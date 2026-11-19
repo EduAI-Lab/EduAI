@@ -162,6 +162,9 @@ database-provisioning action.
 ## 9. Web server and systemd
 
 - [ ] Confirm required Apache modules, certificates, proxy rules, and vhosts.
+- [ ] Enable HTTP/2 (`a2enmod http2`); the vhosts only turn on `Protocols h2` when
+      `mod_http2` is loaded. h2 needs the `event` MPM (`apache2ctl -V | grep MPM`), not
+      `prefork`. Check with a browser's Network → Protocol column showing `h2` (#2134).
 - [ ] Run `apache2ctl configtest` before reloading Apache.
 - [ ] Confirm public HTTPS for Core, AI Tutor, and Question Maker.
 - [ ] Install systemd units from the repository templates or the approved helper.

@@ -34,6 +34,7 @@ docs/perf/
   frontend/baseline/           the pinned BEFORE snapshot — per-page browser vitals
     page-vitals.json           TTFB/FCP/LCP/DCL/load/CLS/blocking + JS totals per page
     errors.json                pages that produced no trustworthy number, and why
+  frontend/lighthouse-<date>/  Lighthouse scores for the main pages + early-input check (#2134)
 ```
 
 Both `baseline/` folders are pinned BEFORE runs. Don't edit them in place after the fixes
@@ -128,6 +129,13 @@ size, with `chunkCount` kept alongside. Unbundled ESM means a full sweep otherwi
 ~12k chunk rows — 100k lines of JSON nobody reads, when it's rank 1 (a 3.8MB
 `@tabler/icons-react` barrel, say) that names the fix. Pass `--full-chunks` for the
 untruncated lists; they go to a separate `page-chunks.json`, which is git-ignored.
+
+### Lighthouse (main pages, works on prod)
+
+`npm run perf:lighthouse` runs Lighthouse on the ten main Core / AI Tutor / Question Maker pages
+(desktop, mobile, desktop with 4× CPU) against a Chrome you have already signed in to, so it needs
+no seed password. Usage is at the top of `scripts/page-profile/lighthouse.mjs`; the first run is
+[`frontend/lighthouse-2026-11-18/`](frontend/lighthouse-2026-11-18/README.md).
 
 ## Compare a later run
 
