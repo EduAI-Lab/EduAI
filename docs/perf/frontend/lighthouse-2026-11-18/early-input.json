@@ -1,0 +1,179 @@
+{
+  "env": {
+    "captured_at": "2026-11-18",
+    "cpuThrottle": "4x",
+    "method": "act as soon as the element is visible, check 4 s later"
+  },
+  "runs": [
+    {
+      "label": "all cases",
+      "cases": [
+        {
+          "app": "Core",
+          "what": "click Materials tab",
+          "url": "https://dev.eduai.ok.ubc.ca/courses/seed_course_cosc101",
+          "trials": 5,
+          "lost": 0,
+          "appearedMs": [
+            1139,
+            987,
+            1214,
+            1019,
+            867
+          ],
+          "lostAtMs": []
+        },
+        {
+          "app": "Core",
+          "what": "click Enrollments tab",
+          "url": "https://dev.eduai.ok.ubc.ca/courses/seed_course_cosc101",
+          "trials": 5,
+          "lost": 0,
+          "appearedMs": [
+            1387,
+            1060,
+            1417,
+            938,
+            686
+          ],
+          "lostAtMs": []
+        },
+        {
+          "app": "AI Tutor",
+          "what": "click Submissions tab",
+          "url": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/courses/1",
+          "trials": 5,
+          "lost": 0,
+          "appearedMs": [
+            3542,
+            2754,
+            2767,
+            3095,
+            3020
+          ],
+          "lostAtMs": []
+        },
+        {
+          "app": "Question Maker",
+          "what": "click Questions tab",
+          "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/1?tab=overview",
+          "trials": 5,
+          "lost": 0,
+          "appearedMs": [
+            5296,
+            4478,
+            4595,
+            4494,
+            4832
+          ],
+          "lostAtMs": []
+        },
+        {
+          "app": "Core",
+          "what": "type in chat box",
+          "url": "https://dev.eduai.ok.ubc.ca/chat?courseId=seed_course_cosc101",
+          "trials": 5,
+          "lost": 1,
+          "appearedMs": [
+            780,
+            1180,
+            1255,
+            1127,
+            1133
+          ],
+          "lostAtMs": [
+            780
+          ]
+        },
+        {
+          "app": "Question Maker",
+          "what": "type in library search",
+          "url": "https://dev.questionmaker.eduai.ok.ubc.ca/library",
+          "trials": 5,
+          "lost": 0,
+          "appearedMs": [
+            4554,
+            4534,
+            5085,
+            5048,
+            8479
+          ],
+          "lostAtMs": []
+        }
+      ]
+    },
+    {
+      "label": "chat box, /chat?courseId",
+      "cases": [
+        {
+          "app": "Core",
+          "what": "type in chat box",
+          "url": "https://dev.eduai.ok.ubc.ca/chat?courseId=seed_course_cosc101",
+          "trials": 15,
+          "lost": 5,
+          "appearedMs": [
+            1178,
+            1227,
+            1111,
+            1261,
+            1283,
+            1190,
+            1349,
+            807,
+            891,
+            1098,
+            1138,
+            1124,
+            842,
+            1173,
+            826
+          ],
+          "lostAtMs": [
+            1178,
+            807,
+            891,
+            842,
+            826
+          ]
+        }
+      ]
+    },
+    {
+      "label": "chat box, /chat",
+      "cases": [
+        {
+          "app": "Core",
+          "what": "type in chat box",
+          "url": "https://dev.eduai.ok.ubc.ca/chat",
+          "trials": 15,
+          "lost": 6,
+          "appearedMs": [
+            843,
+            1169,
+            931,
+            829,
+            840,
+            1170,
+            1192,
+            1211,
+            1162,
+            1151,
+            953,
+            1063,
+            1140,
+            879,
+            1888
+          ],
+          "lostAtMs": [
+            843,
+            931,
+            829,
+            840,
+            953,
+            879
+          ]
+        }
+      ]
+    }
+  ]
+}

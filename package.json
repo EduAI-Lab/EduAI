@@ -16,6 +16,7 @@
     "perf:quality": "node scripts/perf-quality.mjs",
     "perf:endpoints": "node scripts/perf-baseline.mjs",
     "perf:pages": "node scripts/page-profile/profile.mjs",
+    "perf:lighthouse": "node scripts/page-profile/lighthouse.mjs",
     "perf:compare": "node scripts/perf-compare.mjs",
     "test:pict:gen": "node scripts/pict-gen.mjs",
     "docker:dev:db": "node scripts/dev-db.js",
