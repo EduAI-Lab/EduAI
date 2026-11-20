@@ -1,15 +1,17 @@
 /**
  * Unit tests for QuestionComposerPage (#1544). Hooks, services, and heavy child
  * components are mocked so we exercise the page's own logic — mode derivation,
- * gate states, validation, save flows (create/variant/edit), and AI generation
- * — without depending on the real design system or network calls.
+ * gate states, the create/variant wizard flow, validation, save flows
+ * (create/variant/edit), and AI generation — without depending on the real
+ * design system or network calls. The wizard's layout pieces (stepper, footer)
+ * render for real; its step bodies are mocked.
  *
  * `vi.mock` factories are hoisted above every other top-level statement
  * (including imports), so anything referenced inside one is created via
  * `vi.hoisted` to avoid a TDZ ReferenceError.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 afterEach(cleanup);
 
@@ -35,7 +37,7 @@ const {
     toastFn: toast,
     useQmPermissionsForCourseMock: vi.fn(),
     eduaiStatusMock: {
-      status: "ok" as const,
+      status: "ok" as "ok" | "error",
       message: undefined,
       provider: undefined,
       questionGenerationPhase: null,
@@ -99,35 +101,30 @@ vi.mock("@eduai/ui", () => ({
     </button>
   ),
   Card: ({ children, onClick }: any) => <div onClick={onClick}>{children}</div>,
-  CardContent: ({ children }: any) => <div>{children}</div>,
+  CardContent: ({ children, ...rest }: any) => <div {...rest}>{children}</div>,
   CardHeader: ({ children }: any) => <div>{children}</div>,
   CardTitle: ({ children }: any) => <h2>{children}</h2>,
   Label: ({ children, htmlFor }: any) => <label htmlFor={htmlFor}>{children}</label>,
   Separator: () => <hr />,
   Skeleton: () => <div data-testid="skeleton" />,
+  cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
 }));
 
 vi.mock("@/components/questions/QuestionAIControls", () => ({
+  isUbcModelId: (id: string) => id.startsWith("ollama") || id.startsWith("vllm"),
   QuestionAIControls: (props: any) => (
     <div data-testid="ai-controls">
       <button onClick={props.onGenerate}>generate</button>
       <button onClick={() => props.onChange("generationPrompt", "a great prompt")}>
         set-prompt
       </button>
-      <button onClick={() => props.onProviderApiKeyChange("sk-test")}>set-key</button>
-      <button onClick={props.onSaveProviderApiKey}>save-key</button>
-      <span data-testid="api-key-state">{props.apiKeySaveState}</span>
-      <span data-testid="ai-status">{props.status}</span>
-      <button onClick={() => props.onQuestionCountChange?.(3)}>set-count-3</button>
-      <span data-testid="has-count">{String(Boolean(props.onQuestionCountChange))}</span>
-      <span data-testid="ai-disabled">{String(Boolean(props.disabled))}</span>
     </div>
   ),
 }));
 
 vi.mock("@/components/questions/QuestionOutputPanel", () => ({
   QuestionOutputPanel: (props: any) => (
-    <div data-testid="output-panel">
+    <div data-testid="output-panel" data-mcq-layout={props.mcqLayout}>
       <span data-testid="question-text">{props.variantText}</span>
       <button onClick={() => props.onVariantTextChange("What is 2+2?")}>set-text</button>
       <button onClick={() => props.onVariantAnswerChange("A")}>set-answer</button>
@@ -164,6 +161,73 @@ vi.mock("@/components/composer/ComposerMetadataFields", () => ({
   ),
 }));
 
+vi.mock("@/components/composer/wizard/WizardMethodStep", () => ({
+  WizardMethodStep: (props: any) => (
+    <div data-testid="method-step" data-mode={props.mode}>
+      <span data-testid="method-value">{props.value ?? "none"}</span>
+      <button onClick={() => props.onChange("manual")}>choose-manual</button>
+      <button onClick={() => props.onChange("ai")}>choose-ai</button>
+      <span data-testid="ai-status-note">{props.aiStatusNote ?? ""}</span>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/composer/wizard/WizardDetailsStep", () => ({
+  WizardDetailsStep: (props: any) => (
+    <div data-testid="details-step" data-mode={props.mode}>
+      <span data-testid="details-type">{props.value.questionType}</span>
+      <span data-testid="details-difficulty">{props.value.difficulty}</span>
+      <span data-testid="original-difficulty">{props.original?.difficulty ?? ""}</span>
+      <span data-testid="primary-topic-error">{props.topicError ?? ""}</span>
+      <button onClick={() => props.onChange({ questionType: "SA" })}>set-type-sa</button>
+      <button onClick={() => props.onChange({ primaryTopicId: "t1" })}>set-primary-topic</button>
+      <button onClick={() => props.onChange({ difficulty: "hard" })}>set-difficulty-hard</button>
+      <button onClick={() => props.onChange({ description: "a description" })}>
+        set-description
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/composer/wizard/WizardDetailsSummary", () => ({
+  WizardDetailsSummary: (props: any) => (
+    <div data-testid="details-summary">
+      {[props.format, props.topic, props.difficulty, props.thinkingSkill].join(" · ")}
+      <button onClick={props.onEdit}>Edit details</button>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/composer/wizard/WizardAIPanel", () => ({
+  WizardAIPanel: (props: any) => (
+    <div data-testid="ai-panel" data-mode={props.mode}>
+      <button onClick={props.onGenerate}>{props.hasGenerated ? "Regenerate" : "Generate"}</button>
+      <button onClick={() => props.onPromptChange("a great prompt")}>set-prompt</button>
+      <button onClick={() => props.onQuestionCountChange(3)}>set-count-3</button>
+      <button onClick={() => props.onProviderApiKeyChange("sk-test")}>set-key</button>
+      <button onClick={props.onSaveProviderApiKey}>save-key</button>
+      <span data-testid="api-key-state">{props.apiKeySaveState}</span>
+      <span data-testid="ai-disabled">{String(Boolean(props.disabled))}</span>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/composer/wizard/WizardDraftList", () => ({
+  WizardDraftList: (props: any) => (
+    <ol aria-label="Generated drafts">
+      {props.drafts.map((d: any, i: number) => (
+        <li key={i} data-testid={`draft-${i + 1}`} data-keep={String(d.keep)}>
+          <span>{d.questionText}</span>
+          <button onClick={() => props.onKeepChange(i, !d.keep)}>toggle-keep-{i + 1}</button>
+          <button onClick={() => props.onEdit(i)}>edit-{i + 1}</button>
+          <button onClick={() => props.onRegenerate(i)}>regenerate-{i + 1}</button>
+          <span>{props.errors?.[i] ?? ""}</span>
+        </li>
+      ))}
+    </ol>
+  ),
+}));
+
 import { QuestionComposerPage } from "@/pages/QuestionComposerPage";
 
 function setDefaultMocks() {
@@ -187,6 +251,27 @@ beforeEach(() => {
   eduaiStatusMock.questionGenerationPhase = null;
   setDefaultMocks();
 });
+
+const click = (name: string | RegExp) => fireEvent.click(screen.getByRole("button", { name }));
+
+/** Picks a start method on step 1 and continues through step 2 to step 3. */
+async function goToStep3(method: "manual" | "ai", title = "New question") {
+  await screen.findByText(title);
+  fireEvent.click(screen.getByText(`choose-${method}`));
+  click("Continue");
+  await screen.findByTestId("details-step");
+  click("Continue");
+}
+
+/** Selects "Save as: Reviewed" in the wizard footer. */
+const chooseReviewed = () => fireEvent.click(screen.getByRole("radio", { name: "Reviewed" }));
+
+/** Fills a valid MCQ in the manual editor (topic t1 is defaulted from the course topics). */
+function fillValidMcq() {
+  fireEvent.click(screen.getByText("set-text"));
+  fireEvent.click(screen.getByText("set-choices"));
+  fireEvent.click(screen.getByText("set-answer"));
+}
 
 describe("QuestionComposerPage gate states", () => {
   it("shows a not-found card when the course id is invalid", () => {
@@ -238,7 +323,83 @@ describe("QuestionComposerPage gate states", () => {
   });
 });
 
-describe("QuestionComposerPage create mode", () => {
+describe("QuestionComposerPage wizard navigation", () => {
+  it("starts on step 1 with Continue disabled until a start method is picked", async () => {
+    render(<QuestionComposerPage />);
+    expect(await screen.findByText("New question")).toBeInTheDocument();
+    expect(screen.getByTestId("method-step")).toHaveAttribute("data-mode", "question");
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    fireEvent.click(screen.getByText("choose-manual"));
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+    await waitFor(() => expect(courseService.getCourseTopics).toHaveBeenCalledWith(5));
+  });
+
+  it("labels step 3 by the chosen path", async () => {
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    const steps = screen.getByRole("navigation", { name: "Steps" });
+    expect(within(steps).getByText("Write question")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("choose-ai"));
+    expect(within(steps).getByText("Generate & review")).toBeInTheDocument();
+  });
+
+  it("lets completed steps be revisited but keeps future steps disabled", async () => {
+    render(<QuestionComposerPage />);
+    await goToStep3("manual");
+    const steps = screen.getByRole("navigation", { name: "Steps" });
+    const stepButton = (label: string) => within(steps).getByText(label).closest("button")!;
+    expect(stepButton("Write question")).toHaveAttribute("aria-current", "step");
+    fireEvent.click(stepButton("Details"));
+    expect(screen.getByTestId("details-step")).toBeInTheDocument();
+    expect(stepButton("Write question")).toBeDisabled();
+    fireEvent.click(stepButton("How to start"));
+    expect(screen.getByTestId("method-value")).toHaveTextContent("manual");
+  });
+
+  it("keeps entered fields when going Back and forward again", async () => {
+    render(<QuestionComposerPage />);
+    await goToStep3("manual");
+    fireEvent.click(screen.getByText("set-text"));
+    click("Back");
+    fireEvent.click(screen.getByText("set-difficulty-hard"));
+    click("Back");
+    click("Continue");
+    expect(screen.getByTestId("details-difficulty")).toHaveTextContent("hard");
+    click("Continue");
+    expect(screen.getByTestId("question-text")).toHaveTextContent("What is 2+2?");
+  });
+
+  it("shows the details summary on step 3 and jumps to step 2 from Edit details", async () => {
+    render(<QuestionComposerPage />);
+    await goToStep3("manual");
+    await waitFor(() =>
+      expect(screen.getByTestId("details-summary")).toHaveTextContent(
+        "Multiple choice · Topic 1 · Medium · Recall",
+      ),
+    );
+    expect(screen.getByTestId("output-panel")).toHaveAttribute("data-mcq-layout", "radios");
+    click("Edit details");
+    expect(screen.getByTestId("details-step")).toBeInTheDocument();
+  });
+
+  it("shows the UBC-offline note only when the UBC model is selected and offline", async () => {
+    eduaiStatusMock.status = "error";
+    eduaiService.listModels.mockResolvedValue([]);
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    expect(screen.getByTestId("ai-status-note")).toHaveTextContent(/UBC model offline/);
+  });
+
+  it("omits the UBC-offline note while the service is up", async () => {
+    eduaiService.listModels.mockResolvedValue([]);
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    expect(screen.getByTestId("ai-status-note")).toHaveTextContent("");
+  });
+});
+
+describe("QuestionComposerPage create mode (manual path)", () => {
   it("keeps draft creation available while disabling review and sharing for a TA", async () => {
     useQmPermissionsForCourseMock.mockReturnValue({
       canApproveVariant: false,
@@ -247,94 +408,94 @@ describe("QuestionComposerPage create mode", () => {
       accessLoading: false,
     });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
+    await goToStep3("manual");
 
-    expect(screen.getByRole("checkbox", { name: /^mark as reviewed/i })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Reviewed" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Draft" })).toBeChecked();
     expect(screen.getByTestId("share-with-extensions")).toBeDisabled();
     expect(screen.getByRole("button", { name: /save question/i })).toBeEnabled();
   });
 
-  it("renders the composer shell with the create title", async () => {
-    render(<QuestionComposerPage />);
-    expect(await screen.findByText("New question")).toBeInTheDocument();
-    expect(screen.getByTestId("type-selector")).toBeInTheDocument();
-    await waitFor(() => expect(courseService.getCourseTopics).toHaveBeenCalledWith(5));
-  });
-
   it("shows validation errors when saving an empty form", async () => {
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    await goToStep3("manual");
+    click(/save question/i);
     expect(await screen.findByText("Question text is required.")).toBeInTheDocument();
     expect(questionService.createQuestion).not.toHaveBeenCalled();
   });
 
   it("requires at least 2 MCQ choices with a marked answer", async () => {
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
+    await goToStep3("manual");
     fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    click(/save question/i);
     expect(await screen.findByText("Add at least 2 choices with text.")).toBeInTheDocument();
   });
 
-  it("creates a question + variant on valid save", async () => {
+  it("returns to Details with the topic error when no primary topic is set", async () => {
+    courseService.getCourseTopics.mockResolvedValue([]);
+    render(<QuestionComposerPage />);
+    await goToStep3("manual");
+    fillValidMcq();
+    click(/save question/i);
+    expect(await screen.findByTestId("details-step")).toBeInTheDocument();
+    expect(screen.getByTestId("primary-topic-error")).toHaveTextContent("Select a primary topic.");
+    expect(questionService.createQuestion).not.toHaveBeenCalled();
+  });
+
+  it("creates a question + variant as a draft on valid save", async () => {
     questionService.createQuestion.mockResolvedValue({ id: 99 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-choices"));
-    fireEvent.click(screen.getByText("set-answer"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
-    await waitFor(() => expect(questionService.createQuestion).toHaveBeenCalled());
+    await goToStep3("manual");
+    fillValidMcq();
+    click(/save question/i);
+    await waitFor(() =>
+      expect(questionService.createQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({ primaryTopicId: "t1", type: "MCQ", courseId: 5 }),
+      ),
+    );
     await waitFor(() =>
       expect(questionService.createVariant).toHaveBeenCalledWith(
         99,
-        expect.objectContaining({ isDraft: true }),
+        expect.objectContaining({ isDraft: true, isAiGenerated: false, answer: "A" }),
       ),
     );
+    expect(toastFn).toHaveBeenCalledWith("Question saved as a draft.");
     expect(navigateMock).toHaveBeenCalledWith("/courses/5?tab=questions");
   });
 
-  it("marks the created variant reviewed when the checkbox is checked", async () => {
+  it("marks the created variant reviewed when Save as Reviewed is chosen", async () => {
     questionService.createQuestion.mockResolvedValue({ id: 99 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-choices"));
-    fireEvent.click(screen.getByText("set-answer"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
-    // The sharing label also says "mark as reviewed first", so anchor the match.
-    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    await goToStep3("manual");
+    fillValidMcq();
+    chooseReviewed();
+    click(/save question/i);
     await waitFor(() =>
       expect(questionService.createVariant).toHaveBeenCalledWith(
         99,
         expect.objectContaining({ isDraft: false, shareWithExtensions: false }),
       ),
     );
+    expect(toastFn).toHaveBeenCalledWith("Question saved as reviewed.");
   });
 
-  it("gates extension sharing on the reviewed checkbox and clears it when unreviewed", async () => {
-    questionService.createQuestion.mockResolvedValue({ id: 99 });
-    questionService.createVariant.mockResolvedValue({ id: 1 });
+  it("gates sharing on Reviewed and clears it when switched back to Draft", async () => {
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
+    await goToStep3("manual");
 
-    const reviewed = screen.getByRole("checkbox", { name: /^mark as reviewed/i });
     const share = screen.getByTestId("share-with-extensions");
     expect(share).toBeDisabled();
 
-    fireEvent.click(reviewed);
+    chooseReviewed();
     expect(share).not.toBeDisabled();
     fireEvent.click(share);
     expect(share).toBeChecked();
 
     // Sharing only takes effect on approval, so dropping the review drops it (#1555).
-    fireEvent.click(reviewed);
+    fireEvent.click(screen.getByRole("radio", { name: "Draft" }));
     expect(share).not.toBeChecked();
     expect(share).toBeDisabled();
   });
@@ -343,14 +504,11 @@ describe("QuestionComposerPage create mode", () => {
     questionService.createQuestion.mockResolvedValue({ id: 99 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-choices"));
-    fireEvent.click(screen.getByText("set-answer"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
-    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
+    await goToStep3("manual");
+    fillValidMcq();
+    chooseReviewed();
     fireEvent.click(screen.getByTestId("share-with-extensions"));
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    click(/save question/i);
     await waitFor(() =>
       expect(questionService.createVariant).toHaveBeenCalledWith(
         99,
@@ -363,12 +521,9 @@ describe("QuestionComposerPage create mode", () => {
     questionService.createQuestion.mockResolvedValue({ id: 99 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
     const view = render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-choices"));
-    fireEvent.click(screen.getByText("set-answer"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
-    fireEvent.click(screen.getByRole("checkbox", { name: /^mark as reviewed/i }));
+    await goToStep3("manual");
+    fillValidMcq();
+    chooseReviewed();
     fireEvent.click(screen.getByTestId("share-with-extensions"));
 
     useQmPermissionsForCourseMock.mockReturnValue({
@@ -378,7 +533,7 @@ describe("QuestionComposerPage create mode", () => {
       accessLoading: false,
     });
     view.rerender(<QuestionComposerPage />);
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    click(/save question/i);
 
     await waitFor(() =>
       expect(questionService.createVariant).toHaveBeenCalledWith(
@@ -393,41 +548,41 @@ describe("QuestionComposerPage create mode", () => {
       response: { data: { error: "VARIANT_LOCKED" } },
     });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-choices"));
-    fireEvent.click(screen.getByText("set-answer"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    await goToStep3("manual");
+    fillValidMcq();
+    click(/save question/i);
     expect(await screen.findByText(/approved and locked/i)).toBeInTheDocument();
     expect(toastFn.error).toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("switches question type via the selector", async () => {
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-type-sa"));
-    // SA no longer requires MCQ choices; only text + topic needed.
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-primary-topic"));
+  it("saves a short-answer question chosen on the Details step", async () => {
     questionService.createQuestion.mockResolvedValue({ id: 5 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    render(<QuestionComposerPage />);
+    await screen.findByText("New question");
+    fireEvent.click(screen.getByText("choose-manual"));
+    click("Continue");
+    fireEvent.click(screen.getByText("set-type-sa"));
+    fireEvent.click(screen.getByText("set-description"));
+    click("Continue");
+    // SA no longer requires MCQ choices; only text + topic needed.
+    fireEvent.click(screen.getByText("set-text"));
+    click(/save question/i);
     await waitFor(() =>
       expect(questionService.createQuestion).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "SA" }),
+        expect.objectContaining({ type: "SA", description: "a description" }),
       ),
     );
   });
 
-  it("saves the description and clears the output panel", async () => {
+  it("clears the editor content", async () => {
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-description"));
+    await goToStep3("manual");
     fireEvent.click(screen.getByText("set-text"));
     fireEvent.click(screen.getByText("clear"));
     // Clearing resets text, so saving again should fail validation again.
-    fireEvent.click(screen.getByRole("button", { name: /save question/i }));
+    click(/save question/i);
     expect(await screen.findByText("Question text is required.")).toBeInTheDocument();
   });
 });
@@ -445,35 +600,94 @@ describe("QuestionComposerPage variant mode", () => {
           id: 70,
           questionText: "Base text",
           difficulty: "easy",
+          reasoningLevel: "analytical",
           answer: "A",
-          choices: [{ letter: "A", text: "x" }],
+          choices: [
+            { letter: "A", text: "x" },
+            { letter: "B", text: "y" },
+          ],
           referenceId: null,
         },
       ],
     });
   });
 
-  it("renders the variant title and inherited type", async () => {
+  it("shows the original question above the stepper", async () => {
     render(<QuestionComposerPage />);
-    expect(await screen.findByText("New variant")).toBeInTheDocument();
-    expect(screen.getByText(/inherited from the original question/i)).toBeInTheDocument();
+    const original = await screen.findByTestId("variant-original");
+    expect(screen.getByText("New variant")).toBeInTheDocument();
+    expect(original).toHaveTextContent("Variant of");
+    expect(original).toHaveTextContent("Base text");
+    await waitFor(() =>
+      expect(original).toHaveTextContent("Multiple choice · Topic 1 · Easy · Analyze"),
+    );
+    expect(screen.getByTestId("method-step")).toHaveAttribute("data-mode", "variant");
   });
 
-  it("creates a variant referencing the source question", async () => {
-    questionService.createVariant.mockResolvedValue({ id: 71 });
+  it("passes the original's details to step 2", async () => {
     render(<QuestionComposerPage />);
     await screen.findByText("New variant");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByText("set-choices"));
-    fireEvent.click(screen.getByText("set-answer"));
-    fireEvent.click(screen.getByRole("button", { name: /add variant/i }));
+    fireEvent.click(screen.getByText("choose-manual"));
+    click("Continue");
+    expect(screen.getByTestId("details-step")).toHaveAttribute("data-mode", "variant");
+    expect(screen.getByTestId("original-difficulty")).toHaveTextContent("easy");
+    expect(screen.getByTestId("details-difficulty")).toHaveTextContent("easy");
+  });
+
+  it("starts from a copy of the original and creates a variant referencing it", async () => {
+    questionService.createVariant.mockResolvedValue({ id: 71 });
+    render(<QuestionComposerPage />);
+    await goToStep3("manual", "New variant");
+    expect(screen.getByTestId("question-text")).toHaveTextContent("Base text");
+    click(/add variant/i);
     await waitFor(() =>
       expect(questionService.createVariant).toHaveBeenCalledWith(
         7,
-        expect.objectContaining({ referenceId: 70 }),
+        expect.objectContaining({
+          referenceId: 70,
+          questionText: "Base text",
+          isAiGenerated: false,
+        }),
       ),
     );
+    expect(toastFn).toHaveBeenCalledWith("Variant saved as a draft.");
     expect(navigateMock).toHaveBeenCalledWith("/courses/5?tab=questions");
+  });
+
+  it("generates a single AI variant and saves it", async () => {
+    eduaiService.generateQuestions.mockResolvedValue({
+      data: {
+        questions: [
+          {
+            type: "MCQ",
+            content: "Harder variant?",
+            choices: [
+              { letter: "A", text: "p" },
+              { letter: "B", text: "q" },
+            ],
+            answer: "B",
+          },
+        ],
+      },
+    });
+    questionService.createVariant.mockResolvedValue({ id: 72 });
+    render(<QuestionComposerPage />);
+    await goToStep3("ai", "New variant");
+    expect(screen.getByTestId("ai-panel")).toHaveAttribute("data-mode", "variant");
+    fireEvent.click(screen.getByText("set-count-3"));
+    fireEvent.click(screen.getByText("set-prompt"));
+    click("Generate");
+    expect(await screen.findByText("Harder variant?")).toBeInTheDocument();
+    expect(eduaiService.generateQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ numQuestions: 1, mcqRequiredChoiceCount: 2 }),
+    );
+    click(/add variant/i);
+    await waitFor(() =>
+      expect(questionService.createVariant).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ questionText: "Harder variant?", isAiGenerated: true }),
+      ),
+    );
   });
 });
 
@@ -616,65 +830,6 @@ describe("QuestionComposerPage edit mode", () => {
   });
 });
 
-describe("QuestionComposerPage AI generation", () => {
-  it("requires a topic prompt before generating", async () => {
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("generate"));
-    expect(await screen.findByText(/Enter a topic or prompt/i)).toBeInTheDocument();
-    expect(eduaiService.generateQuestions).not.toHaveBeenCalled();
-  });
-
-  it("generates a question and fills the form", async () => {
-    eduaiService.generateQuestions.mockResolvedValue({
-      data: {
-        questions: [
-          {
-            type: "MCQ",
-            difficulty: "hard",
-            content: "Generated question?",
-            choices: [
-              { letter: "A", text: "x" },
-              { letter: "B", text: "y" },
-            ],
-            answer: "A",
-            primary_topic_id: "t1",
-          },
-        ],
-      },
-    });
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-prompt"));
-    fireEvent.click(screen.getByText("generate"));
-    await waitFor(() => expect(eduaiService.generateQuestions).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(toastFn).toHaveBeenCalledWith("Question generated", expect.anything()),
-    );
-  });
-
-  it("surfaces a generation failure with error details", async () => {
-    eduaiService.generateQuestions.mockRejectedValue({
-      response: { data: { aiErrorReason: "quota exceeded" } },
-    });
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-prompt"));
-    fireEvent.click(screen.getByText("generate"));
-    expect(await screen.findByText("quota exceeded")).toBeInTheDocument();
-    expect(toastFn.error).toHaveBeenCalled();
-  });
-
-  it("saves a provider API key", async () => {
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    fireEvent.click(screen.getByText("set-key"));
-    fireEvent.click(screen.getByText("save-key"));
-    await waitFor(() => expect(apiKeyStorage.setApiKey).toHaveBeenCalledWith("openai", "sk-test"));
-    await waitFor(() => expect(screen.getByTestId("api-key-state")).toHaveTextContent("saved"));
-  });
-});
-
 const mcq = (content: string) => ({
   type: "MCQ",
   difficulty: "medium",
@@ -687,18 +842,81 @@ const mcq = (content: string) => ({
   primary_topic_id: "t1",
 });
 
-describe("QuestionComposerPage batch generation (#1973)", () => {
+describe("QuestionComposerPage AI generation", () => {
+  it("requires a topic prompt before generating", async () => {
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    click("Generate");
+    expect(await screen.findByText(/Enter a topic or prompt/i)).toBeInTheDocument();
+    expect(eduaiService.generateQuestions).not.toHaveBeenCalled();
+  });
+
+  it("generates a question and lists it as a draft", async () => {
+    eduaiService.generateQuestions.mockResolvedValue({ data: { questions: [mcq("Generated?")] } });
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    fireEvent.click(screen.getByText("set-prompt"));
+    click("Generate");
+    expect(await screen.findByText("Generated?")).toBeInTheDocument();
+    expect(toastFn).toHaveBeenCalledWith("Question generated", expect.anything());
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeInTheDocument();
+  });
+
+  it("surfaces a generation failure with error details", async () => {
+    eduaiService.generateQuestions.mockRejectedValue({
+      response: { data: { aiErrorReason: "quota exceeded" } },
+    });
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    fireEvent.click(screen.getByText("set-prompt"));
+    click("Generate");
+    expect(await screen.findByText("quota exceeded")).toBeInTheDocument();
+    expect(toastFn.error).toHaveBeenCalled();
+  });
+
+  it("saves a provider API key", async () => {
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    fireEvent.click(screen.getByText("set-key"));
+    fireEvent.click(screen.getByText("save-key"));
+    await waitFor(() => expect(apiKeyStorage.setApiKey).toHaveBeenCalledWith("openai", "sk-test"));
+    await waitFor(() => expect(screen.getByTestId("api-key-state")).toHaveTextContent("saved"));
+  });
+
+  it("keeps Generate disabled until the course topics have loaded", async () => {
+    let resolveTopics: (topics: Array<{ id: string; name: string }>) => void = () => {};
+    courseService.getCourseTopics.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTopics = resolve;
+      }),
+    );
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    expect(screen.getByTestId("ai-disabled")).toHaveTextContent("true");
+    resolveTopics([{ id: "t1", name: "Topic 1" }]);
+    await waitFor(() => expect(screen.getByTestId("ai-disabled")).toHaveTextContent("false"));
+  });
+});
+
+describe("QuestionComposerPage AI drafts (#1973)", () => {
   async function generateBatch(contents: string[], count = 3) {
     eduaiService.generateQuestions.mockResolvedValue({ data: { questions: contents.map(mcq) } });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
+    await goToStep3("ai");
     fireEvent.click(screen.getByText("set-prompt"));
     if (count === 3) fireEvent.click(screen.getByText("set-count-3"));
-    fireEvent.click(screen.getByText("generate"));
+    click("Generate");
     await waitFor(() => expect(eduaiService.generateQuestions).toHaveBeenCalled());
+    await screen.findByTestId("draft-1");
   }
 
-  it("keeps N = 1 requests and labels unchanged", async () => {
+  it("keeps Save disabled until something has been generated", async () => {
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    expect(screen.getByRole("button", { name: /save question/i })).toBeDisabled();
+  });
+
+  it("requests one question by default", async () => {
     await generateBatch(["Only?"], 1);
     expect(eduaiService.generateQuestions).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -706,12 +924,10 @@ describe("QuestionComposerPage batch generation (#1973)", () => {
         difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
       }),
     );
-    await waitFor(() => expect(screen.getByTestId("question-text")).toHaveTextContent("Only?"));
-    expect(screen.queryByRole("navigation", { name: "Generated drafts" })).toBeNull();
-    expect(screen.getByRole("button", { name: /save question/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save question/i })).toBeEnabled();
   });
 
-  it("requests N questions with a matching difficulty count and loads draft 1", async () => {
+  it("requests N questions with a matching difficulty count and lists every draft", async () => {
     await generateBatch(["Q1?", "Q2?", "Q3?"]);
     expect(eduaiService.generateQuestions).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -719,81 +935,117 @@ describe("QuestionComposerPage batch generation (#1973)", () => {
         difficultyDistribution: { easy: 0, medium: 3, hard: 0 },
       }),
     );
-    expect(await screen.findByText("Draft 1 of 3")).toBeInTheDocument();
-    expect(screen.getByTestId("question-text")).toHaveTextContent("Q1?");
+    expect(screen.getByText("Q1?")).toBeInTheDocument();
+    expect(screen.getByText("Q3?")).toBeInTheDocument();
+    expect(screen.getByTestId("draft-2")).toHaveAttribute("data-keep", "true");
+    expect(screen.getByRole("button", { name: "Save 3 questions" })).toBeEnabled();
   });
 
-  it("only offers the count control in create mode", async () => {
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    expect(screen.getByTestId("has-count")).toHaveTextContent("true");
-  });
-
-  it("saves each draft, advances, and returns to the bank after the last", async () => {
+  it("saves only the kept drafts and returns to the bank", async () => {
     questionService.createQuestion.mockResolvedValue({ id: 99 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
     await generateBatch(["Q1?", "Q2?", "Q3?"]);
-    await screen.findByText("Draft 1 of 3");
-    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
-    expect(await screen.findByText("Draft 2 of 3")).toBeInTheDocument();
-    expect(screen.getByTestId("question-text")).toHaveTextContent("Q2?");
-    expect(navigateMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /discard draft/i }));
-    expect(await screen.findByText("Draft 3 of 3")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    fireEvent.click(screen.getByText("toggle-keep-2"));
+    expect(screen.getByTestId("draft-2")).toHaveAttribute("data-keep", "false");
+    click("Save 2 questions");
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/courses/5?tab=questions"));
     expect(questionService.createQuestion).toHaveBeenCalledTimes(2);
-    expect(toastFn).toHaveBeenCalledWith("Saved 2 of 3 questions", expect.anything());
+    const savedTexts = questionService.createVariant.mock.calls.map(
+      (c: any[]) => c[1].questionText,
+    );
+    expect(savedTexts).toEqual(["Q1?", "Q3?"]);
+    expect(questionService.createVariant).toHaveBeenCalledWith(
+      99,
+      expect.objectContaining({ isAiGenerated: true, isDraft: true }),
+    );
+    expect(toastFn).toHaveBeenCalledWith("2 questions saved as drafts.");
   });
 
-  it("keeps edits when switching between drafts", async () => {
-    await generateBatch(["Q1?", "Q2?", "Q3?"]);
-    await screen.findByText("Draft 1 of 3");
-    fireEvent.click(screen.getByText("set-text"));
-    fireEvent.click(screen.getByRole("button", { name: "Draft 2, pending" }));
+  it("disables Save when no draft is kept", async () => {
+    await generateBatch(["Q1?"], 1);
+    fireEvent.click(screen.getByText("toggle-keep-1"));
+    expect(screen.getByRole("button", { name: /save question/i })).toBeDisabled();
+  });
+
+  it("edits a draft in the manual editor and keeps the edit", async () => {
+    questionService.createQuestion.mockResolvedValue({ id: 99 });
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    await generateBatch(["Q1?", "Q2?"]);
+    fireEvent.click(screen.getByText("edit-2"));
+    expect(screen.getByText("Editing draft 2")).toBeInTheDocument();
     expect(screen.getByTestId("question-text")).toHaveTextContent("Q2?");
-    fireEvent.click(screen.getByRole("button", { name: "Draft 1, pending" }));
-    expect(screen.getByTestId("question-text")).toHaveTextContent("What is 2+2?");
+    fireEvent.click(screen.getByText("set-text"));
+    click("Back to drafts");
+    expect(screen.getByTestId("draft-2")).toHaveTextContent("What is 2+2?");
+    expect(screen.getByTestId("draft-1")).toHaveTextContent("Q1?");
+    click("Save 2 questions");
+    await waitFor(() => expect(questionService.createVariant).toHaveBeenCalledTimes(2));
+    expect(questionService.createVariant.mock.calls[1][1].questionText).toBe("What is 2+2?");
   });
 
-  it("stays on a draft whose save fails", async () => {
-    questionService.createQuestion.mockRejectedValue(new Error("boom"));
+  it("regenerates a single draft in place", async () => {
     await generateBatch(["Q1?", "Q2?", "Q3?"]);
-    await screen.findByText("Draft 1 of 3");
-    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
-    expect(await screen.findByText("boom")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Draft 1, current" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Draft 2, pending" })).toBeEnabled();
+    eduaiService.generateQuestions.mockResolvedValue({ data: { questions: [mcq("New Q2?")] } });
+    fireEvent.click(screen.getByText("regenerate-2"));
+    expect(await screen.findByText("New Q2?")).toBeInTheDocument();
+    expect(eduaiService.generateQuestions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ numQuestions: 1 }),
+    );
+    expect(screen.getByText("Q1?")).toBeInTheDocument();
+    expect(screen.getByText("Q3?")).toBeInTheDocument();
+    expect(screen.queryByText("Q2?")).toBeNull();
+    expect(toastFn).toHaveBeenCalledWith("Draft regenerated", expect.anything());
+  });
+
+  it("opens an invalid kept draft in the editor instead of saving", async () => {
+    eduaiService.generateQuestions.mockResolvedValue({
+      data: { questions: [mcq("Q1?"), { ...mcq(""), content: "" }] },
+    });
+    render(<QuestionComposerPage />);
+    await goToStep3("ai");
+    fireEvent.click(screen.getByText("set-prompt"));
+    fireEvent.click(screen.getByText("set-count-3"));
+    click("Generate");
+    await screen.findByTestId("draft-2");
+    click("Save 2 questions");
+    expect(await screen.findByText("Editing draft 2")).toBeInTheDocument();
+    expect(screen.getByText("Question text is required.")).toBeInTheDocument();
+    expect(questionService.createQuestion).not.toHaveBeenCalled();
+  });
+
+  it("drops saved drafts and stays on the step when a later save fails", async () => {
+    questionService.createQuestion
+      .mockResolvedValueOnce({ id: 99 })
+      .mockRejectedValueOnce(new Error("boom"));
+    questionService.createVariant.mockResolvedValue({ id: 1 });
+    await generateBatch(["Q1?", "Q2?", "Q3?"]);
+    click("Save 3 questions");
+    expect(
+      await screen.findByText(/Saved 1 of 3; the rest were not saved\. boom/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Q1?")).toBeNull();
+    expect(screen.getByText("Q2?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save 2 questions" })).toBeEnabled();
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("handles a partial result", async () => {
     await generateBatch(["Q1?", "Q2?"]);
-    expect(await screen.findByText("Draft 1 of 2")).toBeInTheDocument();
+    expect(screen.getByTestId("draft-2")).toBeInTheDocument();
     expect(toastFn).toHaveBeenCalledWith("Generated 2 of 3 questions", expect.anything());
   });
 
-  it("treats a single result from a batch like N = 1", async () => {
-    await generateBatch(["Q1?"]);
-    await waitFor(() =>
-      expect(toastFn).toHaveBeenCalledWith("Generated 1 of 3 questions", expect.anything()),
-    );
-    expect(screen.queryByRole("navigation", { name: "Generated drafts" })).toBeNull();
-    expect(screen.getByRole("button", { name: /save question/i })).toBeInTheDocument();
-  });
-
-  it("confirms before cancelling or regenerating with pending drafts", async () => {
+  it("confirms before cancelling or regenerating with unsaved drafts", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     await generateBatch(["Q1?", "Q2?", "Q3?"]);
-    await screen.findByText("Draft 1 of 3");
     // The header back arrow and the footer button are both named "Cancel".
     for (const cancel of screen.getAllByRole("button", { name: /^cancel$/i })) {
       fireEvent.click(cancel);
     }
     expect(navigateMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("generate"));
+    click("Regenerate");
     expect(eduaiService.generateQuestions).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Draft 1 of 3")).toBeInTheDocument();
+    expect(screen.getByText("Q1?")).toBeInTheDocument();
     expect(confirmSpy).toHaveBeenCalledTimes(3);
     confirmSpy.mockRestore();
   });
@@ -816,36 +1068,23 @@ describe("QuestionComposerPage batch generation (#1973)", () => {
     questionService.createQuestion.mockResolvedValue({ id: 99 });
     questionService.createVariant.mockResolvedValue({ id: 1 });
     render(<QuestionComposerPage />);
-    await screen.findByText("New question");
+    await goToStep3("ai");
     fireEvent.click(screen.getByText("set-prompt"));
     fireEvent.click(screen.getByText("set-count-3"));
-    fireEvent.click(screen.getByText("generate"));
+    // The panel waits for topics; generation itself is not gated by the page here.
+    click("Generate");
     await waitFor(() => expect(eduaiService.generateQuestions).toHaveBeenCalled());
 
     resolveTopics([{ id: "t1", name: "Topic 1" }]);
-    await waitFor(() => expect(screen.getByText("set-primary-topic")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("ai-disabled")).toHaveTextContent("false"));
     resolveGeneration({ data: { questions: ["Q1?", "Q2?", "Q3?"].map(mcq) } });
-    await screen.findByText("Draft 1 of 3");
+    await screen.findByTestId("draft-3");
 
-    fireEvent.click(screen.getByRole("button", { name: /save & next/i }));
+    click("Save 3 questions");
     await waitFor(() =>
       expect(questionService.createQuestion).toHaveBeenCalledWith(
         expect.objectContaining({ primaryTopicId: "t1" }),
       ),
     );
-  });
-
-  it("keeps Generate disabled until the course topics have loaded", async () => {
-    let resolveTopics: (topics: Array<{ id: string; name: string }>) => void = () => {};
-    courseService.getCourseTopics.mockReturnValue(
-      new Promise((resolve) => {
-        resolveTopics = resolve;
-      }),
-    );
-    render(<QuestionComposerPage />);
-    await screen.findByText("New question");
-    expect(screen.getByTestId("ai-disabled")).toHaveTextContent("true");
-    resolveTopics([{ id: "t1", name: "Topic 1" }]);
-    await waitFor(() => expect(screen.getByTestId("ai-disabled")).toHaveTextContent("false"));
   });
 });
