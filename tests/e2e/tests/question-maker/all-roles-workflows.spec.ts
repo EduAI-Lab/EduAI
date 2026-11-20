@@ -179,7 +179,9 @@ test.describe("Question Maker authoring and AI workflows", () => {
         `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`,
       );
       // Wizard: step 1 picks the AI path, step 2 keeps the default details.
-      await page.getByRole("radio", { name: /Generate with AI/ }).click();
+      // Click the card (its label), as a user does; the radio itself is visually hidden.
+      await page.getByText("Generate with AI", { exact: true }).click();
+      await expect(page.getByRole("radio", { name: /Generate with AI/ })).toBeChecked();
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Continue" }).click();
       const prompt = page.getByRole("textbox", { name: "What should the questions cover?" });
@@ -270,7 +272,9 @@ test.describe("Question Maker authoring and AI workflows", () => {
         instructor,
         `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`,
       );
-      await page.getByRole("radio", { name: /Generate with AI/ }).click();
+      // Click the card (its label), as a user does; the radio itself is visually hidden.
+      await page.getByText("Generate with AI", { exact: true }).click();
+      await expect(page.getByRole("radio", { name: /Generate with AI/ })).toBeChecked();
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Continue" }).click();
       await page
