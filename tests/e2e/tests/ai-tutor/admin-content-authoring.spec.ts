@@ -207,7 +207,7 @@ test.describe("AI Tutor ADMIN — activities", () => {
       // decoration, so set them here rather than accepting the defaults. Both
       // sit under the dialog's More options fold (#2170).
       await dialog.getByRole("button", { name: /^More options/ }).click();
-      await expect(dialog.getByText("AI study buddy")).toBeVisible();
+      await expect(dialog.getByText("AI study buddy", { exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Teach me" })).toHaveAttribute(
         "aria-pressed",
         "true",
