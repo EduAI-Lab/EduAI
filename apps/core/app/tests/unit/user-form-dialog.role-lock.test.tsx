@@ -54,3 +54,16 @@ describe("UserFormDialog — role lock", () => {
     expect(screen.queryByText(/role can't be changed/)).not.toBeInTheDocument();
   });
 });
+
+describe("UserFormDialog — active lock", () => {
+  it("locks your own Active Status switch", () => {
+    renderDialog(account("me", "ADMIN"));
+    expect(screen.getByRole("switch", { name: /Active Status/ })).toBeDisabled();
+    expect(screen.getByText("You can't deactivate your own account.")).toBeInTheDocument();
+  });
+
+  it("leaves another user's Active Status switch editable", () => {
+    renderDialog(account("inst-1", "INSTRUCTOR"));
+    expect(screen.getByRole("switch", { name: /Active Status/ })).toBeEnabled();
+  });
+});

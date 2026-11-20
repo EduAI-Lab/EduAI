@@ -65,6 +65,20 @@ describe("/api/courses action", () => {
     );
   });
 
+  it("logs COURSE_RESTORED when create restores a deleted course (200)", async () => {
+    vi.mocked(createCourse).mockResolvedValue(
+      new Response(JSON.stringify({ id: "course-1", code: "COSC 999" }), { status: 200 }),
+    );
+    await action(makeArgs("POST"));
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "COURSE_RESTORED",
+        entityId: "course-1",
+        entityLabel: "COSC 999",
+      }),
+    );
+  });
+
   it("does not log when create fails (non-201)", async () => {
     vi.mocked(createCourse).mockResolvedValue(new Response(null, { status: 400 }));
     await action(makeArgs("POST"));

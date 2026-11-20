@@ -374,6 +374,7 @@ export async function handleUsersApiRequest(request: Request) {
       let effectiveRole = result.data.role;
       let previousRole: typeof effectiveRole;
       let targetWasActiveAdmin = false;
+      let previousIsActive: boolean | undefined;
       if (
         result.data.role !== undefined ||
         result.data.authorizedUnits !== undefined ||
@@ -397,6 +398,7 @@ export async function handleUsersApiRequest(request: Request) {
           return apiError(403, "CANNOT_CHANGE_ADMIN_ROLE");
         }
         previousRole = target.role;
+        previousIsActive = target.isActive;
         effectiveRole = result.data.role ?? target.role;
         targetWasActiveAdmin = target.role === "ADMIN" && target.isActive === true;
         if (effectiveRole !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
@@ -611,11 +613,14 @@ export async function handleUsersApiRequest(request: Request) {
         let actionCode = "USER_UPDATED";
         if (platformRoleChanged) {
           actionCode = "USER_ROLE_CHANGED";
-        } else if (taCourseIds !== undefined) {
+        } else if (taCourseIdsAdded.length > 0 || taCourseIdsRemoved.length > 0) {
+          // The edit form always sends taCourseIds, so only a real change counts.
           actionCode = "USER_TA_COURSES_CHANGED";
-        } else if (result.data.isActive === false) {
+        } else if (result.data.isActive === false && previousIsActive === true) {
           actionCode = "USER_DEACTIVATED";
-        } else if (result.data.isActive === true) {
+        } else if (result.data.isActive === true && previousIsActive === false) {
+          // The edit form always sends isActive: true, so only a real
+          // false -> true transition is a reactivation; a rename stays USER_UPDATED.
           actionCode = "USER_REACTIVATED";
         }
         fireAndForget(

@@ -679,6 +679,39 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
     expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(3);
   });
 
+  it("logs USER_UPDATED, not a TA change or reactivation, when the edit form saves a rename", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "UNIT_ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
+
+    // The real dialog always sends isActive: true alongside the TA course list.
+    const res = await action(
+      makePatch("unit-admin-1", { name: "Renamed", isActive: true, taCourseIds: [] }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "USER_UPDATED" }),
+    );
+  });
+
+  it("logs USER_REACTIVATED only when an inactive user is set active", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "UNIT_ADMIN",
+      isActive: false,
+    } as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
+
+    const res = await action(makePatch("unit-admin-1", { isActive: true, taCourseIds: [] }));
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "USER_REACTIVATED" }),
+    );
+  });
+
   it("audit-logs the previous and new platform roles plus TA courses cleared by demotion", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([

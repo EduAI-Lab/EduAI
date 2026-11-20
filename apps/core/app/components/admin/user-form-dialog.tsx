@@ -97,6 +97,8 @@ export function UserFormDialog({
   // Mirrors the API (CANNOT_CHANGE_OWN_ROLE / CANNOT_CHANGE_ADMIN_ROLE): an
   // admin's role, yours included, is fixed.
   const roleLocked = isEditing && (user.id === currentUserId || user.role === "ADMIN");
+  // Mirrors CANNOT_DEACTIVATE_SELF.
+  const activeLocked = isEditing && user.id === currentUserId;
 
   // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
@@ -307,11 +309,17 @@ export function UserFormDialog({
                   <div className="space-y-0.5">
                     <FormLabel>Active Status</FormLabel>
                     <FormDescription>
-                      Active users can sign in and access the platform
+                      {activeLocked
+                        ? "You can't deactivate your own account."
+                        : "Active users can sign in and access the platform"}
                     </FormDescription>
                   </div>
                   <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={activeLocked}
+                    />
                   </FormControl>
                 </FormItem>
               )}

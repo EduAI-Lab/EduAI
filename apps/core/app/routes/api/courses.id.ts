@@ -223,15 +223,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
           const response = await deleteCourse(request, courseId);
 
           if (response.status === 204) {
+            // Soft delete keeps the row, so the code is still there to label the
+            // entry. The lookup runs inside fireAndForget so a failure there can
+            // never turn an already-successful delete into a 500.
             fireAndForget(
-              logAuditAction({
-                ...getActorContext(session?.user ?? null),
-                ...requestContext,
-                actionCode: "COURSE_DELETED",
-                category: "COURSE",
-                entityType: "Course",
-                entityId: courseId,
-              }),
+              (async () => {
+                const deleted = await prisma.course.findUnique({
+                  where: { id: courseId },
+                  select: { code: true, name: true },
+                });
+                await logAuditAction({
+                  ...getActorContext(session?.user ?? null),
+                  ...requestContext,
+                  actionCode: "COURSE_DELETED",
+                  category: "COURSE",
+                  entityType: "Course",
+                  entityId: courseId,
+                  entityLabel: deleted?.code ?? deleted?.name ?? null,
+                });
+              })(),
             );
           }
 
