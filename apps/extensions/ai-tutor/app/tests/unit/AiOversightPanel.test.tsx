@@ -45,6 +45,16 @@ describe("AiOversightPanel", () => {
     expect(mockAdminAiTraces).not.toHaveBeenCalled();
   });
 
+  it("renders one cell per column header", () => {
+    render(<AiOversightPanel initialTraces={[trace()]} />);
+
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+    const cells = screen.getAllByRole("row")[1].querySelectorAll("td");
+    expect(cells).toHaveLength(headers.length);
+    expect(cells[headers.indexOf("Outcome")].textContent).toBe("Completed");
+    expect(cells[headers.indexOf("When")].textContent).toBe("5m ago");
+  });
+
   it("renders an empty state when there are no traces", () => {
     render(<AiOversightPanel initialTraces={[]} />);
     expect(screen.getByText("No AI tutoring interactions yet.")).toBeInTheDocument();
