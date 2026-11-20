@@ -151,14 +151,17 @@ export async function createUnitAdmin(
     const mirror = async (
       department: string,
       codePrefix: string,
-      name = `${department} Unit Admin E2E`,
+      name?: string,
       topicName?: string,
       year = "2026",
     ): Promise<AtFixtureCourse> => {
+      const code = `${codePrefix}-${RUN}-${Math.floor(Math.random() * 1e4)}`;
       const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
         form: {
-          name,
-          code: `${codePrefix}-${RUN}-${Math.floor(Math.random() * 1e4)}`,
+          // Unique by default: specs run in parallel, and a unit admin sees
+          // every course in its unit, so a shared name matches other fixtures.
+          name: name ?? `${department} Unit Admin E2E ${code}`,
+          code,
           section: "001",
           term: "W1",
           year,
@@ -209,7 +212,11 @@ export async function createUnitAdmin(
     outOfUnit = await mirror(OUT_OF_UNIT_DEPARTMENT, "UAOUT");
 
     if (opts.secondCourse) {
-      second = await mirror(units[0], "UASRC", `${units[0]} Import Source E2E ${RUN}`);
+      second = await mirror(
+        units[0],
+        "UASRC",
+        `${units[0]} Import Source E2E ${RUN}-${Math.floor(Math.random() * 1e4)}`,
+      );
     }
 
     if (opts.contrastCourse) {

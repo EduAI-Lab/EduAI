@@ -24,8 +24,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   /* Retry failed tests once in CI */
   retries: process.env.CI ? 1 : 0,
-  /* Single worker in CI to keep resource usage predictable inside Docker */
-  workers: process.env.CI ? 1 : undefined,
+  /* CI picks its worker count with E2E_WORKERS (default 1) */
+  workers: process.env.CI ? Number(process.env.E2E_WORKERS ?? 1) : undefined,
 
   reporter: process.env.CI
     ? [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]]
