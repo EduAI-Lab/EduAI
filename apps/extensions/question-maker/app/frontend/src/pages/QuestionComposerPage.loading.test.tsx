@@ -73,6 +73,9 @@ vi.mock("@/components/composer/QuestionTypeSelector", () => ({
   QuestionTypeSelector: () => <div data-testid="type-selector" />,
 }));
 
+vi.mock("@/components/composer/wizard/WizardMethodStep", () => ({
+  WizardMethodStep: () => <div data-testid="method-step" />,
+}));
 vi.mock("@/components/composer/ComposerMetadataFields", () => ({
   ComposerMetadataFields: () => <div data-testid="metadata-fields" />,
 }));
@@ -119,7 +122,7 @@ describe("QuestionComposerPage loading (#1332)", () => {
     renderCreate();
 
     await waitFor(() => {
-      expect(screen.getByTestId("type-selector")).toBeInTheDocument();
+      expect(screen.getByTestId("method-step")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("composer-skeleton")).not.toBeInTheDocument();
     expect(document.querySelector(".animate-spin")).toBeNull();

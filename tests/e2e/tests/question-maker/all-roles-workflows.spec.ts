@@ -178,17 +178,26 @@ test.describe("Question Maker authoring and AI workflows", () => {
         instructor,
         `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`,
       );
-      const prompt = page.getByRole("textbox", { name: "Prompt" });
+      // Wizard: step 1 picks the AI path, step 2 keeps the default details.
+      // Click the card (its label), as a user does; the radio itself is visually hidden.
+      await page.getByText("Generate with AI", { exact: true }).click();
+      await expect(page.getByRole("radio", { name: /Generate with AI/ })).toBeChecked();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      const prompt = page.getByRole("textbox", { name: "What should the questions cover?" });
       await expect(prompt).toBeVisible();
       await prompt.fill("FIFO data structures");
-      await page.getByRole("button", { name: "Generate question" }).click();
+      await page.getByRole("button", { name: "Generate", exact: true }).click();
 
+      await expect(page.getByText("Which data structure uses FIFO ordering?")).toBeVisible({
+        timeout: 15_000,
+      });
+      await page.getByRole("button", { name: "Edit", exact: true }).click();
       await expect(page.locator("#composer-variant-text")).toHaveValue(
         "Which data structure uses FIFO ordering?",
-        { timeout: 15_000 },
       );
       await expect(page.getByRole("textbox", { name: "Option A" })).toHaveValue("Queue");
-      await expect(page.getByRole("checkbox", { name: /Mark as reviewed/ })).toBeVisible();
+      await expect(page.getByRole("radio", { name: "Reviewed" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Save question" })).toBeEnabled();
     } finally {
       await instructorContext.dispose();
@@ -263,22 +272,26 @@ test.describe("Question Maker authoring and AI workflows", () => {
         instructor,
         `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`,
       );
-      await page.getByRole("textbox", { name: "Prompt" }).fill("Basic data structures");
-      await page.getByLabel("Number of questions").fill("3");
-      await page.getByRole("button", { name: "Generate 3 questions" }).click();
+      // Click the card (its label), as a user does; the radio itself is visually hidden.
+      await page.getByText("Generate with AI", { exact: true }).click();
+      await expect(page.getByRole("radio", { name: /Generate with AI/ })).toBeChecked();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page
+        .getByRole("textbox", { name: "What should the questions cover?" })
+        .fill("Basic data structures");
+      await page.getByRole("button", { name: "More questions" }).click();
+      await page.getByRole("button", { name: "More questions" }).click();
+      await page.getByRole("button", { name: "Generate", exact: true }).click();
 
-      await expect(page.getByText("Draft 1 of 3")).toBeVisible({ timeout: 15_000 });
+      for (const stem of stems) {
+        await expect(page.getByText(stem)).toBeVisible({ timeout: 15_000 });
+      }
       expect(requestedCount).toBe(3);
-      await expect(page.locator("#composer-variant-text")).toHaveValue(stems[0]);
 
-      // Keep draft 1, discard draft 2, keep draft 3.
-      await page.getByRole("button", { name: "Save & next" }).click();
-      await expect(page.getByText("Draft 2 of 3")).toBeVisible();
-      await expect(page.locator("#composer-variant-text")).toHaveValue(stems[1]);
-      await page.getByRole("button", { name: "Discard draft" }).click();
-      await expect(page.getByText("Draft 3 of 3")).toBeVisible();
-      await expect(page.locator("#composer-variant-text")).toHaveValue(stems[2]);
-      await page.getByRole("button", { name: "Save & next" }).click();
+      // Keep drafts 1 and 3, drop draft 2; only kept drafts are saved.
+      await page.getByRole("checkbox", { name: "Keep draft 2" }).click();
+      await page.getByRole("button", { name: "Save 2 questions" }).click();
 
       await expect(page).toHaveURL(new RegExp(`/courses/${qmCourseId}\\?tab=questions`));
 

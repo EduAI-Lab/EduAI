@@ -28,6 +28,8 @@ interface QuestionOutputPanelProps {
   idPrefix?: string;
   /** Whether the SA/LA answer is required (composer create) vs optional (variant). */
   answerRequired?: boolean;
+  /** MCQ choices editor layout (see MCQChoicesField). */
+  mcqLayout?: "letters" | "radios";
 }
 
 const defaultChoices: MCQChoice[] = [
@@ -54,6 +56,7 @@ export function QuestionOutputPanel({
   onClear,
   idPrefix = "aq",
   answerRequired = false,
+  mcqLayout = "letters",
 }: QuestionOutputPanelProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -135,6 +138,7 @@ export function QuestionOutputPanel({
             onCorrectAnswersChange={onCorrectAnswersChange}
             idPrefix={idPrefix}
             disabled={disabled}
+            layout={mcqLayout}
           />
         </div>
       )}

@@ -41,6 +41,12 @@ export interface MCQChoicesFieldProps {
   /** Optional id prefix for a11y */
   idPrefix?: string;
   disabled?: boolean;
+  /**
+   * "letters" (default): click a letter to mark it correct.
+   * "radios": each row is [radio][letter][text][remove]; the correct row is highlighted and
+   * labelled, and "+ Add choice" / "Allow more than one correct answer" sit below the list.
+   */
+  layout?: "letters" | "radios";
 }
 
 export function MCQChoicesField({
@@ -55,6 +61,7 @@ export function MCQChoicesField({
   choicesLabel = "Choices",
   idPrefix = "mcq",
   disabled = false,
+  layout = "letters",
 }: MCQChoicesFieldProps) {
   const safeChoices = Array.isArray(choices) && choices.length > 0 ? choices : DEFAULT_CHOICES;
   const multi = selectAllThatApply === true;
@@ -129,6 +136,108 @@ export function MCQChoicesField({
     }
     onSelectAllThatApplyChange?.(checked);
   };
+
+  if (layout === "radios") {
+    return (
+      <div className="space-y-2">
+        <Label>
+          {choicesLabel} <span className="text-destructive">*</span>
+        </Label>
+        <div
+          className="space-y-3 rounded-md border bg-muted/50 p-4"
+          role={multi ? "group" : "radiogroup"}
+          aria-label="Correct answer"
+        >
+          {safeChoices.map((choice, index) => {
+            const isCorrect = multi
+              ? safeCorrect.includes(choice.letter)
+              : choice.letter === answer && answer !== "";
+            return (
+              <div
+                key={`${idPrefix}-choice-${index}`}
+                className={cn(
+                  "relative flex items-center gap-3 rounded-md border p-1.5 transition-colors",
+                  isCorrect ? "border-green-500/60 bg-green-500/10" : "border-transparent",
+                )}
+              >
+                <input
+                  type={multi ? "checkbox" : "radio"}
+                  name={`${idPrefix}-correct-choice`}
+                  checked={isCorrect}
+                  onChange={() => handleLetterClick(choice.letter)}
+                  disabled={disabled}
+                  aria-label={`Mark option ${choice.letter} correct`}
+                  className="size-4 shrink-0 cursor-pointer [accent-color:var(--secondary)]"
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                    isCorrect ? "bg-green-600 text-white" : "bg-primary/15 text-foreground",
+                  )}
+                >
+                  {choice.letter}
+                </span>
+                <Input
+                  value={choice.text}
+                  onChange={(e) => handleChoiceTextChange(index, e.target.value)}
+                  placeholder={`Option ${choice.letter}`}
+                  className="min-w-0 flex-1"
+                  aria-label={`Option ${choice.letter}`}
+                  disabled={disabled}
+                />
+                {isCorrect && (
+                  <span className="shrink-0 text-xs font-semibold text-green-700 dark:text-green-400">
+                    Correct
+                  </span>
+                )}
+                {safeChoices.length > 2 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                    onClick={() => handleRemoveChoice(index)}
+                    aria-label={`Remove option ${choice.letter}`}
+                    disabled={disabled}
+                  >
+                    <IconX className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {safeChoices.length < 8 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddChoice}
+              disabled={disabled}
+            >
+              + Add choice
+            </Button>
+          )}
+          {onSelectAllThatApplyChange && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={multi}
+                onCheckedChange={(value) => handleSelectAllThatApplyChange(value === true)}
+                disabled={disabled}
+                aria-label="Allow more than one correct answer"
+              />
+              Allow more than one correct answer
+            </label>
+          )}
+        </div>
+        {(multi ? safeCorrect.length === 0 : answer === "") && (
+          <p className="text-xs text-muted-foreground">No correct answer selected yet.</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
