@@ -28,6 +28,7 @@ jobs:
       shared: ${{ steps.filter.outputs.shared }}
       cross_service: ${{ steps.filter.outputs.cross_service }}
       unit_matrix: ${{ steps.filter.outputs.unit_matrix }}
+      e2e_matrix: ${{ steps.filter.outputs.e2e_matrix }}
     steps:
       - name: Classify changed paths
         id: filter
@@ -45,11 +46,56 @@ jobs:
           changed=$RUNNER_TEMP/changed-files.txt
           all=false
 
+          verified=false
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             gh api \
               "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
               --paginate --jq '.[].filename' > "$changed"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            repo=${{ github.repository }}
+            base=${{ github.event.merge_group.base_sha }}
+            head=${{ github.event.merge_group.head_sha }}
+            head_ref=${{ github.event.merge_group.head_ref }}
+
+            # When the PR branch already contains the queue's base, the queue
+            # commit's tree is byte-identical to the PR head's tree, and the
+            # PR's required checks already passed on exactly this code.
+            # Re-running them would only repeat that result, so reuse it.
+            # Any difference (a stale branch, or an earlier entry in the same
+            # group) falls through to testing what changed against the base.
+            pr=$(sed -nE 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-[0-9a-f]+$#\1#p' <<< "$head_ref")
+            if [ -n "$pr" ]; then
+              pr_head=$(gh api "repos/$repo/pulls/$pr" --jq '.head.sha')
+              group_tree=$(gh api "repos/$repo/git/commits/$head" --jq '.tree.sha')
+              pr_tree=$(gh api "repos/$repo/git/commits/$pr_head" --jq '.tree.sha')
+              pr_green=$(gh api "repos/$repo/commits/$pr_head/check-runs?per_page=100" --jq '
+                [.check_runs[]
+                  | select(.app.slug == "github-actions"
+                      and (.name == "Unit & Integration Tests" or .name == "E2E Tests"))]
+                | (map(.name) | unique | length) == 2 and all(.conclusion == "success")')
+              echo "PR #$pr head $pr_head: tree $pr_tree, required checks green: $pr_green"
+              echo "Queue commit $head: tree $group_tree"
+              if [ "$group_tree" = "$pr_tree" ] && [ "$pr_green" = true ]; then
+                verified=true
+                : > "$changed"
+              fi
+            fi
+
+            if [ "$verified" = false ]; then
+              # git, not the compare API: the API stops listing files at 300,
+              # which would silently under-test a large change. Name-only
+              # diffs need trees but no blobs, so the fetch stays small.
+              git init -q "$RUNNER_TEMP/mg"
+              git -C "$RUNNER_TEMP/mg" \
+                -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
+                fetch -q --no-tags --depth=1 --filter=blob:none \
+                "https://github.com/$repo.git" "$base" "$head"
+              git -C "$RUNNER_TEMP/mg" diff --name-only "$base" "$head" > "$changed"
+            fi
           else
+            # Post-merge push to development: full regression run, off the
+            # merge path, so it costs no queue time.
             all=true
             : > "$changed"
           fi
@@ -61,7 +107,9 @@ jobs:
           question_maker=false
           shared=false
 
-          if [ "$all" = true ]; then
+          if [ "$verified" = true ]; then
+            echo "Queue commit is identical to the PR head that already passed; reusing that result."
+          elif [ "$all" = true ]; then
             code=true
             core=true
             ai_tutor=true
@@ -122,19 +170,48 @@ jobs:
 
           matrix='{"include":['
           separator=''
+          # Core's 606 unit files took ~7 minutes on one runner, mostly module
+          # import time, so they are split across runners with vitest --shard.
+          # Shard 1 also runs the shared UI and integration tests (~2.5 min),
+          # which roughly matches one third of the unit files.
+          core_shards=3
           if [ "$core" = true ]; then
-            matrix+="${separator}"'{"scope":"core","label":"Core and shared UI","db_image":"pgvector/pgvector:pg16","db_user":"postgres","db_password":"postgres","db_name":"postgres"}'
-            separator=','
+            for i in $(seq 1 "$core_shards"); do
+              matrix+="${separator}"'{"scope":"core","id":"core-'"$i"'","shard":"'"$i/$core_shards"'","label":"Core and shared UI '"$i/$core_shards"'","db_image":"pgvector/pgvector:pg16","db_user":"postgres","db_password":"postgres","db_name":"postgres"}'
+              separator=','
+            done
           fi
           if [ "$ai_tutor" = true ]; then
-            matrix+="${separator}"'{"scope":"ai_tutor","label":"AI Tutor","db_image":"postgres:16-alpine","db_user":"postgres","db_password":"postgres","db_name":"aitutor_test"}'
+            matrix+="${separator}"'{"scope":"ai_tutor","id":"ai_tutor","shard":"","label":"AI Tutor","db_image":"postgres:16-alpine","db_user":"postgres","db_password":"postgres","db_name":"aitutor_test"}'
             separator=','
           fi
           if [ "$question_maker" = true ]; then
-            matrix+="${separator}"'{"scope":"question_maker","label":"Question Maker","db_image":"postgres:15-alpine","db_user":"postgres","db_password":"password","db_name":"question_maker_test"}'
+            matrix+="${separator}"'{"scope":"question_maker","id":"question_maker","shard":"","label":"Question Maker","db_image":"postgres:15-alpine","db_user":"postgres","db_password":"password","db_name":"question_maker_test"}'
           fi
           matrix+=']}'
           echo "unit_matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          # One runner per affected E2E suite, each with its own isolated stack,
+          # because CI runs Playwright with a single worker. AI Tutor holds about
+          # two thirds of all E2E time (482 of 740 tests, ~13 of ~18 minutes on
+          # one worker), so it is split further with Playwright's --shard.
+          ai_tutor_shards=3
+          e2e='{"include":['
+          separator=''
+          add_e2e() {
+            e2e+="${separator}{\"id\":\"$1\",\"suite\":\"$2\",\"shard\":\"$3\",\"label\":\"$4\"}"
+            separator=','
+          }
+          [ "$core" = true ] && add_e2e core core "" "Core"
+          if [ "$ai_tutor" = true ]; then
+            for i in $(seq 1 "$ai_tutor_shards"); do
+              add_e2e "ai-tutor-$i" ai-tutor "$i/$ai_tutor_shards" "AI Tutor $i/$ai_tutor_shards"
+            done
+          fi
+          [ "$question_maker" = true ] && add_e2e question-maker question-maker "" "Question Maker"
+          [ "$cross_service" = true ] && add_e2e cross-service cross-service "" "Cross-service"
+          e2e+=']}'
+          echo "e2e_matrix=$e2e" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Affected applications"
@@ -241,9 +318,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .turbo/cache
-          key: turbo-test-${{ runner.os }}-${{ matrix.scope }}-${{ github.sha }}
+          key: turbo-test-${{ runner.os }}-${{ matrix.id }}-${{ github.sha }}
           restore-keys: |
-            turbo-test-${{ runner.os }}-${{ matrix.scope }}-
+            turbo-test-${{ runner.os }}-${{ matrix.id }}-
 
       - name: Run workspace tests
         env:
@@ -252,18 +329,26 @@ jobs:
           REDIS_URL: redis://127.0.0.1:6379
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
+          SHARD: ${{ matrix.shard }}
         run: |
           case "${{ matrix.scope }}" in
             core)
               status=0
-              npx turbo run test --continue --env-mode=loose \
-                --filter=@eduai/ui &
-              ui_pid=$!
-              npx turbo run test:unit test:integration --continue --env-mode=loose \
-                --filter=edu-ai &
-              core_pid=$!
-              wait "$ui_pid" || status=1
-              wait "$core_pid" || status=1
+              pids=()
+              if [ "${SHARD%%/*}" = 1 ]; then
+                npx turbo run test --continue --env-mode=loose \
+                  --filter=@eduai/ui &
+                pids+=($!)
+                npx turbo run test:integration --continue --env-mode=loose \
+                  --filter=edu-ai &
+                pids+=($!)
+              fi
+              npx turbo run test:unit --continue --env-mode=loose \
+                --filter=edu-ai -- --shard="$SHARD" &
+              pids+=($!)
+              for pid in "${pids[@]}"; do
+                wait "$pid" || status=1
+              done
               exit "$status"
               ;;
             ai_tutor)
@@ -401,7 +486,7 @@ jobs:
             exit 1
           fi
           if [ "$CODE_CHANGED" != "true" ]; then
-            echo "Docs-only change; unit tests were not required."
+            echo "Unit tests not required: docs-only, or this exact tree already passed on the PR."
             exit 0
           fi
           if [ "$UNIT_RESULT" != "success" ] || \
@@ -415,10 +500,13 @@ jobs:
           fi
 
   e2e-run:
-    name: E2E tests — affected stacks
+    name: E2E tests — ${{ matrix.label }}
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.e2e_matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -428,34 +516,20 @@ jobs:
       - name: Select suites and images
         id: select
         env:
-          CORE: ${{ needs.changes.outputs.core }}
-          AI_TUTOR: ${{ needs.changes.outputs.ai_tutor }}
-          QUESTION_MAKER: ${{ needs.changes.outputs.question_maker }}
-          CROSS_SERVICE: ${{ needs.changes.outputs.cross_service }}
+          SUITE: ${{ matrix.suite }}
         run: |
           set -euo pipefail
-          suites=()
           targets=(e2e-eduai-app e2e-runner)
-          [ "$CORE" = true ] && suites+=(core)
-          if [ "$AI_TUTOR" = true ]; then
-            suites+=(ai-tutor)
-            targets+=(e2e-ai-tutor-server e2e-ai-tutor-app)
-          fi
-          if [ "$QUESTION_MAKER" = true ]; then
-            suites+=(question-maker)
-            targets+=(e2e-qm-server e2e-qm-app)
-          fi
-          if [ "$CROSS_SERVICE" = true ]; then
-            suites+=(cross-service)
-            targets+=(
-              e2e-ai-tutor-server e2e-ai-tutor-app
-              e2e-qm-server e2e-qm-app
-            )
-          fi
-          suites_csv=$(IFS=,; echo "${suites[*]}")
-          targets_csv=$(printf '%s\n' "${targets[@]}" | awk '!seen[$0]++' | paste -sd, -)
-          echo "suites=$suites_csv" >> "$GITHUB_OUTPUT"
-          echo "targets=$targets_csv" >> "$GITHUB_OUTPUT"
+          case "$SUITE" in
+            ai-tutor)
+              targets+=(e2e-ai-tutor-server e2e-ai-tutor-app) ;;
+            question-maker)
+              targets+=(e2e-qm-server e2e-qm-app) ;;
+            cross-service)
+              targets+=(e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app) ;;
+          esac
+          echo "suites=$SUITE" >> "$GITHUB_OUTPUT"
+          echo "targets=$(IFS=,; echo "${targets[*]}")" >> "$GITHUB_OUTPUT"
 
       - name: Check runner disk space
         id: disk
@@ -512,6 +586,7 @@ jobs:
         env:
           E2E_SKIP_BUILD: "1"
           E2E_SUITES: ${{ steps.select.outputs.suites }}
+          E2E_SHARD: ${{ matrix.shard }}
           E2E_OLLAMA_MODELS_DIR: ${{ runner.temp }}/e2e-ollama-models
         run: bash scripts/e2e-in-docker.sh
 
@@ -541,6 +616,12 @@ jobs:
       - name: Warm affected E2E caches
         # Cache export is intentionally separate from the loaded test build:
         # exporting inline makes the critical path wait for a mode=max upload.
+        # Only the cross-service entry warms: it builds every image, and its
+        # tests take seconds, so the upload fits inside the slower entries'
+        # run time instead of every entry racing to write the same scopes.
+        # Skipped in the merge queue: caches written under its temporary
+        # gh-readonly-queue ref can never be restored by any later run.
+        if: matrix.suite == 'cross-service' && github.event_name != 'merge_group'
         continue-on-error: true
         env:
           TARGETS: ${{ steps.select.outputs.targets }}
@@ -561,7 +642,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.id }}
           path: playwright-report/
           retention-days: 7
 
@@ -571,9 +652,9 @@ jobs:
           started_at=${CI_JOB_STARTED:-$(date +%s)}
           elapsed=$(($(date +%s) - started_at))
           {
-            echo "### Affected E2E"
+            echo "### E2E — ${{ matrix.label }}"
             echo
-            echo "- Suites: \`${{ steps.select.outputs.suites }}\`"
+            echo "- Suite: \`${{ steps.select.outputs.suites }}\` shard \`${{ matrix.shard || 'all' }}\`"
             echo "- Images: \`${{ steps.select.outputs.targets }}\`"
             echo "- Conditional disk cleanup: \`${{ steps.disk.outputs.cleanup }}\`"
             echo "- Job time: ${elapsed}s"
@@ -598,7 +679,7 @@ jobs:
             exit 1
           fi
           if [ "$CODE_CHANGED" != "true" ]; then
-            echo "Docs-only change; E2E was not required."
+            echo "E2E not required: docs-only, or this exact tree already passed on the PR."
             exit 0
           fi
           if [ "$E2E_RESULT" != "success" ]; then

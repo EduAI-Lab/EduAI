@@ -96,6 +96,13 @@ export interface CreateUnitAdminOptions {
    * as evidence of any role-specific denial.
    */
   seedTopic?: boolean;
+  /**
+   * Mirror a published course in `units[0]` from the previous year's term.
+   * The course list hides a filter with only one value, so without this the
+   * Term and Status filters exist only if some other spec happened to leave
+   * a course in another term, or a published one, in the same department.
+   */
+  contrastCourse?: boolean;
 }
 
 /**
@@ -146,6 +153,7 @@ export async function createUnitAdmin(
       codePrefix: string,
       name = `${department} Unit Admin E2E`,
       topicName?: string,
+      year = "2026",
     ): Promise<AtFixtureCourse> => {
       const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
         form: {
@@ -153,8 +161,8 @@ export async function createUnitAdmin(
           code: `${codePrefix}-${RUN}-${Math.floor(Math.random() * 1e4)}`,
           section: "001",
           term: "W1",
-          year: "2026",
-          startDate: "2026-09-08",
+          year,
+          startDate: `${year}-09-08`,
           department,
           instructorUserIds: instrMe.id,
         },
@@ -202,6 +210,12 @@ export async function createUnitAdmin(
 
     if (opts.secondCourse) {
       second = await mirror(units[0], "UASRC", `${units[0]} Import Source E2E ${RUN}`);
+    }
+
+    if (opts.contrastCourse) {
+      const contrast = await mirror(units[0], "UACON", undefined, undefined, "2025");
+      const pub = await adminCtx.patch(`${CORE_URL}/api/courses/${contrast.coreCourseId}/publish`);
+      expect(pub.status(), `Core publish (contrast course): ${await pub.text()}`).toBe(200);
     }
 
     if (opts.publishCourse) {

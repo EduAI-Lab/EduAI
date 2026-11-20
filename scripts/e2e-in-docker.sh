@@ -10,6 +10,9 @@
 #
 # To open the Playwright HTML report after the run:
 #   bash scripts/e2e-in-docker.sh --report
+#
+# To run one slice of the selected tests (CI splits slow suites across runners):
+#   E2E_SHARD=2/3 bash scripts/e2e-in-docker.sh
 
 set -euo pipefail
 
@@ -17,6 +20,7 @@ COMPOSE_FILE="docker-compose.e2e.yml"
 KEEP_ALIVE=false
 SHOW_REPORT=false
 E2E_SUITES="${E2E_SUITES:-all}"
+E2E_SHARD="${E2E_SHARD:-}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -157,8 +161,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # `docker compose run` streams output directly and returns the container's exit code.
 # The playwright-report directory is bind-mounted in docker-compose.e2e.yml, so the
 # report is written directly to the host — no docker cp needed.
+shard_args=()
+[ -n "$E2E_SHARD" ] && shard_args=(--shard="$E2E_SHARD")
+
 docker compose -f "$COMPOSE_FILE" run --rm --no-deps e2e-runner \
-  npx playwright test "${test_paths[@]}" \
+  npx playwright test "${test_paths[@]}" ${shard_args[@]+"${shard_args[@]}"} \
   || RUNNER_EXIT=$?
 
 if [ "$SHOW_REPORT" = true ] && [ -d "./playwright-report" ]; then

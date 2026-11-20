@@ -21,7 +21,7 @@ let ua: UnitAdminFixture;
 test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
   try {
-    ua = await createUnitAdmin(playwright, ctx);
+    ua = await createUnitAdmin(playwright, ctx, { contrastCourse: true });
   } finally {
     await ctx.dispose();
   }
