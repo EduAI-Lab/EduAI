@@ -1,7 +1,14 @@
 import { Textarea } from "./textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
 import { cn } from "../utils";
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { isNumber } from "../lib/primitive-union";
 
 type PromptInputContextType = {
@@ -96,6 +103,13 @@ function PromptInputTextarea({
   ...props
 }: PromptInputTextareaProps) {
   const { value, setValue, maxHeight, onSubmit, disabled, textareaRef } = usePromptInput();
+
+  // Text typed into the server-rendered box before hydration is only in the DOM; adopt it
+  // before the next render writes the controlled value over it (#2186).
+  useLayoutEffect(() => {
+    const typed = textareaRef.current?.value;
+    if (typed && typed !== value) setValue(typed);
+  }, []);
 
   useEffect(() => {
     if (disableAutosize) return;

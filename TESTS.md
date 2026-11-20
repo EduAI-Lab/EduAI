@@ -1502,6 +1502,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`collapsible-section.test.tsx`](packages/ui/src/tests/collapsible-section.test.tsx) | (#2136) `CollapsibleSection` starts expanded; Collapse hides the children and saves `"true"` under its `storageKey` in localStorage; a saved `"true"` starts it collapsed with an Expand button (`aria-expanded="false"`); Expand shows the children again. |
 | [`use-menu-tooltip.test.tsx`](packages/ui/src/tests/use-menu-tooltip.test.tsx) | (#2136) `useMenuTooltip` opens the tooltip on hover while its menu is closed; keeps it shut (and ignores open requests) while the menu is open; after the menu closes, ignores the focus Radix hands back to the trigger until a pointer event on the trigger ends the suppression. |
 | [`dropdown-menu-with-tooltip.test.tsx`](packages/ui/src/tests/dropdown-menu-with-tooltip.test.tsx) | `DropdownMenuWithTooltip` names an icon-only ⋯ trigger with a tooltip while keeping its own accessible name, opens its menu from that trigger, and hides the tooltip while the menu is open. |
+| [`prompt-input.test.tsx`](packages/ui/src/tests/prompt-input.test.tsx) | (#2186) `PromptInputTextarea` hydration: text typed into the server-rendered box before hydration is adopted into the controlled value and survives the next re-render (the chat screen re-renders right after load); an untouched box stays empty. 2 cases. |
 
 ---
 
