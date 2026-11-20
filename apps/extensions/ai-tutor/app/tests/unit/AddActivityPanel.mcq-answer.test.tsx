@@ -241,3 +241,17 @@ describe("AddActivityPanel — removing a choice keeps the answer key honest", (
     });
   });
 });
+
+describe("AddActivityPanel — the model-answer step follows the reference answer", () => {
+  it("stays to do after typing only the question, and is done once an answer is typed", () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("radio", { name: "Short answer" }));
+    fillQuestion("Name the capital of France.");
+
+    const step = () => screen.getByText(/Add a model answer/);
+    expect(step()).toHaveTextContent("(to do)");
+
+    fireEvent.change(screen.getByLabelText(/Reference answer/), { target: { value: "Paris" } });
+    expect(step()).toHaveTextContent("(done)");
+  });
+});

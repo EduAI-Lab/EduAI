@@ -499,7 +499,7 @@ export default function AddActivityPanel({
           {
             key: "answer",
             label: type === "MCQ" ? "Mark the answer" : "Add a model answer",
-            done: type === "MCQ" ? hasSelectedCorrect : question.trim() !== "",
+            done: type === "MCQ" ? hasSelectedCorrect : textAnswer.trim() !== "",
             detail:
               type === "MCQ"
                 ? "Click the letter beside the right choice."

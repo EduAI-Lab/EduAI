@@ -731,6 +731,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         >
           {perms.canManageContent && (
             <CourseNextSteps
+              scope={`course-${course.id}`}
               steps={setupSteps({
                 hasModule: moduleCounts.all > 0,
                 hasLesson: (course.contentCounts?.lessons ?? 0) > 0,

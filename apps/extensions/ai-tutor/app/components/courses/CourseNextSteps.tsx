@@ -15,40 +15,45 @@ export type CourseNextStep = {
   onSelect?: () => void;
 };
 
-const COLLAPSED_KEY = "eduai.aiTutor.course.nextStepsCollapsed";
+const COLLAPSED_KEY_PREFIX = "eduai.aiTutor.nextStepsCollapsed";
 
 /**
  * The setup path as one compact step bar, matching Core's (#2105). The course,
  * module and lesson pages all show the same path (#2170, see `setupSteps`).
  * Collapsible, with each step's detail on hover, so it never takes over the page.
+ * `scope` names the page (e.g. `lesson-12`), so hiding the bar on one page never
+ * hides it on another.
  */
 export function CourseNextSteps({
   steps,
+  scope,
   doneTitle = "Course is set up",
 }: {
   steps: CourseNextStep[];
+  scope: string;
   /** Heading once every step is done. */
   doneTitle?: string;
 }) {
   const doneCount = steps.filter((s) => s.done).length;
   const allDone = doneCount === steps.length;
   const [collapsed, setCollapsed] = useState(false);
+  const storageKey = `${COLLAPSED_KEY_PREFIX}.${scope}`;
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(COLLAPSED_KEY);
+      const stored = window.localStorage.getItem(storageKey);
       // A finished setup tucks itself away unless the instructor chose otherwise.
       setCollapsed(stored === null ? allDone : stored === "1");
     } catch {
       setCollapsed(allDone);
     }
-  }, [allDone]);
+  }, [allDone, storageKey]);
 
   const toggle = () => {
     const next = !collapsed;
     setCollapsed(next);
     try {
-      window.localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+      window.localStorage.setItem(storageKey, next ? "1" : "0");
     } catch {
       // Not remembered across visits.
     }

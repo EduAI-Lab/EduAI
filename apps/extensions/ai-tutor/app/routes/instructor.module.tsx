@@ -610,6 +610,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     >
       {perms.canManageContent && module && (
         <CourseNextSteps
+          scope={`module-${module.id}`}
           doneTitle="Module is set up"
           steps={setupSteps({
             hasModule: true,
@@ -623,7 +624,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               lesson: { onSelect: () => setCreateOpen(true) },
               // An activity is added from inside a lesson.
               activity: oLessons[0] ? { href: `/instructor/lesson/${oLessons[0].id}` } : undefined,
-              publish: { href: `/instructor/courses/${module.courseOfferingId}` },
+              publish: perms.canPublishContent
+                ? { href: `/instructor/courses/${module.courseOfferingId}` }
+                : undefined,
             },
           })}
         />

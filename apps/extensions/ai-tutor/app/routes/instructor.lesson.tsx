@@ -1021,6 +1021,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
         {perms.canManageContent && (
           <CourseNextSteps
+            scope={`lesson-${lessonId}`}
             doneTitle="Lesson is set up"
             steps={setupSteps({
               hasModule: true,
