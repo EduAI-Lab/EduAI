@@ -43,6 +43,13 @@ export function baseVitestConfig(coreDir: string): ViteUserConfig {
       environment: "happy-dom",
       fileParallelism: false,
       setupFiles: ["./app/tests/setup.ts"],
+      // react-day-picker (pulled in by the @eduai/ui barrel's Calendar) loads
+      // date-fns as hundreds of small modules, re-imported by every isolated
+      // test file: ~1.1s of each file's ~1.7s barrel import. Pre-bundling it
+      // into one file cut Core's unit import time 60% and the run 32% (#2181).
+      deps: {
+        optimizer: { client: { enabled: true, include: ["react-day-picker"] } },
+      },
       // Node 22+'s own global `localStorage`/`sessionStorage` (Web Storage
       // API) is defined on the realm before happy-dom installs its working
       // shim, and happy-dom cannot override it — Node's version is a real
