@@ -1,6 +1,6 @@
 # Working memory
 
-- The Question Maker new-question and new-variant URLs use `QuestionComposerPage`, which renders the 3-step `QuestionWizard` (step bodies in `components/composer/wizard/`) with all wizard state kept in the page; only edit mode still uses the two-column layout with `ComposerMetadataFields`. Changes to the older add-question dialog do not affect these routes.
+- The Question Maker new-question URL uses `QuestionComposerPage` and `ComposerMetadataFields`; changes to the older add-question dialog do not affect that route.
 - Course topics created from AI Tutor and Question Maker authoring controls are written through the Core-backed topic API, then selected in the current form.
 - Question Maker's shared `Toaster` has a dismiss button, and its app-level placement is top-right so it does not cover the sticky save actions.
 - RAG/AI source of truth: `docs/rag-ai/README.md` indexes current chat/RAG, embeddings, routing, vLLM, testing, performance, and development-server guidance; HELPME references in `FUTURE_WORK.md` describe potential upgrades, not shipped behavior.
