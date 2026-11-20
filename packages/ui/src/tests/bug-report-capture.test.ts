@@ -1,11 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("html2canvas", () => ({
+vi.mock("html2canvas-pro", () => ({
   default: vi.fn(async () => ({ toDataURL: () => "data:image/jpeg;base64,xyz" })),
 }));
 
-import html2canvas from "html2canvas";
+import html2canvas from "html2canvas-pro";
 import { isBugReportChrome, useBugReportCapture } from "../bug-report-capture";
 
 describe("useBugReportCapture", () => {
@@ -174,6 +174,7 @@ describe("useBugReportCapture", () => {
     vi.mocked(html2canvas).mockRejectedValueOnce(new Error("tainted canvas"));
     const { result, unmount } = renderHook(() => useBugReportCapture());
     await expect(result.current.captureScreenshot()).resolves.toBeNull();
+    expect(result.current.getCapturedData().consoleLogs).toContain("screenshot capture failed");
     unmount();
   });
 

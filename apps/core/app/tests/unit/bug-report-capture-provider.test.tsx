@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const submitBugReport = vi.hoisted(() => vi.fn());
 
-vi.mock("html2canvas", () => ({
+vi.mock("html2canvas-pro", () => ({
   default: vi.fn(async () => ({ toDataURL: () => "data:image/jpeg;base64,xyz" })),
 }));
 vi.mock("~/hooks/api/use-submit-bug-report", () => ({

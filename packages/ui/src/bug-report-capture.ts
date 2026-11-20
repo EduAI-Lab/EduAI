@@ -18,7 +18,8 @@
  *     does so when the reporter opts in, and again on submit to wait for it).
  *     Repeat calls join the capture in flight or return the cached shot.
  *     `clearScreenshot()` drops it and invalidates any capture still in flight.
- *   - `html2canvas` is imported lazily on first screenshot request so it
+ *   - `html2canvas-pro` (not `html2canvas`, which throws on our oklch colours) is
+ *     imported lazily on first screenshot request so it
  *     never lands in the main JS chunk. This is a subpath export, not part of
  *     the `@eduai/ui` barrel, for the same reason.
  * Related: `bug-report-dialog.tsx`.
@@ -201,7 +202,7 @@ export function useBugReportCapture(enabled = true) {
       try {
         // Lazy import keeps html2canvas out of the main bundle; it is large
         // and only needed when a user actually files a bug report.
-        const html2canvas = (await import("html2canvas")).default;
+        const html2canvas = (await import("html2canvas-pro")).default;
         const canvas = await html2canvas(document.body, {
           logging: false,
           useCORS: true,
@@ -213,7 +214,9 @@ export function useBugReportCapture(enabled = true) {
         // screenshot cap, and the server drops oversized screenshots (#979).
         screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
         return screenshotRef.current;
-      } catch {
+      } catch (error) {
+        // Lands in the captured console, so the report shows why it has no screenshot.
+        console.warn("[bug-report] screenshot capture failed", error);
         return captureGenerationRef.current === generation ? screenshotRef.current : null;
       } finally {
         if (capturePromiseRef.current === promise) capturePromiseRef.current = null;
