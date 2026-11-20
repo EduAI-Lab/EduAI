@@ -75,4 +75,34 @@ describe("MCQChoicesField radios layout", () => {
       { letter: "B", text: "Three" },
     ]);
   });
+
+  it("edits choice text, adds a choice and turns on multiple answers", () => {
+    const onChoicesChange = vi.fn();
+    const onSelectAllThatApplyChange = vi.fn();
+    const onCorrectAnswersChange = vi.fn();
+    render(
+      <MCQChoicesField
+        layout="radios"
+        choices={choices}
+        answer="B"
+        onChoicesChange={onChoicesChange}
+        onAnswerChange={vi.fn()}
+        onSelectAllThatApplyChange={onSelectAllThatApplyChange}
+        onCorrectAnswersChange={onCorrectAnswersChange}
+      />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Option A" }), {
+      target: { value: "Uno" },
+    });
+    expect(onChoicesChange).toHaveBeenCalledWith([
+      { letter: "A", text: "Uno" },
+      choices[1],
+      choices[2],
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add choice" }));
+    expect(onChoicesChange).toHaveBeenLastCalledWith([...choices, { letter: "D", text: "" }]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Allow more than one correct answer" }));
+    expect(onSelectAllThatApplyChange).toHaveBeenCalledWith(true);
+    expect(onCorrectAnswersChange).toHaveBeenCalledWith(["B"]);
+  });
 });

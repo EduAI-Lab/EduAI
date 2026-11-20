@@ -14,6 +14,7 @@ import { WizardDetailsStep } from "@/components/composer/wizard/WizardDetailsSte
 import { WizardFooter } from "@/components/composer/wizard/WizardFooter";
 import { WizardAIPanel, appendToPrompt } from "@/components/composer/wizard/WizardAIPanel";
 import { WizardDraftList } from "@/components/composer/wizard/WizardDraftList";
+import { WizardDetailsSummary } from "@/components/composer/wizard/WizardDetailsSummary";
 
 afterEach(() => cleanup());
 
@@ -127,6 +128,59 @@ describe("WizardDetailsStep", () => {
     expect(screen.queryByRole("button", { name: "Add topic" })).toBeNull();
     const difficulty = screen.getByRole("radiogroup", { name: /Difficulty/ });
     expect(within(difficulty).getByRole("radio", { name: /Easy/ })).toHaveTextContent("(original)");
+  });
+});
+
+describe("WizardDetailsStep field changes", () => {
+  it("reports format, label and secondary-topic changes as patches", () => {
+    const onChange = vi.fn();
+    renderInRouter(
+      <WizardDetailsStep
+        mode="question"
+        value={detailsValue}
+        onChange={onChange}
+        topics={[{ id: "t1", name: "Topic 1" } as never, { id: "t2", name: "Topic 2" } as never]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /Short answer/ }));
+    expect(onChange).toHaveBeenCalledWith({ questionType: "SA" });
+    fireEvent.change(screen.getByPlaceholderText("Leave blank to use the question's first line"), {
+      target: { value: "Loops" },
+    });
+    expect(onChange).toHaveBeenCalledWith({ description: "Loops" });
+  });
+});
+
+describe("WizardDetailsSummary", () => {
+  it("shows the chosen details as chips and jumps back with Edit details", () => {
+    const onEdit = vi.fn();
+    render(
+      <WizardDetailsSummary
+        format="Multiple choice"
+        topic="Topic 1"
+        difficulty="Medium"
+        thinkingSkill="Recall"
+        onEdit={onEdit}
+      />,
+    );
+    const summary = screen.getByTestId("details-summary");
+    for (const chip of ["Multiple choice", "Topic 1", "Medium", "Recall"]) {
+      expect(summary).toHaveTextContent(chip);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    expect(onEdit).toHaveBeenCalled();
+  });
+
+  it("omits the topic chip when no topic is set", () => {
+    render(
+      <WizardDetailsSummary
+        format="Short answer"
+        difficulty="Easy"
+        thinkingSkill="Apply"
+        onEdit={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("details-summary")).not.toHaveTextContent("undefined");
   });
 });
 
