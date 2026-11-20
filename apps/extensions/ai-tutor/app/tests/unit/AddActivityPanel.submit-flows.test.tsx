@@ -264,8 +264,37 @@ describe("AddActivityPanel — submit flows", () => {
     consoleSpy.mockRestore();
   });
 
+  it("folds the optional settings under More options (#2170)", () => {
+    renderPanel();
+    const more = screen.getByRole("button", { name: /more options/i });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText(/hint/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Teach me" })).not.toBeInTheDocument();
+
+    fireEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText(/hint/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Teach me" })).toBeInTheDocument();
+  });
+
+  it("walks the in-dialog steps as the required fields fill in", () => {
+    renderPanel();
+    const step = (label: RegExp) => screen.getByText(label);
+    expect(step(/^write the question/i)).toHaveTextContent("(to do)");
+
+    fireEvent.change(screen.getByLabelText(/question prompt/i), {
+      target: { value: "What is 2 + 2?" },
+    });
+    expect(step(/^write the question/i)).toHaveTextContent("(done)");
+    expect(step(/^mark the answer/i)).toHaveTextContent("(to do)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark option B correct" }));
+    expect(step(/^mark the answer/i)).toHaveTextContent("(done)");
+  });
+
   it("selects secondary topics excluding the main topic", () => {
     renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /more options/i }));
     // Only the non-main topic ("Loops") should be offered as a secondary option.
     expect(screen.getByText("Add secondary topics…")).toBeInTheDocument();
   });

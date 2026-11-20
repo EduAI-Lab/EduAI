@@ -62,6 +62,8 @@ import ActivityDetailsCard from "../components/ActivityDetailsCard";
 import EditActivityPanel from "../components/EditActivityPanel";
 import { LessonReading } from "../components/lessons/LessonReading";
 import { PublishConfirmDialog } from "../components/PublishConfirmDialog";
+import { CourseNextSteps } from "../components/courses/CourseNextSteps";
+import { setupSteps } from "~/lib/setup-steps";
 import { lessonPublishBlockedReason } from "~/lib/publish-cascade";
 import {
   BANNER_PRIMARY_ACTION_CLASS,
@@ -1016,6 +1018,29 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             </>
           }
         />
+
+        {perms.canManageContent && (
+          <CourseNextSteps
+            scope={`lesson-${lessonId}`}
+            doneTitle="Lesson is set up"
+            steps={setupSteps({
+              hasModule: true,
+              hasLesson: true,
+              hasActivity: activityCount > 0,
+              published: lessonPublished,
+              publishDetail: lessonPublished
+                ? "Students can see this lesson."
+                : (publishBlockedReason ?? "Publish this lesson so students can see it."),
+              actions: {
+                activity: { onSelect: () => setShowAddPanel(true) },
+                publish:
+                  perms.canPublishContent && crumbsReady && !publishBlockedReason
+                    ? { onSelect: () => setConfirmingPublish(true) }
+                    : undefined,
+              },
+            })}
+          />
+        )}
 
         {lesson?.contentMd?.trim() && <LessonReading contentMd={lesson.contentMd} />}
 

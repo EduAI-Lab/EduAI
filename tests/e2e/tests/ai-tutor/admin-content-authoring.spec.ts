@@ -204,8 +204,10 @@ test.describe("AI Tutor ADMIN — activities", () => {
 
       // The AI-mode section is what the tutor loop will offer the student, and
       // the hint is what "Guide me" leans on — both are part of authoring, not
-      // decoration, so set them here rather than accepting the defaults.
-      await expect(dialog.getByText("AI study buddy")).toBeVisible();
+      // decoration, so set them here rather than accepting the defaults. Both
+      // sit under the dialog's More options fold (#2170).
+      await dialog.getByRole("button", { name: /^More options/ }).click();
+      await expect(dialog.getByText("AI study buddy", { exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Teach me" })).toHaveAttribute(
         "aria-pressed",
         "true",
@@ -266,6 +268,8 @@ test.describe("AI Tutor ADMIN — activities", () => {
         .click();
 
       const dialog = page.locator('[role="dialog"]');
+      // The AI modes sit under the dialog's More options fold (#2170).
+      await dialog.getByRole("button", { name: /^More options/ }).click();
       await dialog.getByRole("button", { name: "Guide me" }).click();
       await expect(dialog.getByRole("button", { name: "Guide me" })).toHaveAttribute(
         "aria-pressed",

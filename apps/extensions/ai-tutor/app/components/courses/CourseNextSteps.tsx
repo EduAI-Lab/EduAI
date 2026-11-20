@@ -15,33 +15,45 @@ export type CourseNextStep = {
   onSelect?: () => void;
 };
 
-const COLLAPSED_KEY = "eduai.aiTutor.course.nextStepsCollapsed";
+const COLLAPSED_KEY_PREFIX = "eduai.aiTutor.nextStepsCollapsed";
 
 /**
- * The course's setup path as one compact step bar, matching Core's (#2105):
- * a module → a published module → a published course. Collapsible, with each
- * step's detail on hover, so it never takes over the page.
+ * The setup path as one compact step bar, matching Core's (#2105). The course,
+ * module and lesson pages all show the same path (#2170, see `setupSteps`).
+ * Collapsible, with each step's detail on hover, so it never takes over the page.
+ * `scope` names the page (e.g. `lesson-12`), so hiding the bar on one page never
+ * hides it on another.
  */
-export function CourseNextSteps({ steps }: { steps: CourseNextStep[] }) {
+export function CourseNextSteps({
+  steps,
+  scope,
+  doneTitle = "Course is set up",
+}: {
+  steps: CourseNextStep[];
+  scope: string;
+  /** Heading once every step is done. */
+  doneTitle?: string;
+}) {
   const doneCount = steps.filter((s) => s.done).length;
   const allDone = doneCount === steps.length;
   const [collapsed, setCollapsed] = useState(false);
+  const storageKey = `${COLLAPSED_KEY_PREFIX}.${scope}`;
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(COLLAPSED_KEY);
+      const stored = window.localStorage.getItem(storageKey);
       // A finished setup tucks itself away unless the instructor chose otherwise.
       setCollapsed(stored === null ? allDone : stored === "1");
     } catch {
       setCollapsed(allDone);
     }
-  }, [allDone]);
+  }, [allDone, storageKey]);
 
   const toggle = () => {
     const next = !collapsed;
     setCollapsed(next);
     try {
-      window.localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+      window.localStorage.setItem(storageKey, next ? "1" : "0");
     } catch {
       // Not remembered across visits.
     }
@@ -57,7 +69,7 @@ export function CourseNextSteps({ steps }: { steps: CourseNextStep[] }) {
     >
       <div className="flex items-center gap-3">
         <p className="text-sm font-semibold text-foreground">
-          {allDone ? "Course is set up" : "Next steps"}
+          {allDone ? doneTitle : "Next steps"}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
             {doneCount} of {steps.length} done
           </span>
@@ -82,78 +94,84 @@ export function CourseNextSteps({ steps }: { steps: CourseNextStep[] }) {
         </button>
       </div>
 
-      {!collapsed && (
-        <ol className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-0">
-          {steps.map((step, i) => {
-            const isNext = step === nextStep;
-            const body = (
-              <span className="inline-flex items-center gap-2">
-                <span
-                  className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
-                    step.done
-                      ? "border-transparent bg-[var(--color-success-500)] text-white"
-                      : isNext
-                        ? "border-primary text-primary-text"
-                        : "border-border text-muted-foreground",
-                  )}
-                >
-                  {step.done ? <IconCheck className="size-3.5" aria-hidden="true" /> : i + 1}
-                </span>
-                <span
-                  className={cn(
-                    "text-xs font-medium",
-                    step.done ? "text-muted-foreground" : "text-foreground",
-                    isNext &&
-                      (step.href || step.onSelect) &&
-                      "underline-offset-2 group-hover:underline",
-                  )}
-                >
-                  {step.label}
-                  <span className="sr-only">
-                    {step.done ? " (done)" : " (to do)"}: {step.detail}
-                  </span>
-                </span>
-              </span>
-            );
-            return (
-              <li key={step.key} className="flex items-center sm:flex-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    {step.onSelect && !step.done ? (
-                      <button
-                        type="button"
-                        onClick={step.onSelect}
-                        className="group rounded-md text-left focus-visible:ring-2"
-                      >
-                        {body}
-                      </button>
-                    ) : step.href && !step.done ? (
-                      <Link to={step.href} className="group rounded-md focus-visible:ring-2">
-                        {body}
-                      </Link>
-                    ) : (
-                      <span tabIndex={0} className="rounded-md focus-visible:ring-2">
-                        {body}
-                      </span>
-                    )}
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-64">{step.detail}</TooltipContent>
-                </Tooltip>
-                {i < steps.length - 1 && (
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "mx-3 hidden h-px flex-1 sm:block",
-                      step.done ? "bg-[var(--color-success-500)]" : "bg-border",
-                    )}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
+      {!collapsed && <StepList steps={steps} className="mt-3" />}
     </section>
+  );
+}
+
+/** The numbered steps alone, for a surface with its own heading (e.g. a dialog). */
+export function StepList({ steps, className }: { steps: CourseNextStep[]; className?: string }) {
+  const nextStep = steps.find((s) => !s.done);
+  return (
+    <ol className={cn("flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-0", className)}>
+      {steps.map((step, i) => {
+        const isNext = step === nextStep;
+        const body = (
+          <span className="inline-flex items-center gap-2">
+            <span
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
+                step.done
+                  ? "border-transparent bg-[var(--color-success-500)] text-white"
+                  : isNext
+                    ? "border-primary text-primary-text"
+                    : "border-border text-muted-foreground",
+              )}
+            >
+              {step.done ? <IconCheck className="size-3.5" aria-hidden="true" /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                "text-xs font-medium",
+                step.done ? "text-muted-foreground" : "text-foreground",
+                isNext &&
+                  (step.href || step.onSelect) &&
+                  "underline-offset-2 group-hover:underline",
+              )}
+            >
+              {step.label}
+              <span className="sr-only">
+                {step.done ? " (done)" : " (to do)"}: {step.detail}
+              </span>
+            </span>
+          </span>
+        );
+        return (
+          <li key={step.key} className="flex items-center sm:flex-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {step.onSelect && !step.done ? (
+                  <button
+                    type="button"
+                    onClick={step.onSelect}
+                    className="group rounded-md text-left focus-visible:ring-2"
+                  >
+                    {body}
+                  </button>
+                ) : step.href && !step.done ? (
+                  <Link to={step.href} className="group rounded-md focus-visible:ring-2">
+                    {body}
+                  </Link>
+                ) : (
+                  <span tabIndex={0} className="rounded-md focus-visible:ring-2">
+                    {body}
+                  </span>
+                )}
+              </TooltipTrigger>
+              <TooltipContent className="max-w-64">{step.detail}</TooltipContent>
+            </Tooltip>
+            {i < steps.length - 1 && (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "mx-3 hidden h-px flex-1 sm:block",
+                  step.done ? "bg-[var(--color-success-500)]" : "bg-border",
+                )}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }

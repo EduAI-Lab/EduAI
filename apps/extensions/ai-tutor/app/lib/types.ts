@@ -252,7 +252,12 @@ export type Course = {
    *  Authoritative for gating course-detail staff tabs — distinct from the global
    *  effective `User.role`, which a TA carries onto every course they can reach. */
   viewerRole?: Role | null;
+  /** Staff only, set by the course and module detail reads (#2170). */
+  contentCounts?: ContentCounts;
 };
+
+/** How many lessons and activities sit under a course or module. */
+export type ContentCounts = { lessons: number; activities: number };
 
 export type Module = {
   id: number;
@@ -265,6 +270,7 @@ export type Module = {
 
 export type ModuleDetail = Module & {
   courseOfferingId: number;
+  contentCounts?: ContentCounts;
 };
 
 export type Lesson = {

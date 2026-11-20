@@ -25,7 +25,7 @@ function topicsState(): CourseTopicsState {
 }
 
 function renderPanel() {
-  return render(
+  const view = render(
     <CourseTopicsProvider value={topicsState()}>
       <Dialog open>
         <DialogContent>
@@ -34,6 +34,9 @@ function renderPanel() {
       </Dialog>
     </CourseTopicsProvider>,
   );
+  // The AI modes sit under the folded "More options" (#2170).
+  fireEvent.click(screen.getByRole("button", { name: /more options/i }));
+  return view;
 }
 
 const REFUSAL = "At least one AI mode must be enabled.";

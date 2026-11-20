@@ -107,15 +107,33 @@ describe("instructor.course — banner and next steps", () => {
     expect(requestToggle).toHaveBeenCalledWith(draftCourse);
   });
 
-  it("publishes the course from its next step", () => {
+  it("publishes the course from its last step once there is content", () => {
+    wrap({ course: { ...draftCourse, contentCounts: { lessons: 1, activities: 1 } } });
+    fireEvent.click(within(steps()).getByRole("button", { name: /^\d*publish for students/i }));
+    expect(requestToggle).toHaveBeenCalledWith(expect.objectContaining({ id: 42 }));
+  });
+
+  it("keeps publishing as the last step until a lesson and an activity exist (#2170)", () => {
     wrap();
-    fireEvent.click(within(steps()).getByRole("button", { name: /publish the course/i }));
-    expect(requestToggle).toHaveBeenCalledWith(draftCourse);
+    expect(
+      within(steps()).queryByRole("button", { name: /^\d*publish for students/i }),
+    ).not.toBeInTheDocument();
+    expect(within(steps()).getByText(/^publish for students/i)).toHaveTextContent(
+      "Last step: add a module, a lesson and an activity first.",
+    );
+  });
+
+  it("sends the Add a lesson step into the first module", () => {
+    wrap();
+    expect(within(steps()).getByRole("link", { name: /^\d*add a lesson/i })).toHaveAttribute(
+      "href",
+      "/instructor/module/10",
+    );
   });
 
   it("opens the create dialog from the Add a module step", () => {
     wrap({ modules: [], modulesTotal: 0, moduleCounts: { all: 0, publishedOffPage: 0 } });
-    fireEvent.click(within(steps()).getByRole("button", { name: /add a module/i }));
+    fireEvent.click(within(steps()).getByRole("button", { name: /^\d*add a module/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
@@ -128,16 +146,19 @@ describe("instructor.course — banner and next steps", () => {
     expect(screen.getByRole("heading", { name: /modules/i, level: 2 })).toHaveTextContent(
       "Modules(12)",
     );
-    expect(within(steps()).getByText(/add a module/i)).toHaveTextContent("(done)");
+    expect(within(steps()).getByText(/^add a module/i)).toHaveTextContent("(done)");
   });
 
-  it("marks Publish a module done when the published module is on another page", () => {
-    wrap({ moduleCounts: { all: 30, publishedOffPage: 1 } });
-    expect(within(steps()).getByText(/publish a module/i)).toHaveTextContent("(done)");
+  it("marks publishing done when the published module is on another page", () => {
+    wrap({
+      course: { ...draftCourse, isPublished: true },
+      moduleCounts: { all: 30, publishedOffPage: 1 },
+    });
+    expect(within(steps()).getByText(/^publish for students/i)).toHaveTextContent("(done)");
   });
 
-  it("leaves Publish a module to do when no module anywhere is published", () => {
-    wrap();
-    expect(within(steps()).getByText(/publish a module/i)).toHaveTextContent("(to do)");
+  it("leaves publishing to do when no module anywhere is published", () => {
+    wrap({ course: { ...draftCourse, isPublished: true } });
+    expect(within(steps()).getByText(/^publish for students/i)).toHaveTextContent("(to do)");
   });
 });

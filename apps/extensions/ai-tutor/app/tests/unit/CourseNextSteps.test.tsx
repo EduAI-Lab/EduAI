@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router";
 
 import { CourseNextSteps, type CourseNextStep } from "~/components/courses/CourseNextSteps";
 
-const KEY = "eduai.aiTutor.course.nextStepsCollapsed";
+const KEY = "eduai.aiTutor.nextStepsCollapsed.course-1";
 
 const todo: CourseNextStep[] = [
   { key: "a", label: "Add a module", done: true, detail: "Add one." },
@@ -12,10 +12,10 @@ const todo: CourseNextStep[] = [
 ];
 const allDone = todo.map((s) => ({ ...s, done: true }));
 
-function renderSteps(steps: CourseNextStep[]) {
+function renderSteps(steps: CourseNextStep[], scope = "course-1") {
   return render(
     <MemoryRouter>
-      <CourseNextSteps steps={steps} />
+      <CourseNextSteps steps={steps} scope={scope} />
     </MemoryRouter>,
   );
 }
@@ -44,6 +44,16 @@ describe("CourseNextSteps", () => {
 
     window.localStorage.setItem(KEY, "0");
     renderSteps(allDone);
+    expect(screen.getByRole("list")).toBeInTheDocument();
+  });
+
+  it("remembers Hide per page, so hiding it on a lesson leaves the course page alone", () => {
+    const { unmount } = renderSteps(todo, "lesson-9");
+    fireEvent.click(screen.getByRole("button", { name: /hide/i }));
+    expect(window.localStorage.getItem("eduai.aiTutor.nextStepsCollapsed.lesson-9")).toBe("1");
+    unmount();
+
+    renderSteps(todo, "course-1");
     expect(screen.getByRole("list")).toBeInTheDocument();
   });
 

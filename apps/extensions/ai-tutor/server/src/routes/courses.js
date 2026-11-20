@@ -74,6 +74,7 @@ import {
 import { calculateCourseProgressBatch, progressBucket } from "../services/progressCalculation.js";
 import {
   CourseMutationError,
+  countContent,
   importCourseContentForUser,
   publishCourseForUser,
   unpublishCourseForUser,
@@ -875,7 +876,12 @@ router.get("/courses/:courseId", async (req, res) => {
       ? (liveEnrollment?.role ?? null)
       : (liveStaffPrincipal?.role ?? liveStaffPrincipal?.kind ?? null);
 
-    res.json({ ...mapCourseOffering(course, coreCourse), viewerRole });
+    // #2170: the staff setup steps need to know whether any lesson or activity exists.
+    const contentCounts = isLearner
+      ? undefined
+      : await countContent({ module: { courseOfferingId: courseId } });
+
+    res.json({ ...mapCourseOffering(course, coreCourse), viewerRole, contentCounts });
   } catch (e) {
     sendSafeError(res, e, "Internal server error");
   }

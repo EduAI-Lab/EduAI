@@ -196,7 +196,7 @@ test.describe("UNIT_ADMIN course detail", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: "Add module" })).toBeVisible();
-    await expect(dialog).toContainText(`Create a new module in ${ua.course.name}`);
+    await expect(dialog).toContainText(`A module is a unit of ${ua.course.name}`);
     await expect(dialog.getByLabel("Module title")).toBeVisible();
 
     await dialog.getByRole("button", { name: "Cancel" }).click();

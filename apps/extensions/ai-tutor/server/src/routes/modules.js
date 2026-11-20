@@ -12,6 +12,7 @@ import {
 import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
 import { calculateModuleProgress } from "../services/progressCalculation.js";
 import { isCoursePublishedLive } from "../services/courseResolver.js";
+import { countContent } from "../services/courseManagement.js";
 import { sendSafeError } from "../utils/safeErrors.js";
 import { gateCourseById, gateCourseThrough } from "../middleware/liveCoursePrincipal.js";
 import {
@@ -281,7 +282,10 @@ router.get("/modules/:moduleId", async (req, res) => {
       return res.status(403).json({ error: "Module is not published" });
     }
 
-    res.json({ ...mapModule(module), courseOfferingId: module.courseOfferingId });
+    // #2170: staff see setup steps, which need to know whether this module has activities.
+    const contentCounts = hasElevatedAccess ? await countContent({ moduleId }) : undefined;
+
+    res.json({ ...mapModule(module), courseOfferingId: module.courseOfferingId, contentCounts });
   } catch (e) {
     sendSafeError(res, e, "Internal server error");
   }
