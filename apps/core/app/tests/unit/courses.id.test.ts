@@ -30,6 +30,15 @@ vi.mock("~/lib/courses/instructors.server", async (importOriginal) => ({
   getCourseInstructors: vi.fn(async () => new Map()),
 }));
 
+// The DELETE branch reads the soft-deleted course to label its audit entry;
+// this file has no database, so stub that read.
+vi.mock("~/lib/prisma.server", () => ({
+  default: {
+    user: { findUnique: vi.fn(async () => null) },
+    course: { findUnique: vi.fn(async () => null) },
+  },
+}));
+
 import { loader, action } from "~/routes/api/courses.id";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
