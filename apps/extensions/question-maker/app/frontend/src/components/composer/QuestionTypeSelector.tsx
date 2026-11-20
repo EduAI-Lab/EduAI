@@ -10,6 +10,7 @@ import { RadioGroup, RadioGroupItem, Label, cn } from "@eduai/ui";
 import { IconListCheck, IconAbc, IconFileText, IconCheck } from "@tabler/icons-react";
 
 import type { QuestionType } from "../../types/question";
+import { selectableCardClass } from "../../lib/selectableCard";
 
 interface QuestionTypeSelectorProps {
   value: QuestionType;
@@ -64,14 +65,7 @@ export function QuestionTypeSelector({
           <Label
             key={optValue}
             htmlFor={id}
-            className={cn(
-              "group relative flex cursor-pointer flex-col gap-3 rounded-[var(--radius-lg)] border bg-card p-4 shadow-[var(--shadow-2xs)] transition-all",
-              "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 focus-within:ring-offset-background",
-              selected
-                ? "border-secondary bg-secondary/[0.06] ring-1 ring-inset ring-secondary"
-                : "border-border hover:border-secondary/50 hover:bg-muted/40",
-              disabled && "cursor-not-allowed opacity-60",
-            )}
+            className={cn("flex-col gap-3 p-4", selectableCardClass(selected, disabled))}
           >
             <RadioGroupItem id={id} value={optValue} className="sr-only" />
 

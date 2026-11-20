@@ -22,6 +22,172 @@ const clampQuestionCount = (raw: string) => {
   return Number.isFinite(n) ? Math.min(MAX_BATCH_QUESTIONS, Math.max(1, n)) : 1;
 };
 
+/** True for the UBC-hosted (campus) model ids. */
+export const isUbcModelId = (modelId: string) =>
+  modelId.startsWith("ollama") || modelId.startsWith("vllm");
+
+interface AIModelSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  availableModels: EduAIModelOption[];
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+}
+
+/** Model dropdown grouped into UBC-hosted and external models. */
+export function AIModelSelect({
+  value,
+  onChange,
+  availableModels,
+  disabled = false,
+  id = "ai-model",
+  className = "h-9",
+}: AIModelSelectProps) {
+  return (
+    <Select
+      value={value}
+      onValueChange={onChange}
+      disabled={disabled || availableModels.length === 0}
+    >
+      <SelectTrigger id={id} className={className}>
+        <SelectValue placeholder="Select model" />
+      </SelectTrigger>
+      <SelectContent>
+        {availableModels.length === 0 ? (
+          <SelectItem value="__no_models" disabled>
+            No models available
+          </SelectItem>
+        ) : (
+          <>
+            {availableModels.some((m) => isCampusModel(m)) && (
+              <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                UBC Hosted
+              </div>
+            )}
+            {availableModels
+              .filter((m) => isCampusModel(m))
+              .map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            {availableModels.some((m) => !isCampusModel(m)) && (
+              <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                External
+              </div>
+            )}
+            {availableModels
+              .filter((m) => !isCampusModel(m))
+              .map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                  {m.provider ? ` (${m.provider})` : ""}
+                </SelectItem>
+              ))}
+          </>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
+interface ProviderApiKeyFieldProps {
+  generationModel: string;
+  /** Draft input buffer for entering a NEW key (not the persisted key). */
+  providerApiKey: string;
+  onProviderApiKeyChange: (value: string) => void;
+  onSaveProviderApiKey?: () => void;
+  keySaved?: boolean;
+  onClearSavedKey?: () => void;
+  apiKeySaveState?: "idle" | "saving" | "saved" | "error";
+}
+
+/** API key entry for the selected cloud model; renders nothing when no key is needed. */
+export function ProviderApiKeyField({
+  generationModel,
+  providerApiKey,
+  onProviderApiKeyChange,
+  onSaveProviderApiKey,
+  keySaved = false,
+  onClearSavedKey,
+  apiKeySaveState = "idle",
+}: ProviderApiKeyFieldProps) {
+  const isExternal = !isUbcModelId(generationModel);
+  const requiresKey = apiKeyStorage.requiresApiKey(generationModel);
+  const providerName = apiKeyStorage.getProviderFromModel(generationModel);
+  if (!requiresKey || !providerName) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label
+          htmlFor="provider-api-key"
+          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+        >
+          {providerName.toUpperCase()} API Key
+        </Label>
+        {keySaved && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            <IconCircleCheck className="size-3.5" aria-hidden />
+            Key saved
+          </span>
+        )}
+      </div>
+      {keySaved ? (
+        // A key is persisted — never reveal it; show a placeholder + Change.
+        <div className="flex items-center gap-2">
+          <Input
+            id="provider-api-key"
+            type="text"
+            value={"•".repeat(24)}
+            disabled
+            aria-label={`${providerName.toUpperCase()} API key saved`}
+            className="h-9 text-xs flex-1 tracking-widest"
+          />
+          <Button type="button" size="sm" variant="outline" onClick={onClearSavedKey}>
+            Change
+          </Button>
+        </div>
+      ) : (
+        // No persisted key — typing here only fills the draft; nothing is
+        // stored until the user explicitly clicks Save.
+        <div className="flex items-center gap-2">
+          <Input
+            id="provider-api-key"
+            type="password"
+            placeholder={`Enter your ${providerName.toUpperCase()} API key`}
+            value={providerApiKey}
+            className="h-9 text-xs flex-1"
+            onChange={(e) => onProviderApiKeyChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && providerApiKey.trim() && apiKeySaveState !== "saving") {
+                e.preventDefault();
+                onSaveProviderApiKey?.();
+              }
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!providerApiKey.trim() || apiKeySaveState === "saving"}
+            onClick={onSaveProviderApiKey}
+          >
+            {apiKeySaveState === "saving" ? "Saving…" : "Save key"}
+          </Button>
+        </div>
+      )}
+      {/* Compact muted notes — replaces the bulky amber warning box to cut clutter. */}
+      <p className="text-[11px] text-muted-foreground">
+        Stored for this account in this browser and sent through EduAI services when you use AI.
+        Signing out removes it from this browser.
+        {isExternal && " External models receive your prompt and course data."}
+      </p>
+    </div>
+  );
+}
+
 export interface QuestionAIControlsValue {
   generationPrompt: string;
   generationModel: string;
@@ -81,11 +247,7 @@ export function QuestionAIControls({
   questionCount = 1,
   onQuestionCountChange,
 }: QuestionAIControlsProps) {
-  const isUbcModel =
-    value.generationModel.startsWith("ollama") || value.generationModel.startsWith("vllm");
-  const isExternal = !isUbcModel;
-  const requiresKey = apiKeyStorage.requiresApiKey(value.generationModel);
-  const providerName = apiKeyStorage.getProviderFromModel(value.generationModel);
+  const isUbcModel = isUbcModelId(value.generationModel);
 
   return (
     <div
@@ -132,50 +294,12 @@ export function QuestionAIControls({
           </Label>
           <HelpHint {...QUESTION_MAKER_HELP.aiModels} LinkComponent={Link} />
         </div>
-        <Select
+        <AIModelSelect
           value={value.generationModel}
-          onValueChange={(v) => onChange("generationModel", v)}
-          disabled={disabled || availableModels.length === 0}
-        >
-          <SelectTrigger id="ai-model" className="h-9">
-            <SelectValue placeholder="Select model" />
-          </SelectTrigger>
-          <SelectContent>
-            {availableModels.length === 0 ? (
-              <SelectItem value="__no_models" disabled>
-                No models available
-              </SelectItem>
-            ) : (
-              <>
-                {availableModels.some((m) => isCampusModel(m)) && (
-                  <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">
-                    UBC Hosted
-                  </div>
-                )}
-                {availableModels
-                  .filter((m) => isCampusModel(m))
-                  .map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                {availableModels.some((m) => !isCampusModel(m)) && (
-                  <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">
-                    External
-                  </div>
-                )}
-                {availableModels
-                  .filter((m) => !isCampusModel(m))
-                  .map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.label}
-                      {m.provider ? ` (${m.provider})` : ""}
-                    </SelectItem>
-                  ))}
-              </>
-            )}
-          </SelectContent>
-        </Select>
+          onChange={(v) => onChange("generationModel", v)}
+          availableModels={availableModels}
+          disabled={disabled}
+        />
       </div>
 
       {/* UBC-hosted unavailable notice — only relevant when a UBC model is selected,
@@ -215,74 +339,15 @@ export function QuestionAIControls({
         />
       </div>
 
-      {requiresKey && providerName && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label
-              htmlFor="provider-api-key"
-              className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-            >
-              {providerName.toUpperCase()} API Key
-            </Label>
-            {keySaved && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                <IconCircleCheck className="size-3.5" aria-hidden />
-                Key saved
-              </span>
-            )}
-          </div>
-          {keySaved ? (
-            // A key is persisted — never reveal it; show a placeholder + Change.
-            <div className="flex items-center gap-2">
-              <Input
-                id="provider-api-key"
-                type="text"
-                value={"•".repeat(24)}
-                disabled
-                aria-label={`${providerName.toUpperCase()} API key saved`}
-                className="h-9 text-xs flex-1 tracking-widest"
-              />
-              <Button type="button" size="sm" variant="outline" onClick={onClearSavedKey}>
-                Change
-              </Button>
-            </div>
-          ) : (
-            // No persisted key — typing here only fills the draft; nothing is
-            // stored until the user explicitly clicks Save.
-            <div className="flex items-center gap-2">
-              <Input
-                id="provider-api-key"
-                type="password"
-                placeholder={`Enter your ${providerName.toUpperCase()} API key`}
-                value={providerApiKey}
-                className="h-9 text-xs flex-1"
-                onChange={(e) => onProviderApiKeyChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && providerApiKey.trim() && apiKeySaveState !== "saving") {
-                    e.preventDefault();
-                    onSaveProviderApiKey?.();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={!providerApiKey.trim() || apiKeySaveState === "saving"}
-                onClick={onSaveProviderApiKey}
-              >
-                {apiKeySaveState === "saving" ? "Saving…" : "Save key"}
-              </Button>
-            </div>
-          )}
-          {/* Compact muted notes — replaces the bulky amber warning box to cut clutter. */}
-          <p className="text-[11px] text-muted-foreground">
-            Stored for this account in this browser and sent through EduAI services when you use AI.
-            Signing out removes it from this browser.
-            {isExternal && " External models receive your prompt and course data."}
-          </p>
-        </div>
-      )}
+      <ProviderApiKeyField
+        generationModel={value.generationModel}
+        providerApiKey={providerApiKey}
+        onProviderApiKeyChange={onProviderApiKeyChange}
+        onSaveProviderApiKey={onSaveProviderApiKey}
+        keySaved={keySaved}
+        onClearSavedKey={onClearSavedKey}
+        apiKeySaveState={apiKeySaveState}
+      />
 
       {mode === "new" && onQuestionCountChange && (
         <div className="space-y-1.5">
